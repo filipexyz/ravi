@@ -53,7 +53,7 @@ Examples:
 
 - the same WhatsApp group can have `main`, `webmaster`, and `support` agent sessions.
 - a DM can have one normal agent session and another specialized follow-up/calls session.
-- a thread can become a distinct session while still belonging to the same underlying chat.
+- a provider-native thread or channel subconversation can have a distinct session while still belonging to the same underlying chat.
 
 A session SHOULD reference its chat through a stable `chat_id` or equivalent binding.
 

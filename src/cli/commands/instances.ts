@@ -55,6 +55,7 @@ import {
   DmScopeSchema,
   DmPolicySchema,
   GroupPolicySchema,
+  ContactIntakeModeSchema,
   dbGetSetting,
   dbSetSetting,
 } from "../../router/router-db.js";
@@ -570,6 +571,7 @@ const SETTABLE_KEYS = [
   "agent",
   "dmPolicy",
   "groupPolicy",
+  "contactIntakeMode",
   "dmScope",
   "instanceId",
   "channel",
@@ -659,9 +661,11 @@ export class InstancesCommands {
       }
     } else {
       console.log("\nInstances:\n");
-      console.log("  NAME                 CHANNEL       AGENT           RAVI      DM           GROUP        STATUS");
       console.log(
-        "  -------------------- ------------- --------------- --------- ------------ ------------ ----------",
+        "  NAME                 CHANNEL       AGENT           RAVI      DM           GROUP        INTAKE       STATUS",
+      );
+      console.log(
+        "  -------------------- ------------- --------------- --------- ------------ ------------ ------------ ----------",
       );
 
       for (const inst of pageInstances) {
@@ -673,7 +677,7 @@ export class InstancesCommands {
         const profile = inst.instanceId ? (omniStatus[inst.instanceId]?.profileName ?? "") : "";
         const label = profile ? `${status} (${profile})` : status;
         console.log(
-          `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${(inst.enabled === false ? "disabled" : "enabled").padEnd(9)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${label}`,
+          `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${(inst.enabled === false ? "disabled" : "enabled").padEnd(9)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${inst.contactIntakeMode.padEnd(12)} ${label}`,
         );
       }
       console.log(
@@ -736,6 +740,7 @@ export class InstancesCommands {
       printInspectionField("Agent", inst.agent ?? "(default)", CONFIG_DB_META);
       printInspectionField("DM Policy", inst.dmPolicy, CONFIG_DB_META);
       printInspectionField("Group Policy", inst.groupPolicy, CONFIG_DB_META);
+      printInspectionField("Contact Intake", inst.contactIntakeMode, CONFIG_DB_META);
       const instanceTags = listInstanceTags(inst.name);
       printInspectionField(
         "Tags",
@@ -775,6 +780,11 @@ export class InstancesCommands {
     dmPolicy?: string,
     @Option({ flags: "--group-policy <policy>", description: "Group policy: open|allowlist|closed (default: open)" })
     groupPolicy?: string,
+    @Option({
+      flags: "--contact-intake-mode <mode>",
+      description: "Inbound DM contact intake: off|discovered|pending (default: off)",
+    })
+    contactIntakeMode?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (agent && !dbGetAgent(agent)) {
@@ -792,6 +802,10 @@ export class InstancesCommands {
       const r = GroupPolicySchema.safeParse(groupPolicy);
       if (!r.success) fail(`Invalid groupPolicy: ${groupPolicy}. Valid: open, allowlist, closed`);
     }
+    if (contactIntakeMode) {
+      const r = ContactIntakeModeSchema.safeParse(contactIntakeMode);
+      if (!r.success) fail(`Invalid contactIntakeMode: ${contactIntakeMode}. Valid: off, discovered, pending`);
+    }
     try {
       const instance = dbUpsertInstance({
         name,
@@ -799,6 +813,7 @@ export class InstancesCommands {
         agent: agent ?? undefined,
         dmPolicy: (dmPolicy ?? "open") as "open" | "pairing" | "closed",
         groupPolicy: (groupPolicy ?? "open") as "open" | "allowlist" | "closed",
+        contactIntakeMode: (contactIntakeMode ?? "off") as "off" | "discovered" | "pending",
       });
       const payload = {
         status: "created" as const,
@@ -875,6 +890,10 @@ export class InstancesCommands {
       const r = GroupPolicySchema.safeParse(value);
       if (!r.success) fail(`Invalid groupPolicy: ${value}. Valid: open, allowlist, closed`);
       dbUpdateInstance(name, { groupPolicy: r.data });
+    } else if (key === "contactIntakeMode") {
+      const r = ContactIntakeModeSchema.safeParse(value);
+      if (!r.success) fail(`Invalid contactIntakeMode: ${value}. Valid: off, discovered, pending`);
+      dbUpdateInstance(name, { contactIntakeMode: r.data });
     } else if (key === "dmScope") {
       if (!clear) {
         const r = DmScopeSchema.safeParse(value);
@@ -1377,6 +1396,7 @@ export class InstancesCommands {
         printInspectionField("Agent", inst.agent ?? "(default)", CONFIG_DB_META, { labelWidth: 15 });
         printInspectionField("DM Policy", inst.dmPolicy, CONFIG_DB_META, { labelWidth: 15 });
         printInspectionField("Group Policy", inst.groupPolicy, CONFIG_DB_META, { labelWidth: 15 });
+        printInspectionField("Contact Intake", inst.contactIntakeMode, CONFIG_DB_META, { labelWidth: 15 });
       }
       return payload;
     } catch (err) {

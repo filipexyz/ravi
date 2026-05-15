@@ -16,41 +16,41 @@ Suggested scans:
 rg -n "displayName.*merge|name.*merge|whatsapp_group|@g\\.us|owner_type|platform_identity|platformIdentities" src
 ```
 
-## Migration Tests
+## Import Tests
 
 Create fixtures for:
 
-- legacy phone contact
-- legacy LID-only contact
-- phone + LID as separate legacy contacts
-- legacy WhatsApp group contact
+- phone contact
+- WhatsApp identity contact
+- phone + WhatsApp identity as separate old records
+- WhatsApp group record
 - Telegram identity
-- legacy/dead channel identity that should be archived or removed
+- dead channel identity that should be archived or removed
 - contact with tags/notes/allowed agents/opt-out
 
 Expected:
 
 - all non-group identities survive migration
-- phone + LID can converge when trusted mapping exists
+- phone + WhatsApp identity can converge when trusted mapping exists
 - group records are not treated as people
 - policy data survives
 - duplicate candidates are reported when evidence is insufficient
 
 ## Runtime Regression Tests
 
-### Phone And LID Same Person
+### Phone And WhatsApp Identity Same Person
 
 Given:
 
 - contact A has phone identity
-- contact B has WhatsApp LID identity
-- trusted LID mapping links both
+- contact B has WhatsApp platform identity
+- trusted Omni mapping links both
 
 Expected:
 
 - resolver returns one canonical contact
 - merge/link audit event is written
-- `ravi contacts get <phone>` and `ravi contacts get <lid>` return the same contact
+- `ravi contacts get <phone>` and `ravi contacts get <whatsapp-identity>` return the same contact
 
 ### Agent-Owned Identity
 
@@ -61,6 +61,8 @@ Given:
 Expected:
 
 - inbound from that identity resolves as `owner_type=agent`
+- `ravi contacts add` / contact upsert for that same identity fails instead of creating a shadow human contact
+- contact lookup by that same identity returns no human contact unless the platform identity owner is changed through an explicit audited operation
 - duplicate detection does not suggest merging it into a contact
 
 ### Group Is Chat
@@ -139,4 +141,4 @@ Implementation is not complete until:
 - ambiguous duplicates remain suggestions
 - sessions/routes/events can carry resolved identity metadata without becoming identity source of truth
 - sessions can represent multiple participating contacts without overwriting actor identity
-- every item in the Legacy Removal Register is either removed or has a documented compatibility shim and removal condition
+- every removed runtime surface is absent from contact service read/write paths

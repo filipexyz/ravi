@@ -29,8 +29,6 @@ import {
   addContactTag,
   removeContactTag,
   setOptOut,
-  addContactIdentity,
-  removeContactIdentity,
   linkContactIdentity,
   unlinkContactIdentity,
   mergeContacts,
@@ -42,9 +40,8 @@ import {
   removeContactMetadata,
   setContactKind,
   listDuplicateContacts,
-  setGroupTag,
-  removeGroupTag,
   getCrmContactProfile,
+  backfillInboundContacts,
   type Contact,
   type ContactContextEntry,
   type ContactDetails,
@@ -72,7 +69,7 @@ const CONTACT_DB_META = { source: "contact-db", freshness: "persisted" } as cons
 const CONTACT_TAGS_META = {
   source: "contact-db",
   freshness: "persisted",
-  via: "tag-bindings+contacts_v2",
+  via: "tag-bindings+contact_policies",
 } as const;
 const ROUTE_RESOLVER_META = { source: "resolver", freshness: "derived-now", via: "route-lookup" } as const;
 const SESSION_LOOKUP_META = { source: "session-db", freshness: "derived-now", via: "identity-lookup" } as const;
@@ -132,8 +129,6 @@ function platformIcon(platform: string): string {
       return "📱";
     case "whatsapp":
       return "🆔";
-    case "whatsapp_lid":
-      return "🆔";
     case "whatsapp_group":
       return "👥";
     case "email":
@@ -165,7 +160,7 @@ function printJson(payload: unknown): void {
 }
 
 function formatIdentityValue(platform: string, value: string): string {
-  if (platform === "phone" || platform === "whatsapp" || platform === "whatsapp_lid" || platform === "whatsapp_group") {
+  if (platform === "phone" || platform === "whatsapp" || platform === "whatsapp_group") {
     return formatPhone(value);
   }
   return value;
@@ -232,6 +227,19 @@ function parseScopeOption(scope?: string): { scopeType?: ContactEventScopeType; 
   return {
     scopeType: raw.slice(0, separator) as ContactEventScopeType,
     scopeId: raw.slice(separator + 1),
+  };
+}
+
+function parseOwnerOption(owner?: string): { ownerType?: string; ownerId?: string } {
+  const raw = owner?.trim();
+  if (!raw) return {};
+  const separator = raw.indexOf(":");
+  if (separator <= 0 || separator === raw.length - 1) {
+    fail("Owner must use <type:id>, e.g. agent:ravi-crm or system:ravi");
+  }
+  return {
+    ownerType: raw.slice(0, separator),
+    ownerId: raw.slice(separator + 1),
   };
 }
 
@@ -414,7 +422,7 @@ export class ContactsCommands {
     const contacts = getPendingContacts();
     const accountPendingContacts = listAccountPendingContacts(account);
     const pendingChats = listAccountPendingChats(account);
-    const legacyAccountPending = listAccountPending(account);
+    const accountPending = listAccountPending(account);
 
     const payload = {
       filter: { account: account ?? null },
@@ -432,7 +440,7 @@ export class ContactsCommands {
         type: entry.chatType,
         contact: null,
       })),
-      accountPending: legacyAccountPending.map((entry) => ({
+      accountPending: accountPending.map((entry) => ({
         ...entry,
         type: entry.chatType,
         contact: entry.pendingKind === "contact" ? serializeContactMaybe(getContact(entry.phone)) : null,
@@ -499,10 +507,112 @@ export class ContactsCommands {
     return payload;
   }
 
+  @Scope("admin")
+  @Command({
+    name: "backfill",
+    aliases: ["intake-backfill"],
+    description: "Backfill canonical contacts from captured chats",
+  })
+  backfill(
+    @Option({ flags: "--instance <id>", description: "Limit to one channel instance/account" }) instanceId?: string,
+    @Option({ flags: "--channel <channel>", description: "Limit to one channel, e.g. whatsapp" }) channel?: string,
+    @Option({ flags: "--mode <mode>", description: "Contact intake status: pending|discovered (default: pending)" })
+    mode?: string,
+    @Option({ flags: "--limit <n>", description: "Maximum candidates to inspect/apply" }) limit?: string,
+    @Option({ flags: "--apply", description: "Write canonical contacts and actor links. Without this, runs dry-run." })
+    apply?: boolean,
+    @Option({ flags: "--dry-run", description: "Force preview mode even if --apply is present" }) dryRun?: boolean,
+    @Option({ flags: "--create-list <name>", description: "When applying, add linked chats to this reading list" })
+    createList?: string,
+    @Option({ flags: "--list-owner <type:id>", description: "Owner for --create-list (default: agent:ravi-crm)" })
+    listOwner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (mode && mode !== "pending" && mode !== "discovered") {
+      fail("--mode must be pending or discovered");
+    }
+    if (apply && dryRun) {
+      fail("Use either --apply or --dry-run, not both");
+    }
+    const owner = parseOwnerOption(listOwner);
+    const result = backfillInboundContacts({
+      instanceId,
+      channel,
+      mode: (mode as "pending" | "discovered" | undefined) ?? "pending",
+      limit,
+      apply: apply === true,
+      createReadingList: createList,
+      readingListOwnerType: owner.ownerType,
+      readingListOwnerId: owner.ownerId,
+    });
+
+    const payload = {
+      action: "contacts.backfill",
+      ...result,
+      nextCommand: result.dryRun
+        ? [
+            "ravi",
+            "contacts",
+            "backfill",
+            instanceId ? `--instance ${instanceId}` : null,
+            channel ? `--channel ${channel}` : null,
+            `--mode ${result.mode}`,
+            createList ? `--create-list ${createList}` : null,
+            listOwner ? `--list-owner ${listOwner}` : null,
+            "--apply",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : null,
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    const title = result.dryRun ? "Contact backfill dry-run" : "Contact backfill applied";
+    console.log(`\n${title}`);
+    console.log(`  Mode: ${result.mode}`);
+    console.log(`  Filter: instance=${result.filter.instanceId ?? "*"} channel=${result.filter.channel ?? "*"}`);
+    console.log(`  Candidates: ${result.totals.candidates}`);
+    console.log(`  Eligible: ${result.totals.eligible}`);
+    console.log(`  Skipped: ${result.totals.skipped}`);
+    if (result.applied) {
+      console.log(`  Contacts created: ${result.totals.contactsCreated}`);
+      console.log(`  Contacts linked/existing: ${result.totals.contactsLinked}`);
+      console.log(`  Platform identities created: ${result.totals.platformIdentitiesCreated}`);
+      console.log(`  Messages linked: ${result.totals.messagesUpdated}`);
+      console.log(`  Participants linked: ${result.totals.participantsUpdated}`);
+      if (result.readingList.id) {
+        console.log(
+          `  Reading list: ${result.readingList.requestedName} (${result.totals.readingListMembersAdded} chats added)`,
+        );
+      }
+    } else {
+      console.log("\nApply:");
+      console.log(`  ${payload.nextCommand}`);
+    }
+
+    const preview = result.items.slice(0, 10);
+    if (preview.length > 0) {
+      console.log("\nPreview:");
+      for (const item of preview) {
+        const status = item.skipReason ? `skipped:${item.skipReason}` : item.action;
+        console.log(
+          `  - ${status} ${item.instanceId}/${item.channel} ${item.contactIdentity} chat=${item.chatId ?? "-"}`,
+        );
+      }
+      if (result.items.length > preview.length) {
+        console.log(`  ... ${result.items.length - preview.length} more`);
+      }
+    }
+    return payload;
+  }
+
   @Scope("writeContacts")
   @Command({ name: "add", description: "Add/allow a contact" })
   add(
-    @Arg("identity", { description: "Phone number or LID" }) identity: string,
+    @Arg("identity", { description: "Phone number or WhatsApp identity" }) identity: string,
     @Arg("name", { required: false, description: "Contact name" }) name?: string,
     @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string,
     @Option({ flags: "--kind <kind>", description: "Contact kind: person or org" }) kind?: string,
@@ -510,7 +620,7 @@ export class ContactsCommands {
   ) {
     const normalized = normalizePhone(identity);
     if (!normalized) {
-      fail("Identity must be a phone number or WhatsApp LID. Use 'ravi contacts link' for explicit platform ids.");
+      fail("Identity must be a phone number or WhatsApp identity. Use 'ravi contacts link' for explicit platform ids.");
     }
     if (normalized.startsWith("group:")) {
       fail("Groups/chats are not contacts. Use chat or route review surfaces for group identities.");
@@ -786,7 +896,7 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const details = getContactDetails(contactRef);
-    const contact = details?.legacyContact ?? getContact(contactRef);
+    const contact = getContact(contactRef);
 
     if (!contact && !details) {
       const payload = { found: false as const, target: contactRef, contact: null };
@@ -805,7 +915,6 @@ export class ContactsCommands {
       platformIdentities: details?.platformIdentities ?? [],
       policy: details?.policy ?? null,
       duplicateCandidates: details?.duplicateCandidates ?? [],
-      legacyContact: contact ? serializeContact(contact) : null,
       routeAgent: contact ? getRouteAgent(contact) : null,
       sessionName: contact ? getSessionName(contact) : null,
     };
@@ -1156,8 +1265,8 @@ export class ContactsCommands {
       const messages = dbListMessageMetaByContactId(details.contact.id, { limit: evidenceLimit });
       const activity = listSessionEventsByContactId(details.contact.id, { limit: evidenceLimit });
       const sessions = listContactSessionSummaries(details.contact.id, { limit: evidenceLimit });
-      const legacyContact = getContact(details.contact.id) ?? details.legacyContact;
-      const tags = details.policy?.tags ?? legacyContact?.tags ?? [];
+      const contactRecord = getContact(details.contact.id);
+      const tags = details.policy?.tags ?? contactRecord?.tags ?? [];
       const summary = metadataValue(metadata, "profile.summary");
       const headline = metadataValue(metadata, "profile.headline");
       const preferredName = metadataValue(metadata, "profile.preferred_name");
@@ -1177,18 +1286,18 @@ export class ContactsCommands {
           platformIdentities: details.platformIdentities,
           duplicateCandidates: details.duplicateCandidates,
           header: {
-            displayName: details.contact.displayName ?? legacyContact?.name ?? details.contact.id,
+            displayName: details.contact.displayName ?? contactRecord?.name ?? details.contact.id,
             preferredName: preferredName ?? null,
             headline: headline ?? null,
             kind: details.contact.kind,
-            status: details.policy?.status ?? legacyContact?.status ?? null,
+            status: details.policy?.status ?? contactRecord?.status ?? null,
             tags,
             primaryPhone: details.contact.primaryPhone,
             primaryEmail: details.contact.primaryEmail,
             avatarUrl: details.contact.avatarUrl,
-            lastInboundAt: details.policy?.lastInboundAt ?? legacyContact?.last_inbound_at ?? null,
-            lastOutboundAt: details.policy?.lastOutboundAt ?? legacyContact?.last_outbound_at ?? null,
-            interactionCount: details.policy?.interactionCount ?? legacyContact?.interaction_count ?? 0,
+            lastInboundAt: details.policy?.lastInboundAt ?? contactRecord?.last_inbound_at ?? null,
+            lastOutboundAt: details.policy?.lastOutboundAt ?? contactRecord?.last_outbound_at ?? null,
+            interactionCount: details.policy?.interactionCount ?? contactRecord?.interaction_count ?? 0,
           },
           summary: summary ?? null,
           preferences: {
@@ -1389,74 +1498,6 @@ export class ContactsCommands {
   }
 
   @Scope("writeContacts")
-  @Command({ name: "group-tag", description: "Set a contact's tag in a specific group" })
-  groupTag(
-    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
-    @Arg("group", { description: "Group contact ID or identity" }) groupRef: string,
-    @Arg("tag", { description: "Tag label" }) tag: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-  ) {
-    const contact = getContact(contactRef);
-    if (!contact) {
-      fail(`Contact not found: ${contactRef}`);
-    }
-    const group = getContact(groupRef);
-    if (!group) {
-      fail(`Group not found: ${groupRef}`);
-    }
-
-    setGroupTag(contact.id, group.id, tag);
-    const payload = {
-      status: "group_tag_set" as const,
-      target: contactRef,
-      groupRef,
-      tag,
-      contact: serializeContact(getUpdatedContact(contact)),
-      group: serializeContact(getUpdatedContact(group)),
-      changedCount: 1,
-    };
-    if (asJson) {
-      printJson(payload);
-    } else {
-      console.log(`✓ Group tag set: ${contact.name ?? contact.id} = "${tag}" in ${group.name ?? group.id}`);
-    }
-    return payload;
-  }
-
-  @Scope("writeContacts")
-  @Command({ name: "group-untag", description: "Remove a contact's tag from a specific group" })
-  groupUntag(
-    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
-    @Arg("group", { description: "Group contact ID or identity" }) groupRef: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-  ) {
-    const contact = getContact(contactRef);
-    if (!contact) {
-      fail(`Contact not found: ${contactRef}`);
-    }
-    const group = getContact(groupRef);
-    if (!group) {
-      fail(`Group not found: ${groupRef}`);
-    }
-
-    removeGroupTag(contact.id, group.id);
-    const payload = {
-      status: "group_tag_removed" as const,
-      target: contactRef,
-      groupRef,
-      contact: serializeContact(getUpdatedContact(contact)),
-      group: serializeContact(getUpdatedContact(group)),
-      changedCount: 1,
-    };
-    if (asJson) {
-      printJson(payload);
-    } else {
-      console.log(`✓ Group tag removed: ${contact.name ?? contact.id} in ${group.name ?? group.id}`);
-    }
-    return payload;
-  }
-
-  @Scope("writeContacts")
   @Command({ name: "link", description: "Link a platform identity to a contact" })
   link(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -1499,42 +1540,6 @@ export class ContactsCommands {
   }
 
   @Scope("writeContacts")
-  @Command({ name: "identity-add", description: "Add an identity to a contact (legacy alias for link)" })
-  identityAdd(
-    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
-    @Arg("platform", { description: "Platform (phone, whatsapp_lid, telegram, email)" })
-    platform: string,
-    @Arg("value", { description: "Identity value" }) value: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-  ) {
-    const contact = getContact(contactRef);
-    if (!contact) {
-      fail(`Contact not found: ${contactRef}`);
-    }
-
-    try {
-      addContactIdentity(contact.id, platform, value);
-      const payload = {
-        status: "identity_added" as const,
-        target: contactRef,
-        identity: { platform, value },
-        contact: serializeContact(getUpdatedContact(contact)),
-        changedCount: 1,
-      };
-      if (asJson) {
-        printJson(payload);
-      } else {
-        console.log(
-          `✓ Identity added: ${contact.id} ${platformIcon(platform)} ${formatIdentityValue(platform, value)}`,
-        );
-      }
-      return payload;
-    } catch (err: any) {
-      fail(err.message);
-    }
-  }
-
-  @Scope("writeContacts")
   @Command({ name: "unlink", description: "Unlink a platform identity from its contact" })
   unlink(
     @Arg("platformIdentity", { description: "Platform identity ID or value" }) platformIdentityRef: string,
@@ -1561,29 +1566,6 @@ export class ContactsCommands {
       console.log(`Platform identity not found: ${platformIdentityRef}`);
     } else {
       console.log(`✓ Identity unlinked: ${platformIdentityRef}`);
-    }
-    return payload;
-  }
-
-  @Scope("writeContacts")
-  @Command({ name: "identity-remove", description: "Remove an identity (legacy alias for unlink)" })
-  identityRemove(
-    @Arg("platform", { description: "Platform" }) platform: string,
-    @Arg("value", { description: "Identity value" }) value: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-  ) {
-    const contact = getContact(value);
-    removeContactIdentity(platform, value);
-    const payload = {
-      status: "identity_removed" as const,
-      identity: { platform, value },
-      contactId: contact?.id ?? null,
-      changedCount: 1,
-    };
-    if (asJson) {
-      printJson(payload);
-    } else {
-      console.log(`✓ Identity removed: ${platformIcon(platform)} ${formatIdentityValue(platform, value)}`);
     }
     return payload;
   }

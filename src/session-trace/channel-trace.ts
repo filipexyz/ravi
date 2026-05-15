@@ -410,6 +410,7 @@ export function recordPromptPublishedTrace(input: RecordPromptPublishedTraceInpu
       taskBarrierTaskId: payload.taskBarrierTaskId,
       source: payload.source,
       context: payload.context,
+      thread: payload._thread,
       promptChars: prompt?.length ?? 0,
     },
     preview: previewText(prompt),

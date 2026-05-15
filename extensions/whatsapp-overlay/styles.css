@@ -6372,6 +6372,7 @@ button.ravi-wa-task-gate-card:hover {
 }
 
 .ravi-wa-chat-chip {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -6381,10 +6382,17 @@ button.ravi-wa-task-gate-card:hover {
   border: 1px solid transparent;
   font-size: 10px;
   font-weight: 700;
+  font-family: inherit;
   letter-spacing: 0.02em;
   line-height: 1.2;
   vertical-align: middle;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.ravi-wa-chat-chip:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.65);
+  outline-offset: 2px;
 }
 
 .ravi-wa-chat-chip--idle {
@@ -6421,6 +6429,354 @@ button.ravi-wa-task-gate-card:hover {
   background: rgba(248, 113, 113, 0.14);
   border-color: rgba(252, 165, 165, 0.22);
   color: #fca5a5;
+}
+
+.ravi-wa-chat-session-editor {
+  position: fixed;
+  z-index: 2147483646;
+  width: 278px;
+  max-height: min(320px, calc(100vh - 18px));
+  overflow: hidden;
+  border: 1px solid rgba(134, 150, 160, 0.28);
+  border-radius: 8px;
+  background: rgba(17, 27, 33, 0.98);
+  color: #e9edef;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.34);
+}
+
+.ravi-wa-chat-session-editor__head,
+.ravi-wa-chat-session-editor__current,
+.ravi-wa-chat-session-editor__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ravi-wa-chat-session-editor__head {
+  justify-content: space-between;
+  padding: 9px 10px 7px;
+  border-bottom: 1px solid rgba(134, 150, 160, 0.16);
+}
+
+.ravi-wa-chat-session-editor__head div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ravi-wa-chat-session-editor__head span,
+.ravi-wa-chat-session-editor__body small,
+.ravi-wa-chat-session-editor__foot,
+.ravi-wa-chat-session-editor__current {
+  font-size: 11px;
+  color: #8696a0;
+}
+
+.ravi-wa-chat-session-editor__head strong,
+.ravi-wa-chat-session-editor__body strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #e9edef;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-chat-session-editor__head button,
+.ravi-wa-chat-session-editor__foot button {
+  appearance: none;
+  border: 1px solid rgba(134, 150, 160, 0.22);
+  border-radius: 7px;
+  background: rgba(32, 44, 51, 0.9);
+  color: #d1d7db;
+  cursor: pointer;
+  font: inherit;
+}
+
+.ravi-wa-chat-session-editor__head button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.ravi-wa-chat-session-editor__current {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(134, 150, 160, 0.1);
+}
+
+.ravi-wa-chat-session-editor__current em {
+  margin-left: auto;
+  font-style: normal;
+  color: #9fd8f8;
+}
+
+.ravi-wa-chat-session-editor__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.ravi-wa-chat-session-editor__dot--thinking {
+  background: #93c5fd;
+}
+
+.ravi-wa-chat-session-editor__dot--streaming {
+  background: #86efac;
+}
+
+.ravi-wa-chat-session-editor__dot--approval {
+  background: #fcd34d;
+}
+
+.ravi-wa-chat-session-editor__dot--compacting {
+  background: #c4b5fd;
+}
+
+.ravi-wa-chat-session-editor__dot--blocked {
+  background: #fca5a5;
+}
+
+.ravi-wa-chat-session-editor__search {
+  display: block;
+  padding: 8px 10px 6px;
+}
+
+.ravi-wa-chat-session-editor__search input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(134, 150, 160, 0.22);
+  border-radius: 7px;
+  background: rgba(42, 57, 66, 0.86);
+  color: #e9edef;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.ravi-wa-chat-session-editor__search input:focus {
+  border-color: rgba(147, 197, 253, 0.5);
+}
+
+.ravi-wa-chat-session-editor__agents {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 0 8px 7px;
+  scrollbar-width: none;
+}
+
+.ravi-wa-chat-session-editor__agents::-webkit-scrollbar {
+  display: none;
+}
+
+.ravi-wa-chat-session-editor__agent {
+  appearance: none;
+  min-width: 76px;
+  max-width: 116px;
+  display: grid;
+  gap: 1px;
+  padding: 5px 7px;
+  border: 1px solid rgba(134, 150, 160, 0.18);
+  border-radius: 7px;
+  background: rgba(32, 44, 51, 0.62);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.ravi-wa-chat-session-editor__agent strong,
+.ravi-wa-chat-session-editor__agent small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-chat-session-editor__agent strong {
+  color: #e9edef;
+  font-size: 11px;
+}
+
+.ravi-wa-chat-session-editor__agent small {
+  color: #8696a0;
+  font-size: 10px;
+}
+
+.ravi-wa-chat-session-editor__agent:hover,
+.ravi-wa-chat-session-editor__agent:focus-visible,
+.ravi-wa-chat-session-editor__agent--selected {
+  border-color: rgba(147, 197, 253, 0.32);
+  background: rgba(59, 130, 246, 0.14);
+  outline: none;
+}
+
+.ravi-wa-chat-session-editor__create {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 7px;
+}
+
+.ravi-wa-chat-session-editor__create input {
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(134, 150, 160, 0.22);
+  border-radius: 7px;
+  background: rgba(42, 57, 66, 0.86);
+  color: #e9edef;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.ravi-wa-chat-session-editor__create input:focus {
+  border-color: rgba(134, 239, 172, 0.5);
+}
+
+.ravi-wa-chat-session-editor__create button {
+  appearance: none;
+  border: 1px solid rgba(134, 239, 172, 0.22);
+  border-radius: 7px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 8px;
+}
+
+.ravi-wa-chat-session-editor__create button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.ravi-wa-chat-session-editor__list {
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 0 6px 6px;
+}
+
+.ravi-wa-chat-session-editor__option {
+  appearance: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.ravi-wa-chat-session-editor__option:hover,
+.ravi-wa-chat-session-editor__option:focus-visible {
+  background: rgba(42, 57, 66, 0.72);
+  border-color: rgba(134, 150, 160, 0.2);
+  outline: none;
+}
+
+.ravi-wa-chat-session-editor__option--selected {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(147, 197, 253, 0.22);
+}
+
+.ravi-wa-chat-session-editor__avatar {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(134, 150, 160, 0.16);
+  color: #d1d7db;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ravi-wa-chat-session-editor__body {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.ravi-wa-chat-session-editor__state {
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ravi-wa-chat-session-editor__state--thinking {
+  color: #93c5fd;
+}
+
+.ravi-wa-chat-session-editor__state--streaming {
+  color: #86efac;
+}
+
+.ravi-wa-chat-session-editor__state--approval {
+  color: #fcd34d;
+}
+
+.ravi-wa-chat-session-editor__state--compacting {
+  color: #c4b5fd;
+}
+
+.ravi-wa-chat-session-editor__state--blocked {
+  color: #fca5a5;
+}
+
+.ravi-wa-chat-session-editor__foot {
+  justify-content: space-between;
+  padding: 7px 10px 9px;
+  border-top: 1px solid rgba(134, 150, 160, 0.12);
+}
+
+.ravi-wa-chat-session-editor__foot button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.ravi-wa-chat-session-editor__foot button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.ravi-wa-chat-session-editor__empty,
+.ravi-wa-chat-session-editor__notice {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #8696a0;
+}
+
+.ravi-wa-chat-session-editor__notice {
+  border-top: 1px solid rgba(134, 150, 160, 0.12);
+}
+
+.ravi-wa-chat-session-editor__notice--error {
+  color: #fca5a5;
+}
+
+.ravi-wa-chat-session-editor__notice--info {
+  color: #93c5fd;
 }
 
 .ravi-wa-message-chip {

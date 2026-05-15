@@ -41,7 +41,7 @@ function installChromeStorageMock() {
 
 const chromeStorage = installChromeStorageMock();
 
-const { buildCrmSnapshot, buildSnapshot, buildTasksSnapshot, resolveChatList } = await import(
+const { buildCrmSnapshot, buildSnapshot, buildTasksSnapshot, executeOmniRoute, resolveChatList } = await import(
   "../../extensions/whatsapp-overlay/lib/compositions.js"
 );
 const { setBindings } = await import("../../extensions/whatsapp-overlay/lib/storage.js");
@@ -84,6 +84,9 @@ describe("whatsapp overlay extension compositions", () => {
             },
           ],
         }),
+      },
+      agents: {
+        list: async () => ({ agents: [{ id: "dev", name: "Dev" }] }),
       },
     };
 
@@ -142,6 +145,169 @@ describe("whatsapp overlay extension compositions", () => {
         live: { activity: "idle", summary: "turn complete" },
       },
     });
+    expect(result.sessions.map((session) => session.sessionName)).toEqual(["dev"]);
+    expect(result.agents.map((agent) => agent.id)).toEqual(["dev"]);
+  });
+
+  it("keeps a local agent session binding visible before the runtime session exists", async () => {
+    const now = Date.now();
+    await setBindings([
+      {
+        chatId: "120363410237809091@g.us",
+        title: "ravi - extension",
+        session: "dev-ravi-extension",
+        agentId: "dev",
+        updatedAt: now,
+      },
+    ]);
+
+    const client = {
+      sessions: {
+        list: async () => ({ sessions: [] }),
+      },
+      agents: {
+        list: async () => ({ agents: [{ id: "dev", name: "Dev" }] }),
+      },
+    };
+
+    const result = await resolveChatList(client, {
+      entries: [
+        {
+          id: "chat-row-1",
+          chatId: "120363410237809091@g.us",
+          title: "ravi - extension",
+        },
+      ],
+    });
+
+    expect(result.items[0]).toMatchObject({
+      resolved: true,
+      session: {
+        sessionName: "dev-ravi-extension",
+        agentId: "dev",
+        boundChatId: "120363410237809091@g.us",
+      },
+    });
+    expect(result.agents.map((agent) => agent.id)).toEqual(["dev"]);
+  });
+
+  it("creates a runtime route when binding a session to a group chat", async () => {
+    const calls = [];
+    const client = {
+      instances: {
+        routes: {
+          show: async (name, pattern) => {
+            calls.push(["show", name, pattern]);
+            throw new Error("not found");
+          },
+          add: async (name, pattern, agent, options) => {
+            calls.push(["add", name, pattern, agent, options]);
+            return { route: { accountId: name, pattern, agent, session: options.session } };
+          },
+        },
+      },
+    };
+
+    const result = await executeOmniRoute(client, {
+      action: "bind-existing",
+      session: "dev",
+      agentId: "dev",
+      chatId: "120363410237809091@g.us",
+      title: "ravi - extension",
+      instance: "main",
+      channel: "whatsapp",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      binding: {
+        chatId: "120363410237809091@g.us",
+        session: "dev",
+        agentId: "dev",
+        instance: "main",
+      },
+      runtimeRoute: {
+        ok: true,
+        action: "created",
+        pattern: "group:120363410237809091",
+        instance: "main",
+      },
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual(["show", "main", "group:120363410237809091"]);
+    expect(calls[1]).toEqual([
+      "add",
+      "main",
+      "group:120363410237809091",
+      "dev",
+      {
+        allowRuntimeMismatch: true,
+        asJson: true,
+        session: "dev",
+        priority: "100",
+        channel: "whatsapp",
+      },
+    ]);
+  });
+
+  it("updates the runtime route session when rebinding a chat", async () => {
+    const calls = [];
+    let route = {
+      accountId: "main",
+      pattern: "group:120363410237809091",
+      agent: "main",
+      session: "old-session",
+      priority: 0,
+      channel: "whatsapp",
+    };
+    const client = {
+      instances: {
+        routes: {
+          show: async (name, pattern) => {
+            calls.push(["show", name, pattern]);
+            return { route };
+          },
+          set: async (name, pattern, key, value, options) => {
+            calls.push(["set", name, pattern, key, value, options]);
+            route = { ...route, [key]: key === "priority" ? Number(value) : value };
+            return { route };
+          },
+        },
+      },
+    };
+
+    const result = await executeOmniRoute(client, {
+      action: "bind-existing",
+      session: "new-session",
+      agentId: "dev",
+      chatId: "120363410237809091@g.us",
+      title: "ravi - extension",
+      instance: "main",
+      channel: "whatsapp",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      runtimeRoute: {
+        ok: true,
+        action: "updated",
+        pattern: "group:120363410237809091",
+        route: {
+          agent: "dev",
+          session: "new-session",
+          priority: 100,
+          channel: "whatsapp",
+        },
+      },
+    });
+    expect(calls).toContainEqual([
+      "set",
+      "main",
+      "group:120363410237809091",
+      "session",
+      "new-session",
+      { allowRuntimeMismatch: true, asJson: true },
+    ]);
   });
 
   it("loads all visible tasks for the workspace and reports status counts", async () => {

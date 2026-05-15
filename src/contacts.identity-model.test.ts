@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import {
   addContactTag,
-  addContactIdentity,
+  backfillInboundContacts,
   closeContacts,
   completeCrmTask,
   createCrmAccount,
@@ -21,6 +21,7 @@ import {
   getContactsByStatus,
   getContactDetails,
   getAgentPlatformIdentity,
+  ensureContactFromInbound,
   linkCrmActivityParticipant,
   linkCrmAccountContact,
   linkCrmOpportunityContact,
@@ -43,6 +44,16 @@ import {
   upsertAgentPlatformIdentity,
   upsertContact,
 } from "./contacts.js";
+import {
+  dbFindChatReadingList,
+  dbListChatMessages,
+  dbListChatParticipants,
+  dbListChatReadingListMembers,
+  dbUpsertInstance,
+  dbUpsertChat,
+  dbUpsertChatMessage,
+  dbUpsertChatParticipant,
+} from "./router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 
 let stateDir: string | null = null;
@@ -58,11 +69,15 @@ afterEach(async () => {
 });
 
 describe("contacts identity graph schema", () => {
-  it("projects legacy contact rows into canonical contacts, policies, and platform identities", () => {
+  it("writes canonical contacts, policies, and platform identities directly", () => {
     upsertContact("5511999999999", "Alice", "allowed", "manual");
     const contact = getContact("5511999999999");
     expect(contact).not.toBeNull();
-    addContactIdentity(contact!.id, "whatsapp_lid", "lid:63295117615153");
+    linkContactIdentity(contact!.id, {
+      channel: "whatsapp",
+      platformUserId: "lid:63295117615153",
+      reason: "test",
+    });
 
     const db = new Database(join(stateDir!, "chat.db"));
     const canonical = db.prepare("SELECT * FROM contacts WHERE id = ?").get(contact!.id) as {
@@ -198,6 +213,31 @@ describe("contacts identity graph schema", () => {
       /append-only/,
     );
     expect(() => db.prepare("DELETE FROM crm_events WHERE id = ?").run(event.id)).toThrow(/append-only/);
+    db.close();
+  });
+
+  it("keeps contact timeline events append-only at storage level", () => {
+    upsertContact("5511999910203", "Timeline Event", "allowed", "manual");
+    const contact = getContact("5511999910203");
+    expect(contact).not.toBeNull();
+
+    const event = createContactEvent({
+      contactRef: contact!.id,
+      eventType: "profile.note_added",
+      source: "test",
+      actorType: "agent",
+      actorId: "dev",
+      payload: { note: "original" },
+      evidence: { source: "unit-test" },
+    });
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    expect(() =>
+      db.prepare("UPDATE contact_events SET event_type = 'profile.note_changed' WHERE id = ?").run(event.id),
+    ).toThrow("contact_events is append-only");
+    expect(() => db.prepare("DELETE FROM contact_events WHERE id = ?").run(event.id)).toThrow(
+      "contact_events is append-only",
+    );
     db.close();
   });
 
@@ -704,7 +744,7 @@ describe("contacts identity graph schema", () => {
       },
       {
         phone: "5511999910004",
-        name: "Pending Fallback Recent",
+        name: "Pending Updated Recent",
         status: "pending" as const,
         lastInboundAt: null,
         lastOutboundAt: null,
@@ -719,9 +759,9 @@ describe("contacts identity graph schema", () => {
 
     const db = new Database(join(stateDir!, "chat.db"));
     const updateContactActivity = db.prepare(`
-      UPDATE contacts_v2
+      UPDATE contact_policies
       SET last_inbound_at = ?, last_outbound_at = ?, created_at = ?, updated_at = ?
-      WHERE id = ?
+      WHERE contact_id = ?
     `);
     for (const seed of seeds) {
       updateContactActivity.run(
@@ -737,16 +777,16 @@ describe("contacts identity graph schema", () => {
     expect(getAllContacts().map((contact) => contact.name)).toEqual([
       "Pending Outbound Latest",
       "Blocked Inbound Mid",
-      "Pending Fallback Recent",
+      "Pending Updated Recent",
       "Allowed Older",
     ]);
     expect(getContactsByStatus("pending").map((contact) => contact.name)).toEqual([
       "Pending Outbound Latest",
-      "Pending Fallback Recent",
+      "Pending Updated Recent",
     ]);
   });
 
-  it("mirrors contact tags into canonical tag bindings while keeping legacy reads working", () => {
+  it("mirrors contact tags into canonical tag bindings while contact reads stay canonical", () => {
     upsertContact("5511999911111", "Tagged", "allowed", "manual");
     const contact = getContact("5511999911111");
     expect(contact).not.toBeNull();
@@ -777,7 +817,7 @@ describe("contacts identity graph schema", () => {
       asset_id: contact!.id,
     });
     expect(JSON.parse(binding!.metadata_json)).toMatchObject({
-      mirroredFrom: "contacts_v2.tags",
+      mirroredFrom: "contact_policies.tags_json",
     });
   });
 
@@ -874,37 +914,23 @@ describe("contacts identity graph schema", () => {
     expect(chatEvents.items[0]?.scopeId).toBe("chat-a");
   });
 
-  it("keeps legacy group contacts out of canonical contacts", () => {
+  it("rejects group/chat identities in contacts", () => {
+    expect(() => upsertContact("group:120363424772797713", "Ravi Dev", "allowed", "manual")).toThrow(
+      "upsertContact expects a person/org identity",
+    );
+
     upsertContact("5511000000000", "Schema Seed", "allowed", "manual");
-    let db = new Database(join(stateDir!, "chat.db"));
-    db.prepare(
-      `
-      INSERT INTO contacts_v2 (id, name, status, source, updated_at)
-      VALUES ('legacy-group-contact', 'Ravi Dev', 'allowed', 'legacy_test', datetime('now'))
-    `,
-    ).run();
-    db.prepare(
-      `
-      INSERT INTO contact_identities (contact_id, platform, identity_value, is_primary)
-      VALUES ('legacy-group-contact', 'whatsapp_group', 'group:120363424772797713', 1)
-    `,
-    ).run();
-    db.close();
+    const contact = getContact("5511000000000");
+    expect(contact).not.toBeNull();
 
-    expect(getContact("group:120363424772797713")).not.toBeNull();
-    expect(getContactDetails("group:120363424772797713")).toBeNull();
-
-    db = new Database(join(stateDir!, "chat.db"));
-    const legacy = db.prepare("SELECT * FROM contacts_v2 WHERE name = ?").get("Ravi Dev");
-    const canonical = db.prepare("SELECT * FROM contacts WHERE display_name = ?").get("Ravi Dev");
-    const platformIdentity = db
-      .prepare("SELECT * FROM platform_identities WHERE normalized_platform_user_id = ?")
-      .get("group:120363424772797713");
-    db.close();
-
-    expect(legacy).not.toBeNull();
-    expect(canonical).toBeNull();
-    expect(platformIdentity).toBeNull();
+    expect(() =>
+      linkContactIdentity(contact!.id, {
+        channel: "whatsapp_group",
+        platformUserId: "group:120363424772797713",
+        reason: "test",
+      }),
+    ).toThrow("Group/chat identities belong to chats, not contacts");
+    expect(getContact("group:120363424772797713")).toBeNull();
   });
 
   it("preserves manually linked instance-specific platform identities across projection syncs", () => {
@@ -1037,6 +1063,271 @@ describe("contacts identity graph schema", () => {
     expect(getContactDetails("5511999990000")).toBeNull();
   });
 
+  it("ensures inbound DM contacts idempotently without an assigned agent", () => {
+    const first = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformSenderId: "5511999900001@s.whatsapp.net",
+      contactIdentity: "5511999900001",
+      displayName: "Novo Lead",
+      chatId: "chat_sde_dm",
+      chatType: "dm",
+      sourceEventId: "evt-intake-1",
+      providerMessageId: "wamid-intake-1",
+      intakeMode: "pending",
+      provenance: { source: "test" },
+    });
+    const repeated = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformSenderId: "5511999900001@s.whatsapp.net",
+      contactIdentity: "5511999900001",
+      displayName: "Novo Lead",
+      chatId: "chat_sde_dm",
+      chatType: "dm",
+      sourceEventId: "evt-intake-1-redelivery",
+      providerMessageId: "wamid-intake-1",
+      intakeMode: "pending",
+      provenance: { source: "test" },
+    });
+
+    expect(first.createdContact).toBe(true);
+    expect(first.contact).toMatchObject({ name: "Novo Lead", status: "pending" });
+    expect(first.platformIdentity).toMatchObject({
+      ownerType: "contact",
+      ownerId: first.contact!.id,
+      channel: "whatsapp",
+      instanceId: "sde",
+      normalizedPlatformUserId: "5511999900001",
+    });
+    expect(repeated.contact?.id).toBe(first.contact!.id);
+    expect(repeated.createdContact).toBe(false);
+    expect(repeated.createdPlatformIdentity).toBe(false);
+    expect(getContact("5511999900001")?.id).toBe(first.contact!.id);
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const counts = db
+      .prepare(
+        `
+        SELECT
+          (SELECT COUNT(*) FROM contacts WHERE id = ?) AS contacts,
+          (SELECT COUNT(*) FROM platform_identities WHERE owner_id = ? AND channel = 'whatsapp' AND instance_id = 'sde') AS exact_identities
+      `,
+      )
+      .get(first.contact!.id, first.contact!.id) as { contacts: number; exact_identities: number };
+    db.close();
+    expect(counts).toEqual({ contacts: 1, exact_identities: 1 });
+  });
+
+  it("backfills captured DM chats into canonical contacts and message actor links", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformChatId: "5511999900100@s.whatsapp.net",
+      chatType: "dm",
+      title: "Lead Backfill",
+      rawProvenance: { source: "test" },
+    });
+    dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "sde",
+      providerMessageId: "wamid-backfill-1",
+      rawChatId: "5511999900100@s.whatsapp.net",
+      rawSenderId: "5511999900100",
+      normalizedSenderId: "5511999900100",
+      actorType: "unknown",
+      messageType: "text",
+      content: { type: "text", text: "quero orçamento" },
+      rawProvenance: { source: "test" },
+      providerTimestamp: 1_700_000_000_000,
+      ingestedAt: 1_700_000_000_100,
+    });
+    dbUpsertChatParticipant({
+      chatId: chat.id,
+      rawPlatformUserId: "5511999900100",
+      normalizedPlatformUserId: "5511999900100",
+      role: "member",
+      source: "import",
+    });
+
+    const dryRun = backfillInboundContacts({ instanceId: "sde", mode: "pending" });
+    expect(dryRun).toMatchObject({
+      dryRun: true,
+      totals: { candidates: 1, eligible: 1, contactsCreated: 0 },
+    });
+    expect(getContact("5511999900100")).toBeNull();
+
+    const applied = backfillInboundContacts({
+      instanceId: "sde",
+      mode: "pending",
+      apply: true,
+      createReadingList: "crm-analysis-pending",
+    });
+    expect(applied.totals).toMatchObject({
+      candidates: 1,
+      eligible: 1,
+      contactsCreated: 1,
+      platformIdentitiesCreated: 1,
+      messagesUpdated: 1,
+      participantsUpdated: 1,
+      readingListMembersAdded: 1,
+    });
+
+    const contact = getContact("5511999900100");
+    expect(contact).toMatchObject({ name: "Lead Backfill", status: "pending" });
+    const messages = dbListChatMessages(chat.id);
+    expect(messages[0]).toMatchObject({
+      actorType: "contact",
+      contactId: contact!.id,
+      normalizedSenderId: "5511999900100",
+    });
+    expect(messages[0]?.platformIdentityId).toBeTruthy();
+
+    const participants = dbListChatParticipants(chat.id);
+    expect(participants).toHaveLength(1);
+    expect(participants[0]).toMatchObject({
+      contactId: contact!.id,
+      normalizedPlatformUserId: "5511999900100",
+      source: "inbound_contact_backfill",
+    });
+    expect(participants[0]?.platformIdentityId).toBeTruthy();
+
+    const list = dbFindChatReadingList({ ref: "crm-analysis-pending", ownerType: "agent", ownerId: "ravi-crm" });
+    expect(list).not.toBeNull();
+    expect(dbListChatReadingListMembers({ listId: list!.id }).items.map((item) => item.chat.id)).toContain(chat.id);
+    expect(listContactEvents(contact!.id).items.some((event) => event.source === "inbound_contact_backfill")).toBe(
+      true,
+    );
+  });
+
+  it("resolves logical instance names to Omni instance ids during inbound backfill", () => {
+    dbUpsertInstance({
+      name: "main",
+      instanceId: "omni-main-uuid",
+      channel: "whatsapp",
+      contactIntakeMode: "discovered",
+    });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "omni-main-uuid",
+      platformChatId: "5511999900200@s.whatsapp.net",
+      chatType: "dm",
+      title: "Lead Main",
+      rawProvenance: { source: "test" },
+    });
+    dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "omni-main-uuid",
+      providerMessageId: "wamid-backfill-main-1",
+      rawChatId: "5511999900200@s.whatsapp.net",
+      rawSenderId: "5511999900200",
+      normalizedSenderId: "5511999900200",
+      actorType: "unknown",
+      messageType: "text",
+      content: { type: "text", text: "novo lead main" },
+      rawProvenance: { source: "test" },
+      providerTimestamp: 1_700_000_000_000,
+      ingestedAt: 1_700_000_000_100,
+    });
+
+    const dryRun = backfillInboundContacts({ instanceId: "main", mode: "discovered" });
+    expect(dryRun).toMatchObject({
+      dryRun: true,
+      filter: {
+        instanceId: "main",
+        resolvedInstanceName: "main",
+        resolvedInstanceId: "omni-main-uuid",
+      },
+      totals: { candidates: 1, eligible: 1, contactsCreated: 0 },
+    });
+    expect(dryRun.filter.chatInstanceIds).toContain("omni-main-uuid");
+    expect(dryRun.items[0]).toMatchObject({
+      instanceId: "omni-main-uuid",
+      action: "create_contact",
+    });
+
+    const applied = backfillInboundContacts({
+      instanceId: "main",
+      mode: "discovered",
+      apply: true,
+    });
+    expect(applied.totals).toMatchObject({
+      candidates: 1,
+      eligible: 1,
+      contactsCreated: 1,
+      platformIdentitiesCreated: 1,
+      messagesUpdated: 1,
+    });
+    const contact = getContact("5511999900200");
+    expect(contact).toMatchObject({ name: "Lead Main", status: "discovered" });
+    expect(
+      resolvePlatformIdentity({ channel: "whatsapp", instanceId: "omni-main-uuid", platformUserId: "5511999900200" }),
+    ).toMatchObject({
+      ownerType: "contact",
+      ownerId: contact!.id,
+    });
+    expect(dbListChatMessages(chat.id)[0]).toMatchObject({
+      actorType: "contact",
+      contactId: contact!.id,
+    });
+  });
+
+  it("preserves explicit contact policy while still linking inbound platform identity", () => {
+    upsertContact("5511999900002", "Cliente Permitido", "allowed", "manual");
+    const existing = getContact("5511999900002");
+    expect(existing).not.toBeNull();
+
+    const result = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformSenderId: "5511999900002@s.whatsapp.net",
+      contactIdentity: "5511999900002",
+      displayName: "Nome do WhatsApp",
+      intakeMode: "pending",
+    });
+
+    expect(result.contact?.id).toBe(existing!.id);
+    expect(result.policy?.status).toBe("allowed");
+    expect(
+      resolvePlatformIdentity({ channel: "whatsapp", instanceId: "sde", platformUserId: "5511999900002" }),
+    ).toMatchObject({
+      ownerType: "contact",
+      ownerId: existing!.id,
+    });
+  });
+
+  it("does not create contacts for group chat identities or agent-owned inbound identities", () => {
+    const group = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformSenderId: "120363409148611292@g.us",
+      contactIdentity: "group:120363409148611292",
+      intakeMode: "pending",
+    });
+    expect(group.contact).toBeNull();
+    expect(getContact("group:120363409148611292")).toBeNull();
+
+    upsertAgentPlatformIdentity({
+      agentId: "dev",
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformUserId: "5511999900003@s.whatsapp.net",
+      linkedBy: "auto",
+    });
+    const agentOwned = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformSenderId: "5511999900003@s.whatsapp.net",
+      contactIdentity: "5511999900003",
+      intakeMode: "pending",
+    });
+    expect(agentOwned.contact).toBeNull();
+    expect(agentOwned.platformIdentity).toMatchObject({ ownerType: "agent", ownerId: "dev" });
+    expect(getContact("5511999900003")).toBeNull();
+  });
+
   it("does not reassign a contact-owned platform identity to an agent", () => {
     upsertContact("5511444444444", "Human", "allowed", "manual");
 
@@ -1057,7 +1348,7 @@ describe("contacts identity graph schema", () => {
     expect(row?.owner_type).toBe("contact");
   });
 
-  it("does not reassign an agent-owned platform identity during contact projection syncs", () => {
+  it("does not create a contact shadow for an agent-owned platform identity during contact writes", () => {
     const identity = upsertAgentPlatformIdentity({
       agentId: "dev",
       channel: "phone",
@@ -1069,7 +1360,7 @@ describe("contacts identity graph schema", () => {
       ownerId: "dev",
     });
 
-    upsertContact("5511444444444", "Human", "allowed", "manual");
+    expect(() => upsertContact("5511444444444", "Human", "allowed", "manual")).toThrow(/owned by agent dev/);
 
     expect(resolvePlatformIdentity({ channel: "phone", platformUserId: "5511444444444" })).toMatchObject({
       id: identity.id,
@@ -1077,14 +1368,7 @@ describe("contacts identity graph schema", () => {
       ownerId: "dev",
     });
 
-    const contact = getContact("5511444444444");
-    expect(contact).not.toBeNull();
-    const details = getContactDetails(contact!.id);
-    expect(
-      details?.platformIdentities.some(
-        (platformIdentity) => platformIdentity.normalizedPlatformUserId === "5511444444444",
-      ),
-    ).toBe(false);
+    expect(getContact("5511444444444")).toBeNull();
   });
 
   it("rejects explicit contact links to agent-owned platform identities", () => {
@@ -1183,40 +1467,20 @@ describe("contacts identity graph schema", () => {
     ).toMatchObject({ ownerType: "agent", ownerId: "dev" });
   });
 
-  it("does not let legacy backfill steal an agent-owned platform identity", () => {
+  it("does not let contact writes shadow an agent-owned platform identity", () => {
     const identity = upsertAgentPlatformIdentity({
       agentId: "dev",
       channel: "phone",
       platformUserId: "5511666600000",
       linkedBy: "auto",
     });
-    closeContacts();
 
-    const db = new Database(join(stateDir!, "chat.db"));
-    db.prepare(
-      `
-      INSERT INTO contacts_v2 (id, name, status, source, updated_at)
-      VALUES ('legacy-agent-conflict', 'Legacy Human', 'allowed', 'legacy_test', datetime('now'))
-    `,
-    ).run();
-    db.prepare(
-      `
-      INSERT INTO contact_identities (contact_id, platform, identity_value, is_primary)
-      VALUES ('legacy-agent-conflict', 'phone', '5511666600000', 1)
-    `,
-    ).run();
-    db.close();
-
-    expect(getContact("5511666600000")?.id).toBe("legacy-agent-conflict");
+    expect(() => upsertContact("5511666600000", "Human", "allowed", "manual")).toThrow(/owned by agent/);
+    expect(getContact("5511666600000")).toBeNull();
     expect(resolvePlatformIdentity({ channel: "phone", platformUserId: "5511666600000" })).toMatchObject({
       id: identity.id,
       ownerType: "agent",
       ownerId: "dev",
     });
-    expect(
-      getContactDetails("legacy-agent-conflict")?.platformIdentities.some(
-        (platformIdentity) => platformIdentity.normalizedPlatformUserId === "5511666600000",
-      ),
-    ).toBe(false);
   });
 });

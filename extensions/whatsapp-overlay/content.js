@@ -17,6 +17,7 @@ const LAYOUT_BRANCH_HIDDEN_CLASS = "ravi-wa-layout-branch-hidden";
 const INLINE_PROBE_ID = "ravi-wa-inline-probe";
 const CHAT_ROW_SELECTOR = "div[role='grid'] [role='row']";
 const CHAT_ROW_BADGE_ATTR = "data-ravi-chat-chip";
+const CHAT_SESSION_EDITOR_ID = "ravi-wa-chat-session-editor";
 const MESSAGE_CHIP_ATTR = "data-ravi-message-chip";
 const CHAT_ARTIFACT_ATTR = "data-ravi-chat-artifact";
 const CHAT_ARTIFACT_KEY_ATTR = "data-ravi-chat-artifact-key";
@@ -94,6 +95,8 @@ let latestTasksSnapshot = null;
 let latestViewState = null;
 let latestTimelineDebug = null;
 let latestChatListItems = [];
+let latestChatListSessions = [];
+let latestChatListAgents = [];
 let latestPageChat = null;
 let latestOmniPanel = null;
 let latestV3Placeholders = null;
@@ -138,6 +141,12 @@ let selectedWorkspaceSessionKey = loadWorkspaceSessionKey();
 let selectedTaskId = loadSelectedTaskId();
 let taskDetailDrawerOpen = false;
 let taskDetailDrawerShouldAnimate = false;
+let chatSessionEditor = null;
+let chatSessionEditorFilter = "";
+let chatSessionEditorSelectedAgentId = null;
+let chatSessionEditorDraftSessionName = null;
+let chatSessionEditorNotice = null;
+let chatSessionEditorInFlight = false;
 let preferredOmniInstance = loadPreferredOmniInstance();
 let v3PlaceholdersEnabled = loadV3PlaceholdersEnabled();
 let selectedOmniChatId = null;
@@ -221,6 +230,8 @@ function boot() {
   document.addEventListener(PAGE_CHAT_RESPONSE_EVENT, handlePageChatEvent);
   document.addEventListener("pointerdown", handleHumanChatListPointerDown, true);
   document.addEventListener("keydown", handleHumanChatListKeydown, true);
+  document.addEventListener("pointerdown", handleChatSessionEditorOutsidePointerDown, true);
+  document.addEventListener("keydown", handleChatSessionEditorKeydown, true);
   ensureShell();
   syncLayoutChrome();
   syncWorkspaceLauncher();
@@ -248,6 +259,7 @@ function boot() {
   intervalIds.push(setInterval(pollDomCommands, DOM_COMMAND_POLL_INTERVAL_MS));
   window.addEventListener("resize", syncMessagePopoverPosition);
   window.addEventListener("resize", scheduleV3PlaceholderRender);
+  window.addEventListener("resize", renderChatSessionEditor);
   document.addEventListener("scroll", syncMessagePopoverPosition, true);
   document.addEventListener("scroll", scheduleV3PlaceholderRender, true);
 }
@@ -1205,6 +1217,7 @@ function rememberHumanChatListIntent(target) {
   if (!selectedWorkspaceSessionKey) return;
   const element = resolveEventElement(target);
   if (!(element instanceof Element)) return;
+  if (element.closest(`[${CHAT_ROW_BADGE_ATTR}], #${CHAT_SESSION_EDITOR_ID}`)) return;
 
   const row = element.closest(CHAT_ROW_SELECTOR);
   const chatList = detectChatList();
@@ -1618,6 +1631,9 @@ async function refreshChatListOverlay() {
   const rows = detectVisibleChatRows();
   if (rows.length === 0) {
     latestChatListItems = [];
+    latestChatListSessions = [];
+    latestChatListAgents = [];
+    closeChatSessionEditor();
     clearChatListBadges();
     return;
   }
@@ -1642,6 +1658,12 @@ async function refreshChatListOverlay() {
     });
 
     latestChatListItems = Array.isArray(response?.items) ? response.items : [];
+    latestChatListSessions = Array.isArray(response?.sessions)
+      ? response.sessions
+      : latestChatListSessions;
+    latestChatListAgents = Array.isArray(response?.agents)
+      ? response.agents
+      : latestChatListAgents;
     renderChatListBadges(rows, latestChatListItems);
   } catch (error) {
     handleRuntimeError(error);
@@ -1672,24 +1694,767 @@ function renderChatListBadges(rows, items) {
     }
 
     const chip = existing || createChatListBadge();
+    chip.__raviChatSessionEditorContext = { row, item };
     chip.setAttribute("data-ravi-chat-row-id", row.id);
     chip.className = `ravi-wa-chat-chip ravi-wa-chat-chip--${chipActivityClass(item.session.live?.activity)}`;
+    chip.setAttribute("aria-expanded", chatSessionEditor?.rowId === row.id ? "true" : "false");
     chip.textContent = formatChatListBadge(item.session);
     chip.title = `${item.session.sessionName} · ${item.session.live?.summary || item.session.live?.activity || "idle"}`;
     row.titleContainer.appendChild(chip);
   }
+  renderChatSessionEditor();
 }
 
 function createChatListBadge() {
-  const chip = document.createElement("span");
+  const chip = document.createElement("button");
+  chip.type = "button";
   chip.setAttribute(CHAT_ROW_BADGE_ATTR, "true");
+  chip.setAttribute("aria-haspopup", "dialog");
+  ["pointerdown", "mousedown", "mouseup"].forEach((eventName) => {
+    chip.addEventListener(eventName, stopChatListBadgeEvent);
+  });
+  chip.addEventListener("click", (event) => {
+    stopChatListBadgeEvent(event);
+    const context = chip.__raviChatSessionEditorContext;
+    if (!context?.row || !context?.item) return;
+    openChatSessionEditor(chip, context.row, context.item);
+  });
+  chip.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    stopChatListBadgeEvent(event);
+    const context = chip.__raviChatSessionEditorContext;
+    if (!context?.row || !context?.item) return;
+    openChatSessionEditor(chip, context.row, context.item);
+  });
   return chip;
 }
 
 function clearChatListBadges() {
+  closeChatSessionEditor();
   document
     .querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`)
     .forEach((node) => node.remove());
+}
+
+function stopChatListBadgeEvent(event) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function openChatSessionEditor(anchor, row, item) {
+  const currentSession = normalizeChatSessionOption(item?.session);
+  chatSessionEditor = {
+    rowId: row.id,
+    title: row.title || item?.query?.title || null,
+    chatId: row.chatIdCandidate || item?.query?.chatId || null,
+    item,
+  };
+  chatSessionEditorFilter = "";
+  chatSessionEditorSelectedAgentId = currentSession?.agentId || null;
+  chatSessionEditorDraftSessionName = null;
+  chatSessionEditorNotice = null;
+  renderChatListBadges(detectVisibleChatRows(), latestChatListItems);
+  renderChatSessionEditor();
+  requestAnimationFrame(() => {
+    const input = document.querySelector(`#${CHAT_SESSION_EDITOR_ID} input`);
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.select();
+    } else if (anchor instanceof HTMLElement) {
+      anchor.focus();
+    }
+  });
+}
+
+function closeChatSessionEditor() {
+  chatSessionEditor = null;
+  chatSessionEditorFilter = "";
+  chatSessionEditorSelectedAgentId = null;
+  chatSessionEditorDraftSessionName = null;
+  chatSessionEditorNotice = null;
+  chatSessionEditorInFlight = false;
+  document.getElementById(CHAT_SESSION_EDITOR_ID)?.remove();
+  document.querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`).forEach((node) => {
+    node.setAttribute("aria-expanded", "false");
+  });
+}
+
+function handleChatSessionEditorOutsidePointerDown(event) {
+  if (!chatSessionEditor) return;
+  const element = resolveEventElement(event.target);
+  if (!(element instanceof Element)) return;
+  if (element.closest(`#${CHAT_SESSION_EDITOR_ID}, [${CHAT_ROW_BADGE_ATTR}]`)) return;
+  closeChatSessionEditor();
+}
+
+function handleChatSessionEditorKeydown(event) {
+  if (!chatSessionEditor || event.key !== "Escape") return;
+  closeChatSessionEditor();
+}
+
+function ensureChatSessionEditorContainer() {
+  let container = document.getElementById(CHAT_SESSION_EDITOR_ID);
+  if (container) return container;
+  container = document.createElement("div");
+  container.id = CHAT_SESSION_EDITOR_ID;
+  container.setAttribute("role", "dialog");
+  container.setAttribute("aria-label", "Editar sessão do chat");
+  ["pointerdown", "mousedown", "mouseup", "click", "keydown"].forEach((eventName) => {
+    container.addEventListener(eventName, (event) => event.stopPropagation());
+  });
+  document.body.appendChild(container);
+  return container;
+}
+
+function renderChatSessionEditor() {
+  if (!chatSessionEditor) return;
+  const anchor = findChatSessionEditorAnchor(chatSessionEditor.rowId);
+  if (!(anchor instanceof HTMLElement)) {
+    closeChatSessionEditor();
+    return;
+  }
+
+  const container = ensureChatSessionEditorContainer();
+  const focusState = captureChatSessionEditorFocus(container);
+  const item =
+    latestChatListItems.find((entry) => entry?.id === chatSessionEditor.rowId) ||
+    chatSessionEditor.item ||
+    null;
+  chatSessionEditor.item = item;
+  const currentSession = normalizeChatSessionOption(item?.session);
+  const options = getChatSessionEditorSessionOptions(item, currentSession);
+  const agents = getChatSessionEditorAgentOptions(options, currentSession);
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  if (chatSessionEditorSelectedAgentId && !agentIds.has(chatSessionEditorSelectedAgentId)) {
+    chatSessionEditorSelectedAgentId = currentSession?.agentId || agents[0]?.id || null;
+  }
+  const selectedAgent =
+    agents.find((agent) => agent.id === chatSessionEditorSelectedAgentId) ||
+    (chatSessionEditorSelectedAgentId
+      ? { id: chatSessionEditorSelectedAgentId, name: chatSessionEditorSelectedAgentId }
+      : null);
+  const filteredAgents = filterChatSessionEditorAgentOptions(agents, chatSessionEditorFilter).slice(0, 7);
+  const filteredOptions = filterChatSessionEditorOptions(options, chatSessionEditorFilter, currentSession);
+  const visibleSessions = (selectedAgent
+    ? filteredOptions.filter((session) => session.agentId === selectedAgent.id)
+    : filteredOptions
+  ).slice(0, selectedAgent ? 5 : 6);
+  const query = getChatSessionEditorQuery(item);
+  const manualBinding = Boolean(item?.session?.boundChatId || item?.session?.boundTitle);
+  const currentActivity = chipActivityClass(currentSession?.live?.activity);
+  const currentLabel = currentSession
+    ? `${currentSession.sessionName} · ${chipActivityLabel(currentSession.live?.activity)}`
+    : "sem sessão";
+  const defaultDraftSessionName = selectedAgent
+    ? buildChatSessionEditorDraftSessionName(query, selectedAgent.id)
+    : "";
+  if (selectedAgent && chatSessionEditorDraftSessionName === null) {
+    chatSessionEditorDraftSessionName = defaultDraftSessionName;
+  }
+  const draftSessionName = selectedAgent
+    ? (chatSessionEditorDraftSessionName ?? defaultDraftSessionName)
+    : "";
+  const notice = chatSessionEditorNotice
+    ? `<div class="ravi-wa-chat-session-editor__notice ravi-wa-chat-session-editor__notice--${escapeAttribute(chatSessionEditorNotice.kind)}">${escapeHtml(chatSessionEditorNotice.text)}</div>`
+    : "";
+
+  positionChatSessionEditor(container, anchor);
+  container.className = "ravi-wa-chat-session-editor";
+  container.innerHTML = `
+    <div class="ravi-wa-chat-session-editor__head">
+      <div>
+        <span>${escapeHtml(shorten(query.title || query.chatId || "chat", 34))}</span>
+        <strong>${escapeHtml(currentLabel)}</strong>
+      </div>
+      <button type="button" data-ravi-chat-session-editor-close title="Fechar">x</button>
+    </div>
+    <div class="ravi-wa-chat-session-editor__current">
+      <span class="ravi-wa-chat-session-editor__dot ravi-wa-chat-session-editor__dot--${currentActivity}"></span>
+      <span>${escapeHtml(currentSession?.agentId ? `agent ${currentSession.agentId}` : "agent -")}</span>
+      <em>${escapeHtml(manualBinding ? "manual" : "auto")}</em>
+    </div>
+    <label class="ravi-wa-chat-session-editor__search">
+      <input type="text" placeholder="filtrar sessão ou agent" value="${escapeAttribute(chatSessionEditorFilter)}" data-ravi-chat-session-editor-input="search" />
+    </label>
+    <div class="ravi-wa-chat-session-editor__agents" aria-label="Agentes">
+      ${
+        filteredAgents.length
+          ? filteredAgents.map((agent) => renderChatSessionEditorAgentOption(agent, selectedAgent, currentSession)).join("")
+          : `<p class="ravi-wa-chat-session-editor__empty">nenhum agent</p>`
+      }
+    </div>
+    ${
+      selectedAgent
+        ? renderChatSessionEditorCreateControl(selectedAgent, draftSessionName)
+        : ""
+    }
+    <div class="ravi-wa-chat-session-editor__list">
+      ${
+        visibleSessions.length
+          ? visibleSessions.map((session) => renderChatSessionEditorSessionOption(session, currentSession)).join("")
+          : `<p class="ravi-wa-chat-session-editor__empty">${escapeHtml(selectedAgent ? "sem sessões desse agent" : "nenhuma sessão")}</p>`
+      }
+    </div>
+    <div class="ravi-wa-chat-session-editor__foot">
+      <button type="button" data-ravi-chat-session-editor-unbind${manualBinding && !chatSessionEditorInFlight ? "" : " disabled"}>limpar</button>
+      <span>${escapeHtml(`${agents.length} agents · ${options.length} sessões`)}</span>
+    </div>
+    ${notice}
+  `;
+
+  container
+    .querySelector("[data-ravi-chat-session-editor-close]")
+    ?.addEventListener("click", closeChatSessionEditor);
+  const input = container.querySelector(".ravi-wa-chat-session-editor__search input");
+  input?.addEventListener("input", (event) => {
+    chatSessionEditorFilter = event.target.value || "";
+    renderChatSessionEditor();
+  });
+  container.querySelectorAll("[data-ravi-chat-session-editor-agent]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const agentId = button.getAttribute("data-ravi-chat-session-editor-agent");
+      if (!agentId || chatSessionEditorInFlight) return;
+      chatSessionEditorSelectedAgentId =
+        chatSessionEditorSelectedAgentId === agentId ? null : agentId;
+      chatSessionEditorDraftSessionName = null;
+      renderChatSessionEditor();
+    });
+  });
+  const draftInput = container.querySelector("[data-ravi-chat-session-editor-input='draft']");
+  draftInput?.addEventListener("input", (event) => {
+    chatSessionEditorDraftSessionName = event.target.value || "";
+    const createButton = container.querySelector("[data-ravi-chat-session-editor-create]");
+    if (createButton instanceof HTMLButtonElement) {
+      createButton.disabled =
+        chatSessionEditorInFlight ||
+        !normalizeTaskSessionName(chatSessionEditorDraftSessionName);
+    }
+  });
+  container.querySelectorAll("[data-ravi-chat-session-editor-create]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const agentId = button.getAttribute("data-ravi-chat-session-editor-create");
+      if (!agentId) return;
+      await createChatSessionEditorSession(agentId);
+    });
+  });
+  container.querySelectorAll("[data-ravi-chat-session-editor-choice]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const sessionKey = button.getAttribute("data-ravi-chat-session-editor-choice");
+      if (!sessionKey) return;
+      await bindChatSessionEditorChoice(sessionKey);
+    });
+  });
+  container
+    .querySelector("[data-ravi-chat-session-editor-unbind]")
+    ?.addEventListener("click", unbindChatSessionEditorChoice);
+  restoreChatSessionEditorFocus(container, focusState);
+}
+
+function captureChatSessionEditorFocus(container) {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !container.contains(active)) return null;
+  if (active instanceof HTMLInputElement) {
+    const inputId = active.getAttribute("data-ravi-chat-session-editor-input");
+    return {
+      kind: "input",
+      selector: inputId
+        ? `[data-ravi-chat-session-editor-input="${escapeCssIdentifier(inputId)}"]`
+        : ".ravi-wa-chat-session-editor__search input",
+      selectionStart: active.selectionStart,
+      selectionEnd: active.selectionEnd,
+    };
+  }
+  const selector = [
+    "data-ravi-chat-session-editor-agent",
+    "data-ravi-chat-session-editor-create",
+    "data-ravi-chat-session-editor-choice",
+  ]
+    .map((attr) => {
+      const value = active.getAttribute(attr);
+      return value ? `[${attr}="${escapeCssIdentifier(value)}"]` : null;
+    })
+    .find(Boolean);
+  return selector ? { kind: "button", selector } : null;
+}
+
+function restoreChatSessionEditorFocus(container, focusState) {
+  if (!focusState) return;
+  requestAnimationFrame(() => {
+    if (!chatSessionEditor || !document.body.contains(container)) return;
+    if (focusState.kind === "input") {
+      const input = container.querySelector(focusState.selector);
+      if (!(input instanceof HTMLInputElement)) return;
+      input.focus({ preventScroll: true });
+      const start = focusState.selectionStart ?? input.value.length;
+      const end = focusState.selectionEnd ?? start;
+      input.setSelectionRange(start, end);
+      return;
+    }
+    if (focusState.kind === "button") {
+      const button = container.querySelector(focusState.selector);
+      if (button instanceof HTMLElement) button.focus({ preventScroll: true });
+    }
+  });
+}
+
+function findChatSessionEditorAnchor(rowId) {
+  if (!rowId) return null;
+  return Array.from(document.querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`)).find(
+    (node) => node.getAttribute("data-ravi-chat-row-id") === rowId,
+  );
+}
+
+function positionChatSessionEditor(container, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const width = 278;
+  const height = 320;
+  const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8));
+  const below = rect.bottom + 8;
+  const top = below + height <= window.innerHeight ? below : Math.max(8, rect.top - height - 8);
+  container.style.left = `${Math.round(left)}px`;
+  container.style.top = `${Math.round(top)}px`;
+}
+
+function escapeCssIdentifier(value) {
+  if (globalThis.CSS?.escape) return CSS.escape(value);
+  return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function renderChatSessionEditorAgentOption(agent, selectedAgent, currentSession) {
+  const selected = selectedAgent?.id === agent.id;
+  const current = currentSession?.agentId === agent.id;
+  const label = agent.name || agent.displayName || agent.id;
+  const detail = [
+    current ? "atual" : null,
+    agent.provider || agent.model || agent.description || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <button
+      type="button"
+      class="ravi-wa-chat-session-editor__agent${selected ? " ravi-wa-chat-session-editor__agent--selected" : ""}"
+      data-ravi-chat-session-editor-agent="${escapeAttribute(agent.id)}"
+      ${chatSessionEditorInFlight ? " disabled" : ""}
+      title="${escapeAttribute(agent.id)}"
+    >
+      <strong>${escapeHtml(shorten(label, 18))}</strong>
+      ${detail ? `<small>${escapeHtml(shorten(detail, 22))}</small>` : ""}
+    </button>
+  `;
+}
+
+function renderChatSessionEditorCreateControl(agent, draftSessionName) {
+  const normalizedDraft = normalizeTaskSessionName(draftSessionName);
+  return `
+    <div class="ravi-wa-chat-session-editor__create">
+      <span class="ravi-wa-chat-session-editor__avatar">+</span>
+      <input
+        type="text"
+        value="${escapeAttribute(draftSessionName)}"
+        placeholder="nome da sessão"
+        spellcheck="false"
+        aria-label="Nome da nova sessão"
+        data-ravi-chat-session-editor-input="draft"
+      />
+      <button
+        type="button"
+        data-ravi-chat-session-editor-create="${escapeAttribute(agent.id)}"
+        ${chatSessionEditorInFlight || !normalizedDraft ? " disabled" : ""}
+        title="${escapeAttribute(`criar sessão para ${agent.id}`)}"
+      >criar</button>
+    </div>
+  `;
+}
+
+function renderChatSessionEditorSessionOption(session, currentSession) {
+  const selected = isSameChatSessionOption(session, currentSession);
+  const activityClass = chipActivityClass(session.live?.activity);
+  const activityLabel = chipActivityLabel(session.live?.activity);
+  const elapsed = formatSessionElapsedCompact(session);
+  const detail = [
+    session.agentId ? `agent ${session.agentId}` : null,
+    session.displayName || session.chatId || session.channel || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <button
+      type="button"
+      class="ravi-wa-chat-session-editor__option${selected ? " ravi-wa-chat-session-editor__option--selected" : ""}"
+      data-ravi-chat-session-editor-choice="${escapeAttribute(session.sessionKey)}"
+      ${selected || chatSessionEditorInFlight ? " disabled" : ""}
+      title="${escapeAttribute(session.sessionName)}"
+    >
+      <span class="ravi-wa-chat-session-editor__avatar">${escapeHtml(shorten((session.agentId || session.sessionName || "S").slice(0, 2).toUpperCase(), 2))}</span>
+      <span class="ravi-wa-chat-session-editor__body">
+        <strong>${escapeHtml(shorten(session.sessionName, 26))}</strong>
+        <small>${escapeHtml(shorten(detail || "sem detalhe", 36))}</small>
+      </span>
+      <span class="ravi-wa-chat-session-editor__state ravi-wa-chat-session-editor__state--${activityClass}">
+        ${escapeHtml(elapsed ? `${activityLabel} ${elapsed}` : activityLabel)}
+      </span>
+    </button>
+  `;
+}
+
+function getChatSessionEditorQuery(item) {
+  const session = item?.session || null;
+  const chatId = item?.query?.chatId || chatSessionEditor?.chatId || null;
+  const title = item?.query?.title || chatSessionEditor?.title || null;
+  const snapshotSession = latestSnapshot?.session || null;
+  const snapshotChatId = snapshotSession?.boundChatId || snapshotSession?.chatId || null;
+  const snapshotTitle = snapshotSession?.boundTitle || latestSnapshot?.query?.title || null;
+  const snapshotMatches =
+    Boolean(snapshotSession) &&
+    ((chatId && snapshotChatId === chatId) || (!chatId && title && snapshotTitle === title));
+  return {
+    chatId,
+    title,
+    accountId:
+      session?.accountId ||
+      session?.lastAccountId ||
+      session?.instance ||
+      (snapshotMatches ? snapshotSession.accountId : null) ||
+      null,
+  };
+}
+
+function buildChatSessionEditorDraftSessionName(query, agentId) {
+  const agentStem = slugifyOmniToken(agentId || "agent") || "agent";
+  const chatStem = slugifyOmniToken(query?.title || query?.chatId || "chat") || "chat";
+  return `${agentStem}-${chatStem}`.slice(0, 48);
+}
+
+function getChatSessionEditorSessionOptions(item, currentSession) {
+  const byKey = new Map();
+  const add = (session) => {
+    const normalized = normalizeChatSessionOption(session);
+    if (!normalized) return;
+    const key = normalized.sessionKey || normalized.sessionName;
+    if (!key || byKey.has(key)) return;
+    byKey.set(key, normalized);
+  };
+
+  add(currentSession);
+  add(item?.session);
+  add(latestSnapshot?.session);
+  (latestSnapshot?.activeSessions || []).forEach(add);
+  (latestSnapshot?.recentSessions || []).forEach(add);
+  (latestChatListSessions || []).forEach(add);
+  (latestOmniPanel?.sessions || []).forEach(add);
+
+  const currentKey = currentSession?.sessionKey || currentSession?.sessionName || null;
+  return [...byKey.values()].sort((left, right) => compareChatSessionEditorOptions(left, right, currentKey));
+}
+
+function getChatSessionEditorAgentOptions(sessionOptions, currentSession) {
+  const byId = new Map();
+  const add = (agent) => {
+    const normalized = normalizeChatSessionAgentOption(agent);
+    if (!normalized || byId.has(normalized.id)) return;
+    byId.set(normalized.id, normalized);
+  };
+
+  (latestChatListAgents || []).forEach(add);
+  (latestOmniPanel?.agents || []).forEach(add);
+  if (currentSession?.agentId) add({ id: currentSession.agentId, name: currentSession.agentId });
+  (sessionOptions || []).forEach((session) => {
+    if (session?.agentId) add({ id: session.agentId, name: session.agentId });
+  });
+
+  const currentAgentId = currentSession?.agentId || null;
+  return [...byId.values()].sort((left, right) => {
+    if (currentAgentId && left.id === currentAgentId && right.id !== currentAgentId) return -1;
+    if (currentAgentId && right.id === currentAgentId && left.id !== currentAgentId) return 1;
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function normalizeChatSessionAgentOption(agent) {
+  if (!agent || typeof agent !== "object") return null;
+  const id = normalizeTaskAgentId(agent.id || agent.agentId || agent.name);
+  if (!id) return null;
+  return {
+    ...agent,
+    id,
+    name: normalizeTaskAgentId(agent.name || agent.displayName || id) || id,
+    displayName: normalizeTaskAgentId(agent.displayName || agent.name || id) || id,
+    description: normalizeTaskSessionName(agent.description || agent.summary),
+    provider: normalizeTaskAgentId(agent.provider),
+    model: normalizeTaskSessionName(agent.model),
+  };
+}
+
+function filterChatSessionEditorAgentOptions(agents, filter) {
+  const token = normalizeLookupToken(filter);
+  if (!token) return agents;
+  return agents.filter((agent) => {
+    const haystack = [
+      agent.id,
+      agent.name,
+      agent.displayName,
+      agent.description,
+      agent.provider,
+      agent.model,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(token);
+  });
+}
+
+function filterChatSessionEditorOptions(options, filter, currentSession) {
+  const token = normalizeLookupToken(filter);
+  if (!token) return options;
+  const currentKey = currentSession?.sessionKey || currentSession?.sessionName || null;
+  return options
+    .filter((session) => {
+      const haystack = [
+        session.sessionName,
+        session.sessionKey,
+        session.agentId,
+        session.displayName,
+        session.chatId,
+        session.channel,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(token);
+    })
+    .sort((left, right) => compareChatSessionEditorOptions(left, right, currentKey));
+}
+
+function compareChatSessionEditorOptions(left, right, currentKey) {
+  const leftKey = left.sessionKey || left.sessionName;
+  const rightKey = right.sessionKey || right.sessionName;
+  if (currentKey && leftKey === currentKey && rightKey !== currentKey) return -1;
+  if (currentKey && rightKey === currentKey && leftKey !== currentKey) return 1;
+  const leftBusy = isBusyChatSessionActivity(left.live?.activity);
+  const rightBusy = isBusyChatSessionActivity(right.live?.activity);
+  if (leftBusy !== rightBusy) return leftBusy ? -1 : 1;
+  const leftUpdated = Number(left.live?.updatedAt || left.updatedAt || 0);
+  const rightUpdated = Number(right.live?.updatedAt || right.updatedAt || 0);
+  if (leftUpdated !== rightUpdated) return rightUpdated - leftUpdated;
+  return left.sessionName.localeCompare(right.sessionName);
+}
+
+function normalizeChatSessionOption(session) {
+  if (!session || typeof session !== "object") return null;
+  const sessionKey = normalizeTaskSessionName(
+    session.sessionKey || session.key || session.id || session.sessionName || session.name,
+  );
+  const sessionName = normalizeTaskSessionName(
+    session.sessionName || session.name || session.label || sessionKey,
+  );
+  if (!sessionName && !sessionKey) return null;
+  const agentId = normalizeTaskAgentId(session.agentId || session.agent) || null;
+  const live = normalizeChatSessionLive(session);
+  return {
+    ...session,
+    sessionKey: sessionKey || sessionName,
+    sessionName: sessionName || sessionKey,
+    agentId,
+    displayName: normalizeTaskSessionName(session.displayName || session.subject),
+    chatId: normalizeTaskSessionName(session.chatId || session.lastTo || session.boundChatId),
+    channel: normalizeTaskSessionName(session.channel || session.lastChannel),
+    accountId: normalizeTaskSessionName(session.accountId || session.lastAccountId || session.instance),
+    updatedAt: Number(session.updatedAt || live?.updatedAt || 0),
+    live,
+  };
+}
+
+function normalizeChatSessionLive(session) {
+  const live = session?.live && typeof session.live === "object" ? session.live : null;
+  return {
+    ...(live || {}),
+    activity: live?.activity || session?.activity || "idle",
+    summary: live?.summary || session?.summary || null,
+    updatedAt: Number(live?.updatedAt || session?.updatedAt || Date.now()),
+    busySince: live?.busySince || session?.busySince || undefined,
+  };
+}
+
+function isSameChatSessionOption(left, right) {
+  if (!left || !right) return false;
+  const leftKeys = new Set([left.sessionKey, left.sessionName].filter(Boolean));
+  return [right.sessionKey, right.sessionName].filter(Boolean).some((key) => leftKeys.has(key));
+}
+
+function isBusyChatSessionActivity(activity) {
+  return Boolean(activity && activity !== "idle" && activity !== "unknown");
+}
+
+async function createChatSessionEditorSession(agentId) {
+  if (chatSessionEditorInFlight || !chatSessionEditor) return;
+  const normalizedAgentId = normalizeTaskAgentId(agentId);
+  const item =
+    latestChatListItems.find((entry) => entry?.id === chatSessionEditor.rowId) ||
+    chatSessionEditor.item ||
+    null;
+  const query = getChatSessionEditorQuery(item);
+  if (!normalizedAgentId || !query.chatId || !query.accountId) {
+    chatSessionEditorNotice = { kind: "error", text: "agent, chatId e instância obrigatórios" };
+    renderChatSessionEditor();
+    return;
+  }
+  const sessionName = normalizeTaskSessionName(chatSessionEditorDraftSessionName);
+  if (!sessionName) {
+    chatSessionEditorNotice = { kind: "error", text: "nome da sessão obrigatório" };
+    renderChatSessionEditor();
+    return;
+  }
+  chatSessionEditorInFlight = true;
+  chatSessionEditorNotice = { kind: "info", text: "criando..." };
+  renderChatSessionEditor();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:v3-command",
+      payload: {
+        name: "chat.createSession",
+        args: {
+          agentId: normalizedAgentId,
+          session: sessionName,
+          chatId: query.chatId,
+          title: query.title,
+          chatName: query.title,
+          instance: query.accountId,
+          channel: "whatsapp",
+        },
+      },
+    });
+    const result = response?.ack?.body?.result || response;
+    if (response?.ok === false || result?.ok === false) {
+      throw new Error(formatOmniRouteError(result || response, "falha ao criar"));
+    }
+    const session = normalizeChatSessionOption(
+      result?.snapshot?.session || {
+        sessionKey: sessionName,
+        sessionName,
+        agentId: normalizedAgentId,
+        live: { activity: "idle", summary: "local binding", updatedAt: Date.now() },
+      },
+    );
+    applyChatSessionEditorOptimisticSession(session, query);
+    chatSessionEditorInFlight = false;
+    closeChatSessionEditor();
+    renderChatListBadges(detectVisibleChatRows(), latestChatListItems);
+    await refreshChatListOverlay();
+  } catch (error) {
+    chatSessionEditorInFlight = false;
+    chatSessionEditorNotice = { kind: "error", text: error?.message || String(error) };
+    renderChatSessionEditor();
+  }
+}
+
+async function bindChatSessionEditorChoice(sessionKey) {
+  if (chatSessionEditorInFlight || !chatSessionEditor) return;
+  const item =
+    latestChatListItems.find((entry) => entry?.id === chatSessionEditor.rowId) ||
+    chatSessionEditor.item ||
+    null;
+  const currentSession = normalizeChatSessionOption(item?.session);
+  const session = getChatSessionEditorSessionOptions(item, currentSession).find(
+    (entry) => entry.sessionKey === sessionKey || entry.sessionName === sessionKey,
+  );
+  if (!session) return;
+  const query = getChatSessionEditorQuery(item);
+  if (!session.agentId) {
+    chatSessionEditorNotice = { kind: "error", text: "sessão sem agent" };
+    renderChatSessionEditor();
+    return;
+  }
+  if (!query.chatId || !(query.accountId || session.accountId || session.lastAccountId)) {
+    chatSessionEditorNotice = { kind: "error", text: "chat sem id/instância" };
+    renderChatSessionEditor();
+    return;
+  }
+
+  chatSessionEditorInFlight = true;
+  chatSessionEditorNotice = { kind: "info", text: "salvando..." };
+  renderChatSessionEditor();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:v3-command",
+      payload: {
+        name: "chat.bindSession",
+        args: {
+          session: session.sessionName,
+          agentId: session.agentId,
+          chatId: query.chatId,
+          title: query.title,
+          chatName: query.title,
+          instance: query.accountId || session.accountId || session.lastAccountId,
+          channel: "whatsapp",
+        },
+      },
+    });
+    const result = response?.ack?.body?.result || response;
+    if (response?.ok === false || result?.ok === false) {
+      throw new Error(formatOmniRouteError(result || response, "falha ao vincular"));
+    }
+    applyChatSessionEditorOptimisticSession(session, query);
+    chatSessionEditorInFlight = false;
+    closeChatSessionEditor();
+    renderChatListBadges(detectVisibleChatRows(), latestChatListItems);
+    await refreshChatListOverlay();
+  } catch (error) {
+    chatSessionEditorInFlight = false;
+    chatSessionEditorNotice = { kind: "error", text: error?.message || String(error) };
+    renderChatSessionEditor();
+  }
+}
+
+async function unbindChatSessionEditorChoice() {
+  if (chatSessionEditorInFlight || !chatSessionEditor) return;
+  const item =
+    latestChatListItems.find((entry) => entry?.id === chatSessionEditor.rowId) ||
+    chatSessionEditor.item ||
+    null;
+  const query = getChatSessionEditorQuery(item);
+  if (!query.chatId && !query.title) return;
+  chatSessionEditorInFlight = true;
+  chatSessionEditorNotice = { kind: "info", text: "limpando..." };
+  renderChatSessionEditor();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:v3-command",
+      payload: {
+        name: "chat.unbindSession",
+        args: {
+          chatId: query.chatId,
+          title: query.title,
+          instance: query.accountId,
+          channel: "whatsapp",
+        },
+      },
+    });
+    const result = response?.ack?.body?.result || response;
+    if (result?.ok === false) {
+      throw new Error(formatOmniRouteError(result, "falha ao limpar"));
+    }
+    chatSessionEditorInFlight = false;
+    closeChatSessionEditor();
+    await refreshChatListOverlay();
+  } catch (error) {
+    chatSessionEditorInFlight = false;
+    chatSessionEditorNotice = { kind: "error", text: error?.message || String(error) };
+    renderChatSessionEditor();
+  }
+}
+
+function applyChatSessionEditorOptimisticSession(session, query) {
+  const item = latestChatListItems.find((entry) => entry?.id === chatSessionEditor?.rowId);
+  if (!item) return;
+  item.resolved = true;
+  item.session = {
+    ...session,
+    boundChatId: query.chatId,
+    boundTitle: query.title,
+    accountId: query.accountId || session.accountId || session.lastAccountId,
+  };
 }
 
 function refreshMessageChips() {
@@ -3903,6 +4668,7 @@ function renderOmniWorkspace(body, context) {
               args: {
                 actorSession: getCurrentOmniActorSession(),
                 session: formState.selectedSession.sessionName,
+                agentId: formState.selectedSession.agentId,
                 title: formState.selectedChat.name,
                 chatId:
                   formState.selectedChat.externalId ||

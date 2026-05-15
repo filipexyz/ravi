@@ -28,7 +28,7 @@ normative: true
 
 Unify Ravi contact identity handling in one coherent model.
 
-The implementation should be allowed to happen in one coordinated migration rather than a long compatibility drip, as long as existing user-facing `ravi contacts` workflows keep working.
+The implementation should be allowed to happen in one coordinated migration, as long as existing user-facing `ravi contacts` workflows keep working on the canonical model.
 
 The model MUST make Ravi the semantic owner above Omni. Omni remains the transport source for raw ids and delivery facts; Ravi exposes contacts, platform identities, chats, sessions, actors, and policies.
 
@@ -103,6 +103,7 @@ Constraints:
 - `channel + instance_id + normalized_platform_user_id` MUST be unique.
 - `owner_type + owner_id` MUST be present for resolved identities.
 - Agent-owned identities MUST NOT be merged into contacts.
+- Agent-owned identities MUST NOT be shadowed by a contact primary field. If an identity already belongs to an agent, contact creation and contact lookup by that identity MUST fail closed instead of returning a human contact.
 
 ### `contact_policies`
 
@@ -208,7 +209,7 @@ Contact timeline entries SHOULD reference canonical `contact_id` plus actor meta
 - Raw provider identifiers MUST be preserved as provenance even after normalization.
 - Feature code SHOULD use normalized Ravi identity/chat/session abstractions instead of raw Omni ids.
 - WhatsApp phone JID and bare phone MUST normalize to a stable phone identity.
-- WhatsApp LID MUST normalize separately, but MAY auto-link to phone when a trusted LID mapping exists.
+- WhatsApp technical ids from Omni MUST normalize as WhatsApp platform identities, and MAY auto-link to phone when a trusted provider mapping exists.
 - WhatsApp group JID MUST normalize as chat/group identity, not contact identity.
 - Telegram user id MUST include channel and instance scope.
 - Email and phone MAY be represented as platform identities even when no chat instance exists.
@@ -217,6 +218,10 @@ Contact timeline entries SHOULD reference canonical `contact_id` plus actor meta
 ## Inbound Resolution
 
 Inbound message handling MUST resolve identities before policy/routing decisions when feasible.
+
+Implementations that create or link contacts from inbound human messages MUST also consult `contacts/identity-graph/inbound-contact-intake`.
+
+This unified model defines the target architecture. Inbound contact intake defines route-independent capture, per-instance configuration, durable message requirements, pending-state separation, and canonical-only runtime behavior.
 
 Expected flow:
 
@@ -246,7 +251,7 @@ Omni-facing code MAY know about:
 
 - provider message ids
 - channel-specific sender ids
-- WhatsApp LID/phone/group JIDs
+- WhatsApp phone/group ids and technical ids from Omni
 - Telegram ids
 - provider delivery and media payloads
 
@@ -270,7 +275,7 @@ Examples:
 
 - Sticker support should check channel capabilities, not assume WhatsApp by JID suffix in product code.
 - Calls/outbound should target contact or platform identity, then resolve a channel identity late.
-- Routes may match raw ids for compatibility, but should store resolved semantic metadata when available.
+- Routes may match raw ids, but should store resolved semantic metadata when available.
 
 ## CLI Contract
 
@@ -288,7 +293,7 @@ ravi contacts merge <source-contact> <target-contact> [--reason <text>]
 ravi contacts duplicates [--json]
 ```
 
-Existing compatibility aliases such as `info`, `check`, and `identity-add` MAY remain, but new help text SHOULD teach the canonical commands above.
+Existing read-only aliases such as `info` and `check` MAY remain, but identity mutation aliases without explicit channel instance support MUST NOT remain.
 
 JSON output MUST expose `contact`, `platformIdentities`, `policy`, and `duplicateCandidates` as typed objects instead of formatting-only strings.
 
@@ -299,17 +304,17 @@ JSON output MUST expose `contact`, `platformIdentities`, `policy`, and `duplicat
 Signals:
 
 - Same primary phone or email.
-- LID and phone mapping points to different contacts.
+- WhatsApp identity and phone mapping points to different contacts.
 - Same platform identity present in two records, which should be impossible after constraints.
 - Same normalized phone across identities.
 
 Weak signals such as display name similarity MAY be shown as low-confidence suggestions only.
 
-## Migration Requirements
+## Import Requirements
 
-Existing `contacts_v2` and `contact_identities` data MUST be migrated without data loss.
+Existing contact-like data from older stores MAY be imported into the canonical model through an explicit one-time process. Runtime contact reads and writes MUST NOT depend on those stores.
 
-Migration MUST preserve:
+Import MUST preserve:
 
 - contact id where possible
 - name/email
@@ -320,41 +325,39 @@ Migration MUST preserve:
 - interaction counters
 - all existing identities
 
-Migration SHOULD map current active platforms:
+Import SHOULD map current active platforms:
 
 - `phone` -> `platform_identities(channel='phone')`
-- `whatsapp_lid` -> `platform_identities(channel='whatsapp')`
-- `whatsapp_group` -> chat/group migration path, not person contact
+- WhatsApp technical ids from Omni -> `platform_identities(channel='whatsapp')`
+- WhatsApp group ids -> chat/group import path, not person contact
 - `telegram` -> `platform_identities(channel='telegram')`
 
 Legacy Matrix-specific fields and identities SHOULD be removed or archived during the migration unless an active Matrix channel is reintroduced.
 
-If a legacy contact represents a WhatsApp group, it SHOULD migrate into chat metadata or remain as a compatibility contact marked `kind='org'` only until a chat model owns it. New group contacts MUST NOT be created.
+If older data represents a WhatsApp group, it MUST move into chat metadata or participant annotations. New group contacts MUST NOT be created.
 
-Current legacy surfaces that MUST be accounted for:
+Old surfaces that MUST be accounted for during import only:
 
-- `contacts_v2.agent_id`, `reply_mode`, `allowed_agents`, `opt_out`, `tags`, `notes`, and interaction counters map to contact policy/profile data.
-- `contact_identities.platform + identity_value` maps to `platform_identities`.
-- `contacts_v2.notes.groupTags` SHOULD move to `chat_participants.metadata_json` or a future participant annotation table, because group-specific contact labels belong to the relationship between actor and chat.
+- old inline agent, reply mode, allowed agents, opt-out, tags, notes, and interaction counters map to contact policy/profile data.
+- old platform/id pairs map to `platform_identities`.
+- old group-scoped contact notes SHOULD move to `chat_participants.metadata_json` or a future participant annotation table, because group-specific labels belong to the relationship between actor and chat.
 - `account_pending` SHOULD split pending humans from pending chats/groups instead of creating group contacts.
 - `omni_group_metadata.participants_json` SHOULD seed `chat_participants`.
 - `message_metadata` and `session_events` SHOULD gain actor metadata rather than storing only raw `chat_id`/source ids.
 - `agents.matrix_account`, `matrix_accounts`, and other dead channel-specific fields SHOULD be removed or archived unless the channel is reactivated.
 
-## Legacy Removal Register
+## Removed Runtime Surfaces
 
-These legacy surfaces are not target architecture. The implementation MUST either remove them or leave an explicit compatibility shim with a removal condition.
+These surfaces are not target architecture. Runtime contact code MUST NOT read or write them.
 
-| Legacy surface | Target replacement | Removal condition |
+| Removed surface | Target replacement | Runtime rule |
 | --- | --- | --- |
-| `contacts_v2` table/name | `contacts` canonical table/model | migrated data validated and CLI/API reads from `contacts` |
-| `contact_identities` table/name | `platform_identities` | migrated identities validated, link/unlink/merge use platform identities |
-| `Contact.phone` compatibility field | primary platform identity lookup or explicit contact ref | callers no longer assume every contact has a phone-shaped id |
-| `contacts_v2.agent_id` | `contact_policies` / routing policy / allowed agents | policy migration preserves behavior |
-| `contacts_v2.allowed_agents` inline JSON | `contact_policies` or scoped policy relation | policy reader no longer depends on contacts row JSON |
-| `contacts_v2.notes.groupTags` | `chat_participants.metadata_json` or participant annotation table | group labels available via chat participant lookup |
-| `contact_identities.platform='whatsapp_group'` | `chats` and `chat_participants` | all group contacts migrated to chats |
-| group records in `contacts_v2` | `chats` | no code creates or requires group-as-contact records |
+| old contact table/name | `contacts` canonical table/model | no contact service read/write path |
+| old contact identity table/name | `platform_identities` | link/unlink/merge use platform identities |
+| `Contact.phone` as identity truth | primary platform identity lookup or explicit contact ref | callers must not assume every contact has a phone-shaped id |
+| inline agent/policy fields in older contact rows | `contact_policies` / routing policy / allowed agents | policy reader uses canonical policy |
+| group labels inside contact notes | `chat_participants.metadata_json` or participant annotation table | group labels are chat-scoped |
+| group contact identities | `chats` and `chat_participants` | no code creates or requires group contacts |
 | `account_pending` group semantics | pending chat/route review backed by `chats` | pending humans and pending chats are separated; chat approval creates/removes route review state without creating contacts |
 | `agents.matrix_account` | active channel platform identity or removal | no active Matrix channel or replacement identity exists |
 | `matrix_accounts` table | active channel account model or removal/archive | Matrix integration removed or reintroduced through channel abstraction |
@@ -363,7 +366,7 @@ Raw transport caches such as `omni_group_metadata` MAY remain after migration, b
 
 ## Acceptance Criteria
 
-- A single person with phone, WhatsApp LID, Telegram, email, and other active channel identities resolves to one contact.
+- A single person with phone, WhatsApp, Telegram, email, and other active channel identities resolves to one contact.
 - A Ravi agent with a WhatsApp, Telegram, or other active channel identity resolves as an agent-owned platform identity, not a human contact.
 - A WhatsApp group does not appear as a human contact.
 - A group or shared session can have multiple contact participants without overwriting session identity.

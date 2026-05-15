@@ -309,14 +309,16 @@ function buildDispatchState(item, actorSession, dispatchSessions) {
 }
 
 export async function buildOmniPanelSnapshot(client, query) {
-  const [sessionsResult, routesResult, allBindings] = await Promise.all([
+  const [sessionsResult, agentsResult, routesResult, allBindings] = await Promise.all([
     client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    listAgents(client),
     client.routes.list().catch(() => ({ routes: [] })),
     getBindings(),
     ensureLiveStateStream().catch(() => false),
   ]);
 
   const sessions = normalizeSessions(sessionsResult);
+  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), sessions);
   const routes = Array.isArray(routesResult?.routes) ? routesResult.routes : [];
   const binding = await findBinding({ chatId: query?.chatId, title: query?.title });
 
@@ -333,6 +335,7 @@ export async function buildOmniPanelSnapshot(client, query) {
     bindings: allBindings,
     routes,
     sessions: sessions.map(toListEntry),
+    agents,
     instances: [],
   };
 }
@@ -347,27 +350,43 @@ export async function executeOmniRoute(client, body) {
   const instance = clean(body?.instance);
   const chatType = clean(body?.chatType);
   const chatName = clean(body?.chatName);
+  const agentId = clean(body?.agentId);
+  const channel = clean(body?.channel) ?? "whatsapp";
 
   switch (action) {
     case "bind-existing": {
-      if (!session || (!chatId && !title)) {
-        return { ok: false, error: "session and chatId/title required", code: "invalid_args" };
+      if (!session || !agentId || !chatId || !instance) {
+        return { ok: false, error: "session, agentId, chatId and instance required", code: "invalid_args" };
       }
-      const binding = await upsertBinding({ session, chatId, title, instance, chatType, chatName });
-      return { ok: true, binding };
+      const runtimeRoute = await upsertRuntimeChatRoute(client, { session, agentId, chatId, instance, channel });
+      if (runtimeRoute?.ok === false) return runtimeRoute;
+      const binding = await upsertBinding({ session, agentId: clean(body?.agentId), chatId, title, instance, chatType, chatName });
+      return { ok: true, binding, runtimeRoute };
+    }
+    case "create-session": {
+      if (!agentId || !chatId || !instance) {
+        return { ok: false, error: "agentId, chatId and instance required", code: "invalid_args" };
+      }
+      const sessionName = session || buildSyntheticSessionName(agentId, chatName || title || chatId);
+      const runtimeRoute = await upsertRuntimeChatRoute(client, { session: sessionName, agentId, chatId, instance, channel });
+      if (runtimeRoute?.ok === false) return runtimeRoute;
+      const binding = await upsertBinding({ session: sessionName, agentId, chatId, title, instance, chatType, chatName });
+      const snapshot = toSessionSnapshot(createSyntheticBindingSession(binding), binding);
+      return { ok: true, createdSession: true, binding, runtimeRoute, snapshot: { session: snapshot } };
     }
     case "unbind": {
       if (!chatId && !title) return { ok: false, error: "chatId or title required", code: "invalid_args" };
+      const runtimeRoute = chatId && instance ? await clearRuntimeChatRouteSession(client, { chatId, instance }) : null;
       const list = await getBindings();
       const remaining = list.filter((b) => {
         if (chatId && b.chatId === chatId) return false;
         if (title && b.title === title) return false;
         return true;
       });
-      if (remaining.length === list.length) return { ok: true, removed: false };
+      if (remaining.length === list.length) return { ok: true, removed: false, runtimeRoute };
       const { setBindings } = await import("./storage.js");
       await setBindings(remaining);
-      return { ok: true, removed: true };
+      return { ok: true, removed: true, runtimeRoute };
     }
     default:
       return { ok: false, error: `Unsupported action: ${action}`, code: "unsupported_action" };
@@ -376,11 +395,13 @@ export async function executeOmniRoute(client, body) {
 
 export async function resolveChatList(client, body) {
   const entries = Array.isArray(body?.entries) ? body.entries : [];
-  const [sessionsResult] = await Promise.all([
+  const [sessionsResult, agentsResult] = await Promise.all([
     client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    listAgents(client),
     ensureLiveStateStream().catch(() => false),
   ]);
   const sessions = normalizeSessions(sessionsResult);
+  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), sessions);
   const items = await Promise.all(
     entries.map(async (entry) => {
       const id = clean(entry?.id) ?? null;
@@ -392,6 +413,8 @@ export async function resolveChatList(client, body) {
         title: query.title,
         session: requestedSessionName,
       });
+      const syntheticSession = !resolved.session && binding?.session ? createSyntheticBindingSession(binding) : null;
+      const matchedSession = resolved.session ?? syntheticSession;
       return {
         id,
         query: {
@@ -399,13 +422,84 @@ export async function resolveChatList(client, body) {
           title: clean(query.title),
           session: clean(query.session),
         },
-        resolved: Boolean(resolved.session),
-        session: resolved.session ? toSessionSnapshot(resolved.session, binding) : null,
+        resolved: Boolean(matchedSession),
+        session: matchedSession ? toSessionSnapshot(matchedSession, binding) : null,
         warnings: [],
       };
     }),
   );
-  return { ok: true, items, generatedAt: Date.now() };
+  return { ok: true, items, sessions: sessions.map(toListEntry), agents, generatedAt: Date.now() };
+}
+
+async function upsertRuntimeChatRoute(client, input) {
+  const instance = clean(input?.instance);
+  const agentId = clean(input?.agentId);
+  const session = clean(input?.session);
+  const pattern = normalizeChatRoutePattern(input?.chatId);
+  const channel = clean(input?.channel) ?? "whatsapp";
+  if (!instance || !agentId || !session || !pattern) {
+    return { ok: false, error: "instance, agentId, session and chatId required", code: "invalid_route_args" };
+  }
+
+  const options = { allowRuntimeMismatch: true, asJson: true };
+  const route = await getRuntimeRoute(client, instance, pattern);
+  if (!route) {
+    const created = await client.instances.routes.add(instance, pattern, agentId, {
+      ...options,
+      session,
+      priority: "100",
+      channel,
+    });
+    return { ok: true, action: "created", pattern, instance, route: created?.route ?? created };
+  }
+
+  await client.instances.routes.set(instance, pattern, "agent", agentId, options);
+  await client.instances.routes.set(instance, pattern, "session", session, options);
+  await client.instances.routes.set(instance, pattern, "priority", "100", options).catch(() => null);
+  await client.instances.routes.set(instance, pattern, "channel", channel, options).catch(() => null);
+  const updated = await getRuntimeRoute(client, instance, pattern).catch(() => null);
+  return { ok: true, action: "updated", pattern, instance, route: updated };
+}
+
+async function clearRuntimeChatRouteSession(client, input) {
+  const instance = clean(input?.instance);
+  const pattern = normalizeChatRoutePattern(input?.chatId);
+  if (!instance || !pattern) return { ok: false, error: "instance and chatId required", code: "invalid_route_args" };
+  const route = await getRuntimeRoute(client, instance, pattern);
+  if (!route) return { ok: true, action: "missing", pattern, instance };
+  if (!route.session) return { ok: true, action: "unchanged", pattern, instance, route };
+  const options = { allowRuntimeMismatch: true, asJson: true };
+  await client.instances.routes.set(instance, pattern, "session", "-", options);
+  const updated = await getRuntimeRoute(client, instance, pattern).catch(() => null);
+  return { ok: true, action: "cleared-session", pattern, instance, route: updated };
+}
+
+async function getRuntimeRoute(client, instance, pattern) {
+  try {
+    const result = await client.instances.routes.show(instance, pattern);
+    return result?.route ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeChatRoutePattern(chatId) {
+  const value = clean(chatId);
+  if (!value) return null;
+  const lowered = value.toLowerCase();
+  if (lowered.startsWith("group:")) {
+    const groupId = lowered.slice(6).replace(/@.*$/, "");
+    return groupId ? `group:${groupId}` : null;
+  }
+  const groupMatch = lowered.match(/^(\d+(?:-\d+)?)@g\.us$/);
+  if (groupMatch?.[1]) return `group:${groupMatch[1]}`;
+  const userMatch = lowered.match(/^(\d+)(?::\d+)?@s\.whatsapp\.net$/);
+  if (userMatch?.[1]) return userMatch[1];
+  const lidMatch = lowered.match(/^(\d+)@lid$/);
+  if (lidMatch?.[1]) return `lid:${lidMatch[1]}`;
+  if (lowered.startsWith("lid:")) return lowered;
+  const digits = lowered.replace(/\D/g, "");
+  return digits || lowered;
 }
 
 function normalizeSessions(result) {
@@ -428,6 +522,7 @@ function normalizeSessions(result) {
     lastChannel: s.lastChannel ?? null,
     lastThreadId: s.lastThreadId ?? null,
     accountId: s.accountId ?? null,
+    lastAccountId: s.lastAccountId ?? null,
     groupId: s.groupId ?? null,
     thinkingLevel: s.thinkingLevel ?? null,
     modelOverride: s.modelOverride ?? null,
@@ -435,6 +530,51 @@ function normalizeSessions(result) {
     createdAt: s.createdAt ?? 0,
     ...s,
   }));
+}
+
+function listAgents(client) {
+  return client?.agents?.list
+    ? client.agents.list({}).catch(() => ({ agents: [] }))
+    : Promise.resolve({ agents: [] });
+}
+
+function normalizeAgents(result) {
+  const list = Array.isArray(result?.agents)
+    ? result.agents
+    : Array.isArray(result?.items)
+      ? result.items
+      : Array.isArray(result)
+        ? result
+        : [];
+  return list
+    .map((agent) => {
+      const id = clean(agent?.id ?? agent?.agentId ?? agent?.name);
+      if (!id) return null;
+      return {
+        ...agent,
+        id,
+        name: clean(agent?.name ?? agent?.displayName ?? id) ?? id,
+        displayName: clean(agent?.displayName ?? agent?.name ?? id) ?? id,
+        cwd: clean(agent?.cwd),
+        provider: clean(agent?.provider),
+        model: clean(agent?.model),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function mergeAgentsWithSessions(agents, sessions) {
+  const byId = new Map();
+  for (const agent of agents) {
+    if (agent?.id && !byId.has(agent.id)) byId.set(agent.id, agent);
+  }
+  for (const session of sessions) {
+    const id = clean(session?.agentId);
+    if (!id || byId.has(id)) continue;
+    byId.set(id, { id, name: id, displayName: id, inferred: true });
+  }
+  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function normalizeTasks(result) {
@@ -489,6 +629,7 @@ function toListEntry(session) {
     chatType: session.chatType ?? null,
     channel: session.channel ?? null,
     chatId: session.lastTo ?? null,
+    accountId: session.accountId ?? session.lastAccountId ?? null,
     updatedAt: session.updatedAt ?? 0,
     createdAt: session.createdAt ?? 0,
     thinkingLevel: session.thinkingLevel ?? null,
@@ -513,11 +654,61 @@ function toSessionSnapshot(session, binding) {
     ...toListEntry(session),
     name: session.name ?? null,
     subject: session.subject ?? null,
-    accountId: session.accountId ?? null,
+    accountId: session.accountId ?? session.lastAccountId ?? null,
     groupId: session.groupId ?? null,
     boundChatId: binding?.chatId ?? null,
     boundTitle: binding?.title ?? null,
   };
+}
+
+function createSyntheticBindingSession(binding) {
+  const sessionName = clean(binding?.session);
+  const agentId = clean(binding?.agentId) ?? inferAgentIdFromSessionName(sessionName) ?? "agent";
+  const now = Number(binding?.updatedAt || Date.now());
+  return {
+    sessionKey: sessionName,
+    name: sessionName,
+    agentId,
+    displayName: clean(binding?.chatName ?? binding?.title),
+    subject: clean(binding?.chatName ?? binding?.title),
+    chatType: clean(binding?.chatType),
+    channel: "whatsapp",
+    lastChannel: "whatsapp",
+    lastTo: clean(binding?.chatId),
+    accountId: clean(binding?.instance),
+    updatedAt: now,
+    createdAt: now,
+    live: {
+      activity: "idle",
+      summary: "local binding",
+      updatedAt: now,
+    },
+  };
+}
+
+function buildSyntheticSessionName(agentId, label) {
+  const agentStem = slugifyToken(agentId) || "agent";
+  const chatStem = slugifyToken(label) || "chat";
+  return `${agentStem}-${chatStem}`.slice(0, 48);
+}
+
+function inferAgentIdFromSessionName(sessionName) {
+  const raw = clean(sessionName);
+  if (!raw) return null;
+  const match = raw.match(/^agent:([^:]+):/);
+  if (match?.[1]) return match[1];
+  const dash = raw.match(/^([a-zA-Z0-9_-]+)-/);
+  return dash?.[1] ?? null;
+}
+
+function slugifyToken(value) {
+  return clean(value)
+    ?.toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32) ?? "";
 }
 
 function resolveSession(sessions, query) {

@@ -10,7 +10,7 @@ normative: false
 
 # Why Session Handoff
 
-`ravi sessions send --thread` keeps the runtime target explicit while solving context continuity.
+`ravi sessions send --thread` keeps the runtime target explicit while attaching thread context.
 
 Alternatives considered:
 

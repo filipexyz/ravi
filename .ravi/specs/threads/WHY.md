@@ -40,7 +40,7 @@ The user wants to create a thread without choosing an agent, then hand it to an 
 
 A chat is transport context. A thread can span a WhatsApp DM, a group, a CLI note, a task result, and an agent session.
 
-Binding the subject to one chat would make cross-channel continuity hard.
+Binding the subject to one chat would make cross-channel follow-up hard.
 
 ## Why `ravi sessions send --thread`
 

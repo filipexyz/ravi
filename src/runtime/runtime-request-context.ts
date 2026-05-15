@@ -59,6 +59,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
       ...(runtimeResolution.options.thinking ? { runtimeThinking: runtimeResolution.options.thinking } : {}),
       runtimeModelSource: runtimeResolution.sources.model,
       ...(approvalSource ? { approvalSource } : {}),
+      ...(prompt._thread ? { raviThread: prompt._thread } : {}),
     },
   });
   runtimeContext = refreshRuntimeContextCapabilities(runtimeContext, capabilities);
@@ -236,6 +237,12 @@ function buildRaviRuntimeEnv(options: {
       if (prompt.context.groupId) raviEnv.RAVI_GROUP_ID = prompt.context.groupId;
       if (prompt.context.groupName) raviEnv.RAVI_GROUP_NAME = prompt.context.groupName;
     }
+  }
+
+  if (prompt._thread) {
+    raviEnv.RAVI_THREAD_ID = prompt._thread.id;
+    raviEnv.RAVI_THREAD_HANDOFF_ID = prompt._thread.handoffId;
+    if (prompt._thread.slug) raviEnv.RAVI_THREAD_SLUG = prompt._thread.slug;
   }
 
   Object.assign(raviEnv, buildTaskRuntimeEnv(sessionName, sessionCwd, prompt.taskBarrierTaskId));

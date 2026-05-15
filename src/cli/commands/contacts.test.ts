@@ -87,7 +87,7 @@ mock.module("../../contacts.js", () => ({
         primaryPhone: contact.phone ?? null,
         primaryEmail: contact.email ?? null,
         avatarUrl: null,
-        metadata: { legacy: { sourceTable: "contacts_v2" } },
+        metadata: { source: "contacts", identityModel: "canonical" },
         createdAt: contact.created_at,
         updatedAt: contact.updated_at,
       },
@@ -106,7 +106,7 @@ mock.module("../../contacts.js", () => ({
           isPrimary: true,
           confidence: 1,
           linkedBy: "initial",
-          linkReason: "legacy_backfill",
+          linkReason: "manual",
           firstSeenAt: contact.created_at,
           lastSeenAt: contact.updated_at,
           createdAt: contact.created_at,
@@ -129,7 +129,6 @@ mock.module("../../contacts.js", () => ({
         updatedAt: contact.updated_at,
       },
       duplicateCandidates: [],
-      legacyContact: contact,
     };
   },
   getPendingContacts: () => pendingContacts,
@@ -146,8 +145,6 @@ mock.module("../../contacts.js", () => ({
   addContactTag: () => {},
   removeContactTag: () => {},
   setOptOut: () => {},
-  addContactIdentity: () => {},
-  removeContactIdentity: () => {},
   linkContactIdentity: () => {},
   unlinkContactIdentity: () => null,
   mergeContacts: (targetId: string, sourceId: string) => {
@@ -167,8 +164,6 @@ mock.module("../../contacts.js", () => ({
   addContactNote: () => ({}),
   setContactMetadata: () => ({}),
   removeContactMetadata: () => ({ removed: false, previous: null, event: null }),
-  setGroupTag: () => {},
-  removeGroupTag: () => {},
   getCrmContactProfile: (contactId: string) =>
     crmProfileRecord
       ? {
@@ -331,7 +326,6 @@ describe("ContactsCommands info", () => {
     expect(payload.found).toBe(true);
     expect(payload.target).toBe("contact-1");
     expect((payload.contact as Record<string, unknown>).id).toBe("contact-1");
-    expect((payload.legacyContact as Record<string, unknown>).id).toBe("contact-1");
     expect(payload.routeAgent).toBe("sales");
     expect(payload.sessionName).toBe("wa-support");
     expect(payload.platformIdentities).toHaveLength(1);

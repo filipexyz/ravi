@@ -12,6 +12,7 @@ const actualChatDbModule = await import("../db.js");
 const actualDbSaveMessageMeta = actualRouterDbModule.dbSaveMessageMeta;
 const actualDbGetMessageMeta = actualRouterDbModule.dbGetMessageMeta;
 const actualDbUpsertChat = actualRouterDbModule.dbUpsertChat;
+const actualDbUpsertChatMessage = actualRouterDbModule.dbUpsertChatMessage;
 const actualDbUpsertChatParticipant = actualRouterDbModule.dbUpsertChatParticipant;
 const actualDbBindSessionToChat = actualRouterDbModule.dbBindSessionToChat;
 const actualDbUpsertSessionParticipant = actualRouterDbModule.dbUpsertSessionParticipant;
@@ -20,16 +21,34 @@ const actualGetSession = actualRouterSessionsModule.getSession;
 const actualUpdateProviderSession = actualRouterSessionsModule.updateProviderSession;
 
 const promptCalls: Array<[string, Record<string, unknown>]> = [];
+const chatMessageCalls: Array<Parameters<typeof actualDbUpsertChatMessage>[0]> = [];
 const chatParticipantCalls: Array<Parameters<typeof actualDbUpsertChatParticipant>[0]> = [];
 const sessionParticipantCalls: Array<Parameters<typeof actualDbUpsertSessionParticipant>[0]> = [];
 const messageMetaSaveCalls: Array<[string, string, Record<string, unknown>]> = [];
 const agentPlatformIdentityCalls: Array<Record<string, unknown>> = [];
+const ensureContactFromInboundCalls: Array<Record<string, unknown>> = [];
 const platformIdentityByUser = new Map<string, Record<string, unknown>>();
 const contactByRef = new Map<string, Record<string, unknown>>();
 const messageMetaById = new Map<string, MessageMetadata>();
 const recordInboundCalls: string[] = [];
 let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
+let contactIntakeMode: "off" | "discovered" | "pending" = "off";
+let routeResult: Record<string, unknown> | null = null;
+
+function defaultRouteResult(): Record<string, unknown> {
+  return {
+    sessionKey: "agent:main:whatsapp:main:group:120363424772797713",
+    sessionName: "dev",
+    dmScope: "main",
+    route: { pattern: "group:120363424772797713", priority: 0, session: "dev" },
+    agent: {
+      id: "main",
+      cwd: agentCwd,
+      mode: "active",
+    },
+  };
+}
 
 mock.module("../nats.js", () => ({
   getNats: () => {
@@ -54,24 +73,23 @@ mock.module("../slash/index.js", () => ({
 
 mock.module("../router/index.js", () => ({
   expandHome: (cwd: string) => cwd,
-  resolveRoute: () => ({
-    sessionKey: "agent:main:whatsapp:main:group:120363424772797713",
-    sessionName: "dev",
-    dmScope: "main",
-    route: { pattern: "group:120363424772797713", priority: 0, session: "dev" },
-    agent: {
-      id: "main",
-      cwd: agentCwd,
-      mode: "active",
-    },
-  }),
+  resolveRoute: () => routeResult,
 }));
 
 mock.module("../config-store.js", () => ({
   configStore: {
     getConfig: () => ({
       instanceToAccount: { "instance-1": "main" },
-      instances: { main: { name: "main", agent: "main", enabled: true, groupPolicy: "open", dmPolicy: "open" } },
+      instances: {
+        main: {
+          name: "main",
+          agent: "main",
+          enabled: true,
+          groupPolicy: "open",
+          dmPolicy: "open",
+          contactIntakeMode,
+        },
+      },
       routes: [],
       agents: {},
       defaultAgent: "main",
@@ -87,6 +105,34 @@ mock.module("../contacts.js", () => ({
   saveAccountPending: () => false,
   recordInbound: mock((contactRef: string) => {
     recordInboundCalls.push(contactRef);
+  }),
+  ensureContactFromInbound: mock((input: Record<string, unknown>) => {
+    ensureContactFromInboundCalls.push(input);
+    return {
+      contact: {
+        id: "contact_auto",
+        phone: input.contactIdentity,
+        name: input.displayName ?? null,
+        status: input.intakeMode ?? "pending",
+      },
+      policy: {
+        contactId: "contact_auto",
+        status: input.intakeMode ?? "pending",
+      },
+      platformIdentity: {
+        id: "pi_auto",
+        ownerType: "contact",
+        ownerId: "contact_auto",
+        channel: input.channel,
+        instanceId: input.instanceId,
+        platformUserId: input.platformSenderId,
+        normalizedPlatformUserId: input.contactIdentity,
+        confidence: 1,
+      },
+      createdContact: true,
+      createdPlatformIdentity: true,
+      eventIds: [],
+    };
   }),
   resolvePlatformIdentity: (input: { platformUserId: string }) =>
     platformIdentityByUser.get(input.platformUserId) ?? null,
@@ -119,6 +165,10 @@ mock.module("../router/router-db.js", () => ({
   }),
   dbGetMessageMeta: mock((messageId: string) => messageMetaById.get(messageId) ?? actualDbGetMessageMeta(messageId)),
   dbUpsertChat: mock((input: Parameters<typeof actualDbUpsertChat>[0]) => actualDbUpsertChat(input)),
+  dbUpsertChatMessage: mock((input: Parameters<typeof actualDbUpsertChatMessage>[0]) => {
+    chatMessageCalls.push(input);
+    return actualDbUpsertChatMessage(input);
+  }),
   dbUpsertChatParticipant: mock((input: Parameters<typeof actualDbUpsertChatParticipant>[0]) => {
     chatParticipantCalls.push(input);
     return actualDbUpsertChatParticipant(input);
@@ -172,12 +222,16 @@ describe("OmniConsumer channel context", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-omni-consumer-context-");
     agentCwd = join(stateDir, "agent");
+    routeResult = defaultRouteResult();
+    contactIntakeMode = "off";
     actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
     promptCalls.length = 0;
+    chatMessageCalls.length = 0;
     chatParticipantCalls.length = 0;
     sessionParticipantCalls.length = 0;
     messageMetaSaveCalls.length = 0;
     agentPlatformIdentityCalls.length = 0;
+    ensureContactFromInboundCalls.length = 0;
     platformIdentityByUser.clear();
     contactByRef.clear();
     messageMetaById.clear();
@@ -253,6 +307,172 @@ describe("OmniConsumer channel context", () => {
       groupName: "ravi - dev",
       groupId: "120363424772797713",
       groupMembers: ["Luis Filipe", "R M"],
+    });
+  });
+
+  it("stores inbound DM messages and runs contact intake before no-route return", async () => {
+    routeResult = null;
+    contactIntakeMode = "pending";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-intake-dm",
+      type: "message.received",
+      payload: {
+        externalId: "msg-intake-dm",
+        chatId: "5511999901234@s.whatsapp.net",
+        from: "5511999901234@s.whatsapp.net",
+        content: {
+          type: "text",
+          text: "olá, quero orçamento",
+        },
+        rawPayload: {
+          pushName: "Lead Novo",
+          resolvedSenderPhone: "5511999901234",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(0);
+    expect(ensureContactFromInboundCalls).toHaveLength(1);
+    expect(ensureContactFromInboundCalls[0]).toMatchObject({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "5511999901234@s.whatsapp.net",
+      contactIdentity: "5511999901234",
+      displayName: "Lead Novo",
+      chatType: "dm",
+      providerMessageId: "msg-intake-dm",
+      intakeMode: "pending",
+    });
+    expect(chatMessageCalls).toHaveLength(1);
+    expect(chatMessageCalls[0]).toMatchObject({
+      providerMessageId: "msg-intake-dm",
+      rawChatId: "5511999901234@s.whatsapp.net",
+      rawSenderId: "5511999901234",
+      normalizedSenderId: "5511999901234",
+      actorType: "contact",
+      contactId: "contact_auto",
+      platformIdentityId: "pi_auto",
+      messageType: "text",
+    });
+  });
+
+  it("captures history-sync messages without replaying them to runtime", async () => {
+    contactIntakeMode = "pending";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-history-sync-dm",
+      type: "message.received",
+      payload: {
+        externalId: "msg-history-sync-dm",
+        chatId: "5511999904321@s.whatsapp.net",
+        from: "5511999904321@s.whatsapp.net",
+        content: {
+          type: "text",
+          text: "mensagem antiga importada",
+        },
+        rawPayload: {
+          pushName: "Lead Importado",
+          resolvedSenderPhone: "5511999904321",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "history-sync",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(ensureContactFromInboundCalls).toHaveLength(1);
+    expect(chatMessageCalls).toHaveLength(1);
+    expect(chatParticipantCalls).toHaveLength(1);
+    expect(promptCalls).toHaveLength(0);
+    expect(sessionParticipantCalls).toHaveLength(0);
+    expect(chatMessageCalls[0]).toMatchObject({
+      providerMessageId: "msg-history-sync-dm",
+      actorType: "contact",
+      contactId: "contact_auto",
+      platformIdentityId: "pi_auto",
+      rawProvenance: {
+        ingestMode: "history-sync",
+      },
+    });
+  });
+
+  it("captures old timestamp messages without replaying them to runtime", async () => {
+    contactIntakeMode = "pending";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-old-timestamp-dm",
+      type: "message.received",
+      payload: {
+        externalId: "msg-old-timestamp-dm",
+        chatId: "5511999909876@s.whatsapp.net",
+        from: "5511999909876@s.whatsapp.net",
+        content: {
+          type: "text",
+          text: "mensagem antiga sem flag",
+        },
+        rawPayload: {
+          pushName: "Lead Antigo",
+          resolvedSenderPhone: "5511999909876",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now() - 60_000,
+    });
+
+    expect(ensureContactFromInboundCalls).toHaveLength(1);
+    expect(chatMessageCalls).toHaveLength(1);
+    expect(chatParticipantCalls).toHaveLength(1);
+    expect(promptCalls).toHaveLength(0);
+    expect(sessionParticipantCalls).toHaveLength(0);
+    expect(chatMessageCalls[0]).toMatchObject({
+      providerMessageId: "msg-old-timestamp-dm",
+      actorType: "contact",
+      contactId: "contact_auto",
+      platformIdentityId: "pi_auto",
+      rawProvenance: {
+        ingestMode: "realtime",
+      },
     });
   });
 
