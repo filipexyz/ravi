@@ -3377,7 +3377,10 @@ export type TagRulesExplainInput = {
 export type TagRulesExplainReturn = unknown;
 
 /** Input shape for `tag-rules.list`. */
-export type TagRulesListInput = Record<string, never>;
+export type TagRulesListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `tag-rules.list`. (no @Returns declared) */
 export type TagRulesListReturn = unknown;

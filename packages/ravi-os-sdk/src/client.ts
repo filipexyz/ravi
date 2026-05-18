@@ -3741,11 +3741,14 @@ export class RaviClient {
       });
     },
     /** List loaded tag rules from .ravi/tag-rules */
-    list: async (): Promise<TagRulesListReturn> => {
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<TagRulesListReturn> => {
       return this.transport.call({
         groupSegments: ["tag-rules"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Show a single rule definition */

@@ -7902,7 +7902,16 @@ export const TagRulesExplainInputSchema = {
 /** JSON Schema for the input body of `tag-rules.list`. */
 export const TagRulesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of rules to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
