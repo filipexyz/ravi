@@ -23,7 +23,18 @@ function resolveContactRef(target: string): string {
   return cleaned;
 }
 
-function summarizeRule(rule: TagRule, source?: string): Record<string, unknown> {
+interface RuleSummary {
+  id: string;
+  enabled: boolean;
+  scope: TagRule["scope"];
+  priority: number;
+  conditions: number;
+  apply: number;
+  description: string | null;
+  source: string | null;
+}
+
+function summarizeRule(rule: TagRule, source?: string): RuleSummary {
   return {
     id: rule.id,
     enabled: rule.enabled,

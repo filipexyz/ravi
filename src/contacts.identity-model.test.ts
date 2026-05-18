@@ -1105,8 +1105,9 @@ describe("contacts identity graph schema", () => {
       (event) => event.eventType === "profile.tag_added",
     );
     expect(events.length).toBeGreaterThan(0);
-    expect(events[0].payload?.tags).toEqual(expect.arrayContaining(["new-contact", "needs-triage"]));
-    expect(events[0].payload?.reason).toBe("instance_default_contact_tags");
+    const payload = (events[0]?.payload ?? {}) as { tags?: unknown; reason?: unknown };
+    expect(payload.tags).toEqual(expect.arrayContaining(["new-contact", "needs-triage"]));
+    expect(payload.reason).toBe("instance_default_contact_tags");
   });
 
   it("ensures inbound DM contacts idempotently without an assigned agent", () => {

@@ -6770,7 +6770,7 @@ function candidateFromAccountPendingRow(
 ): InboundContactBackfillCandidate | null {
   if (row.is_group === 1) return null;
   const chat = findBackfillChatForPending(database, row, channelFilter, chatInstanceIds);
-  const message = chat ? getBackfillFirstMessage(database, chat.id) : null;
+  const message = chat && database ? getBackfillFirstMessage(database, chat.id) : null;
   const channel = normalizePlatformIdentityChannel(chat?.channel ?? channelFilter ?? "whatsapp");
   const contactIdentity = (message?.normalized_sender_id || normalizePhone(row.phone) || row.phone).trim();
   const normalizedSenderId = normalizePhone(contactIdentity);
