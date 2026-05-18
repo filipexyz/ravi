@@ -67,21 +67,36 @@ function summarizeOutcome(outcome: ApplyRuleResult): Record<string, unknown> {
 })
 export class TagRulesCommands {
   @Command({ name: "list", description: "List loaded tag rules from .ravi/tag-rules" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean): unknown {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of rules to skip (default: 0)" }) offset?: string,
+  ): unknown {
     const loaded = loadTagRulesFromDirectory();
-    const summary = loaded.rules.map((entry) => summarizeRule(entry.rule, entry.source));
+    const all = loaded.rules.map((entry) => summarizeRule(entry.rule, entry.source));
+    const pageLimit = limit ? Math.max(1, Number(limit)) : 50;
+    const pageOffset = offset ? Math.max(0, Number(offset)) : 0;
+    const summary = all.slice(pageOffset, pageOffset + pageLimit);
+    const total = all.length;
     if (asJson) {
-      printJson({ rules: summary, errors: loaded.errors });
-      return { rules: summary, errors: loaded.errors };
+      const payload = {
+        rules: summary,
+        errors: loaded.errors,
+        pagination: { total, limit: pageLimit, offset: pageOffset, returned: summary.length },
+      };
+      printJson(payload);
+      return payload;
     }
-    console.log(`Loaded ${summary.length} rule(s)${loaded.errors.length ? `, ${loaded.errors.length} error(s)` : ""}`);
+    console.log(
+      `Loaded ${total} rule(s) (showing ${summary.length})${loaded.errors.length ? `, ${loaded.errors.length} error(s)` : ""}`,
+    );
     for (const rule of summary) {
       console.log(`  ${rule.id.padEnd(28)} scope=${rule.scope} priority=${rule.priority} apply=${rule.apply}`);
     }
     for (const error of loaded.errors) {
       console.log(`  ! ${error.source}: ${error.error}`);
     }
-    return { rules: summary, errors: loaded.errors };
+    return { rules: summary, errors: loaded.errors, pagination: { total, limit: pageLimit, offset: pageOffset } };
   }
 
   @Command({ name: "show", description: "Show a single rule definition" })
