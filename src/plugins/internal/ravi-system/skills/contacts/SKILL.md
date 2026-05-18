@@ -198,3 +198,93 @@ Contacts deve parar na identidade/policy/vínculo com chat. Depois:
 - CRM recebe conclusões: facts, opportunities, activities, tasks e next actions.
 
 Não adicione campos de análise IA em contacts se a informação puder ser produzida por observer e gravada como CRM fact/event.
+
+## Auto Tags por Instância
+
+Cada instância pode declarar tags default que vão automaticamente para qualquer contato canônico criado pelo intake (runtime ou backfill).
+
+Regras:
+- Aplica somente quando o contato é criado pela primeira vez (`createdContact=true`). Contato já existente não recebe tag default.
+- Tags entram via `attachCanonicalContactTag` e ficam refletidas em `contact_policies.tags_json`.
+- Cada aplicação emite um evento `profile.tag_added` em `contact_events` com `reason: instance_default_contact_tags`, preservando proveniência por instância.
+- Backfill respeita a mesma regra: só aplica em chats que viram `create_contact`; `link_existing` e `already_linked` não tocam tags.
+
+Configurar:
+
+```bash
+ravi instances set <instance> defaultContactTags new-contact
+ravi instances set <instance> defaultContactTags '["new-contact","needs-triage"]'
+ravi instances set <instance> defaultContactTags -
+```
+
+Aceita CSV ou JSON array. `-` ou `null` limpa.
+
+Inspecionar:
+
+```bash
+ravi instances show <instance>
+# ou via JSON:
+ravi instances show <instance> --json | jq .instance.defaultContactTags
+```
+
+## Playbook: Tag → Observer por Contato
+
+Fluxo end-to-end para uma instância tratar cada novo contato como um lead vivo, com observers trocando de tag para coordenar etapas.
+
+### 1. Configurar instância
+
+```bash
+ravi instances set <instance> contactIntakeMode discovered
+ravi instances set <instance> defaultContactTags new-contact
+```
+
+Resultado: todo DM novo cria contato canônico e ganha a tag `new-contact`. Contatos antigos não recebem tag retroativa — use `ravi contacts tag <id> new-contact` se quiser equiparar.
+
+### 2. (Opcional) Definir tag formalmente
+
+Tags slugificam automaticamente, mas definir traz label e descrição auditável:
+
+```bash
+ravi tags define new-contact --label "New Contact" --description "Contato recém-capturado pelo intake"
+```
+
+### 3. Criar observer rule por tag de contato
+
+```bash
+ravi observers rules set new-contact-watch <observer-agent> \
+  --scope tag \
+  --tag new-contact \
+  --tag-target contact \
+  --observer-role new-contact-watch \
+  --observer-mode summarize \
+  --profile default
+```
+
+A sessão fonte é resolvida automaticamente via `session_participants`: se a sessão tem participante contato com a tag, o rule dispara e cria binding observer.
+
+### 4. Observer trabalha o lead e troca a tag para encadear
+
+Dentro do prompt do observer, ele tem permissão pra ler conversa e propor próximos passos. Para entregar o lead à próxima etapa, troca a tag do contato:
+
+```bash
+ravi contacts untag <contactId> new-contact
+ravi contacts tag <contactId> lead-qualified
+```
+
+Outro observer rule pode estar bound a `--tag lead-qualified --tag-target contact`. Na próxima evaluation (quando uma nova mensagem chega ou outra rebind ocorre), o novo observer entra em ação.
+
+### 5. Auditoria e debugging
+
+```bash
+ravi observers rules explain --session <session>
+ravi contacts events <phone>
+ravi observers list --source-session <session>
+```
+
+`explain` mostra `source.contactIds` e quais tags de contato estão sendo coletadas no descriptor.
+
+### Limitações conhecidas
+
+- Bindings antigos não são removidos automaticamente quando a tag muda. O observer antigo continua bound até intervenção manual (`ravi observers unbind` ou expiração natural).
+- Para sessões DM-per-peer (1 contato por sessão), o fluxo é determinístico. Em sessões `main` ou de grupo, vários contatos podem coexistir e cada um carrega suas tags.
+- `defaultContactTags` aplica só na criação. Se você precisa retaguear contatos existentes para inseri-los no fluxo, faça via `ravi contacts tag <id> <tag>` em lote.

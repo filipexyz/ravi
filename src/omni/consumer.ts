@@ -685,6 +685,7 @@ export class OmniConsumer {
           sourceEventId: event.id,
           providerMessageId: payload.externalId,
           intakeMode: instanceConfig?.contactIntakeMode ?? "off",
+          defaultTags: instanceConfig?.defaultContactTags ?? null,
           provenance: {
             subject,
             omniChannelType: channelType,

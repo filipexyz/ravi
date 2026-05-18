@@ -572,6 +572,7 @@ const SETTABLE_KEYS = [
   "dmPolicy",
   "groupPolicy",
   "contactIntakeMode",
+  "defaultContactTags",
   "dmScope",
   "instanceId",
   "channel",
@@ -579,6 +580,29 @@ const SETTABLE_KEYS = [
   "defaults",
 ] as const;
 type SettableKey = (typeof SETTABLE_KEYS)[number];
+
+function parseDefaultContactTagsInput(value: string): string[] {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!Array.isArray(parsed)) {
+        fail("defaultContactTags JSON must be an array of strings");
+      }
+      return (parsed as unknown[])
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
+    } catch {
+      fail("defaultContactTags must be valid JSON when starting with '['");
+    }
+  }
+  return trimmed
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0);
+}
 
 const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy", "channel"] as const;
 
@@ -741,6 +765,9 @@ export class InstancesCommands {
       printInspectionField("DM Policy", inst.dmPolicy, CONFIG_DB_META);
       printInspectionField("Group Policy", inst.groupPolicy, CONFIG_DB_META);
       printInspectionField("Contact Intake", inst.contactIntakeMode, CONFIG_DB_META);
+      const defaultContactTagList =
+        inst.defaultContactTags && inst.defaultContactTags.length > 0 ? inst.defaultContactTags.join(", ") : "-";
+      printInspectionField("Default Contact Tags", defaultContactTagList, CONFIG_DB_META);
       const instanceTags = listInstanceTags(inst.name);
       printInspectionField(
         "Tags",
@@ -922,6 +949,15 @@ export class InstancesCommands {
           fail(`defaults must be valid JSON object, e.g. '{"image_provider":"openai","image_model":"gpt-image-2"}'`);
         }
         dbUpdateInstance(name, { defaults: jsonValue as Record<string, unknown> });
+      }
+    } else if (key === "defaultContactTags") {
+      if (clear) {
+        jsonValue = [];
+        dbUpdateInstance(name, { defaultContactTags: null });
+      } else {
+        const tags = parseDefaultContactTagsInput(value);
+        jsonValue = tags;
+        dbUpdateInstance(name, { defaultContactTags: tags });
       }
     }
 

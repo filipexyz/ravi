@@ -158,6 +158,23 @@ describe("Instances CRUD", () => {
     }
   });
 
+  it("persists default contact tags and clears them when null is passed", () => {
+    const inst = dbUpsertInstance({
+      name: "test-inst-main",
+      defaultContactTags: ["new-contact", "needs-triage", "  duplicate  ", "duplicate"],
+    });
+    expect(inst.defaultContactTags).toEqual(["new-contact", "needs-triage", "duplicate"]);
+
+    const partial = dbUpdateInstance("test-inst-main", { dmPolicy: "closed" });
+    expect(partial.defaultContactTags).toEqual(["new-contact", "needs-triage", "duplicate"]);
+
+    const replaced = dbUpdateInstance("test-inst-main", { defaultContactTags: ["crm-pending"] });
+    expect(replaced.defaultContactTags).toEqual(["crm-pending"]);
+
+    const cleared = dbUpdateInstance("test-inst-main", { defaultContactTags: null });
+    expect(cleared.defaultContactTags).toBeUndefined();
+  });
+
   it("accepts and updates contact intake modes", () => {
     const modes: Array<"off" | "discovered" | "pending"> = ["off", "discovered", "pending"];
     for (const contactIntakeMode of modes) {

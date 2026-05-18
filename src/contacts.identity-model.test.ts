@@ -1063,6 +1063,52 @@ describe("contacts identity graph schema", () => {
     expect(getContactDetails("5511999990000")).toBeNull();
   });
 
+  it("applies instance default tags only on first contact creation", () => {
+    const first = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformSenderId: "5511999911111@s.whatsapp.net",
+      contactIdentity: "5511999911111",
+      displayName: "Tag Default Lead",
+      chatId: "chat_default_tag",
+      chatType: "dm",
+      sourceEventId: "evt-default-tags-1",
+      providerMessageId: "wamid-default-tags-1",
+      intakeMode: "pending",
+      defaultTags: ["new-contact", "  needs-triage  ", "needs-triage"],
+      provenance: { source: "test" },
+    });
+    expect(first.createdContact).toBe(true);
+    const initialTags = first.contact?.tags ?? [];
+    expect(initialTags).toEqual(expect.arrayContaining(["new-contact", "needs-triage"]));
+
+    const repeat = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformSenderId: "5511999911111@s.whatsapp.net",
+      contactIdentity: "5511999911111",
+      displayName: "Tag Default Lead",
+      chatId: "chat_default_tag",
+      chatType: "dm",
+      sourceEventId: "evt-default-tags-2",
+      providerMessageId: "wamid-default-tags-2",
+      intakeMode: "pending",
+      defaultTags: ["other-tag"],
+      provenance: { source: "test" },
+    });
+    expect(repeat.createdContact).toBe(false);
+    const repeatedTags = repeat.contact?.tags ?? [];
+    expect(repeatedTags).not.toContain("other-tag");
+    expect(repeatedTags).toEqual(expect.arrayContaining(["new-contact", "needs-triage"]));
+
+    const events = listContactEvents(first.contact!.id).items.filter(
+      (event) => event.eventType === "profile.tag_added",
+    );
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0].payload?.tags).toEqual(expect.arrayContaining(["new-contact", "needs-triage"]));
+    expect(events[0].payload?.reason).toBe("instance_default_contact_tags");
+  });
+
   it("ensures inbound DM contacts idempotently without an assigned agent", () => {
     const first = ensureContactFromInbound({
       channel: "whatsapp",

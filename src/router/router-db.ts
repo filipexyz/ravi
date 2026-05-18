@@ -17,6 +17,7 @@ import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
+import { executeWrite } from "../db/write-retry.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
 
 const log = logger.child("router:db");
@@ -110,6 +111,7 @@ export const InstanceInputSchema = z.object({
   dmScope: DmScopeSchema.optional(),
   enabled: z.boolean().default(true),
   defaults: z.record(z.string(), z.unknown()).optional(),
+  defaultContactTags: z.array(z.string()).optional(),
 });
 
 // ============================================================================
@@ -176,6 +178,7 @@ interface InstanceRow {
   dm_scope: string | null;
   enabled: number | null;
   defaults: string | null;
+  default_contact_tags: string | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -338,6 +341,7 @@ export interface InstanceConfig {
   dmScope?: DmScope;
   enabled?: boolean;
   defaults?: Record<string, unknown>;
+  defaultContactTags?: string[];
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -1482,6 +1486,7 @@ function getDb(): Database {
       dm_scope     TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
       enabled      INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
       defaults     TEXT,
+      default_contact_tags TEXT,
       created_at   INTEGER NOT NULL,
       updated_at   INTEGER NOT NULL
     );
@@ -1921,6 +1926,7 @@ function getDb(): Database {
     "TEXT NOT NULL DEFAULT 'off' CHECK(contact_intake_mode IN ('off','discovered','pending'))",
   );
   ensureColumn(db, "instances", "defaults", "TEXT");
+  ensureColumn(db, "instances", "default_contact_tags", "TEXT");
 
   const contextColumns = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
   if (contextColumns.length > 0 && !contextColumns.some((c) => c.name === "context_id")) {
@@ -2829,165 +2835,167 @@ function upsertSessionParticipant(database: Database, input: UpsertSessionPartic
 
 function backfillChatModel(database: Database): void {
   const now = Date.now();
-  const txn = database.transaction(() => {
-    const groupRows = database.prepare("SELECT * FROM omni_group_metadata").all() as Array<{
-      account_id: string;
-      instance_id: string;
-      chat_id: string;
-      chat_uuid: string | null;
-      external_id: string | null;
-      channel: string | null;
-      name: string | null;
-      avatar_url: string | null;
-      participant_count: number | null;
-      participants_json: string | null;
-      platform_metadata_json: string | null;
-      fetched_at: number;
-    }>;
+  executeWrite(
+    database,
+    (database) => {
+      const groupRows = database.prepare("SELECT * FROM omni_group_metadata").all() as Array<{
+        account_id: string;
+        instance_id: string;
+        chat_id: string;
+        chat_uuid: string | null;
+        external_id: string | null;
+        channel: string | null;
+        name: string | null;
+        avatar_url: string | null;
+        participant_count: number | null;
+        participants_json: string | null;
+        platform_metadata_json: string | null;
+        fetched_at: number;
+      }>;
 
-    for (const row of groupRows) {
-      const chat = upsertChat(database, {
-        channel: row.channel ?? "whatsapp",
-        instanceId: row.instance_id,
-        platformChatId: row.chat_id,
-        chatType: "group",
-        title: row.name,
-        avatarUrl: row.avatar_url,
-        metadata: {
-          accountId: row.account_id,
-          chatUuid: row.chat_uuid,
-          externalId: row.external_id,
-          participantCount: row.participant_count,
-        },
-        rawProvenance: {
-          sourceTable: "omni_group_metadata",
-          accountId: row.account_id,
+      for (const row of groupRows) {
+        const chat = upsertChat(database, {
+          channel: row.channel ?? "whatsapp",
           instanceId: row.instance_id,
-          chatId: row.chat_id,
-          chatUuid: row.chat_uuid,
-          externalId: row.external_id,
-          platformMetadata: parseJsonRecord(row.platform_metadata_json),
-        },
-        seenAt: row.fetched_at || now,
-      });
-
-      const participants = parseParticipantsJson(row.participants_json);
-      for (const participant of participants) {
-        upsertChatParticipant(database, {
-          chatId: chat.id,
-          rawPlatformUserId: participant.platformUserId,
-          normalizedPlatformUserId: normalizePhone(participant.platformUserId) || participant.platformUserId,
-          role: normalizeParticipantRole(participant.role),
-          status: "active",
-          source: "omni",
+          platformChatId: row.chat_id,
+          chatType: "group",
+          title: row.name,
+          avatarUrl: row.avatar_url,
           metadata: {
-            omniParticipantId: participant.id ?? null,
-            displayName: participant.displayName ?? null,
+            accountId: row.account_id,
+            chatUuid: row.chat_uuid,
+            externalId: row.external_id,
+            participantCount: row.participant_count,
+          },
+          rawProvenance: {
+            sourceTable: "omni_group_metadata",
+            accountId: row.account_id,
+            instanceId: row.instance_id,
+            chatId: row.chat_id,
+            chatUuid: row.chat_uuid,
+            externalId: row.external_id,
+            platformMetadata: parseJsonRecord(row.platform_metadata_json),
           },
           seenAt: row.fetched_at || now,
         });
-      }
-    }
 
-    const sessionRows = database
-      .prepare(
-        `
+        const participants = parseParticipantsJson(row.participants_json);
+        for (const participant of participants) {
+          upsertChatParticipant(database, {
+            chatId: chat.id,
+            rawPlatformUserId: participant.platformUserId,
+            normalizedPlatformUserId: normalizePhone(participant.platformUserId) || participant.platformUserId,
+            role: normalizeParticipantRole(participant.role),
+            status: "active",
+            source: "omni",
+            metadata: {
+              omniParticipantId: participant.id ?? null,
+              displayName: participant.displayName ?? null,
+            },
+            seenAt: row.fetched_at || now,
+          });
+        }
+      }
+
+      const sessionRows = database
+        .prepare(
+          `
         SELECT session_key, agent_id, channel, account_id, group_id, last_channel, last_account_id,
                last_to, last_thread_id, chat_type, display_name, subject, updated_at, created_at
         FROM sessions
         WHERE COALESCE(last_to, group_id) IS NOT NULL
       `,
-      )
-      .all() as Array<{
-      session_key: string;
-      agent_id: string;
-      channel: string | null;
-      account_id: string | null;
-      group_id: string | null;
-      last_channel: string | null;
-      last_account_id: string | null;
-      last_to: string | null;
-      last_thread_id: string | null;
-      chat_type: string | null;
-      display_name: string | null;
-      subject: string | null;
-      updated_at: number;
-      created_at: number;
-    }>;
+        )
+        .all() as Array<{
+        session_key: string;
+        agent_id: string;
+        channel: string | null;
+        account_id: string | null;
+        group_id: string | null;
+        last_channel: string | null;
+        last_account_id: string | null;
+        last_to: string | null;
+        last_thread_id: string | null;
+        chat_type: string | null;
+        display_name: string | null;
+        subject: string | null;
+        updated_at: number;
+        created_at: number;
+      }>;
 
-    for (const row of sessionRows) {
-      const rawChatId = row.last_to ?? row.group_id;
-      if (!rawChatId) continue;
-      const chat = upsertChat(database, {
-        channel: row.last_channel ?? row.channel ?? "unknown",
-        instanceId: row.last_account_id ?? row.account_id ?? "",
-        platformChatId: rawChatId,
-        chatType: inferChatType(rawChatId, row.chat_type as ChatType | null),
-        title: row.display_name ?? row.subject,
-        rawProvenance: {
-          sourceTable: "sessions",
+      for (const row of sessionRows) {
+        const rawChatId = row.last_to ?? row.group_id;
+        if (!rawChatId) continue;
+        const chat = upsertChat(database, {
+          channel: row.last_channel ?? row.channel ?? "unknown",
+          instanceId: row.last_account_id ?? row.account_id ?? "",
+          platformChatId: rawChatId,
+          chatType: inferChatType(rawChatId, row.chat_type as ChatType | null),
+          title: row.display_name ?? row.subject,
+          rawProvenance: {
+            sourceTable: "sessions",
+            sessionKey: row.session_key,
+            groupId: row.group_id,
+            lastTo: row.last_to,
+            lastThreadId: row.last_thread_id,
+          },
+          seenAt: row.updated_at || row.created_at || now,
+        });
+        bindSessionToChat(database, {
           sessionKey: row.session_key,
-          groupId: row.group_id,
-          lastTo: row.last_to,
-          lastThreadId: row.last_thread_id,
-        },
-        seenAt: row.updated_at || row.created_at || now,
-      });
-      bindSessionToChat(database, {
-        sessionKey: row.session_key,
-        chatId: chat.id,
-        agentId: row.agent_id,
-        bindingReason: "legacy_session_backfill",
-        seenAt: row.updated_at || now,
-      });
-    }
+          chatId: chat.id,
+          agentId: row.agent_id,
+          bindingReason: "legacy_session_backfill",
+          seenAt: row.updated_at || now,
+        });
+      }
 
-    const eventRows = database
-      .prepare(
-        `
+      const eventRows = database
+        .prepare(
+          `
         SELECT DISTINCT source_channel, source_account_id, source_chat_id, source_thread_id
         FROM session_events
         WHERE source_chat_id IS NOT NULL
       `,
-      )
-      .all() as Array<{
-      source_channel: string | null;
-      source_account_id: string | null;
-      source_chat_id: string;
-      source_thread_id: string | null;
-    }>;
+        )
+        .all() as Array<{
+        source_channel: string | null;
+        source_account_id: string | null;
+        source_chat_id: string;
+        source_thread_id: string | null;
+      }>;
 
-    for (const row of eventRows) {
-      upsertChat(database, {
-        channel: row.source_channel ?? "unknown",
-        instanceId: row.source_account_id ?? "",
-        platformChatId: row.source_thread_id ? `${row.source_chat_id}#${row.source_thread_id}` : row.source_chat_id,
-        chatType: row.source_thread_id ? "thread" : inferChatType(row.source_chat_id),
-        rawProvenance: {
-          sourceTable: "session_events",
-          sourceChatId: row.source_chat_id,
-          sourceThreadId: row.source_thread_id,
-        },
-        seenAt: now,
-      });
-    }
+      for (const row of eventRows) {
+        upsertChat(database, {
+          channel: row.source_channel ?? "unknown",
+          instanceId: row.source_account_id ?? "",
+          platformChatId: row.source_thread_id ? `${row.source_chat_id}#${row.source_thread_id}` : row.source_chat_id,
+          chatType: row.source_thread_id ? "thread" : inferChatType(row.source_chat_id),
+          rawProvenance: {
+            sourceTable: "session_events",
+            sourceChatId: row.source_chat_id,
+            sourceThreadId: row.source_thread_id,
+          },
+          seenAt: now,
+        });
+      }
 
-    const messageRows = database
-      .prepare("SELECT DISTINCT chat_id FROM message_metadata WHERE chat_id IS NOT NULL")
-      .all() as Array<{ chat_id: string }>;
-    for (const row of messageRows) {
-      upsertChat(database, {
-        channel: "unknown",
-        instanceId: "",
-        platformChatId: row.chat_id,
-        chatType: inferChatType(row.chat_id),
-        rawProvenance: { sourceTable: "message_metadata", chatId: row.chat_id },
-        seenAt: now,
-      });
-    }
-  });
-
-  txn();
+      const messageRows = database
+        .prepare("SELECT DISTINCT chat_id FROM message_metadata WHERE chat_id IS NOT NULL")
+        .all() as Array<{ chat_id: string }>;
+      for (const row of messageRows) {
+        upsertChat(database, {
+          channel: "unknown",
+          instanceId: "",
+          platformChatId: row.chat_id,
+          chatType: inferChatType(row.chat_id),
+          rawProvenance: { sourceTable: "message_metadata", chatId: row.chat_id },
+          seenAt: now,
+        });
+      }
+    },
+    { label: "router:backfillChatModel" },
+  );
 }
 
 function backfillChatModelOnce(database: Database): void {
@@ -3309,9 +3317,9 @@ function getStatements(): PreparedStatements {
     upsertInstance: database.prepare(`
       INSERT INTO instances (
         name, instance_id, channel, agent, dm_policy, group_policy, contact_intake_mode,
-        dm_scope, enabled, defaults, created_at, updated_at
+        dm_scope, enabled, defaults, default_contact_tags, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
         instance_id  = excluded.instance_id,
         channel      = excluded.channel,
@@ -3322,6 +3330,7 @@ function getStatements(): PreparedStatements {
         dm_scope     = excluded.dm_scope,
         enabled      = excluded.enabled,
         defaults     = excluded.defaults,
+        default_contact_tags = excluded.default_contact_tags,
         updated_at   = excluded.updated_at
     `),
     getInstanceByName: database.prepare("SELECT * FROM instances WHERE name = ? AND deleted_at IS NULL"),
@@ -3339,6 +3348,7 @@ function getStatements(): PreparedStatements {
         dm_scope     = ?,
         enabled      = ?,
         defaults     = ?,
+        default_contact_tags = ?,
         updated_at   = ?
       WHERE name = ?
     `),
@@ -3504,6 +3514,19 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
       result.defaults = JSON.parse(row.defaults);
     } catch {
       // Ignore invalid JSON so a bad defaults blob does not break instance listing.
+    }
+  }
+  if (row.default_contact_tags) {
+    try {
+      const parsed = JSON.parse(row.default_contact_tags);
+      if (Array.isArray(parsed)) {
+        result.defaultContactTags = parsed
+          .filter((value): value is string => typeof value === "string")
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0);
+      }
+    } catch {
+      // Ignore invalid tag payload to avoid breaking instance listing.
     }
   }
   if (row.deleted_at) result.deletedAt = row.deleted_at;
@@ -4854,6 +4877,9 @@ export function dbUpsertInstance(input: z.input<typeof InstanceInputSchema>): In
   }
   const s = getStatements();
   const now = Date.now();
+  const normalizedTags = validated.defaultContactTags
+    ? Array.from(new Set(validated.defaultContactTags.map((tag) => tag.trim()).filter((tag) => tag.length > 0)))
+    : null;
   s.upsertInstance.run(
     validated.name,
     validated.instanceId ?? null,
@@ -4865,6 +4891,7 @@ export function dbUpsertInstance(input: z.input<typeof InstanceInputSchema>): In
     validated.dmScope ?? null,
     validated.enabled ? 1 : 0,
     validated.defaults ? JSON.stringify(validated.defaults) : null,
+    normalizedTags && normalizedTags.length > 0 ? JSON.stringify(normalizedTags) : null,
     now,
     now,
   );
@@ -4892,8 +4919,9 @@ export function dbListInstances(): InstanceConfig[] {
 
 export function dbUpdateInstance(
   name: string,
-  updates: Partial<Omit<InstanceConfig, "name" | "createdAt" | "updatedAt" | "defaults">> & {
+  updates: Partial<Omit<InstanceConfig, "name" | "createdAt" | "updatedAt" | "defaults" | "defaultContactTags">> & {
     defaults?: Record<string, unknown> | null;
+    defaultContactTags?: string[] | null;
   },
 ): InstanceConfig {
   const s = getStatements();
@@ -4907,6 +4935,19 @@ export function dbUpdateInstance(
   if (updates.groupPolicy) GroupPolicySchema.parse(updates.groupPolicy);
   if (updates.contactIntakeMode) ContactIntakeModeSchema.parse(updates.contactIntakeMode);
   const now = Date.now();
+  let nextDefaultContactTags: string | null;
+  if (updates.defaultContactTags !== undefined) {
+    if (updates.defaultContactTags === null) {
+      nextDefaultContactTags = null;
+    } else {
+      const normalized = Array.from(
+        new Set(updates.defaultContactTags.map((tag) => tag.trim()).filter((tag) => tag.length > 0)),
+      );
+      nextDefaultContactTags = normalized.length > 0 ? JSON.stringify(normalized) : null;
+    }
+  } else {
+    nextDefaultContactTags = row.default_contact_tags ?? null;
+  }
   s.updateInstance.run(
     updates.instanceId !== undefined ? (updates.instanceId ?? null) : row.instance_id,
     updates.channel ?? row.channel,
@@ -4917,6 +4958,7 @@ export function dbUpdateInstance(
     updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
     updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : (row.enabled ?? 1),
     updates.defaults !== undefined ? (updates.defaults ? JSON.stringify(updates.defaults) : null) : row.defaults,
+    nextDefaultContactTags,
     now,
     name,
   );
@@ -5149,33 +5191,35 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
   const cascadeFlagKey = "revokedViaCascade";
   const cascadeRootKey = "cascadeRootContextId";
 
-  db.transaction(() => {
-    for (const target of targets) {
-      // Skip if already revoked at the same or earlier timestamp (idempotency).
-      if (target.revokedAt && target.revokedAt <= revokedAt) {
-        // Still update metadata if a reason or cascade flag should be set.
-      }
-      const metadata: Record<string, unknown> = { ...(target.metadata ?? {}) };
-      if (reasonNote) {
-        metadata[reasonKey] = reasonNote;
-      }
-      if (target.contextId !== root.contextId) {
-        metadata[cascadeFlagKey] = true;
-        metadata[cascadeRootKey] = root.contextId;
-        const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
-        if (!chain.includes(root.contextId)) {
-          chain.push(root.contextId);
+  executeWrite(
+    db,
+    (database) => {
+      for (const target of targets) {
+        // Skip if already revoked at the same or earlier timestamp (idempotency).
+        if (target.revokedAt && target.revokedAt <= revokedAt) {
+          // Still update metadata if a reason or cascade flag should be set.
         }
-        metadata[cascadeKey] = chain;
-      }
+        const metadata: Record<string, unknown> = { ...(target.metadata ?? {}) };
+        if (reasonNote) {
+          metadata[reasonKey] = reasonNote;
+        }
+        if (target.contextId !== root.contextId) {
+          metadata[cascadeFlagKey] = true;
+          metadata[cascadeRootKey] = root.contextId;
+          const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
+          if (!chain.includes(root.contextId)) {
+            chain.push(root.contextId);
+          }
+          metadata[cascadeKey] = chain;
+        }
 
-      db.prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`).run(
-        revokedAt,
-        JSON.stringify(metadata),
-        target.contextId,
-      );
-    }
-  })();
+        database
+          .prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`)
+          .run(revokedAt, JSON.stringify(metadata), target.contextId);
+      }
+    },
+    { label: "router:revokeContextCascade" },
+  );
 
   const finalRoot = dbGetContext(contextId)!;
   const cascaded: ContextRecord[] = [];

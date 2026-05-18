@@ -1315,6 +1315,7 @@ export interface EnsureContactFromInboundInput {
   intakeMode?: ContactIntakeMode | null;
   source?: string | null;
   provenance?: Record<string, unknown> | null;
+  defaultTags?: string[] | null;
 }
 
 export interface EnsureContactFromInboundResult {
@@ -6252,6 +6253,39 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
       eventIds.push(linkEvent.id);
     }
 
+    if (createdContact && Array.isArray(input.defaultTags) && input.defaultTags.length > 0) {
+      const refreshedContact = getCanonicalCompatContactById(database, contact.id);
+      const existingTags = refreshedContact?.tags ?? contact.tags;
+      const appliedSlugs: string[] = [];
+      for (const tag of input.defaultTags) {
+        const slug = attachCanonicalContactTag(contact.id, tag, "inbound_contact_intake_default_tag");
+        if (slug) appliedSlugs.push(slug);
+      }
+      if (appliedSlugs.length > 0) {
+        const mergedTags = mergeTagLists(existingTags, appliedSlugs);
+        upsertCanonicalContactPolicy(database, {
+          contactId: contact.id,
+          tags: mergedTags,
+        });
+        const tagsEvent = insertContactEvent(database, {
+          contactId: contact.id,
+          eventType: "profile.tag_added",
+          source: intakeSource,
+          actorType: "system",
+          confidence: 1,
+          chatId: input.chatId,
+          messageId: input.providerMessageId ?? input.sourceEventId,
+          payload: {
+            tags: appliedSlugs,
+            reason: "instance_default_contact_tags",
+            instanceId,
+          },
+          evidence,
+        });
+        eventIds.push(tagsEvent.id);
+      }
+    }
+
     contact = getCanonicalCompatContactById(database, contact.id);
     policy = contact ? getContactPolicyById(database, contact.id) : null;
   });
@@ -6323,6 +6357,7 @@ interface ChatMessageBackfillRow {
 interface BackfillInstanceRow {
   name: string;
   instance_id: string | null;
+  default_contact_tags: string | null;
 }
 
 interface BackfillInstanceFilter {
@@ -6331,6 +6366,7 @@ interface BackfillInstanceFilter {
   resolvedInstanceId: string | null;
   chatInstanceIds: string[];
   accountIds: string[];
+  defaultContactTags: string[];
 }
 
 function normalizeBackfillMode(mode?: InboundContactBackfillMode | null): InboundContactBackfillMode {
@@ -6381,6 +6417,7 @@ function resolveBackfillInstanceFilter(database: Database | null, requested?: st
       resolvedInstanceId: null,
       chatInstanceIds: [],
       accountIds: [],
+      defaultContactTags: [],
     };
   }
 
@@ -6389,11 +6426,13 @@ function resolveBackfillInstanceFilter(database: Database | null, requested?: st
     const activeInstanceClause = sqliteColumnExists(database, "instances", "deleted_at")
       ? "AND deleted_at IS NULL"
       : "";
+    const tagColumnPresent = sqliteColumnExists(database, "instances", "default_contact_tags");
     resolved =
       (database
         .prepare(
           `
-          SELECT name, instance_id FROM instances
+          SELECT name, instance_id, ${tagColumnPresent ? "default_contact_tags" : "NULL AS default_contact_tags"}
+          FROM instances
           WHERE 1 = 1
             ${activeInstanceClause}
             AND (name = ? OR instance_id = ?)
@@ -6405,12 +6444,27 @@ function resolveBackfillInstanceFilter(database: Database | null, requested?: st
 
   const instanceName = resolved?.name ?? null;
   const instanceId = resolved?.instance_id ?? null;
+  let defaultContactTags: string[] = [];
+  if (resolved?.default_contact_tags) {
+    try {
+      const parsed = JSON.parse(resolved.default_contact_tags);
+      if (Array.isArray(parsed)) {
+        defaultContactTags = parsed
+          .filter((value): value is string => typeof value === "string")
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0);
+      }
+    } catch {
+      defaultContactTags = [];
+    }
+  }
   return {
     requested: cleanRequested,
     resolvedInstanceName: instanceName,
     resolvedInstanceId: instanceId,
     chatInstanceIds: uniqueNonEmptyStrings([cleanRequested, instanceId, instanceName]),
     accountIds: uniqueNonEmptyStrings([cleanRequested, instanceName, instanceId]),
+    defaultContactTags,
   };
 }
 
@@ -7100,6 +7154,7 @@ export function backfillInboundContacts(input: BackfillInboundContactsInput = {}
           sourceEventId: `backfill:${candidate.key}`,
           intakeMode: mode,
           source: "inbound_contact_backfill",
+          defaultTags: instanceFilter.defaultContactTags.length > 0 ? instanceFilter.defaultContactTags : null,
           provenance: {
             ...candidate.provenance,
             sources: candidate.sources,
