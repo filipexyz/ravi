@@ -215,7 +215,7 @@ export class TagRulesCommands {
 
   @Command({ name: "evaluate", description: "Evaluate a rule against a target asset" })
   evaluate(
-    @Arg("rule-id", { description: "Rule id to evaluate" }) ruleId: string,
+    @Arg("ruleId", { description: "Rule id to evaluate" }) ruleId: string,
     @Option({ flags: "--target <ref>", description: "Target (e.g. contact:<id>)" }) target?: string,
     @Option({ flags: "--apply", description: "Actually apply tag changes (default: dry-run)" }) applyChanges?: boolean,
     @Option({ flags: "--file <path>", description: "Load rule from a file path instead of the registry" })

@@ -7872,7 +7872,7 @@ export const TagRulesEvaluateInputSchema = {
       "description": "Load rule from a file path instead of the registry",
       "type": "string"
     },
-    "rule-id": {
+    "ruleId": {
       "description": "Rule id to evaluate",
       "type": "string"
     },
@@ -7882,7 +7882,7 @@ export const TagRulesEvaluateInputSchema = {
     }
   },
   "required": [
-    "rule-id"
+    "ruleId"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

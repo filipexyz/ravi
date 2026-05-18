@@ -3361,7 +3361,7 @@ export type StickersShowReturn = unknown;
 export type TagRulesEvaluateInput = {
   apply?: boolean;
   file?: string;
-  "rule-id": string;
+  ruleId: string;
   target?: string;
 };
 

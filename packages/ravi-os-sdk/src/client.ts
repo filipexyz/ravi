@@ -3719,7 +3719,7 @@ export class RaviClient {
 
   readonly tagRules = {
     /** Evaluate a rule against a target asset */
-    evaluate: async (rule-id: string, options?: {
+    evaluate: async (ruleId: string, options?: {
       apply?: boolean;
       file?: string;
       target?: string;
@@ -3727,7 +3727,7 @@ export class RaviClient {
       return this.transport.call({
         groupSegments: ["tag-rules"],
         command: "evaluate",
-        body: { rule-id, ...(options ?? {}) },
+        body: { ruleId, ...(options ?? {}) },
       });
     },
     /** Explain which rules currently match a target asset (dry-run) */
