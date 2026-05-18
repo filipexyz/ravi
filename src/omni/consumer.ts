@@ -67,6 +67,7 @@ import type { AgentConfig } from "../router/types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
+import { runTagRulesForContact } from "../tag-rules/index.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
@@ -807,6 +808,24 @@ export class OmniConsumer {
       },
       seenAt: msgTs,
     });
+
+    if (!isGroup && effectiveActorType === "contact" && effectiveContactId) {
+      const contactIdForRules = effectiveContactId;
+      queueMicrotask(() => {
+        try {
+          runTagRulesForContact({
+            contactRef: contactIdForRules,
+            cause: { evaluation: "reactive", triggerType: "message.received" },
+            apply: true,
+          });
+        } catch (error) {
+          log.warn("Failed to run tag rules for inbound contact", {
+            contactId: contactIdForRules,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    }
 
     if (suppressRuntimeReplay) {
       log.debug("Historical inbound captured without runtime replay", {

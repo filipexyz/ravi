@@ -1,4 +1,5 @@
 import { addContactTag, getContactById, removeContactTag, type Contact } from "../contacts.js";
+import { nats } from "../nats.js";
 import { tryNormalizeTagSlug } from "../tags/tag-db.js";
 import { evaluateContactConditions } from "./conditions.js";
 import type { AppliedTagAction, ApplyAction, TagRule } from "./types.js";
@@ -120,6 +121,20 @@ export function applyContactRule(options: ApplyRuleOptions): ApplyRuleResult {
       for (const slug of willAdd) {
         addContactTag(contact.id, slug);
       }
+      const payload = {
+        ruleId: rule.id,
+        contactId: contact.id,
+        added: willAdd,
+        removed: willRemove,
+        cause: {
+          evaluation: options.cause.evaluation,
+          triggerType: options.cause.triggerType ?? null,
+        },
+        cascadeDepth,
+        emittedAt: Date.now(),
+      };
+      nats.emit("ravi.tags.rule.applied", payload).catch(() => {});
+      nats.emit(`ravi.contacts.${contact.id}.tags.rule.applied`, payload).catch(() => {});
     }
 
     applied.push({

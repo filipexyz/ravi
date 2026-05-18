@@ -6,6 +6,7 @@ import {
   evaluateRulesForContact,
   loadTagRulesFromDirectory,
   parseTagRuleFromString,
+  runTagRulesForContact,
   type ApplyRuleResult,
   type TagRule,
 } from "../../tag-rules/index.js";
@@ -105,6 +106,55 @@ export class TagRulesCommands {
       }
     }
     if (!ok) process.exitCode = 1;
+    return payload;
+  }
+
+  @Command({ name: "explain", description: "Explain which rules currently match a target asset (dry-run)" })
+  explain(
+    @Option({ flags: "--target <ref>", description: "Target (e.g. contact:<id>)" }) target?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ): unknown {
+    if (!target) fail("Provide --target contact:<id>");
+    const contactRef = resolveContactRef(target);
+    const result = runTagRulesForContact({
+      contactRef,
+      cause: { evaluation: "manual", triggerType: "cli-explain" },
+      apply: false,
+    });
+    const payload = {
+      target: { type: "contact", id: contactRef },
+      rules: result.rules,
+      loaded: { errors: result.loaded.errors, count: result.loaded.rules.length },
+      outcomes: result.outcomes.map((outcome) => ({
+        ruleId: outcome.ruleId,
+        matched: outcome.matched,
+        wouldApply: outcome.applied
+          .filter((entry) => !entry.noop)
+          .map((entry) => ({ added: entry.added, removed: entry.removed })),
+        skipped: outcome.skipped,
+        trace: outcome.trace,
+      })),
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`target=contact:${contactRef}`);
+    console.log(
+      `rules total=${payload.rules.total} matched=${payload.rules.matched} would-apply=${payload.rules.appliedActions}`,
+    );
+    for (const outcome of payload.outcomes) {
+      const status = outcome.matched ? "MATCH" : "miss";
+      const summary = outcome.wouldApply
+        .map((entry) => `+[${entry.added.join(",")}] -[${entry.removed.join(",")}]`)
+        .join(" ");
+      console.log(`  [${status}] ${outcome.ruleId.padEnd(28)} ${summary}`);
+      if (outcome.skipped.length > 0) {
+        for (const skip of outcome.skipped) {
+          console.log(`    ! skipped ${skip.reason}`);
+        }
+      }
+    }
     return payload;
   }
 

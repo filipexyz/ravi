@@ -463,6 +463,37 @@ describe("tag-rules apply", () => {
     expect(refreshed.tags.filter((tag) => tag === "loop:tag")).toHaveLength(1);
   });
 
+  it("explain CLI surface returns matched and would-apply traces without mutating tags", () => {
+    upsertContact("5511990008888", "Explain", "allowed", "manual");
+    addContactTag("5511990008888", "lifecycle:new");
+    writeRule({
+      id: "explain-target",
+      scope: "contact",
+      enabled: true,
+      priority: 0,
+      conditions: [{ kind: "has-tag", tag: "lifecycle:new" }],
+      apply: [
+        {
+          target: "contact",
+          tag: "lifecycle:qualified",
+          removeTag: "lifecycle:new",
+          when: "matched",
+        },
+      ],
+      evaluation: { reactive: true, cron: null },
+    } as TagRule);
+
+    const explained = runTagRulesForContact({
+      contactRef: getContact("5511990008888")!.id,
+      cause: { evaluation: "manual", triggerType: "cli-explain" },
+      apply: false,
+    });
+    expect(explained.rules.matched).toBe(1);
+    expect(explained.outcomes[0]!.applied[0]!.added).toEqual(["lifecycle:qualified"]);
+    expect(getContact("5511990008888")!.tags).toContain("lifecycle:new");
+    expect(getContact("5511990008888")!.tags).not.toContain("lifecycle:qualified");
+  });
+
   it("when:not-matched applies removals when conditions fail", () => {
     upsertContact("5511990004444", "Reverse", "allowed", "manual");
     addContactTag("5511990004444", "temperature:hot");
