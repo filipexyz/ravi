@@ -77,6 +77,39 @@ describe("tag-rules loader", () => {
     expect(result.rules.map((entry) => entry.rule.id)).toEqual(["first", "alpha", "beta"]);
   });
 
+  it("rejects rules with conditions or apply targets that mismatch the scope", () => {
+    writeRule(
+      {
+        id: "bad-scope-condition",
+        scope: "contact",
+        enabled: true,
+        priority: 0,
+        conditions: [{ kind: "any-message-text-matches", pattern: "foo" } as unknown as never],
+        apply: [{ target: "contact", tag: "x", when: "matched" }],
+        evaluation: { reactive: true, cron: null },
+      } as TagRule,
+      "bad-scope-condition.json",
+    );
+    writeRule(
+      {
+        id: "bad-target",
+        scope: "chat",
+        enabled: true,
+        priority: 0,
+        conditions: [{ kind: "message-count", operator: ">=", value: 1 }],
+        apply: [{ target: "contact", tag: "x", when: "matched" }],
+        evaluation: { reactive: true, cron: null },
+      } as TagRule,
+      "bad-target.json",
+    );
+
+    const result = loadTagRulesFromDirectory();
+    const errors = result.errors.map((entry) => entry.error).join("\n");
+    expect(errors).toContain("not valid for scope 'contact'");
+    expect(errors).toContain("does not match rule scope 'chat'");
+    expect(result.rules.map((entry) => entry.rule.id)).toEqual([]);
+  });
+
   it("rejects duplicate ids and reports errors without breaking other rules", () => {
     writeRule(
       {

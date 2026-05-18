@@ -77,6 +77,26 @@ const ContactConditionSchema = z.discriminatedUnion("kind", [
 ]);
 export type ContactCondition = z.infer<typeof ContactConditionSchema>;
 
+const ALLOWED_CONDITION_KINDS_FOR_SCOPE: Record<"contact" | "chat", Set<string>> = {
+  contact: new Set([
+    "has-tag",
+    "not-has-tag",
+    "has-any-tag",
+    "has-all-tags",
+    "last-inbound-age",
+    "status",
+    "has-chat-with",
+  ]),
+  chat: new Set([
+    "any-message-text-matches",
+    "message-count",
+    "last-inbound-age",
+    "chat-type",
+    "has-tag",
+    "not-has-tag",
+  ]),
+};
+
 const ApplyActionSchema = z.object({
   target: z.enum(["contact", "chat"]),
   targetMode: z.enum(["all", "matched"]).optional(),
@@ -107,12 +127,30 @@ export const TagRuleSchema = z
     metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .superRefine((rule, ctx) => {
-    for (const action of rule.apply) {
+    for (const [index, action] of rule.apply.entries()) {
       if (!action.tag && !action.removeTag) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Each apply action MUST set at least one of 'tag' or 'removeTag'",
-          path: ["apply"],
+          path: ["apply", index],
+        });
+      }
+      if (action.target !== rule.scope) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Apply target '${action.target}' does not match rule scope '${rule.scope}'`,
+          path: ["apply", index, "target"],
+        });
+      }
+    }
+    const allowed = ALLOWED_CONDITION_KINDS_FOR_SCOPE[rule.scope];
+    for (const [index, condition] of rule.conditions.entries()) {
+      const kind = (condition as { kind?: string }).kind;
+      if (!kind || !allowed.has(kind)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Condition kind '${kind ?? "unknown"}' is not valid for scope '${rule.scope}'`,
+          path: ["conditions", index, "kind"],
         });
       }
     }
@@ -134,7 +172,7 @@ export interface RuleEvaluationCause {
 
 export interface AppliedTagAction {
   ruleId: string;
-  target: { type: "contact"; id: string };
+  target: { type: "contact" | "chat"; id: string };
   added: string[];
   removed: string[];
   noop: boolean;

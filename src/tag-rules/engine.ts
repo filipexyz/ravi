@@ -133,6 +133,7 @@ export function applyContactRule(options: ApplyRuleOptions): ApplyRuleResult {
       }
       const payload = {
         ruleId: rule.id,
+        target: { type: "contact" as const, id: contact.id },
         contactId: contact.id,
         added: willAdd,
         removed: willRemove,
@@ -270,6 +271,7 @@ export function applyChatRule(options: ApplyChatRuleOptions): ApplyRuleResult {
       }
       const payload = {
         ruleId: rule.id,
+        target: { type: "chat" as const, id: chatId },
         chatId,
         added: willAdd,
         removed: willRemove,
@@ -283,7 +285,7 @@ export function applyChatRule(options: ApplyChatRuleOptions): ApplyRuleResult {
 
     applied.push({
       ruleId: rule.id,
-      target: { type: "contact", id: chatId },
+      target: { type: "chat", id: chatId },
       added: willAdd,
       removed: willRemove,
       noop,
