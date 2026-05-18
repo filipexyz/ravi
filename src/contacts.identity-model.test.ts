@@ -1274,6 +1274,66 @@ describe("contacts identity graph schema", () => {
     });
   });
 
+  it("resolves displayName via message pushName, participant fallback, and overrides raw IDs", () => {
+    const lidChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformChatId: "238289734901889@lid",
+      chatType: "dm",
+      title: "238289734901889@lid",
+      rawProvenance: { source: "test" },
+    });
+    dbUpsertChatMessage({
+      chatId: lidChat.id,
+      channel: "whatsapp",
+      instanceId: "sde",
+      providerMessageId: "wamid-pushname-1",
+      rawChatId: "238289734901889@lid",
+      rawSenderId: "238289734901889@lid",
+      normalizedSenderId: "lid:238289734901889",
+      actorType: "unknown",
+      messageType: "text",
+      content: { type: "text", text: "oi" },
+      rawProvenance: { source: "test", rawPayload: { pushName: "Raquel" } },
+      providerTimestamp: 1_700_000_001_000,
+      ingestedAt: 1_700_000_001_100,
+    });
+
+    const orphanChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformChatId: "238289734901890@lid",
+      chatType: "dm",
+      title: "238289734901890@lid",
+      rawProvenance: { source: "test" },
+    });
+    dbUpsertChatParticipant({
+      chatId: orphanChat.id,
+      rawPlatformUserId: "238289734901890@lid",
+      normalizedPlatformUserId: "lid:238289734901890",
+      role: "member",
+      source: "import",
+      metadata: { displayName: "Pedro" },
+    });
+
+    const applied = backfillInboundContacts({
+      instanceId: "sde",
+      mode: "discovered",
+      apply: true,
+    });
+    expect(applied.totals.contactsCreated).toBe(2);
+
+    const lidItem = applied.items.find((item) => item.chatId === lidChat.id);
+    expect(lidItem?.action).toBe("create_contact");
+    const lidContact = getContact(lidItem!.contactId!);
+    expect(lidContact?.name).toBe("Raquel");
+
+    const orphanItem = applied.items.find((item) => item.chatId === orphanChat.id);
+    expect(orphanItem?.action).toBe("create_contact");
+    const orphanContact = getContact(orphanItem!.contactId!);
+    expect(orphanContact?.name).toBe("Pedro");
+  });
+
   it("preserves explicit contact policy while still linking inbound platform identity", () => {
     upsertContact("5511999900002", "Cliente Permitido", "allowed", "manual");
     const existing = getContact("5511999900002");

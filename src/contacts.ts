@@ -6317,6 +6317,7 @@ interface ChatMessageBackfillRow {
   normalized_sender_id: string | null;
   provider_timestamp: number | null;
   ingested_at: number;
+  raw_provenance_json: string | null;
 }
 
 interface BackfillInstanceRow {
@@ -6436,7 +6437,8 @@ function getBackfillFirstMessage(database: Database, chatId: string): ChatMessag
   const row = database
     .prepare(
       `
-      SELECT id, provider_message_id, raw_sender_id, normalized_sender_id, provider_timestamp, ingested_at
+      SELECT id, provider_message_id, raw_sender_id, normalized_sender_id, provider_timestamp, ingested_at,
+             raw_provenance_json
       FROM chat_messages
       WHERE chat_id = ?
         AND agent_id IS NULL
@@ -6447,6 +6449,112 @@ function getBackfillFirstMessage(database: Database, chatId: string): ChatMessag
     )
     .get(chatId) as ChatMessageBackfillRow | undefined;
   return row ?? null;
+}
+
+function cleanDisplayNameCandidate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (looksLikeRawPlatformIdentifier(trimmed)) return null;
+  return trimmed;
+}
+
+function looksLikeRawPlatformIdentifier(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed.includes("@")) return true;
+  if (/^lid:/i.test(trimmed)) return true;
+  if (/^\d{6,}$/.test(trimmed)) return true;
+  return false;
+}
+
+function extractPushNameFromProvenance(provenanceJson: string | null): string | null {
+  if (!provenanceJson) return null;
+  const parsed = parseJsonObject(provenanceJson);
+  if (!parsed) return null;
+  const direct = cleanDisplayNameCandidate(parsed.pushName);
+  if (direct) return direct;
+  const rawPayload = parsed.rawPayload;
+  if (rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload)) {
+    const fromRaw = cleanDisplayNameCandidate((rawPayload as Record<string, unknown>).pushName);
+    if (fromRaw) return fromRaw;
+    const notify = cleanDisplayNameCandidate((rawPayload as Record<string, unknown>).notify);
+    if (notify) return notify;
+  }
+  return null;
+}
+
+function getBackfillPushNameFromMessages(database: Database, chatId: string): string | null {
+  if (!sqliteTableExists(database, "chat_messages")) return null;
+  const rows = database
+    .prepare(
+      `
+      SELECT raw_provenance_json
+      FROM chat_messages
+      WHERE chat_id = ?
+        AND agent_id IS NULL
+        AND (actor_type IS NULL OR actor_type <> 'agent')
+        AND raw_provenance_json IS NOT NULL
+      ORDER BY COALESCE(provider_timestamp, ingested_at), ingested_at, id
+      LIMIT 25
+    `,
+    )
+    .all(chatId) as Array<{ raw_provenance_json: string | null }>;
+  for (const row of rows) {
+    const name = extractPushNameFromProvenance(row.raw_provenance_json);
+    if (name) return name;
+  }
+  return null;
+}
+
+function getBackfillParticipantDisplayName(
+  database: Database,
+  chatId: string,
+  _senderCandidates: string[],
+): string | null {
+  if (!sqliteTableExists(database, "chat_participants")) return null;
+  const rows = database
+    .prepare(
+      `
+      SELECT metadata_json, source
+      FROM chat_participants
+      WHERE chat_id = ?
+        AND agent_id IS NULL
+        AND (role IS NULL OR role <> 'agent')
+        AND metadata_json IS NOT NULL
+      ORDER BY
+        CASE WHEN source = 'inbound_message' THEN 0
+             WHEN source = 'inbound_contact_backfill' THEN 2
+             ELSE 1
+        END,
+        last_seen_at DESC,
+        id
+    `,
+    )
+    .all(chatId) as Array<{ metadata_json: string | null; source: string | null }>;
+  for (const row of rows) {
+    const parsed = parseJsonObject(row.metadata_json);
+    if (!parsed) continue;
+    const name = cleanDisplayNameCandidate(parsed.displayName);
+    if (name) return name;
+  }
+  return null;
+}
+
+function resolveBackfillDisplayName(
+  database: Database,
+  chatId: string,
+  fallbackTitle: string | null,
+  senderCandidates: string[],
+  message: ChatMessageBackfillRow | null,
+): string | null {
+  const fromMessage = extractPushNameFromProvenance(message?.raw_provenance_json ?? null);
+  if (fromMessage) return fromMessage;
+  const fromScan = getBackfillPushNameFromMessages(database, chatId);
+  if (fromScan) return fromScan;
+  const fromParticipants = getBackfillParticipantDisplayName(database, chatId, senderCandidates);
+  if (fromParticipants) return fromParticipants;
+  return cleanDisplayNameCandidate(fallbackTitle);
 }
 
 function findBackfillChatForPending(
@@ -6521,6 +6629,12 @@ function candidateFromChatRow(database: Database, row: ChatBackfillRow): Inbound
   const normalizedSenderId = normalizePhone(contactIdentity);
   const platformSenderId = (message?.raw_sender_id || row.platform_chat_id || contactIdentity).trim();
   const channel = normalizePlatformIdentityChannel(row.channel);
+  const senderCandidates = backfillSenderCandidates({
+    platformSenderId,
+    normalizedSenderId,
+    contactIdentity,
+  });
+  const displayName = resolveBackfillDisplayName(database, row.id, row.title, senderCandidates, message);
   const key = `chat:${row.id}`;
   return {
     key,
@@ -6532,7 +6646,7 @@ function candidateFromChatRow(database: Database, row: ChatBackfillRow): Inbound
     platformSenderId,
     normalizedSenderId,
     contactIdentity,
-    displayName: row.title,
+    displayName,
     avatarUrl: row.avatar_url,
     providerMessageId: message?.provider_message_id ?? null,
     firstSeenAt: row.first_seen_at,
@@ -6562,6 +6676,14 @@ function candidateFromAccountPendingRow(
   const normalizedSenderId = normalizePhone(contactIdentity);
   const platformSenderId = (message?.raw_sender_id || chat?.platform_chat_id || row.phone).trim();
   const key = chat?.id ? `chat:${chat.id}` : `pending:${row.account_id}:${normalizedSenderId || contactIdentity}`;
+  const senderCandidates = backfillSenderCandidates({
+    platformSenderId,
+    normalizedSenderId,
+    contactIdentity,
+  });
+  const displayName =
+    cleanDisplayNameCandidate(row.name) ??
+    (database && chat ? resolveBackfillDisplayName(database, chat.id, chat.title, senderCandidates, message) : null);
   return {
     key,
     sources: ["account_pending"],
@@ -6572,7 +6694,7 @@ function candidateFromAccountPendingRow(
     platformSenderId,
     normalizedSenderId,
     contactIdentity,
-    displayName: row.name ?? chat?.title ?? null,
+    displayName,
     avatarUrl: chat?.avatar_url ?? null,
     providerMessageId: message?.provider_message_id ?? null,
     firstSeenAt: chat?.first_seen_at ?? row.created_at,
@@ -6991,6 +7113,20 @@ export function backfillInboundContacts(input: BackfillInboundContactsInput = {}
           totals.eligible -= 1;
           items.push(item);
           continue;
+        }
+
+        if (
+          candidate.displayName &&
+          intake.contact.name &&
+          looksLikeRawPlatformIdentifier(intake.contact.name) &&
+          !looksLikeRawPlatformIdentifier(candidate.displayName)
+        ) {
+          upsertCanonicalContactRecord(contactDatabase, {
+            id: intake.contact.id,
+            displayName: candidate.displayName,
+            coalesceDisplayName: false,
+          });
+          intake.contact = getCanonicalCompatContactById(contactDatabase, intake.contact.id) ?? intake.contact;
         }
 
         const platformIdentityId = intake.platformIdentity?.ownerType === "contact" ? intake.platformIdentity.id : null;
