@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { getRaviStateDir } from "../utils/paths.js";
+import { executeWrite } from "../db/write-retry.js";
+import { reconcileColumns } from "../db/reconcile-columns.js";
 import type {
   AddInsightCommentInput,
   CreateInsightInput,
@@ -118,61 +120,64 @@ export function closeInsightsDb(): void {
   insightDbState.dbPath = null;
 }
 
+const SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS insights (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    detail TEXT,
+    confidence TEXT NOT NULL,
+    importance TEXT NOT NULL,
+    author_kind TEXT NOT NULL,
+    author_name TEXT NOT NULL,
+    author_agent_id TEXT,
+    author_session_key TEXT,
+    author_session_name TEXT,
+    author_context_id TEXT,
+    origin_kind TEXT NOT NULL,
+    origin_context_id TEXT,
+    author_json TEXT NOT NULL,
+    origin_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS insight_links (
+    id TEXT PRIMARY KEY,
+    insight_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    label TEXT,
+    metadata_json TEXT,
+    created_by_json TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(insight_id, target_type, target_id),
+    FOREIGN KEY (insight_id) REFERENCES insights(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS insight_comments (
+    id TEXT PRIMARY KEY,
+    insight_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    author_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (insight_id) REFERENCES insights(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_insights_updated_at ON insights(updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_insights_kind ON insights(kind, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_insights_author_agent ON insights(author_agent_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_insights_author_session ON insights(author_session_name, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_insights_origin_context ON insights(origin_context_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_insight_links_target ON insight_links(target_type, target_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_insight_links_insight ON insight_links(insight_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_insight_comments_insight ON insight_comments(insight_id, created_at DESC);
+`;
+
 function initializeSchema(db: Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS insights (
-      id TEXT PRIMARY KEY,
-      kind TEXT NOT NULL,
-      summary TEXT NOT NULL,
-      detail TEXT,
-      confidence TEXT NOT NULL,
-      importance TEXT NOT NULL,
-      author_kind TEXT NOT NULL,
-      author_name TEXT NOT NULL,
-      author_agent_id TEXT,
-      author_session_key TEXT,
-      author_session_name TEXT,
-      author_context_id TEXT,
-      origin_kind TEXT NOT NULL,
-      origin_context_id TEXT,
-      author_json TEXT NOT NULL,
-      origin_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS insight_links (
-      id TEXT PRIMARY KEY,
-      insight_id TEXT NOT NULL,
-      target_type TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      label TEXT,
-      metadata_json TEXT,
-      created_by_json TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      UNIQUE(insight_id, target_type, target_id),
-      FOREIGN KEY (insight_id) REFERENCES insights(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS insight_comments (
-      id TEXT PRIMARY KEY,
-      insight_id TEXT NOT NULL,
-      body TEXT NOT NULL,
-      author_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (insight_id) REFERENCES insights(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_insights_updated_at ON insights(updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_insights_kind ON insights(kind, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_insights_author_agent ON insights(author_agent_id, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_insights_author_session ON insights(author_session_name, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_insights_origin_context ON insights(origin_context_id, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_insight_links_target ON insight_links(target_type, target_id, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_insight_links_insight ON insight_links(insight_id, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_insight_comments_insight ON insight_comments(insight_id, created_at DESC);
-  `);
+  db.exec(SCHEMA_SQL);
+  reconcileColumns(db, SCHEMA_SQL, { label: "insights-db" });
 }
 
 function parseRecord<T extends object>(value: string | null): T | undefined {
@@ -304,8 +309,10 @@ export function dbCreateInsight(input: CreateInsightInput): InsightDetail {
   const confidence = input.confidence ?? "medium";
   const importance = input.importance ?? "normal";
 
-  const transaction = db.transaction(() => {
-    db.prepare(`
+  executeWrite(
+    db,
+    () => {
+      db.prepare(`
       INSERT INTO insights (
         id,
         kind,
@@ -327,28 +334,28 @@ export function dbCreateInsight(input: CreateInsightInput): InsightDetail {
         updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id,
-      kind,
-      summary,
-      detail,
-      confidence,
-      importance,
-      input.author.kind,
-      input.author.name,
-      input.author.agentId ?? null,
-      input.author.sessionKey ?? null,
-      input.author.sessionName ?? null,
-      input.author.contextId ?? null,
-      input.origin.kind,
-      input.origin.contextId ?? null,
-      JSON.stringify(input.author),
-      JSON.stringify(input.origin),
-      now,
-      now,
-    );
+        id,
+        kind,
+        summary,
+        detail,
+        confidence,
+        importance,
+        input.author.kind,
+        input.author.name,
+        input.author.agentId ?? null,
+        input.author.sessionKey ?? null,
+        input.author.sessionName ?? null,
+        input.author.contextId ?? null,
+        input.origin.kind,
+        input.origin.contextId ?? null,
+        JSON.stringify(input.author),
+        JSON.stringify(input.origin),
+        now,
+        now,
+      );
 
-    for (const link of input.links ?? []) {
-      db.prepare(`
+      for (const link of input.links ?? []) {
+        db.prepare(`
         INSERT INTO insight_links (
           id,
           insight_id,
@@ -361,20 +368,20 @@ export function dbCreateInsight(input: CreateInsightInput): InsightDetail {
           updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        `inl-${randomUUID().slice(0, 10)}`,
-        id,
-        link.targetType,
-        link.targetId,
-        trimOrNull(link.label),
-        stringifyRecord(link.metadata),
-        stringifyActor(link.createdBy ?? input.author),
-        now,
-        now,
-      );
-    }
-  });
-
-  transaction();
+          `inl-${randomUUID().slice(0, 10)}`,
+          id,
+          link.targetType,
+          link.targetId,
+          trimOrNull(link.label),
+          stringifyRecord(link.metadata),
+          stringifyActor(link.createdBy ?? input.author),
+          now,
+          now,
+        );
+      }
+    },
+    { label: "insights:createInsight" },
+  );
   return dbGetInsight(id)!;
 }
 
