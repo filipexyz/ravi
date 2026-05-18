@@ -53,6 +53,7 @@ Suggested setting:
 
 ```text
 contact_intake_mode = off | discovered | pending
+default_contact_tags = string[]
 ```
 
 Semantics:
@@ -60,10 +61,28 @@ Semantics:
 - `off`: Ravi stores chat/message provenance but does not auto-create contacts.
 - `discovered`: Ravi auto-creates or links contacts with `contact_policies.status='discovered'`.
 - `pending`: Ravi auto-creates or links contacts with `contact_policies.status='pending'`.
+- `default_contact_tags`: list of canonical tag slugs that MUST be attached to any contact created for the first time through this instance's intake (runtime or backfill). Tags MUST NOT be reapplied on subsequent inbound events for the same contact.
 
 `contact_intake_mode` MUST NOT imply permission to auto-reply. Reply permission remains governed by route, policy, pairing, allowed agents, opt-out, and runtime settings.
 
+`default_contact_tags` MUST be expressed as canonical slugs. Implementations SHOULD trim, deduplicate, and normalize entries before storing.
+
 The default for a CRM-enabled/business intake instance SHOULD be `discovered`. The global default MAY remain conservative until migration has been validated.
+
+## Default Contact Tags
+
+Default contact tags enable a fixed policy hook at the moment a canonical contact is first created. They give downstream consumers (observers, CRM workers, reading lists) a stable selector to bind to without inspecting business-specific metadata.
+
+Rules:
+
+- Default tags MUST apply only when intake creates a new canonical `contacts` row (`createdContact=true`). Existing contacts MUST NOT receive instance default tags retroactively.
+- Backfill MUST honor the same rule: only `create_contact` actions apply default tags. `link_existing` and `already_linked` MUST NOT add or remove default tags.
+- Tag application MUST persist via the canonical tag binding pipeline used by `ravi contacts tag`, producing a `canonical_tag_bindings` row and mirroring into `contact_policies.tags_json`.
+- Each application MUST emit exactly one `profile.tag_added` event in `contact_events` per intake decision, carrying the tag list, instance id, and a stable `reason` identifier (e.g. `instance_default_contact_tags`).
+- Default tag failures (invalid slug, unavailable tag definition) MUST NOT block contact creation. The intake transaction MUST proceed without applying that specific tag and SHOULD surface a warning.
+- Operators MAY change default tags at any time. Changes MUST NOT trigger re-tagging of existing contacts. To retag, operators MUST run an explicit batch via `ravi contacts tag <id> <slug>`.
+
+Default contact tags SHOULD be used as the bridge between intake and observer rules: an instance tags every new contact with a state slug (for example `new-contact`), and observer rules with `--scope tag --tag-target contact --tag new-contact` automatically attach observers. State transitions are then expressed by adding/removing tags on the contact.
 
 ## Inbound Flow
 
@@ -268,3 +287,5 @@ Backfill SHOULD:
 - Existing blocked/allowed/opt-out policies survive automatic intake.
 - CRM enrichment can run later without being required for contact capture.
 - Raw provider ids remain available as provenance without becoming the product model.
+- An instance with `default_contact_tags` applies those tags exactly once, at first canonical contact creation, with a `profile.tag_added` audit event tracking the cause.
+- Repeating intake for the same contact does not re-add or remove default tags.

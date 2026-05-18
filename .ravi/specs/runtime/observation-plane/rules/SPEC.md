@@ -138,6 +138,20 @@ Inherited tags MUST be explicit. A project tag MUST NOT automatically apply to e
 
 Tag-driven rules MUST be auditable: operators must be able to explain which tag caused an observer binding.
 
+### Contact Tag Resolution
+
+When a rule targets `contact` tags, the Observation Plane MUST resolve which contacts belong to a source session before evaluating the tag set:
+
+- Contact resolution MUST come from durable session metadata, such as `session_participants` rows with `owner_type='contact'`.
+- A source session MAY carry zero or many contact ids. The descriptor MUST include all distinct contact ids it can resolve.
+- The descriptor MUST collect tags for every resolved contact id and include them in the tag set used by `matchRule`.
+- Contact tag matches MUST NOT be marked `inherited` unless the rule explicitly opts in. Direct attachment is the default.
+- A rule that targets `contact` with no resolved contacts MUST NOT match.
+
+Contact-tag resolution MUST stay deterministic per source session: the same `session_participants` state and the same `canonical_tag_bindings` state MUST always produce the same matching set, regardless of read order.
+
+Operators changing a contact's tags MUST be able to observe the effect via `ravi observers rules explain --session <session>`, which MUST expose resolved contact ids and the contact-scoped tag set used during matching.
+
 ## Rule Priority and Conflicts
 
 Rules are evaluated by priority ascending, then stable id ascending.
@@ -255,9 +269,10 @@ ravi observers refresh <session>
 - An agent-scoped rule can attach observers to every new session of that agent.
 - A task-profile rule can attach a task reporter observer only to matching task sessions.
 - A tag rule can attach an observer when a source session/task/agent has the configured tag.
+- A contact-target tag rule attaches an observer when a session participant contact carries the configured tag, and detaches future bindings when the tag is removed (existing bindings persist until explicit reconciliation).
 - Removing or disabling a rule does not silently destroy existing observer state.
 - Rule validation catches unsafe permission grants such as `observe` mode with task mutation tools.
-- Rule explain can answer: "why did this observer appear on this session?"
+- Rule explain can answer: "why did this observer appear on this session?" and surfaces the resolved contact ids when a contact tag rule matched.
 
 ## Known Failure Modes
 

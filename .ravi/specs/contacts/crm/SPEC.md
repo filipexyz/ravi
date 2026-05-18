@@ -1037,6 +1037,19 @@ Contact profile integration:
 ravi contacts profile <contact> --include-crm --json
 ```
 
+## Tag-Driven Observer Orchestration
+
+Contact tags double as the orchestration channel between intake, CRM workers, and observers.
+
+- Instances MAY declare `default_contact_tags` so every newly captured contact lands in a known state (see `contacts/identity-graph/inbound-contact-intake`).
+- Observer rules MAY target those tags with `--scope tag --tag-target contact --tag <slug>` so the right observer is attached as soon as a session involves the tagged contact (see `runtime/observation-plane/rules`).
+- Observers and CRM workers MUST express state transitions by attaching/detaching tags (`ravi contacts tag/untag`) rather than overloading `contact_policies.status` or `crm_contact_profiles.lifecycle`.
+- Tags used for orchestration SHOULD be defined with clear slugs and labels via `ravi tags define` and SHOULD have a documented lifecycle (which tag follows which) so the state machine is auditable.
+- A tag transition MUST emit a `profile.tag_added` or equivalent `profile.tag_removed` event in `contact_events` so the timeline preserves orchestration history.
+- Old observer bindings created by a previous tag MUST persist until explicit reconciliation. Operators MUST be able to detach stale observers via `ravi observers ...` without manual SQL.
+
+This pattern keeps CRM lifecycle, access policy, and observer orchestration separate while letting contact tags coordinate the work loop.
+
 ## Acceptance Criteria
 
 - CRM lifecycle does not change contact access policy.
@@ -1047,3 +1060,4 @@ ravi contacts profile <contact> --include-crm --json
 - `ravi crm next` can answer "who needs action now?"
 - `ravi contacts profile` can show CRM summary without scanning all raw messages.
 - Weak agent observations enter as proposed facts or notes, not confirmed CRM state.
+- Tag-driven orchestration: changing a contact's tag visibly changes which observer rules match the contact's sessions, with `ravi observers rules explain` surfacing the cause.

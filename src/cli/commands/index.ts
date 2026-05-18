@@ -50,6 +50,7 @@ export * from "./skill-gates.js";
 export * from "./skills.js";
 export * from "./specs.js";
 export * from "./stickers.js";
+export * from "./tag-rules.js";
 export * from "./tags.js";
 export * from "./tasks-automations.js";
 export * from "./tasks-deps.js";

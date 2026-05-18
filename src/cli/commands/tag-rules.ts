@@ -1,0 +1,161 @@
+import "reflect-metadata";
+import { readFileSync, statSync } from "node:fs";
+import { Arg, Command, Group, Option } from "../decorators.js";
+import { fail } from "../context.js";
+import {
+  evaluateRulesForContact,
+  loadTagRulesFromDirectory,
+  parseTagRuleFromString,
+  type ApplyRuleResult,
+  type TagRule,
+} from "../../tag-rules/index.js";
+
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function resolveContactRef(target: string): string {
+  const cleaned = target.trim();
+  if (!cleaned) fail("Target must be a non-empty value");
+  if (cleaned.startsWith("contact:")) return cleaned.slice("contact:".length);
+  return cleaned;
+}
+
+function summarizeRule(rule: TagRule, source?: string): Record<string, unknown> {
+  return {
+    id: rule.id,
+    enabled: rule.enabled,
+    scope: rule.scope,
+    priority: rule.priority,
+    conditions: rule.conditions.length,
+    apply: rule.apply.length,
+    description: rule.description ?? null,
+    source: source ?? null,
+  };
+}
+
+function summarizeOutcome(outcome: ApplyRuleResult): Record<string, unknown> {
+  return {
+    ruleId: outcome.ruleId,
+    matched: outcome.matched,
+    applied: outcome.applied.map((entry) => ({
+      added: entry.added,
+      removed: entry.removed,
+      noop: entry.noop,
+    })),
+    skipped: outcome.skipped,
+  };
+}
+
+@Group({
+  name: "tag-rules",
+  description: "Deterministic tag classification rules",
+  scope: "admin",
+})
+export class TagRulesCommands {
+  @Command({ name: "list", description: "List loaded tag rules from .ravi/tag-rules" })
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean): unknown {
+    const loaded = loadTagRulesFromDirectory();
+    const summary = loaded.rules.map((entry) => summarizeRule(entry.rule, entry.source));
+    if (asJson) {
+      printJson({ rules: summary, errors: loaded.errors });
+      return { rules: summary, errors: loaded.errors };
+    }
+    console.log(`Loaded ${summary.length} rule(s)${loaded.errors.length ? `, ${loaded.errors.length} error(s)` : ""}`);
+    for (const rule of summary) {
+      console.log(`  ${rule.id.padEnd(28)} scope=${rule.scope} priority=${rule.priority} apply=${rule.apply}`);
+    }
+    for (const error of loaded.errors) {
+      console.log(`  ! ${error.source}: ${error.error}`);
+    }
+    return { rules: summary, errors: loaded.errors };
+  }
+
+  @Command({ name: "show", description: "Show a single rule definition" })
+  show(
+    @Arg("id", { description: "Rule id" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ): unknown {
+    const loaded = loadTagRulesFromDirectory();
+    const entry = loaded.rules.find((candidate) => candidate.rule.id === id);
+    if (!entry) fail(`Rule not found: ${id}`);
+    if (asJson) {
+      printJson({ rule: entry.rule, source: entry.source });
+      return { rule: entry.rule, source: entry.source };
+    }
+    console.log(JSON.stringify(entry.rule, null, 2));
+    return { rule: entry.rule, source: entry.source };
+  }
+
+  @Command({ name: "validate", description: "Validate all rule files without applying" })
+  validate(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean): unknown {
+    const loaded = loadTagRulesFromDirectory();
+    const ok = loaded.errors.length === 0;
+    const payload = {
+      status: ok ? ("ok" as const) : ("error" as const),
+      ruleCount: loaded.rules.length,
+      errors: loaded.errors,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`status=${payload.status} rules=${payload.ruleCount} errors=${payload.errors.length}`);
+      for (const error of loaded.errors) {
+        console.log(`  ! ${error.source}: ${error.error}`);
+      }
+    }
+    if (!ok) process.exitCode = 1;
+    return payload;
+  }
+
+  @Command({ name: "evaluate", description: "Evaluate a rule against a target asset" })
+  evaluate(
+    @Arg("rule-id", { description: "Rule id to evaluate" }) ruleId: string,
+    @Option({ flags: "--target <ref>", description: "Target (e.g. contact:<id>)" }) target?: string,
+    @Option({ flags: "--apply", description: "Actually apply tag changes (default: dry-run)" }) applyChanges?: boolean,
+    @Option({ flags: "--file <path>", description: "Load rule from a file path instead of the registry" })
+    file?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ): unknown {
+    if (!target) fail("Provide --target contact:<id>");
+    const contactRef = resolveContactRef(target);
+
+    let rule: TagRule | null = null;
+    if (file) {
+      try {
+        const stat = statSync(file);
+        if (!stat.isFile()) fail(`Rule file is not a regular file: ${file}`);
+      } catch (error) {
+        fail(`Cannot read rule file: ${(error as Error).message}`);
+      }
+      rule = parseTagRuleFromString(readFileSync(file, "utf8"));
+    } else {
+      const loaded = loadTagRulesFromDirectory();
+      const entry = loaded.rules.find((candidate) => candidate.rule.id === ruleId);
+      if (!entry) fail(`Rule not found in registry: ${ruleId}`);
+      rule = entry.rule;
+    }
+    if (!rule) fail(`Rule could not be resolved: ${ruleId}`);
+
+    const outcomes = evaluateRulesForContact({
+      rules: [rule],
+      contactRef,
+      cause: { evaluation: "manual", triggerType: "cli" },
+      apply: Boolean(applyChanges),
+    });
+
+    const payload = {
+      ruleId: rule.id,
+      target: { type: "contact", id: contactRef },
+      apply: Boolean(applyChanges),
+      outcomes: outcomes.map(summarizeOutcome),
+      traces: outcomes.map((outcome) => ({ ruleId: outcome.ruleId, trace: outcome.trace })),
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(JSON.stringify(payload, null, 2));
+    }
+    return payload;
+  }
+}
