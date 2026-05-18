@@ -3,7 +3,7 @@
 // Drift is detected by `ravi sdk client check` (CI).
 
 import type { Transport } from "./transport/types.js";
-import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsPublishReturn, ArtifactsReleaseActivateReturn, ArtifactsRestoreReturn, ArtifactsShowReturn, ArtifactsSnapshotReturn, ArtifactsUpdateReturn, ArtifactsVersionReturn, ArtifactsVersionsReturn, AudioGenerateReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ContactsActivityReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsGroupTagReturn, ContactsGroupUntagReturn, ContactsIdentityAddReturn, ContactsIdentityRemoveReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsMessagesReturn, ContactsMetadataListReturn, ContactsMetadataRemoveReturn, ContactsMetadataSetReturn, ContactsNoteReturn, ContactsPendingReturn, ContactsProfileReturn, ContactsRemoveReturn, ContactsSessionsReturn, ContactsSetReturn, ContactsTagReturn, ContactsTimelineReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CrmAccountCreateReturn, CrmAccountLinkContactReturn, CrmAccountReturn, CrmAccountShowReturn, CrmBoardReturn, CrmContactReturn, CrmContactSetReturn, CrmContactShowReturn, CrmContactsReturn, CrmFactConfirmReturn, CrmFactListReturn, CrmFactProposeReturn, CrmFactRejectReturn, CrmNextReturn, CrmOpportunityContactsReturn, CrmOpportunityCreateReturn, CrmOpportunityLinkContactReturn, CrmOpportunityMoveReturn, CrmOpportunityReturn, CrmOpportunityShowReturn, CrmTaskCreateReturn, CrmTaskDoneReturn, CrmTaskShowReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MediaSendReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PermissionsCheckReturn, PermissionsClearReturn, PermissionsGrantReturn, PermissionsInitReturn, PermissionsListReturn, PermissionsRevokeReturn, PermissionsSyncReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, ServiceStartReturn, ServiceTuiReturn, ServiceWaReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsDeleteReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetModelReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsTraceReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsInstallReturn, SkillsListReturn, SkillsShowReturn, SkillsSyncReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, VideoAnalyzeReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSettingsReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn } from "./types.js";
+import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsPublishReturn, ArtifactsReleaseActivateReturn, ArtifactsRestoreReturn, ArtifactsShowReturn, ArtifactsSnapshotReturn, ArtifactsUpdateReturn, ArtifactsVersionReturn, ArtifactsVersionsReturn, AudioGenerateReturn, ChatsListReturn, ChatsListsAddReturn, ChatsListsCreateReturn, ChatsListsDeltaReturn, ChatsListsListReturn, ChatsListsMarkReadReturn, ChatsListsMembersReturn, ChatsListsRemoveReturn, ChatsReadReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ContactsActivityReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBackfillReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsMessagesReturn, ContactsMetadataListReturn, ContactsMetadataRemoveReturn, ContactsMetadataSetReturn, ContactsNoteReturn, ContactsPendingReturn, ContactsProfileReturn, ContactsRemoveReturn, ContactsSessionsReturn, ContactsSetReturn, ContactsTagReturn, ContactsTimelineReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CrmAccountCreateReturn, CrmAccountLinkContactReturn, CrmAccountReturn, CrmAccountShowReturn, CrmBoardReturn, CrmContactReturn, CrmContactSetReturn, CrmContactShowReturn, CrmContactsReturn, CrmFactConfirmReturn, CrmFactListReturn, CrmFactProposeReturn, CrmFactRejectReturn, CrmNextReturn, CrmOpportunityContactsReturn, CrmOpportunityCreateReturn, CrmOpportunityLinkContactReturn, CrmOpportunityMoveReturn, CrmOpportunityReturn, CrmOpportunityShowReturn, CrmTaskCreateReturn, CrmTaskDoneReturn, CrmTaskShowReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MediaSendReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PermissionsCheckReturn, PermissionsClearReturn, PermissionsGrantReturn, PermissionsInitReturn, PermissionsListReturn, PermissionsRevokeReturn, PermissionsSyncReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, ServiceStartReturn, ServiceTuiReturn, ServiceWaReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsDeleteReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetModelReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsTraceReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsInstallReturn, SkillsListReturn, SkillsShowReturn, SkillsSyncReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, TagRulesEvaluateReturn, TagRulesExplainReturn, TagRulesListReturn, TagRulesShowReturn, TagRulesTickReturn, TagRulesValidateReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ThreadsBriefReturn, ThreadsCloseReturn, ThreadsCommentReturn, ThreadsCreateReturn, ThreadsEntriesReturn, ThreadsLinkReturn, ThreadsListReturn, ThreadsNoteReturn, ThreadsShowReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, VideoAnalyzeReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSettingsReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn } from "./types.js";
 
 /**
  * `RaviClient` exposes every registry command as a typed method.
@@ -396,6 +396,144 @@ export class RaviClient {
     }
   };
 
+  readonly chats = {
+    /** List recent canonical chats */
+    list: async (options?: {
+      agent?: string;
+      channel?: string;
+      contact?: string;
+      includeRaw?: boolean;
+      instance?: string;
+      limit?: string;
+      offset?: string;
+      query?: string;
+      type?: string;
+    }): Promise<ChatsListReturn> => {
+      return this.transport.call({
+        groupSegments: ["chats"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    lists: {
+      /** Add a chat to a reading list */
+      add: async (list: string, chat: string, options?: {
+        channel?: string;
+        includeRaw?: boolean;
+        instance?: string;
+        owner?: string;
+        priority?: string;
+        reason?: string;
+      }): Promise<ChatsListsAddReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "add",
+          body: { list, chat, ...(options ?? {}) },
+        });
+      },
+      /** Create or restore a chat reading list */
+      create: async (name: string, options?: {
+        description?: string;
+        mode?: string;
+        owner?: string;
+        visibility?: string;
+      }): Promise<ChatsListsCreateReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "create",
+          body: { name, ...(options ?? {}) },
+        });
+      },
+      /** Read what changed in a chat since this list reader cursor */
+      delta: async (list: string, chat: string, options?: {
+        channel?: string;
+        includeRaw?: boolean;
+        instance?: string;
+        limit?: string;
+        markRead?: boolean;
+        owner?: string;
+        reader?: string;
+      }): Promise<ChatsListsDeltaReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "delta",
+          body: { list, chat, ...(options ?? {}) },
+        });
+      },
+      /** List chat reading lists */
+      list: async (options?: {
+        includeArchived?: boolean;
+        limit?: string;
+        offset?: string;
+        owner?: string;
+      }): Promise<ChatsListsListReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "list",
+          body: { ...(options ?? {}) },
+        });
+      },
+      /** Explicitly advance one reading-list cursor */
+      markRead: async (list: string, chat: string, options?: {
+        channel?: string;
+        includeRaw?: boolean;
+        instance?: string;
+        message?: string;
+        owner?: string;
+        reader?: string;
+        reason?: string;
+      }): Promise<ChatsListsMarkReadReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "mark-read",
+          body: { list, chat, ...(options ?? {}) },
+        });
+      },
+      /** List chats in a reading list with unread counts */
+      members: async (list: string, options?: {
+        includeRaw?: boolean;
+        limit?: string;
+        offset?: string;
+        owner?: string;
+        reader?: string;
+      }): Promise<ChatsListsMembersReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "members",
+          body: { list, ...(options ?? {}) },
+        });
+      },
+      /** Remove a chat from a reading list without deleting cursor history */
+      remove: async (list: string, chat: string, options?: {
+        channel?: string;
+        instance?: string;
+        owner?: string;
+      }): Promise<ChatsListsRemoveReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "remove",
+          body: { list, chat, ...(options ?? {}) },
+        });
+      }
+    },
+    /** Read messages from one chat */
+    read: async (chat: string, options?: {
+      channel?: string;
+      includeRaw?: boolean;
+      instance?: string;
+      limit?: string;
+      offset?: string;
+      order?: string;
+      type?: string;
+    }): Promise<ChatsReadReturn> => {
+      return this.transport.call({
+        groupSegments: ["chats"],
+        command: "read",
+        body: { chat, ...(options ?? {}) },
+      });
+    }
+  };
+
   readonly commands = {
     /** List Ravi commands */
     list: async (options?: {
@@ -484,6 +622,23 @@ export class RaviClient {
         body: { contact, mode, ...(options ?? {}) },
       });
     },
+    /** Backfill canonical contacts from captured chats */
+    backfill: async (options?: {
+      apply?: boolean;
+      channel?: string;
+      createList?: string;
+      dryRun?: boolean;
+      instance?: string;
+      limit?: string;
+      listOwner?: string;
+      mode?: string;
+    }): Promise<ContactsBackfillReturn> => {
+      return this.transport.call({
+        groupSegments: ["contacts"],
+        command: "backfill",
+        body: { ...(options ?? {}) },
+      });
+    },
     /** Block a contact */
     block: async (contact: string): Promise<ContactsBlockReturn> => {
       return this.transport.call({
@@ -524,38 +679,6 @@ export class RaviClient {
         groupSegments: ["contacts"],
         command: "get",
         body: { contact },
-      });
-    },
-    /** Set a contact's tag in a specific group */
-    groupTag: async (contact: string, group: string, tag: string): Promise<ContactsGroupTagReturn> => {
-      return this.transport.call({
-        groupSegments: ["contacts"],
-        command: "group-tag",
-        body: { contact, group, tag },
-      });
-    },
-    /** Remove a contact's tag from a specific group */
-    groupUntag: async (contact: string, group: string): Promise<ContactsGroupUntagReturn> => {
-      return this.transport.call({
-        groupSegments: ["contacts"],
-        command: "group-untag",
-        body: { contact, group },
-      });
-    },
-    /** Add an identity to a contact (legacy alias for link) */
-    identityAdd: async (contact: string, platform: string, value: string): Promise<ContactsIdentityAddReturn> => {
-      return this.transport.call({
-        groupSegments: ["contacts"],
-        command: "identity-add",
-        body: { contact, platform, value },
-      });
-    },
-    /** Remove an identity (legacy alias for unlink) */
-    identityRemove: async (platform: string, value: string): Promise<ContactsIdentityRemoveReturn> => {
-      return this.transport.call({
-        groupSegments: ["contacts"],
-        command: "identity-remove",
-        body: { platform, value },
       });
     },
     /** Show contact details with all identities */
@@ -1797,6 +1920,7 @@ export class RaviClient {
     create: async (name: string, options?: {
       agent?: string;
       channel?: string;
+      contactIntakeMode?: string;
       dmPolicy?: string;
       groupPolicy?: string;
     }): Promise<InstancesCreateReturn> => {
@@ -3247,6 +3371,11 @@ export class RaviClient {
       barrier?: string;
       channel?: string;
       interactive?: boolean;
+      thread?: string;
+      threadOwner?: string;
+      threadScope?: string;
+      threadSummary?: string;
+      threadTitle?: string;
       to?: string;
       wait?: boolean;
     }): Promise<SessionsSendReturn> => {
@@ -3584,6 +3713,66 @@ export class RaviClient {
         groupSegments: ["stickers"],
         command: "show",
         body: { id },
+      });
+    }
+  };
+
+  readonly tagRules = {
+    /** Evaluate a rule against a target asset */
+    evaluate: async (rule-id: string, options?: {
+      apply?: boolean;
+      file?: string;
+      target?: string;
+    }): Promise<TagRulesEvaluateReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "evaluate",
+        body: { rule-id, ...(options ?? {}) },
+      });
+    },
+    /** Explain which rules currently match a target asset (dry-run) */
+    explain: async (options?: {
+      target?: string;
+    }): Promise<TagRulesExplainReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "explain",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** List loaded tag rules from .ravi/tag-rules */
+    list: async (): Promise<TagRulesListReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "list",
+        body: {},
+      });
+    },
+    /** Show a single rule definition */
+    show: async (id: string): Promise<TagRulesShowReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "show",
+        body: { id },
+      });
+    },
+    /** Run all rules against all contacts (use for cron/periodic schedules) */
+    tick: async (options?: {
+      apply?: boolean;
+      limit?: string;
+    }): Promise<TagRulesTickReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "tick",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Validate all rule files without applying */
+    validate: async (): Promise<TagRulesValidateReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "validate",
+        body: {},
       });
     }
   };
@@ -4065,6 +4254,118 @@ export class RaviClient {
         groupSegments: ["tasks"],
         command: "unarchive",
         body: { taskId },
+      });
+    }
+  };
+
+  readonly threads = {
+    /** Render the bounded thread brief used for handoff */
+    brief: async (thread: string, options?: {
+      scope?: string;
+    }): Promise<ThreadsBriefReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "brief",
+        body: { thread, ...(options ?? {}) },
+      });
+    },
+    /** Close a thread */
+    close: async (thread: string, options?: {
+      reason?: string;
+      scope?: string;
+    }): Promise<ThreadsCloseReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "close",
+        body: { thread, ...(options ?? {}) },
+      });
+    },
+    /** Append a comment to a thread */
+    comment: async (thread: string, body: string, options?: {
+      scope?: string;
+      visibility?: string;
+    }): Promise<ThreadsCommentReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "comment",
+        body: { thread, body, ...(options ?? {}) },
+      });
+    },
+    /** Create a Ravi-owned thread */
+    create: async (slug: string, options?: {
+      defaultAgent?: string;
+      owner?: string;
+      scope?: string;
+      status?: string;
+      summary?: string;
+      title?: string;
+    }): Promise<ThreadsCreateReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "create",
+        body: { slug, ...(options ?? {}) },
+      });
+    },
+    /** List thread entries */
+    entries: async (thread: string, options?: {
+      limit?: string;
+      offset?: string;
+      scope?: string;
+    }): Promise<ThreadsEntriesReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "entries",
+        body: { thread, ...(options ?? {}) },
+      });
+    },
+    /** Link a thread to another Ravi object */
+    link: async (thread: string, target: string, options?: {
+      label?: string;
+      role?: string;
+      scope?: string;
+      visibility?: string;
+    }): Promise<ThreadsLinkReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "link",
+        body: { thread, target, ...(options ?? {}) },
+      });
+    },
+    /** List Ravi threads */
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+      owner?: string;
+      scope?: string;
+      search?: string;
+      status?: string;
+    }): Promise<ThreadsListReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Append a note to a thread */
+    note: async (thread: string, body: string, options?: {
+      scope?: string;
+      visibility?: string;
+    }): Promise<ThreadsNoteReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "note",
+        body: { thread, body, ...(options ?? {}) },
+      });
+    },
+    /** Show one thread with links and recent entries */
+    show: async (thread: string, options?: {
+      entries?: string;
+      scope?: string;
+    }): Promise<ThreadsShowReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "show",
+        body: { thread, ...(options ?? {}) },
       });
     }
   };

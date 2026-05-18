@@ -925,6 +925,355 @@ export const AudioGenerateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `chats.list`. */
+export const ChatsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Filter by agent id",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Filter by channel, e.g. whatsapp",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Filter by contact id, phone, or identity",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Filter by instance name or Omni instance id",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 25, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching chats to skip (default: 0)",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search chat ids, titles, and message content",
+      "type": "string"
+    },
+    "type": {
+      "description": "Filter by chat type: dm|group|thread|room",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.add`. */
+export const ChatsListsAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "priority": {
+      "description": "Sort priority (default: 0)",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why this chat is in the list",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat",
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.create`. */
+export const ChatsListsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "List description",
+      "type": "string"
+    },
+    "mode": {
+      "description": "static|dynamic|hybrid (default: static)",
+      "type": "string"
+    },
+    "name": {
+      "description": "Reading list name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope (default: current agent or system:ravi)",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "private|team|system (default: system)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.delta`. */
+export const ChatsListsDeltaInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Max delta messages (default: 50, max: 500)",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "markRead": {
+      "description": "Advance the cursor to the last returned message",
+      "type": "boolean"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "reader": {
+      "description": "Reader cursor scope (default: current agent)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat",
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.list`. */
+export const ChatsListsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeArchived": {
+      "description": "Include archived lists",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching lists to skip (default: 0)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner, e.g. agent:ravi-crm",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.mark-read`. */
+export const ChatsListsMarkReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "message": {
+      "description": "Mark read through this durable message id (default: latest)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "reader": {
+      "description": "Reader cursor scope (default: current agent)",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Cursor update reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat",
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.members`. */
+export const ChatsListsMembersInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching members to skip (default: 0)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "reader": {
+      "description": "Reader cursor scope (default: current agent)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.remove`. */
+export const ChatsListsRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat",
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.read`. */
+export const ChatsReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, platform chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching messages to skip (default: 0)",
+      "type": "string"
+    },
+    "order": {
+      "description": "Message order (default: asc)",
+      "type": "string"
+    },
+    "type": {
+      "description": "Resolve chat type: dm|group|thread|room",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `commands.list`. */
 export const CommandsListInputSchema = {
   "additionalProperties": false,
@@ -1042,7 +1391,7 @@ export const ContactsAddInputSchema = {
       "type": "string"
     },
     "identity": {
-      "description": "Phone number or LID",
+      "description": "Phone number or WhatsApp identity",
       "type": "string"
     },
     "kind": {
@@ -1095,6 +1444,46 @@ export const ContactsApproveInputSchema = {
   "required": [
     "contact"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.backfill`. */
+export const ContactsBackfillInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Write canonical contacts and actor links. Without this, runs dry-run.",
+      "type": "boolean"
+    },
+    "channel": {
+      "description": "Limit to one channel, e.g. whatsapp",
+      "type": "string"
+    },
+    "createList": {
+      "description": "When applying, add linked chats to this reading list",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Force preview mode even if --apply is present",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Limit to one channel instance/account",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum candidates to inspect/apply",
+      "type": "string"
+    },
+    "listOwner": {
+      "description": "Owner for --create-list (default: agent:ravi-crm)",
+      "type": "string"
+    },
+    "mode": {
+      "description": "Contact intake status: pending|discovered (default: pending)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -1165,96 +1554,6 @@ export const ContactsGetInputSchema = {
   },
   "required": [
     "contact"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `contacts.group-tag`. */
-export const ContactsGroupTagInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "contact": {
-      "description": "Contact ID or identity",
-      "type": "string"
-    },
-    "group": {
-      "description": "Group contact ID or identity",
-      "type": "string"
-    },
-    "tag": {
-      "description": "Tag label",
-      "type": "string"
-    }
-  },
-  "required": [
-    "contact",
-    "group",
-    "tag"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `contacts.group-untag`. */
-export const ContactsGroupUntagInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "contact": {
-      "description": "Contact ID or identity",
-      "type": "string"
-    },
-    "group": {
-      "description": "Group contact ID or identity",
-      "type": "string"
-    }
-  },
-  "required": [
-    "contact",
-    "group"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `contacts.identity-add`. */
-export const ContactsIdentityAddInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "contact": {
-      "description": "Contact ID or identity",
-      "type": "string"
-    },
-    "platform": {
-      "description": "Platform (phone, whatsapp_lid, telegram, email)",
-      "type": "string"
-    },
-    "value": {
-      "description": "Identity value",
-      "type": "string"
-    }
-  },
-  "required": [
-    "contact",
-    "platform",
-    "value"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `contacts.identity-remove`. */
-export const ContactsIdentityRemoveInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "platform": {
-      "description": "Platform",
-      "type": "string"
-    },
-    "value": {
-      "description": "Identity value",
-      "type": "string"
-    }
-  },
-  "required": [
-    "platform",
-    "value"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3821,6 +4120,10 @@ export const InstancesCreateInputSchema = {
       "description": "Channel type (default: whatsapp)",
       "type": "string"
     },
+    "contactIntakeMode": {
+      "description": "Inbound DM contact intake: off|discovered|pending (default: off)",
+      "type": "string"
+    },
     "dmPolicy": {
       "description": "DM policy: open|pairing|closed (default: open)",
       "type": "string"
@@ -3912,7 +4215,7 @@ export const InstancesGetInputSchema = {
   "additionalProperties": false,
   "properties": {
     "key": {
-      "description": "Property key (agent, dmPolicy, groupPolicy, dmScope, instanceId, channel, enabled, defaults)",
+      "description": "Property key (agent, dmPolicy, groupPolicy, contactIntakeMode, defaultContactTags, dmScope, instanceId, channel, enabled, defaults)",
       "type": "string"
     },
     "name": {
@@ -4224,7 +4527,7 @@ export const InstancesSetInputSchema = {
   "additionalProperties": false,
   "properties": {
     "key": {
-      "description": "Property key (agent, dmPolicy, groupPolicy, dmScope, instanceId, channel, enabled, defaults)",
+      "description": "Property key (agent, dmPolicy, groupPolicy, contactIntakeMode, defaultContactTags, dmScope, instanceId, channel, enabled, defaults)",
       "type": "string"
     },
     "name": {
@@ -6842,6 +7145,26 @@ export const SessionsSendInputSchema = {
       "description": "Prompt to send (omit for interactive mode)",
       "type": "string"
     },
+    "thread": {
+      "description": "Attach or auto-create a Ravi thread",
+      "type": "string"
+    },
+    "threadOwner": {
+      "description": "Owner for thread auto-create",
+      "type": "string"
+    },
+    "threadScope": {
+      "description": "Scope for thread lookup/create",
+      "type": "string"
+    },
+    "threadSummary": {
+      "description": "Initial summary when --thread auto-creates",
+      "type": "string"
+    },
+    "threadTitle": {
+      "description": "Title required when --thread auto-creates",
+      "type": "string"
+    },
     "to": {
       "description": "Override delivery target",
       "type": "string"
@@ -7534,6 +7857,90 @@ export const StickersShowInputSchema = {
   "required": [
     "id"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.evaluate`. */
+export const TagRulesEvaluateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Actually apply tag changes (default: dry-run)",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Load rule from a file path instead of the registry",
+      "type": "string"
+    },
+    "rule-id": {
+      "description": "Rule id to evaluate",
+      "type": "string"
+    },
+    "target": {
+      "description": "Target (e.g. contact:<id>)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "rule-id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.explain`. */
+export const TagRulesExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "target": {
+      "description": "Target (e.g. contact:<id>)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.list`. */
+export const TagRulesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.show`. */
+export const TagRulesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.tick`. */
+export const TagRulesTickInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Apply tag changes (default: dry-run)",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Limit number of contacts processed",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.validate`. */
+export const TagRulesValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8794,6 +9201,261 @@ export const TasksUnarchiveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `threads.brief`. */
+export const ThreadsBriefInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.close`. */
+export const ThreadsCloseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "description": "Closure reason",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.comment`. */
+export const ThreadsCommentInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "description": "Comment body",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "default|internal|private|restricted",
+      "type": "string"
+    }
+  },
+  "required": [
+    "body",
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.create`. */
+export const ThreadsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "defaultAgent": {
+      "description": "Default agent id",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner pointer",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope pointer, e.g. chat:<id> or session:<key>",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Thread slug",
+      "type": "string"
+    },
+    "status": {
+      "description": "Initial status",
+      "type": "string"
+    },
+    "summary": {
+      "description": "Initial thread summary",
+      "type": "string"
+    },
+    "title": {
+      "description": "Thread title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "slug"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.entries`. */
+export const ThreadsEntriesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Page offset",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.link`. */
+export const ThreadsLinkInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "label": {
+      "description": "Display label",
+      "type": "string"
+    },
+    "role": {
+      "description": "Link role",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "target": {
+      "description": "Target pointer, e.g. chat:<id>",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "default|internal|private|restricted",
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.list`. */
+export const ThreadsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Page offset",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Filter by scope",
+      "type": "string"
+    },
+    "search": {
+      "description": "Search title, slug, or summary",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.note`. */
+export const ThreadsNoteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "description": "Note body",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "default|internal|private|restricted",
+      "type": "string"
+    }
+  },
+  "required": [
+    "body",
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.show`. */
+export const ThreadsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "description": "Number of entries to include",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.list`. */
 export const ToolsListInputSchema = {
   "additionalProperties": false,
@@ -9073,7 +9735,7 @@ export const WhatsappDmAckInputSchema = {
       "type": "string"
     },
     "contact": {
-      "description": "Contact ID, phone, or LID",
+      "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
     },
     "messageId": {
@@ -9097,7 +9759,7 @@ export const WhatsappDmReadInputSchema = {
       "type": "string"
     },
     "contact": {
-      "description": "Contact ID, phone, or LID",
+      "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
     },
     "last": {
@@ -9125,7 +9787,7 @@ export const WhatsappDmSendInputSchema = {
       "type": "string"
     },
     "contact": {
-      "description": "Contact ID, phone, or LID",
+      "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
     },
     "message": {
