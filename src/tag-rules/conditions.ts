@@ -256,6 +256,25 @@ export function evaluateContactConditions(input: EvaluateContactRuleInput): Eval
   return { matched: true, trace };
 }
 
+export interface EvaluateChatRuleInput {
+  conditions: ChatCondition[];
+  chatId: string;
+  now?: number;
+}
+
+export function evaluateChatConditions(input: EvaluateChatRuleInput): EvaluateContactRuleResult {
+  const now = input.now ?? Date.now();
+  const trace: Array<Record<string, unknown>> = [];
+  for (const condition of input.conditions) {
+    const result = evaluateChatCondition(condition, input.chatId, now);
+    trace.push({ ...result.cause, matched: result.matched });
+    if (!result.matched) {
+      return { matched: false, trace };
+    }
+  }
+  return { matched: true, trace };
+}
+
 export const __internal = {
   durationToMs,
   compareDuration,

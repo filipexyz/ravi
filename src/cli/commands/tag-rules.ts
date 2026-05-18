@@ -7,6 +7,7 @@ import {
   loadTagRulesFromDirectory,
   parseTagRuleFromString,
   runTagRulesForContact,
+  tickTagRules,
   type ApplyRuleResult,
   type TagRule,
 } from "../../tag-rules/index.js";
@@ -156,6 +157,34 @@ export class TagRulesCommands {
       }
     }
     return payload;
+  }
+
+  @Command({ name: "tick", description: "Run all rules against all contacts (use for cron/periodic schedules)" })
+  async tick(
+    @Option({ flags: "--apply", description: "Apply tag changes (default: dry-run)" }) applyChanges?: boolean,
+    @Option({ flags: "--limit <n>", description: "Limit number of contacts processed" }) limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ): Promise<unknown> {
+    const limitNumber = limit ? Number(limit) : undefined;
+    if (limit !== undefined && (!Number.isFinite(limitNumber) || (limitNumber ?? 0) < 1)) {
+      fail("--limit must be a positive number");
+    }
+    const result = await tickTagRules({
+      apply: Boolean(applyChanges),
+      limit: limitNumber,
+      cause: { evaluation: "periodic", triggerType: "cli-tick" },
+    });
+    if (asJson) {
+      printJson(result);
+      return result;
+    }
+    console.log(
+      `rules=${result.rulesLoaded} contacts=${result.contactsProcessed} matched=${result.matched} applied=${result.appliedActions}`,
+    );
+    for (const contact of result.contacts) {
+      console.log(`  ${contact.contactId.padEnd(28)} matched=${contact.matched} applied=${contact.appliedActions}`);
+    }
+    return result;
   }
 
   @Command({ name: "evaluate", description: "Evaluate a rule against a target asset" })

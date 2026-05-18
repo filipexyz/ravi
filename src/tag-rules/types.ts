@@ -78,7 +78,7 @@ const ContactConditionSchema = z.discriminatedUnion("kind", [
 export type ContactCondition = z.infer<typeof ContactConditionSchema>;
 
 const ApplyActionSchema = z.object({
-  target: z.literal("contact"),
+  target: z.enum(["contact", "chat"]),
   targetMode: z.enum(["all", "matched"]).optional(),
   tag: z.string().min(1).optional(),
   removeTag: z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
@@ -94,8 +94,8 @@ export const TagRuleSchema = z
       .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/, "Rule id must be a slug-ish identifier"),
     description: z.string().optional(),
     enabled: z.boolean().default(true),
-    scope: z.literal("contact"),
-    conditions: z.array(ContactConditionSchema).default([]),
+    scope: z.enum(["contact", "chat"]),
+    conditions: z.array(z.union([ContactConditionSchema, ChatConditionSchema])).default([]),
     apply: z.array(ApplyActionSchema).min(1),
     priority: z.number().int().default(0),
     evaluation: z

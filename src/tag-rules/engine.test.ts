@@ -4,7 +4,14 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { addContactTag, closeContacts, getContact, getContactById, upsertContact } from "../contacts.js";
 import { dbUpsertChat, dbUpsertChatMessage } from "../router/router-db.js";
-import { loadTagRulesFromDirectory, runTagRulesForContact, type TagRule } from "./index.js";
+import {
+  evaluateRulesForChat,
+  loadTagRulesFromDirectory,
+  runTagRulesForContact,
+  tickTagRules,
+  type TagRule,
+} from "./index.js";
+import { canonicalTagSlugsForAsset } from "../tags/helpers.js";
 import { evaluateContactConditions } from "./conditions.js";
 
 let stateDir: string | null = null;
@@ -492,6 +499,84 @@ describe("tag-rules apply", () => {
     expect(explained.outcomes[0]!.applied[0]!.added).toEqual(["lifecycle:qualified"]);
     expect(getContact("5511990008888")!.tags).toContain("lifecycle:new");
     expect(getContact("5511990008888")!.tags).not.toContain("lifecycle:qualified");
+  });
+
+  it("chat-scope rule tags the chat asset when conditions match", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformChatId: "chat-engaged@s.whatsapp.net",
+      chatType: "dm",
+      title: "Engaged",
+      rawProvenance: { source: "test" },
+    });
+    for (let index = 0; index < 5; index += 1) {
+      dbUpsertChatMessage({
+        chatId: chat.id,
+        channel: "whatsapp",
+        instanceId: "sde",
+        providerMessageId: `chat-tag-${index}`,
+        rawChatId: "chat-engaged@s.whatsapp.net",
+        rawSenderId: "sender",
+        normalizedSenderId: "sender",
+        actorType: "contact",
+        messageType: "text",
+        content: { type: "text", text: `msg ${index}` },
+        providerTimestamp: Date.now() + index,
+        ingestedAt: Date.now() + index,
+      });
+    }
+
+    const rule: TagRule = {
+      id: "engaged-chat",
+      scope: "chat",
+      enabled: true,
+      priority: 0,
+      conditions: [{ kind: "message-count", operator: ">=", value: 5 }],
+      apply: [{ target: "chat", tag: "chat:engaged", when: "matched" }],
+      evaluation: { reactive: true, cron: null },
+    } as TagRule;
+
+    const outcomes = evaluateRulesForChat({
+      rules: [rule],
+      chatId: chat.id,
+      cause: { evaluation: "manual", triggerType: "test" },
+      apply: true,
+    });
+    expect(outcomes[0]!.matched).toBe(true);
+    expect(outcomes[0]!.applied[0]!.added).toEqual(["chat:engaged"]);
+    expect(canonicalTagSlugsForAsset("chat", chat.id)).toContain("chat:engaged");
+  });
+
+  it("tick iterates all contacts and applies matching rules", async () => {
+    upsertContact("5511990009999", "Tick A", "allowed", "manual");
+    addContactTag("5511990009999", "lifecycle:new");
+    upsertContact("5511990010101", "Tick B", "allowed", "manual");
+    addContactTag("5511990010101", "lifecycle:active");
+
+    writeRule({
+      id: "qualify-via-tick",
+      scope: "contact",
+      enabled: true,
+      priority: 0,
+      conditions: [{ kind: "has-tag", tag: "lifecycle:new" }],
+      apply: [
+        {
+          target: "contact",
+          tag: "lifecycle:qualified",
+          removeTag: "lifecycle:new",
+          when: "matched",
+        },
+      ],
+      evaluation: { reactive: true, cron: null },
+    } as TagRule);
+
+    const summary = await tickTagRules({ apply: true });
+    expect(summary.rulesLoaded).toBe(1);
+    expect(summary.contactsProcessed).toBeGreaterThanOrEqual(2);
+    expect(summary.appliedActions).toBe(1);
+    expect(getContact("5511990009999")!.tags).toContain("lifecycle:qualified");
+    expect(getContact("5511990010101")!.tags).not.toContain("lifecycle:qualified");
   });
 
   it("when:not-matched applies removals when conditions fail", () => {
