@@ -11,6 +11,7 @@
  */
 
 import { getDb, dbListAgents } from "../router/router-db.js";
+import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
 const log = logger.child("permissions:relations");
 
@@ -229,42 +230,46 @@ export function syncRelationsFromConfig(): void {
   let granted = 0;
 
   // Atomic: clear + re-grant in a single transaction (no permission gap)
-  db.transaction(() => {
-    const cleared = clearRelations({ source: "config" });
-    if (cleared > 0) {
-      log.debug("Cleared config relations", { count: cleared });
-    }
-
-    for (const agent of agents) {
-      // Main agent = superadmin
-      if (agent.id === "main") {
-        grantRelation("agent", agent.id, "admin", "system", "*", "config");
-        granted++;
-        continue;
+  executeWrite(
+    db,
+    () => {
+      const cleared = clearRelations({ source: "config" });
+      if (cleared > 0) {
+        log.debug("Cleared config relations", { count: cleared });
       }
 
-      // contactScope → write/read permissions
-      if (agent.contactScope === "all") {
-        grantRelation("agent", agent.id, "write_contacts", "system", "*", "config");
-        granted++;
-      } else if (agent.contactScope === "own") {
-        grantRelation("agent", agent.id, "read_own_contacts", "system", "*", "config");
-        granted++;
-      } else if (agent.contactScope?.startsWith("tagged:")) {
-        const tag = agent.contactScope.slice(7);
-        grantRelation("agent", agent.id, "read_tagged_contacts", "system", tag, "config");
-        granted++;
-      }
+      for (const agent of agents) {
+        // Main agent = superadmin
+        if (agent.id === "main") {
+          grantRelation("agent", agent.id, "admin", "system", "*", "config");
+          granted++;
+          continue;
+        }
 
-      // allowedSessions → session access
-      if (agent.allowedSessions) {
-        for (const pattern of agent.allowedSessions) {
-          grantRelation("agent", agent.id, "access", "session", pattern, "config");
+        // contactScope → write/read permissions
+        if (agent.contactScope === "all") {
+          grantRelation("agent", agent.id, "write_contacts", "system", "*", "config");
+          granted++;
+        } else if (agent.contactScope === "own") {
+          grantRelation("agent", agent.id, "read_own_contacts", "system", "*", "config");
+          granted++;
+        } else if (agent.contactScope?.startsWith("tagged:")) {
+          const tag = agent.contactScope.slice(7);
+          grantRelation("agent", agent.id, "read_tagged_contacts", "system", tag, "config");
           granted++;
         }
+
+        // allowedSessions → session access
+        if (agent.allowedSessions) {
+          for (const pattern of agent.allowedSessions) {
+            grantRelation("agent", agent.id, "access", "session", pattern, "config");
+            granted++;
+          }
+        }
       }
-    }
-  })();
+    },
+    { label: "permissions:syncFromConfig" },
+  );
 
   log.info("Synced relations from config", { agents: agents.length, granted });
 }

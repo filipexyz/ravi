@@ -8,6 +8,7 @@
 import type { Statement } from "bun:sqlite";
 import type { SessionEntry } from "./types.js";
 import { dbRenameRouteSessionName, getDb, getDbChanges, getRaviDbPath } from "./router-db.js";
+import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router:sessions");
@@ -664,11 +665,15 @@ export function renameSessionName(sessionKey: string, name: string): RenameSessi
   }
 
   const db = getDb();
-  const routeReferencesUpdated = db.transaction(() => {
-    const s = getStatements();
-    s.updateName.run(newName, Date.now(), sessionKey);
-    return oldName ? dbRenameRouteSessionName(oldName, newName) : 0;
-  })();
+  const routeReferencesUpdated = executeWrite(
+    db,
+    () => {
+      const s = getStatements();
+      s.updateName.run(newName, Date.now(), sessionKey);
+      return oldName ? dbRenameRouteSessionName(oldName, newName) : 0;
+    },
+    { label: "router:renameSessionCanonical" },
+  );
 
   const after = getSession(sessionKey);
   if (!after) {

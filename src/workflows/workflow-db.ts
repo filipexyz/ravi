@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SQLQueryBindings } from "bun:sqlite";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
+import { executeWrite } from "../db/write-retry.js";
 import type {
   CreateWorkflowSpecInput,
   TaskWorkflowSurface,
@@ -428,37 +429,40 @@ export function dbInsertWorkflowNodeRuns(nodeRuns: Array<Omit<WorkflowNodeRun, "
     `,
   );
   const now = Date.now();
-  const insertMany = db.transaction(() => {
-    for (const nodeRun of nodeRuns) {
-      stmt.run(
-        nodeRun.id,
-        nodeRun.workflowRunId,
-        nodeRun.specNodeKey,
-        nodeRun.label,
-        nodeRun.kind,
-        nodeRun.requirement,
-        nodeRun.releaseMode,
-        nodeRun.status,
-        JSON.stringify(nodeRun.waitingOnNodeKeys),
-        nodeRun.currentTaskId ?? null,
-        nodeRun.attemptCount,
-        nodeRun.releasedAt ?? null,
-        nodeRun.releasedBy ?? null,
-        nodeRun.releasedByAgentId ?? null,
-        nodeRun.releasedBySessionName ?? null,
-        nodeRun.readyAt ?? null,
-        nodeRun.blockedAt ?? null,
-        nodeRun.completedAt ?? null,
-        nodeRun.skippedAt ?? null,
-        nodeRun.cancelledAt ?? null,
-        nodeRun.archivedAt ?? null,
-        nodeRun.lastTaskTransitionAt ?? null,
-        now,
-        now,
-      );
-    }
-  });
-  insertMany();
+  executeWrite(
+    db,
+    () => {
+      for (const nodeRun of nodeRuns) {
+        stmt.run(
+          nodeRun.id,
+          nodeRun.workflowRunId,
+          nodeRun.specNodeKey,
+          nodeRun.label,
+          nodeRun.kind,
+          nodeRun.requirement,
+          nodeRun.releaseMode,
+          nodeRun.status,
+          JSON.stringify(nodeRun.waitingOnNodeKeys),
+          nodeRun.currentTaskId ?? null,
+          nodeRun.attemptCount,
+          nodeRun.releasedAt ?? null,
+          nodeRun.releasedBy ?? null,
+          nodeRun.releasedByAgentId ?? null,
+          nodeRun.releasedBySessionName ?? null,
+          nodeRun.readyAt ?? null,
+          nodeRun.blockedAt ?? null,
+          nodeRun.completedAt ?? null,
+          nodeRun.skippedAt ?? null,
+          nodeRun.cancelledAt ?? null,
+          nodeRun.archivedAt ?? null,
+          nodeRun.lastTaskTransitionAt ?? null,
+          now,
+          now,
+        );
+      }
+    },
+    { label: "workflow:insertNodeRuns" },
+  );
 }
 
 export function dbInsertWorkflowRunEdges(edges: WorkflowRunEdge[]): void {
@@ -470,12 +474,15 @@ export function dbInsertWorkflowRunEdges(edges: WorkflowRunEdge[]): void {
       VALUES (?, ?, ?, ?)
     `,
   );
-  const insertMany = db.transaction(() => {
-    for (const edge of edges) {
-      stmt.run(edge.workflowRunId, edge.fromNodeRunId, edge.toNodeRunId, edge.createdAt);
-    }
-  });
-  insertMany();
+  executeWrite(
+    db,
+    () => {
+      for (const edge of edges) {
+        stmt.run(edge.workflowRunId, edge.fromNodeRunId, edge.toNodeRunId, edge.createdAt);
+      }
+    },
+    { label: "workflow:insertRunEdges" },
+  );
 }
 
 export function dbListWorkflowNodeRuns(workflowRunId: string): WorkflowNodeRun[] {

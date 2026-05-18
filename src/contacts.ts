@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { getRaviStateDir } from "./utils/paths.js";
+import { executeWrite } from "./db/write-retry.js";
 import {
   attachTagSlugsToAsset,
   canonicalAssetIdsForTag,
@@ -3786,8 +3787,7 @@ function insertCrmEvent(database: Database, input: CreateCrmEventInput): CrmEven
 
 export function createCrmEvent(input: CreateCrmEventInput): CrmEvent {
   const database = ensureDb();
-  const txn = database.transaction(() => insertCrmEvent(database, input));
-  return txn();
+  return executeWrite(database, () => insertCrmEvent(database, input), { label: "contacts:createCrmEvent" });
 }
 
 function crmMutationSource(options: CrmMutationOptions): string {
@@ -3945,40 +3945,42 @@ export function updateCrmContactProfile(input: UpdateCrmContactProfileInput): Cr
   if (input.nextTaskId) requireCrmTask(database, input.nextTaskId);
 
   let profile: CrmContactProfile | null = null;
-  const txn = database.transaction(() => {
-    const previousRow = getCrmContactProfileRow(database, contactId);
-    const previous = previousRow ? rowToCrmContactProfile(previousRow) : null;
-    const owner = normalizeOptionalCrmOwner({
-      ownerType: input.ownerType,
-      ownerId: input.ownerId,
-      previousOwnerType: previous?.ownerType ?? null,
-      previousOwnerId: previous?.ownerId ?? null,
-    });
-    const lifecycle =
-      input.lifecycle === null
-        ? "unknown"
-        : normalizeCrmEnum<CrmContactLifecycle>(
-            input.lifecycle,
-            CRM_CONTACT_LIFECYCLES,
-            previous?.lifecycle ?? "unknown",
-          );
-    const relationshipHealth =
-      input.relationshipHealth === null
-        ? "unknown"
-        : normalizeCrmEnum<CrmRelationshipHealth>(
-            input.relationshipHealth,
-            CRM_RELATIONSHIP_HEALTHS,
-            previous?.relationshipHealth ?? "unknown",
-          );
-    const priority =
-      input.priority === null
-        ? "normal"
-        : normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, previous?.priority ?? "normal");
-    const metadata = normalizeMetadataObject(input.metadata, previousRow?.metadata_json ?? "{}");
+  executeWrite(
+    database,
+    () => {
+      const previousRow = getCrmContactProfileRow(database, contactId);
+      const previous = previousRow ? rowToCrmContactProfile(previousRow) : null;
+      const owner = normalizeOptionalCrmOwner({
+        ownerType: input.ownerType,
+        ownerId: input.ownerId,
+        previousOwnerType: previous?.ownerType ?? null,
+        previousOwnerId: previous?.ownerId ?? null,
+      });
+      const lifecycle =
+        input.lifecycle === null
+          ? "unknown"
+          : normalizeCrmEnum<CrmContactLifecycle>(
+              input.lifecycle,
+              CRM_CONTACT_LIFECYCLES,
+              previous?.lifecycle ?? "unknown",
+            );
+      const relationshipHealth =
+        input.relationshipHealth === null
+          ? "unknown"
+          : normalizeCrmEnum<CrmRelationshipHealth>(
+              input.relationshipHealth,
+              CRM_RELATIONSHIP_HEALTHS,
+              previous?.relationshipHealth ?? "unknown",
+            );
+      const priority =
+        input.priority === null
+          ? "normal"
+          : normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, previous?.priority ?? "normal");
+      const metadata = normalizeMetadataObject(input.metadata, previousRow?.metadata_json ?? "{}");
 
-    database
-      .prepare(
-        `
+      database
+        .prepare(
+          `
         INSERT INTO crm_contact_profiles (
           contact_id, lifecycle, relationship_health, priority, score, health_score,
           owner_type, owner_id, primary_account_id, primary_opportunity_id,
@@ -4007,53 +4009,54 @@ export function updateCrmContactProfile(input: UpdateCrmContactProfileInput): Cr
           metadata_json = excluded.metadata_json,
           updated_at = datetime('now')
       `,
-      )
-      .run(
-        contactId,
-        lifecycle,
-        relationshipHealth,
-        priority,
-        normalizeOptionalNumber(input.score, "score", previous?.score ?? null),
-        normalizeOptionalNumber(input.healthScore, "health_score", previous?.healthScore ?? null),
-        owner.ownerType,
-        owner.ownerId,
-        input.primaryAccountId === undefined
-          ? (previous?.primaryAccountId ?? null)
-          : normalizeOptionalText(input.primaryAccountId),
-        input.primaryOpportunityId === undefined
-          ? (previous?.primaryOpportunityId ?? null)
-          : normalizeOptionalText(input.primaryOpportunityId),
-        normalizeOptionalText(input.leadSource, previous?.leadSource ?? null),
-        normalizeOptionalText(input.persona, previous?.persona ?? null),
-        normalizeOptionalText(input.buyingRole, previous?.buyingRole ?? null),
-        normalizeOptionalText(input.lastMeaningfulInteractionAt, previous?.lastMeaningfulInteractionAt ?? null),
-        normalizeOptionalText(input.nextActionAt, previous?.nextActionAt ?? null),
-        normalizeOptionalText(input.nextActionSummary, previous?.nextActionSummary ?? null),
-        input.nextTaskId === undefined ? (previous?.nextTaskId ?? null) : normalizeOptionalText(input.nextTaskId),
-        jsonObject(metadata),
-      );
+        )
+        .run(
+          contactId,
+          lifecycle,
+          relationshipHealth,
+          priority,
+          normalizeOptionalNumber(input.score, "score", previous?.score ?? null),
+          normalizeOptionalNumber(input.healthScore, "health_score", previous?.healthScore ?? null),
+          owner.ownerType,
+          owner.ownerId,
+          input.primaryAccountId === undefined
+            ? (previous?.primaryAccountId ?? null)
+            : normalizeOptionalText(input.primaryAccountId),
+          input.primaryOpportunityId === undefined
+            ? (previous?.primaryOpportunityId ?? null)
+            : normalizeOptionalText(input.primaryOpportunityId),
+          normalizeOptionalText(input.leadSource, previous?.leadSource ?? null),
+          normalizeOptionalText(input.persona, previous?.persona ?? null),
+          normalizeOptionalText(input.buyingRole, previous?.buyingRole ?? null),
+          normalizeOptionalText(input.lastMeaningfulInteractionAt, previous?.lastMeaningfulInteractionAt ?? null),
+          normalizeOptionalText(input.nextActionAt, previous?.nextActionAt ?? null),
+          normalizeOptionalText(input.nextActionSummary, previous?.nextActionSummary ?? null),
+          input.nextTaskId === undefined ? (previous?.nextTaskId ?? null) : normalizeOptionalText(input.nextTaskId),
+          jsonObject(metadata),
+        );
 
-    const nextRow = getCrmContactProfileRow(database, contactId);
-    if (!nextRow) throw new Error(`CRM contact profile not found after update: ${contactId}`);
-    profile = rowToCrmContactProfile(nextRow);
-    projectCrmContactProfileMetadata(database, profile);
-    insertCrmEvent(database, {
-      eventType: "crm.contact_profile.updated",
-      entityType: "contact",
-      entityId: contactId,
-      contactId,
-      source: crmMutationSource(input),
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: input.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: profileEventPayload(profile),
-      previousPayload: previous ? profileEventPayload(previous) : null,
-    });
-  });
-  txn();
+      const nextRow = getCrmContactProfileRow(database, contactId);
+      if (!nextRow) throw new Error(`CRM contact profile not found after update: ${contactId}`);
+      profile = rowToCrmContactProfile(nextRow);
+      projectCrmContactProfileMetadata(database, profile);
+      insertCrmEvent(database, {
+        eventType: "crm.contact_profile.updated",
+        entityType: "contact",
+        entityId: contactId,
+        contactId,
+        source: crmMutationSource(input),
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: input.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: profileEventPayload(profile),
+        previousPayload: previous ? profileEventPayload(previous) : null,
+      });
+    },
+    { label: "contacts:updateCrmContactProfile" },
+  );
   if (!profile) throw new Error(`CRM contact profile not updated: ${contactId}`);
   return profile;
 }
@@ -4156,10 +4159,12 @@ export function createCrmAccount(input: CreateCrmAccountInput): CrmAccount {
   }
   const accountId = `crm_acc_${generateId()}`;
   let account: CrmAccount | null = null;
-  const txn = database.transaction(() => {
-    database
-      .prepare(
-        `
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
         INSERT INTO crm_accounts (
           id, org_contact_id, name, legal_name, domain, website_url, industry, size_label,
           lifecycle, relationship_health, priority, owner_type, owner_id,
@@ -4167,47 +4172,48 @@ export function createCrmAccount(input: CreateCrmAccountInput): CrmAccount {
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `,
-      )
-      .run(
+        )
+        .run(
+          accountId,
+          orgContactId,
+          name,
+          normalizeOptionalText(input.legalName),
+          normalizeOptionalText(input.domain)?.toLowerCase() ?? null,
+          normalizeOptionalText(input.websiteUrl),
+          normalizeOptionalText(input.industry),
+          normalizeOptionalText(input.sizeLabel),
+          normalizeCrmEnum<CrmContactLifecycle>(input.lifecycle, CRM_CONTACT_LIFECYCLES, "unknown"),
+          normalizeCrmEnum<CrmRelationshipHealth>(input.relationshipHealth, CRM_RELATIONSHIP_HEALTHS, "unknown"),
+          normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
+          owner.ownerType,
+          owner.ownerId,
+          crmMutationSource(input),
+          idempotencyKey,
+          normalizeCrmConfidence(input.confidence),
+          jsonObject(input.metadata),
+        );
+      const row = getCrmAccountRow(database, accountId);
+      if (!row) throw new Error(`CRM account not found after create: ${accountId}`);
+      account = rowToCrmAccount(row);
+      insertCrmEvent(database, {
+        eventType: "crm.account.created",
+        entityType: "account",
+        entityId: accountId,
         accountId,
-        orgContactId,
-        name,
-        normalizeOptionalText(input.legalName),
-        normalizeOptionalText(input.domain)?.toLowerCase() ?? null,
-        normalizeOptionalText(input.websiteUrl),
-        normalizeOptionalText(input.industry),
-        normalizeOptionalText(input.sizeLabel),
-        normalizeCrmEnum<CrmContactLifecycle>(input.lifecycle, CRM_CONTACT_LIFECYCLES, "unknown"),
-        normalizeCrmEnum<CrmRelationshipHealth>(input.relationshipHealth, CRM_RELATIONSHIP_HEALTHS, "unknown"),
-        normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
-        owner.ownerType,
-        owner.ownerId,
-        crmMutationSource(input),
+        contactId: orgContactId,
+        source: account.source,
         idempotencyKey,
-        normalizeCrmConfidence(input.confidence),
-        jsonObject(input.metadata),
-      );
-    const row = getCrmAccountRow(database, accountId);
-    if (!row) throw new Error(`CRM account not found after create: ${accountId}`);
-    account = rowToCrmAccount(row);
-    insertCrmEvent(database, {
-      eventType: "crm.account.created",
-      entityType: "account",
-      entityId: accountId,
-      accountId,
-      contactId: orgContactId,
-      source: account.source,
-      idempotencyKey,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: account.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: account,
-    });
-  });
-  txn();
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: account.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: account,
+      });
+    },
+    { label: "contacts:createCrmAccount" },
+  );
   if (!account) throw new Error(`CRM account not created: ${accountId}`);
   return account;
 }
@@ -4306,24 +4312,26 @@ export function linkCrmAccountContact(input: LinkCrmAccountContactInput): CrmAcc
   const role = normalizeOptionalText(input.role) ?? "member";
   const id = stableId("crm_ac", [account.id, contactId, role]);
   let membership: CrmAccountContact | null = null;
-  const txn = database.transaction(() => {
-    const previous = database.prepare("SELECT * FROM crm_account_contacts WHERE id = ?").get(id) as
-      | CrmAccountContactRow
-      | undefined;
-    const affectedContactIds = new Set<string>([contactId]);
-    if (input.isPrimary) {
-      const previousPrimaryRows = database
-        .prepare("SELECT DISTINCT contact_id FROM crm_account_contacts WHERE account_id = ? AND is_primary = 1")
-        .all(account.id) as Array<{ contact_id: string }>;
-      for (const row of previousPrimaryRows) affectedContactIds.add(row.contact_id);
-      database.prepare("UPDATE crm_account_contacts SET is_primary = 0 WHERE account_id = ?").run(account.id);
-    } else if (input.isPrimary === false && previous?.is_primary) {
-      affectedContactIds.add(previous.contact_id);
-    }
-    const nextIsPrimary = input.isPrimary === undefined ? (previous?.is_primary ?? 0) : input.isPrimary ? 1 : 0;
-    database
-      .prepare(
-        `
+  executeWrite(
+    database,
+    () => {
+      const previous = database.prepare("SELECT * FROM crm_account_contacts WHERE id = ?").get(id) as
+        | CrmAccountContactRow
+        | undefined;
+      const affectedContactIds = new Set<string>([contactId]);
+      if (input.isPrimary) {
+        const previousPrimaryRows = database
+          .prepare("SELECT DISTINCT contact_id FROM crm_account_contacts WHERE account_id = ? AND is_primary = 1")
+          .all(account.id) as Array<{ contact_id: string }>;
+        for (const row of previousPrimaryRows) affectedContactIds.add(row.contact_id);
+        database.prepare("UPDATE crm_account_contacts SET is_primary = 0 WHERE account_id = ?").run(account.id);
+      } else if (input.isPrimary === false && previous?.is_primary) {
+        affectedContactIds.add(previous.contact_id);
+      }
+      const nextIsPrimary = input.isPrimary === undefined ? (previous?.is_primary ?? 0) : input.isPrimary ? 1 : 0;
+      database
+        .prepare(
+          `
         INSERT INTO crm_account_contacts (
           id, account_id, contact_id, role, title, department, decision_role,
           relationship_strength, is_primary, status, source, confidence,
@@ -4344,54 +4352,55 @@ export function linkCrmAccountContact(input: LinkCrmAccountContactInput): CrmAcc
           last_seen_at = datetime('now'),
           updated_at = datetime('now')
       `,
-      )
-      .run(
-        id,
-        account.id,
+        )
+        .run(
+          id,
+          account.id,
+          contactId,
+          role,
+          normalizeOptionalText(input.title, previous?.title ?? null),
+          normalizeOptionalText(input.department, previous?.department ?? null),
+          normalizeOptionalText(input.decisionRole, previous?.decision_role ?? "unknown") ?? "unknown",
+          normalizeOptionalText(input.relationshipStrength, previous?.relationship_strength ?? "unknown") ?? "unknown",
+          nextIsPrimary,
+          normalizeOptionalText(input.status, previous?.status ?? "active") ?? "active",
+          crmMutationSource(input),
+          normalizeCrmConfidence(input.confidence),
+          crmEventJson(input.evidence),
+          jsonObject(normalizeMetadataObject(input.metadata, previous?.metadata_json ?? "{}")),
+        );
+      const row = database.prepare("SELECT * FROM crm_account_contacts WHERE id = ?").get(id) as
+        | CrmAccountContactRow
+        | undefined;
+      if (!row) throw new Error(`CRM account membership not found after link: ${id}`);
+      const linkedMembership = rowToCrmAccountContact(row);
+      membership = linkedMembership;
+      for (const affectedContactId of affectedContactIds) {
+        refreshCrmContactPrimaryAccount(
+          database,
+          affectedContactId,
+          affectedContactId === contactId && linkedMembership.isPrimary ? account.id : null,
+        );
+      }
+      insertCrmEvent(database, {
+        eventType: "crm.account_contact.linked",
+        entityType: "account",
+        entityId: account.id,
         contactId,
-        role,
-        normalizeOptionalText(input.title, previous?.title ?? null),
-        normalizeOptionalText(input.department, previous?.department ?? null),
-        normalizeOptionalText(input.decisionRole, previous?.decision_role ?? "unknown") ?? "unknown",
-        normalizeOptionalText(input.relationshipStrength, previous?.relationship_strength ?? "unknown") ?? "unknown",
-        nextIsPrimary,
-        normalizeOptionalText(input.status, previous?.status ?? "active") ?? "active",
-        crmMutationSource(input),
-        normalizeCrmConfidence(input.confidence),
-        crmEventJson(input.evidence),
-        jsonObject(normalizeMetadataObject(input.metadata, previous?.metadata_json ?? "{}")),
-      );
-    const row = database.prepare("SELECT * FROM crm_account_contacts WHERE id = ?").get(id) as
-      | CrmAccountContactRow
-      | undefined;
-    if (!row) throw new Error(`CRM account membership not found after link: ${id}`);
-    const linkedMembership = rowToCrmAccountContact(row);
-    membership = linkedMembership;
-    for (const affectedContactId of affectedContactIds) {
-      refreshCrmContactPrimaryAccount(
-        database,
-        affectedContactId,
-        affectedContactId === contactId && linkedMembership.isPrimary ? account.id : null,
-      );
-    }
-    insertCrmEvent(database, {
-      eventType: "crm.account_contact.linked",
-      entityType: "account",
-      entityId: account.id,
-      contactId,
-      accountId: account.id,
-      source: linkedMembership.source,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: linkedMembership.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: linkedMembership,
-      previousPayload: previous ? rowToCrmAccountContact(previous) : null,
-    });
-  });
-  txn();
+        accountId: account.id,
+        source: linkedMembership.source,
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: linkedMembership.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: linkedMembership,
+        previousPayload: previous ? rowToCrmAccountContact(previous) : null,
+      });
+    },
+    { label: "contacts:linkCrmAccountContact" },
+  );
   if (!membership) throw new Error(`CRM account membership not linked: ${id}`);
   return membership;
 }
@@ -4446,10 +4455,12 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
   }
   const opportunityId = `crm_opp_${generateId()}`;
   let opportunity: CrmOpportunity | null = null;
-  const txn = database.transaction(() => {
-    database
-      .prepare(
-        `
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
         INSERT INTO crm_opportunities (
           id, account_id, primary_contact_id, pipeline_id, stage_id, title, description,
           status, priority, value_cents, currency, probability, expected_close_at,
@@ -4458,86 +4469,87 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `,
-      )
-      .run(
-        opportunityId,
-        accountId,
-        contactId,
-        stage.pipelineId,
-        stage.id,
-        title,
-        normalizeOptionalText(input.description),
-        normalizeCrmEnum<CrmOpportunityStatus>(
-          input.status,
-          CRM_OPPORTUNITY_STATUSES,
-          opportunityStatusForStage(stage, "open"),
-        ),
-        normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
-        input.valueCents ?? null,
-        normalizeOptionalText(input.currency) ?? "BRL",
-        normalizeProbability(input.probability, stage.probability),
-        normalizeOptionalText(input.expectedCloseAt),
-        owner.ownerType,
-        owner.ownerId,
-        crmMutationSource(input),
-        idempotencyKey,
-        normalizeCrmConfidence(input.confidence),
-        crmEventJson(input.evidence),
-        jsonObject(input.metadata),
-      );
-    const row = requireCrmOpportunity(database, opportunityId);
-    opportunity = rowToCrmOpportunity(row);
-    if (contactId) {
-      database
-        .prepare(
-          `
+        )
+        .run(
+          opportunityId,
+          accountId,
+          contactId,
+          stage.pipelineId,
+          stage.id,
+          title,
+          normalizeOptionalText(input.description),
+          normalizeCrmEnum<CrmOpportunityStatus>(
+            input.status,
+            CRM_OPPORTUNITY_STATUSES,
+            opportunityStatusForStage(stage, "open"),
+          ),
+          normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
+          input.valueCents ?? null,
+          normalizeOptionalText(input.currency) ?? "BRL",
+          normalizeProbability(input.probability, stage.probability),
+          normalizeOptionalText(input.expectedCloseAt),
+          owner.ownerType,
+          owner.ownerId,
+          crmMutationSource(input),
+          idempotencyKey,
+          normalizeCrmConfidence(input.confidence),
+          crmEventJson(input.evidence),
+          jsonObject(input.metadata),
+        );
+      const row = requireCrmOpportunity(database, opportunityId);
+      opportunity = rowToCrmOpportunity(row);
+      if (contactId) {
+        database
+          .prepare(
+            `
           INSERT OR IGNORE INTO crm_opportunity_contacts (
             id, opportunity_id, contact_id, account_id, role, is_primary,
             source, confidence, evidence_json, metadata_json, created_at, updated_at
           )
           VALUES (?, ?, ?, ?, 'stakeholder', 1, ?, ?, ?, '{}', datetime('now'), datetime('now'))
         `,
-        )
-        .run(
-          stableId("crm_oc", [opportunityId, contactId, "stakeholder"]),
-          opportunityId,
-          contactId,
-          accountId,
-          opportunity.source,
-          opportunity.confidence,
-          crmEventJson(input.evidence),
-        );
-      database
-        .prepare(
-          `
+          )
+          .run(
+            stableId("crm_oc", [opportunityId, contactId, "stakeholder"]),
+            opportunityId,
+            contactId,
+            accountId,
+            opportunity.source,
+            opportunity.confidence,
+            crmEventJson(input.evidence),
+          );
+        database
+          .prepare(
+            `
           INSERT INTO crm_contact_profiles (contact_id, primary_opportunity_id, created_at, updated_at)
           VALUES (?, ?, datetime('now'), datetime('now'))
           ON CONFLICT(contact_id) DO UPDATE SET primary_opportunity_id = COALESCE(primary_opportunity_id, excluded.primary_opportunity_id), updated_at = datetime('now')
         `,
-        )
-        .run(contactId, opportunityId);
-      const profileRow = getCrmContactProfileRow(database, contactId);
-      if (profileRow) projectCrmContactProfileMetadata(database, rowToCrmContactProfile(profileRow));
-    }
-    insertCrmEvent(database, {
-      eventType: "crm.opportunity.created",
-      entityType: "opportunity",
-      entityId: opportunityId,
-      contactId,
-      accountId,
-      opportunityId,
-      source: opportunity.source,
-      idempotencyKey,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: opportunity.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: opportunity,
-    });
-  });
-  txn();
+          )
+          .run(contactId, opportunityId);
+        const profileRow = getCrmContactProfileRow(database, contactId);
+        if (profileRow) projectCrmContactProfileMetadata(database, rowToCrmContactProfile(profileRow));
+      }
+      insertCrmEvent(database, {
+        eventType: "crm.opportunity.created",
+        entityType: "opportunity",
+        entityId: opportunityId,
+        contactId,
+        accountId,
+        opportunityId,
+        source: opportunity.source,
+        idempotencyKey,
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: opportunity.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: opportunity,
+      });
+    },
+    { label: "contacts:createCrmOpportunity" },
+  );
   if (!opportunity) throw new Error(`CRM opportunity not created: ${opportunityId}`);
   return opportunity;
 }
@@ -4650,26 +4662,30 @@ export function linkCrmOpportunityContact(input: LinkCrmOpportunityContactInput)
   const role = normalizeOptionalText(input.role) ?? "stakeholder";
   const id = stableId("crm_oc", [opportunity.id, contactId, role]);
   let link: CrmOpportunityContact | null = null;
-  const txn = database.transaction(() => {
-    const previous = database.prepare("SELECT * FROM crm_opportunity_contacts WHERE id = ?").get(id) as
-      | CrmOpportunityContactRow
-      | undefined;
-    const affectedContactIds = new Set<string>([contactId]);
-    if (input.isPrimary) {
-      const previousPrimaryRows = database
-        .prepare("SELECT DISTINCT contact_id FROM crm_opportunity_contacts WHERE opportunity_id = ? AND is_primary = 1")
-        .all(opportunity.id) as Array<{ contact_id: string }>;
-      for (const row of previousPrimaryRows) affectedContactIds.add(row.contact_id);
+  executeWrite(
+    database,
+    () => {
+      const previous = database.prepare("SELECT * FROM crm_opportunity_contacts WHERE id = ?").get(id) as
+        | CrmOpportunityContactRow
+        | undefined;
+      const affectedContactIds = new Set<string>([contactId]);
+      if (input.isPrimary) {
+        const previousPrimaryRows = database
+          .prepare(
+            "SELECT DISTINCT contact_id FROM crm_opportunity_contacts WHERE opportunity_id = ? AND is_primary = 1",
+          )
+          .all(opportunity.id) as Array<{ contact_id: string }>;
+        for (const row of previousPrimaryRows) affectedContactIds.add(row.contact_id);
+        database
+          .prepare("UPDATE crm_opportunity_contacts SET is_primary = 0 WHERE opportunity_id = ?")
+          .run(opportunity.id);
+      } else if (input.isPrimary === false && previous?.is_primary) {
+        affectedContactIds.add(previous.contact_id);
+      }
+      const nextIsPrimary = input.isPrimary === undefined ? (previous?.is_primary ?? 0) : input.isPrimary ? 1 : 0;
       database
-        .prepare("UPDATE crm_opportunity_contacts SET is_primary = 0 WHERE opportunity_id = ?")
-        .run(opportunity.id);
-    } else if (input.isPrimary === false && previous?.is_primary) {
-      affectedContactIds.add(previous.contact_id);
-    }
-    const nextIsPrimary = input.isPrimary === undefined ? (previous?.is_primary ?? 0) : input.isPrimary ? 1 : 0;
-    database
-      .prepare(
-        `
+        .prepare(
+          `
         INSERT INTO crm_opportunity_contacts (
           id, opportunity_id, contact_id, account_id, role, influence, sentiment, is_primary,
           source, confidence, evidence_json, metadata_json, created_at, updated_at
@@ -4686,58 +4702,59 @@ export function linkCrmOpportunityContact(input: LinkCrmOpportunityContactInput)
           metadata_json = excluded.metadata_json,
           updated_at = datetime('now')
       `,
-      )
-      .run(
-        id,
-        opportunity.id,
+        )
+        .run(
+          id,
+          opportunity.id,
+          contactId,
+          accountId,
+          role,
+          normalizeOptionalText(input.influence, previous?.influence ?? "unknown") ?? "unknown",
+          normalizeOptionalText(input.sentiment, previous?.sentiment ?? "unknown") ?? "unknown",
+          nextIsPrimary,
+          crmMutationSource(input),
+          normalizeCrmConfidence(input.confidence),
+          crmEventJson(input.evidence),
+          jsonObject(normalizeMetadataObject(input.metadata, previous?.metadata_json ?? "{}")),
+        );
+      if (nextIsPrimary === 1) {
+        refreshCrmOpportunityPrimaryContact(database, opportunity.id, contactId);
+      } else if (previous?.is_primary) {
+        const nextPrimaryContactId = refreshCrmOpportunityPrimaryContact(database, opportunity.id);
+        if (nextPrimaryContactId) affectedContactIds.add(nextPrimaryContactId);
+      }
+      for (const affectedContactId of affectedContactIds) {
+        refreshCrmContactPrimaryOpportunity(
+          database,
+          affectedContactId,
+          affectedContactId === contactId && nextIsPrimary === 1 ? opportunity.id : null,
+        );
+      }
+      const row = database.prepare("SELECT * FROM crm_opportunity_contacts WHERE id = ?").get(id) as
+        | CrmOpportunityContactRow
+        | undefined;
+      if (!row) throw new Error(`CRM opportunity contact not found after link: ${id}`);
+      link = rowToCrmOpportunityContact(row);
+      insertCrmEvent(database, {
+        eventType: "crm.opportunity_contact.linked",
+        entityType: "opportunity",
+        entityId: opportunity.id,
         contactId,
         accountId,
-        role,
-        normalizeOptionalText(input.influence, previous?.influence ?? "unknown") ?? "unknown",
-        normalizeOptionalText(input.sentiment, previous?.sentiment ?? "unknown") ?? "unknown",
-        nextIsPrimary,
-        crmMutationSource(input),
-        normalizeCrmConfidence(input.confidence),
-        crmEventJson(input.evidence),
-        jsonObject(normalizeMetadataObject(input.metadata, previous?.metadata_json ?? "{}")),
-      );
-    if (nextIsPrimary === 1) {
-      refreshCrmOpportunityPrimaryContact(database, opportunity.id, contactId);
-    } else if (previous?.is_primary) {
-      const nextPrimaryContactId = refreshCrmOpportunityPrimaryContact(database, opportunity.id);
-      if (nextPrimaryContactId) affectedContactIds.add(nextPrimaryContactId);
-    }
-    for (const affectedContactId of affectedContactIds) {
-      refreshCrmContactPrimaryOpportunity(
-        database,
-        affectedContactId,
-        affectedContactId === contactId && nextIsPrimary === 1 ? opportunity.id : null,
-      );
-    }
-    const row = database.prepare("SELECT * FROM crm_opportunity_contacts WHERE id = ?").get(id) as
-      | CrmOpportunityContactRow
-      | undefined;
-    if (!row) throw new Error(`CRM opportunity contact not found after link: ${id}`);
-    link = rowToCrmOpportunityContact(row);
-    insertCrmEvent(database, {
-      eventType: "crm.opportunity_contact.linked",
-      entityType: "opportunity",
-      entityId: opportunity.id,
-      contactId,
-      accountId,
-      opportunityId: opportunity.id,
-      source: link.source,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: link.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: link,
-      previousPayload: previous ? rowToCrmOpportunityContact(previous) : null,
-    });
-  });
-  txn();
+        opportunityId: opportunity.id,
+        source: link.source,
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: link.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: link,
+        previousPayload: previous ? rowToCrmOpportunityContact(previous) : null,
+      });
+    },
+    { label: "contacts:linkCrmOpportunityContact" },
+  );
   if (!link) throw new Error(`CRM opportunity contact not linked: ${id}`);
   return link;
 }
@@ -4759,45 +4776,29 @@ export function moveCrmOpportunityStage(input: MoveCrmOpportunityStageInput): Cr
   const stage = resolveCrmStage(database, input.stageRef, previous.pipeline_id ?? "crm_pipeline_default");
   const nextStatus = opportunityStatusForStage(stage, previous.status);
   let opportunity: CrmOpportunity | null = null;
-  const txn = database.transaction(() => {
-    database
-      .prepare(
-        `
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
         UPDATE crm_opportunities
         SET pipeline_id = ?, stage_id = ?, status = ?, closed_at = ?, lost_reason = ?, updated_at = datetime('now')
         WHERE id = ?
       `,
-      )
-      .run(
-        stage.pipelineId,
-        stage.id,
-        nextStatus,
-        nextStatus === "won" || nextStatus === "lost" ? new Date().toISOString() : null,
-        nextStatus === "lost" ? (normalizeOptionalText(input.lostReason) ?? previous.lost_reason) : null,
-        previous.id,
-      );
-    const next = requireCrmOpportunity(database, previous.id);
-    opportunity = rowToCrmOpportunity(next);
-    insertCrmEvent(database, {
-      eventType: "crm.opportunity.stage_changed",
-      entityType: "opportunity",
-      entityId: previous.id,
-      contactId: previous.primary_contact_id,
-      accountId: previous.account_id,
-      opportunityId: previous.id,
-      source: crmMutationSource(input),
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: input.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: { opportunity, stage },
-      previousPayload: { opportunity: rowToCrmOpportunity(previous), stageId: previous.stage_id },
-    });
-    if (previous.status !== next.status) {
+        )
+        .run(
+          stage.pipelineId,
+          stage.id,
+          nextStatus,
+          nextStatus === "won" || nextStatus === "lost" ? new Date().toISOString() : null,
+          nextStatus === "lost" ? (normalizeOptionalText(input.lostReason) ?? previous.lost_reason) : null,
+          previous.id,
+        );
+      const next = requireCrmOpportunity(database, previous.id);
+      opportunity = rowToCrmOpportunity(next);
       insertCrmEvent(database, {
-        eventType: "crm.opportunity.status_changed",
+        eventType: "crm.opportunity.stage_changed",
         entityType: "opportunity",
         entityId: previous.id,
         contactId: previous.primary_contact_id,
@@ -4810,12 +4811,31 @@ export function moveCrmOpportunityStage(input: MoveCrmOpportunityStageInput): Cr
         evidence: input.evidence,
         scopeType: input.scopeType,
         scopeId: input.scopeId,
-        payload: { status: next.status, closedAt: next.closed_at, lostReason: next.lost_reason },
-        previousPayload: { status: previous.status, closedAt: previous.closed_at, lostReason: previous.lost_reason },
+        payload: { opportunity, stage },
+        previousPayload: { opportunity: rowToCrmOpportunity(previous), stageId: previous.stage_id },
       });
-    }
-  });
-  txn();
+      if (previous.status !== next.status) {
+        insertCrmEvent(database, {
+          eventType: "crm.opportunity.status_changed",
+          entityType: "opportunity",
+          entityId: previous.id,
+          contactId: previous.primary_contact_id,
+          accountId: previous.account_id,
+          opportunityId: previous.id,
+          source: crmMutationSource(input),
+          actorType: input.actorType,
+          actorId: input.actorId,
+          confidence: input.confidence,
+          evidence: input.evidence,
+          scopeType: input.scopeType,
+          scopeId: input.scopeId,
+          payload: { status: next.status, closedAt: next.closed_at, lostReason: next.lost_reason },
+          previousPayload: { status: previous.status, closedAt: previous.closed_at, lostReason: previous.lost_reason },
+        });
+      }
+    },
+    { label: "contacts:moveCrmOpportunityStage" },
+  );
   if (!opportunity) throw new Error(`CRM opportunity not moved: ${input.opportunityId}`);
   return opportunity;
 }
@@ -4896,10 +4916,12 @@ export function createCrmTask(input: CreateCrmTaskInput): CrmTask {
   }
   const taskId = `crm_task_${generateId()}`;
   let task: CrmTask | null = null;
-  const txn = database.transaction(() => {
-    database
-      .prepare(
-        `
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
         INSERT INTO crm_tasks (
           id, contact_id, account_id, opportunity_id, chat_id, session_key, title, body,
           task_type, status, priority, due_at, snoozed_until, owner_type, owner_id,
@@ -4908,55 +4930,56 @@ export function createCrmTask(input: CreateCrmTaskInput): CrmTask {
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `,
-      )
-      .run(
-        taskId,
+        )
+        .run(
+          taskId,
+          contactId,
+          accountId,
+          input.opportunityId ?? null,
+          normalizeOptionalText(input.chatId),
+          normalizeOptionalText(input.sessionKey),
+          title,
+          normalizeOptionalText(input.body),
+          normalizeOptionalText(input.taskType) ?? "follow_up",
+          normalizeCrmEnum<CrmTaskStatus>(input.status, CRM_TASK_STATUSES, "open"),
+          normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
+          normalizeOptionalText(input.dueAt),
+          normalizeOptionalText(input.snoozedUntil),
+          owner.ownerType,
+          owner.ownerId,
+          normalizeOptionalText(input.createdByType) ?? normalizeCrmActorType(input.actorType),
+          normalizeOptionalText(input.createdById) ?? normalizeOptionalText(input.actorId),
+          crmMutationSource(input),
+          idempotencyKey,
+          normalizeCrmConfidence(input.confidence),
+          crmEventJson(input.evidence),
+          jsonObject(input.metadata),
+          normalizeOptionalText(input.raviTaskId),
+        );
+      const row = requireCrmTask(database, taskId);
+      task = rowToCrmTask(row);
+      if (contactId) refreshCrmContactNextAction(database, contactId);
+      insertCrmEvent(database, {
+        eventType: "crm.task.created",
+        entityType: "task",
+        entityId: taskId,
         contactId,
         accountId,
-        input.opportunityId ?? null,
-        normalizeOptionalText(input.chatId),
-        normalizeOptionalText(input.sessionKey),
-        title,
-        normalizeOptionalText(input.body),
-        normalizeOptionalText(input.taskType) ?? "follow_up",
-        normalizeCrmEnum<CrmTaskStatus>(input.status, CRM_TASK_STATUSES, "open"),
-        normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
-        normalizeOptionalText(input.dueAt),
-        normalizeOptionalText(input.snoozedUntil),
-        owner.ownerType,
-        owner.ownerId,
-        normalizeOptionalText(input.createdByType) ?? normalizeCrmActorType(input.actorType),
-        normalizeOptionalText(input.createdById) ?? normalizeOptionalText(input.actorId),
-        crmMutationSource(input),
+        opportunityId: input.opportunityId ?? null,
+        taskId,
+        source: task.source,
         idempotencyKey,
-        normalizeCrmConfidence(input.confidence),
-        crmEventJson(input.evidence),
-        jsonObject(input.metadata),
-        normalizeOptionalText(input.raviTaskId),
-      );
-    const row = requireCrmTask(database, taskId);
-    task = rowToCrmTask(row);
-    if (contactId) refreshCrmContactNextAction(database, contactId);
-    insertCrmEvent(database, {
-      eventType: "crm.task.created",
-      entityType: "task",
-      entityId: taskId,
-      contactId,
-      accountId,
-      opportunityId: input.opportunityId ?? null,
-      taskId,
-      source: task.source,
-      idempotencyKey,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: task.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: task,
-    });
-  });
-  txn();
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: task.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: task,
+      });
+    },
+    { label: "contacts:createCrmTask" },
+  );
   if (!task) throw new Error(`CRM task not created: ${taskId}`);
   return task;
 }
@@ -4966,39 +4989,42 @@ export function completeCrmTask(input: CompleteCrmTaskInput): CrmTask {
   const previous = requireCrmTask(database, input.taskId);
   let task: CrmTask | null = rowToCrmTask(previous);
   if (previous.status === "done") return task;
-  const txn = database.transaction(() => {
-    database
-      .prepare(
-        `
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
         UPDATE crm_tasks
         SET status = 'done', completed_at = datetime('now'), updated_at = datetime('now')
         WHERE id = ?
       `,
-      )
-      .run(previous.id);
-    const row = requireCrmTask(database, previous.id);
-    task = rowToCrmTask(row);
-    if (row.contact_id) refreshCrmContactNextAction(database, row.contact_id);
-    insertCrmEvent(database, {
-      eventType: "crm.task.completed",
-      entityType: "task",
-      entityId: previous.id,
-      contactId: previous.contact_id,
-      accountId: previous.account_id,
-      opportunityId: previous.opportunity_id,
-      taskId: previous.id,
-      source: crmMutationSource(input),
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: input.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: task,
-      previousPayload: rowToCrmTask(previous),
-    });
-  });
-  txn();
+        )
+        .run(previous.id);
+      const row = requireCrmTask(database, previous.id);
+      task = rowToCrmTask(row);
+      if (row.contact_id) refreshCrmContactNextAction(database, row.contact_id);
+      insertCrmEvent(database, {
+        eventType: "crm.task.completed",
+        entityType: "task",
+        entityId: previous.id,
+        contactId: previous.contact_id,
+        accountId: previous.account_id,
+        opportunityId: previous.opportunity_id,
+        taskId: previous.id,
+        source: crmMutationSource(input),
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: input.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: task,
+        previousPayload: rowToCrmTask(previous),
+      });
+    },
+    { label: "contacts:completeCrmTask" },
+  );
   if (!task) throw new Error(`CRM task not completed: ${input.taskId}`);
   return task;
 }
@@ -5147,10 +5173,12 @@ export function proposeCrmFact(input: ProposeCrmFactInput): CrmFact {
 
   const factId = `crm_fact_${generateId()}`;
   let fact: CrmFact | null = null;
-  const txn = database.transaction(() => {
-    database
-      .prepare(
-        `
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
         INSERT INTO crm_facts (
           id, entity_type, entity_id, contact_id, account_id, opportunity_id,
           key, value_json, status, source, idempotency_key, confidence, evidence_json,
@@ -5159,51 +5187,52 @@ export function proposeCrmFact(input: ProposeCrmFactInput): CrmFact {
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `,
-      )
-      .run(
-        factId,
-        target.entityType,
-        target.entityId,
-        target.contactId,
-        target.accountId,
-        target.opportunityId,
-        key,
-        JSON.stringify(input.value),
-        status,
-        crmMutationSource(input),
+        )
+        .run(
+          factId,
+          target.entityType,
+          target.entityId,
+          target.contactId,
+          target.accountId,
+          target.opportunityId,
+          key,
+          JSON.stringify(input.value),
+          status,
+          crmMutationSource(input),
+          idempotencyKey,
+          normalizeCrmConfidence(input.confidence),
+          crmEventJson(input.evidence),
+          scope.scopeType,
+          scope.scopeId,
+          normalizeCrmActorType(input.actorType),
+          normalizeOptionalText(input.actorId),
+          status === "confirmed" ? normalizeCrmActorType(input.actorType) : null,
+          status === "confirmed" ? normalizeOptionalText(input.actorId) : null,
+          normalizeOptionalText(input.supersedesFactId),
+          jsonObject(input.metadata),
+        );
+      const row = requireCrmFact(database, factId);
+      fact = rowToCrmFact(row);
+      insertCrmEvent(database, {
+        eventType: `crm.fact.${status}`,
+        entityType: target.entityType,
+        entityId: target.entityId,
+        contactId: target.contactId,
+        accountId: target.accountId,
+        opportunityId: target.opportunityId,
+        source: fact.source,
         idempotencyKey,
-        normalizeCrmConfidence(input.confidence),
-        crmEventJson(input.evidence),
-        scope.scopeType,
-        scope.scopeId,
-        normalizeCrmActorType(input.actorType),
-        normalizeOptionalText(input.actorId),
-        status === "confirmed" ? normalizeCrmActorType(input.actorType) : null,
-        status === "confirmed" ? normalizeOptionalText(input.actorId) : null,
-        normalizeOptionalText(input.supersedesFactId),
-        jsonObject(input.metadata),
-      );
-    const row = requireCrmFact(database, factId);
-    fact = rowToCrmFact(row);
-    insertCrmEvent(database, {
-      eventType: `crm.fact.${status}`,
-      entityType: target.entityType,
-      entityId: target.entityId,
-      contactId: target.contactId,
-      accountId: target.accountId,
-      opportunityId: target.opportunityId,
-      source: fact.source,
-      idempotencyKey,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: fact.confidence,
-      evidence: input.evidence,
-      scopeType: scope.scopeType,
-      scopeId: scope.scopeId,
-      payload: fact,
-    });
-  });
-  txn();
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: fact.confidence,
+        evidence: input.evidence,
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
+        payload: fact,
+      });
+    },
+    { label: "contacts:proposeCrmFact" },
+  );
   if (!fact) throw new Error(`CRM fact not created: ${factId}`);
   return fact;
 }
@@ -5213,10 +5242,12 @@ function updateCrmFactStatus(input: UpdateCrmFactStatusInput, status: Exclude<Cr
   const previous = requireCrmFact(database, input.factId);
   let fact: CrmFact | null = rowToCrmFact(previous);
   if (previous.status === status) return fact;
-  const txn = database.transaction(() => {
-    database
-      .prepare(
-        `
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
         UPDATE crm_facts
         SET status = ?,
             confirmed_by_type = CASE WHEN ? = 'confirmed' THEN ? ELSE confirmed_by_type END,
@@ -5224,36 +5255,37 @@ function updateCrmFactStatus(input: UpdateCrmFactStatusInput, status: Exclude<Cr
             updated_at = datetime('now')
         WHERE id = ?
       `,
-      )
-      .run(
-        status,
-        status,
-        normalizeCrmActorType(input.actorType),
-        status,
-        normalizeOptionalText(input.actorId),
-        previous.id,
-      );
-    const row = requireCrmFact(database, previous.id);
-    fact = rowToCrmFact(row);
-    insertCrmEvent(database, {
-      eventType: `crm.fact.${status}`,
-      entityType: previous.entity_type,
-      entityId: previous.entity_id,
-      contactId: previous.contact_id,
-      accountId: previous.account_id,
-      opportunityId: previous.opportunity_id,
-      source: crmMutationSource(input),
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: input.confidence ?? previous.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType ?? previous.scope_type,
-      scopeId: input.scopeId ?? previous.scope_id,
-      payload: fact,
-      previousPayload: rowToCrmFact(previous),
-    });
-  });
-  txn();
+        )
+        .run(
+          status,
+          status,
+          normalizeCrmActorType(input.actorType),
+          status,
+          normalizeOptionalText(input.actorId),
+          previous.id,
+        );
+      const row = requireCrmFact(database, previous.id);
+      fact = rowToCrmFact(row);
+      insertCrmEvent(database, {
+        eventType: `crm.fact.${status}`,
+        entityType: previous.entity_type,
+        entityId: previous.entity_id,
+        contactId: previous.contact_id,
+        accountId: previous.account_id,
+        opportunityId: previous.opportunity_id,
+        source: crmMutationSource(input),
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: input.confidence ?? previous.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType ?? previous.scope_type,
+        scopeId: input.scopeId ?? previous.scope_id,
+        payload: fact,
+        previousPayload: rowToCrmFact(previous),
+      });
+    },
+    { label: "contacts:updateCrmFactStatus" },
+  );
   if (!fact) throw new Error(`CRM fact not updated: ${input.factId}`);
   return fact;
 }
@@ -5358,18 +5390,20 @@ export function projectContactEventToCrmActivity(input: ProjectContactEventToCrm
   }
   const activityId = `crm_act_${generateId()}`;
   let activity: CrmActivity | null = null;
-  const txn = database.transaction(() => {
-    const existing = database.prepare("SELECT * FROM crm_activities WHERE contact_event_id = ?").get(event.id) as
-      | CrmActivityRow
-      | undefined;
-    if (existing) {
-      activity = rowToCrmActivity(existing);
-      return;
-    }
+  executeWrite(
+    database,
+    () => {
+      const existing = database.prepare("SELECT * FROM crm_activities WHERE contact_event_id = ?").get(event.id) as
+        | CrmActivityRow
+        | undefined;
+      if (existing) {
+        activity = rowToCrmActivity(existing);
+        return;
+      }
 
-    database
-      .prepare(
-        `
+      database
+        .prepare(
+          `
         INSERT OR IGNORE INTO crm_activities (
           id, activity_type, title, summary, body, occurred_at,
           contact_id, account_id, opportunity_id, task_id, chat_id, session_key,
@@ -5378,75 +5412,76 @@ export function projectContactEventToCrmActivity(input: ProjectContactEventToCrm
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `,
-      )
-      .run(
+        )
+        .run(
+          activityId,
+          normalizeOptionalText(input.activityType) ?? contactEventActivityType(event.eventType),
+          normalizeOptionalText(input.title),
+          normalizeOptionalText(input.summary) ?? contactEventSummary(event),
+          normalizeOptionalText(input.body),
+          event.effectiveAt ?? event.createdAt,
+          event.contactId,
+          normalizeOptionalText(input.accountId),
+          normalizeOptionalText(input.opportunityId),
+          normalizeOptionalText(input.taskId),
+          event.chatId,
+          event.sessionKey,
+          event.messageId,
+          event.id,
+          null,
+          event.actorType ?? "unknown",
+          event.actorId,
+          crmMutationSource(input),
+          idempotencyKey,
+          input.confidence ?? event.confidence ?? 1,
+          crmEventJson(input.evidence ?? event.evidence),
+          JSON.stringify({
+            contactEventId: event.id,
+            contactEventType: event.eventType,
+            payload: event.payload,
+          }),
+        );
+      const row = database.prepare("SELECT * FROM crm_activities WHERE contact_event_id = ?").get(event.id) as
+        | CrmActivityRow
+        | undefined;
+      if (!row) throw new Error(`CRM activity not found after projection: ${activityId}`);
+      const projectedActivity = rowToCrmActivity(row);
+      activity = projectedActivity;
+      if (row.id !== activityId) return;
+      insertCrmEvent(database, {
+        eventType: "crm.activity.logged",
+        entityType: "activity",
+        entityId: activityId,
+        contactId: event.contactId,
+        accountId: projectedActivity.accountId,
+        opportunityId: projectedActivity.opportunityId,
+        taskId: projectedActivity.taskId,
         activityId,
-        normalizeOptionalText(input.activityType) ?? contactEventActivityType(event.eventType),
-        normalizeOptionalText(input.title),
-        normalizeOptionalText(input.summary) ?? contactEventSummary(event),
-        normalizeOptionalText(input.body),
-        event.effectiveAt ?? event.createdAt,
-        event.contactId,
-        normalizeOptionalText(input.accountId),
-        normalizeOptionalText(input.opportunityId),
-        normalizeOptionalText(input.taskId),
-        event.chatId,
-        event.sessionKey,
-        event.messageId,
-        event.id,
-        null,
-        event.actorType ?? "unknown",
-        event.actorId,
-        crmMutationSource(input),
+        source: projectedActivity.source,
         idempotencyKey,
-        input.confidence ?? event.confidence ?? 1,
-        crmEventJson(input.evidence ?? event.evidence),
-        JSON.stringify({
-          contactEventId: event.id,
-          contactEventType: event.eventType,
-          payload: event.payload,
-        }),
-      );
-    const row = database.prepare("SELECT * FROM crm_activities WHERE contact_event_id = ?").get(event.id) as
-      | CrmActivityRow
-      | undefined;
-    if (!row) throw new Error(`CRM activity not found after projection: ${activityId}`);
-    const projectedActivity = rowToCrmActivity(row);
-    activity = projectedActivity;
-    if (row.id !== activityId) return;
-    insertCrmEvent(database, {
-      eventType: "crm.activity.logged",
-      entityType: "activity",
-      entityId: activityId,
-      contactId: event.contactId,
-      accountId: projectedActivity.accountId,
-      opportunityId: projectedActivity.opportunityId,
-      taskId: projectedActivity.taskId,
-      activityId,
-      source: projectedActivity.source,
-      idempotencyKey,
-      actorType: input.actorType ?? event.actorType,
-      actorId: input.actorId ?? event.actorId,
-      confidence: projectedActivity.confidence,
-      evidence: input.evidence ?? event.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: projectedActivity,
-      emitContactEvent: false,
-    });
-    upsertCrmActivityParticipant(database, {
-      activityId: projectedActivity.id,
-      contactId: event.contactId,
-      accountId: projectedActivity.accountId,
-      role: "subject",
-      actorType: event.actorType,
-      actorId: event.actorId,
-      source: projectedActivity.source,
-      confidence: projectedActivity.confidence,
-      metadata: { sourceContactEventId: event.id },
-    });
-  });
-  txn();
+        actorType: input.actorType ?? event.actorType,
+        actorId: input.actorId ?? event.actorId,
+        confidence: projectedActivity.confidence,
+        evidence: input.evidence ?? event.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: projectedActivity,
+        emitContactEvent: false,
+      });
+      upsertCrmActivityParticipant(database, {
+        activityId: projectedActivity.id,
+        contactId: event.contactId,
+        accountId: projectedActivity.accountId,
+        role: "subject",
+        actorType: event.actorType,
+        actorId: event.actorId,
+        source: projectedActivity.source,
+        confidence: projectedActivity.confidence,
+        metadata: { sourceContactEventId: event.id },
+      });
+    },
+    { label: "contacts:projectContactEventToCrmActivity" },
+  );
   if (!activity) throw new Error(`CRM activity not projected: ${activityId}`);
   return activity;
 }
@@ -5516,39 +5551,42 @@ export function linkCrmActivityParticipant(input: LinkCrmActivityParticipantInpu
   const accountId = normalizeOptionalText(input.accountId);
   if (accountId) requireCrmAccount(database, accountId);
   let participant: CrmActivityParticipant | null = null;
-  const txn = database.transaction(() => {
-    const row = upsertCrmActivityParticipant(database, {
-      activityId: activity.id,
-      contactId,
-      accountId,
-      role: input.role,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      source: crmMutationSource(input),
-      confidence: input.confidence,
-      metadata: input.metadata,
-    });
-    participant = rowToCrmActivityParticipant(row);
-    insertCrmEvent(database, {
-      eventType: "crm.activity_participant.linked",
-      entityType: "activity",
-      entityId: activity.id,
-      contactId,
-      accountId,
-      opportunityId: activity.opportunity_id,
-      taskId: activity.task_id,
-      activityId: activity.id,
-      source: participant.source,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      confidence: participant.confidence,
-      evidence: input.evidence,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      payload: participant,
-    });
-  });
-  txn();
+  executeWrite(
+    database,
+    () => {
+      const row = upsertCrmActivityParticipant(database, {
+        activityId: activity.id,
+        contactId,
+        accountId,
+        role: input.role,
+        actorType: input.actorType,
+        actorId: input.actorId,
+        source: crmMutationSource(input),
+        confidence: input.confidence,
+        metadata: input.metadata,
+      });
+      participant = rowToCrmActivityParticipant(row);
+      insertCrmEvent(database, {
+        eventType: "crm.activity_participant.linked",
+        entityType: "activity",
+        entityId: activity.id,
+        contactId,
+        accountId,
+        opportunityId: activity.opportunity_id,
+        taskId: activity.task_id,
+        activityId: activity.id,
+        source: participant.source,
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: participant.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: participant,
+      });
+    },
+    { label: "contacts:linkCrmActivityParticipant" },
+  );
   if (!participant) throw new Error(`CRM activity participant not linked: ${input.activityId}`);
   return participant;
 }
@@ -5693,13 +5731,15 @@ export function setContactMetadata(
   const scope = normalizeContactEventScope(options.scopeType, options.scopeId);
   const valueJson = JSON.stringify(value);
 
-  const txn = database.transaction(() => {
-    const previous = database
-      .prepare("SELECT * FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
-      .get(contactId, scope.scopeType, scope.storageScopeId, normalizedKey) as ContactContextRow | undefined;
-    database
-      .prepare(
-        `
+  executeWrite(
+    database,
+    () => {
+      const previous = database
+        .prepare("SELECT * FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
+        .get(contactId, scope.scopeType, scope.storageScopeId, normalizedKey) as ContactContextRow | undefined;
+      database
+        .prepare(
+          `
         INSERT INTO contact_contexts (
           contact_id, scope_type, scope_id, key, value_json, source, confidence,
           updated_by_type, updated_by_id, created_at, updated_at
@@ -5713,36 +5753,37 @@ export function setContactMetadata(
           updated_by_id = excluded.updated_by_id,
           updated_at = datetime('now')
       `,
-      )
-      .run(
+        )
+        .run(
+          contactId,
+          scope.scopeType,
+          scope.storageScopeId,
+          normalizedKey,
+          valueJson,
+          options.source?.trim() || "cli",
+          options.confidence ?? 1,
+          options.actorType ?? "user",
+          options.actorId?.trim() || null,
+        );
+      insertContactEvent(database, {
         contactId,
-        scope.scopeType,
-        scope.storageScopeId,
-        normalizedKey,
-        valueJson,
-        options.source?.trim() || "cli",
-        options.confidence ?? 1,
-        options.actorType ?? "user",
-        options.actorId?.trim() || null,
-      );
-    insertContactEvent(database, {
-      contactId,
-      eventType: "profile.metadata_set",
-      scopeType: scope.scopeType,
-      scopeId: scope.scopeId,
-      source: options.source ?? "cli",
-      actorType: options.actorType ?? "user",
-      actorId: options.actorId ?? null,
-      confidence: options.confidence ?? 1,
-      payload: {
-        key: normalizedKey,
-        value,
-        previousValue: previous ? parseJsonValue(previous.value_json) : null,
-      },
-      evidence: options.evidence,
-    });
-  });
-  txn();
+        eventType: "profile.metadata_set",
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
+        source: options.source ?? "cli",
+        actorType: options.actorType ?? "user",
+        actorId: options.actorId ?? null,
+        confidence: options.confidence ?? 1,
+        payload: {
+          key: normalizedKey,
+          value,
+          previousValue: previous ? parseJsonValue(previous.value_json) : null,
+        },
+        evidence: options.evidence,
+      });
+    },
+    { label: "contacts:setContactMetadata" },
+  );
 
   const row = database
     .prepare("SELECT * FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
@@ -5764,29 +5805,32 @@ export function removeContactMetadata(
   let previous: ContactContextEntry | null = null;
   let event: ContactEvent | null = null;
 
-  const txn = database.transaction(() => {
-    const previousRow = database
-      .prepare("SELECT * FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
-      .get(contactId, scope.scopeType, scope.storageScopeId, normalizedKey) as ContactContextRow | undefined;
-    if (!previousRow) return;
-    previous = rowToContactContext(previousRow);
-    database
-      .prepare("DELETE FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
-      .run(contactId, scope.scopeType, scope.storageScopeId, normalizedKey);
-    event = insertContactEvent(database, {
-      contactId,
-      eventType: "profile.metadata_removed",
-      scopeType: scope.scopeType,
-      scopeId: scope.scopeId,
-      source: options.source ?? "cli",
-      actorType: options.actorType ?? "user",
-      actorId: options.actorId ?? null,
-      confidence: options.confidence ?? 1,
-      payload: { key: normalizedKey, previousValue: previous.value },
-      evidence: options.evidence,
-    });
-  });
-  txn();
+  executeWrite(
+    database,
+    () => {
+      const previousRow = database
+        .prepare("SELECT * FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
+        .get(contactId, scope.scopeType, scope.storageScopeId, normalizedKey) as ContactContextRow | undefined;
+      if (!previousRow) return;
+      previous = rowToContactContext(previousRow);
+      database
+        .prepare("DELETE FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
+        .run(contactId, scope.scopeType, scope.storageScopeId, normalizedKey);
+      event = insertContactEvent(database, {
+        contactId,
+        eventType: "profile.metadata_removed",
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
+        source: options.source ?? "cli",
+        actorType: options.actorType ?? "user",
+        actorId: options.actorId ?? null,
+        confidence: options.confidence ?? 1,
+        payload: { key: normalizedKey, previousValue: previous.value },
+        evidence: options.evidence,
+      });
+    },
+    { label: "contacts:removeContactMetadata" },
+  );
 
   return { removed: previous !== null, previous, event };
 }
@@ -6105,192 +6149,194 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
   let createdContact = false;
   let createdPlatformIdentity = false;
 
-  const txn = database.transaction(() => {
-    const existingIdentity = findPlatformIdentityByChannelRef(database, {
-      channel,
-      instanceId,
-      platformUserId: platformSenderId,
-    });
-    if (existingIdentity?.owner_type === "agent") {
-      platformIdentity = rowToPlatformIdentity(existingIdentity);
-      return;
-    }
-
-    if (existingIdentity?.owner_type === "contact" && existingIdentity.owner_id) {
-      contact = getCanonicalCompatContactById(database, existingIdentity.owner_id);
-      platformIdentity = rowToPlatformIdentity(existingIdentity);
-    }
-    if (!contact && contactIdentity) {
-      contact = findCanonicalContactByIdentity(database, contactIdentity);
-    }
-
-    if (!desiredStatus && !contact) {
-      return;
-    }
-    if (!desiredStatus && contact) {
-      policy = getContactPolicyById(database, contact.id);
-      return;
-    }
-    if (normalizePhone(contactIdentity).startsWith("group:")) {
-      return;
-    }
-
-    const evidence = inboundIntakeEventEvidence(input);
-
-    if (!contact) {
-      contact = createCanonicalContactForIdentity(database, contactIdentity, {
-        name: input.displayName ?? null,
-        status: desiredStatus!,
-        source: "inbound",
-        tags: [],
-        notes: {},
+  executeWrite(
+    database,
+    () => {
+      const existingIdentity = findPlatformIdentityByChannelRef(database, {
+        channel,
+        instanceId,
+        platformUserId: platformSenderId,
       });
-      createdContact = true;
-      const createdEvent = insertContactEvent(database, {
-        contactId: contact.id,
-        eventType: "profile.created",
-        source: intakeSource,
-        actorType: "system",
-        confidence: 1,
-        chatId: input.chatId,
-        messageId: input.providerMessageId ?? input.sourceEventId,
-        payload: {
-          status: desiredStatus,
-          contactIdentity,
-          displayName: input.displayName ?? null,
-        },
-        evidence,
-      });
-      eventIds.push(createdEvent.id);
-    } else {
-      upsertCanonicalContactRecord(database, {
-        id: contact.id,
-        displayName: input.displayName ?? null,
-        avatarUrl: input.avatarUrl ?? null,
-        coalesceDisplayName: true,
-      });
-      contact = getCanonicalCompatContactById(database, contact.id);
-    }
-
-    if (!contact) return;
-    policy = getContactPolicyById(database, contact.id);
-    if (desiredStatus && shouldApplyInboundIntakeStatus(policy, desiredStatus)) {
-      const previousStatus = policy?.status ?? null;
-      upsertCanonicalContactPolicy(database, {
-        contactId: contact.id,
-        status: desiredStatus,
-        source: "inbound",
-      });
-      policy = getContactPolicyById(database, contact.id);
-      const statusEvent = insertContactEvent(database, {
-        contactId: contact.id,
-        eventType: "policy.status_changed",
-        source: intakeSource,
-        actorType: "system",
-        confidence: 1,
-        chatId: input.chatId,
-        messageId: input.providerMessageId ?? input.sourceEventId,
-        payload: { previousStatus, status: desiredStatus },
-        evidence,
-      });
-      eventIds.push(statusEvent.id);
-    }
-
-    const linked = upsertInboundContactPlatformIdentity(database, contact.id, {
-      channel,
-      instanceId,
-      platformUserId: platformSenderId,
-      displayName: input.displayName ?? null,
-      avatarUrl: input.avatarUrl ?? null,
-      profileData:
-        input.profileData === undefined
-          ? {
-              source: "inbound_contact_intake",
-              rawPlatformUserId: platformSenderId,
-              instanceId,
-              provenance: input.provenance ?? null,
-            }
-          : input.profileData,
-    });
-    platformIdentity = linked.identity;
-    createdPlatformIdentity = linked.created;
-
-    database
-      .prepare(
-        `
-        INSERT OR IGNORE INTO identity_link_events (
-          id, event_type, target_owner_type, target_owner_id, platform_identity_id,
-          confidence, reason, actor_type, metadata_json
-        )
-        VALUES (?, 'auto_link', 'contact', ?, ?, 1.0, 'inbound_contact_intake', 'system', ?)
-      `,
-      )
-      .run(
-        stableId("ile", ["auto_link", contact.id, platformIdentity.id, "inbound_contact_intake"]),
-        contact.id,
-        platformIdentity.id,
-        metadataJson({ source: "inbound_contact_intake", channel, instanceId, chatId: input.chatId ?? null }),
-      );
-
-    if (linked.created) {
-      const linkEvent = insertContactEvent(database, {
-        contactId: contact.id,
-        eventType: "identity.linked",
-        source: intakeSource,
-        actorType: "system",
-        platformIdentityId: platformIdentity.id,
-        chatId: input.chatId,
-        messageId: input.providerMessageId ?? input.sourceEventId,
-        confidence: 1,
-        payload: {
-          channel,
-          instanceId,
-          platformUserId: platformSenderId,
-          normalizedPlatformUserId: platformIdentity.normalizedPlatformUserId,
-        },
-        evidence,
-      });
-      eventIds.push(linkEvent.id);
-    }
-
-    if (createdContact && Array.isArray(input.defaultTags) && input.defaultTags.length > 0) {
-      const refreshedContact = getCanonicalCompatContactById(database, contact.id);
-      const existingTags = refreshedContact?.tags ?? contact.tags;
-      const appliedSlugs: string[] = [];
-      for (const tag of input.defaultTags) {
-        const slug = attachCanonicalContactTag(contact.id, tag, "inbound_contact_intake_default_tag");
-        if (slug) appliedSlugs.push(slug);
+      if (existingIdentity?.owner_type === "agent") {
+        platformIdentity = rowToPlatformIdentity(existingIdentity);
+        return;
       }
-      if (appliedSlugs.length > 0) {
-        const mergedTags = mergeTagLists(existingTags, appliedSlugs);
-        upsertCanonicalContactPolicy(database, {
-          contactId: contact.id,
-          tags: mergedTags,
+
+      if (existingIdentity?.owner_type === "contact" && existingIdentity.owner_id) {
+        contact = getCanonicalCompatContactById(database, existingIdentity.owner_id);
+        platformIdentity = rowToPlatformIdentity(existingIdentity);
+      }
+      if (!contact && contactIdentity) {
+        contact = findCanonicalContactByIdentity(database, contactIdentity);
+      }
+
+      if (!desiredStatus && !contact) {
+        return;
+      }
+      if (!desiredStatus && contact) {
+        policy = getContactPolicyById(database, contact.id);
+        return;
+      }
+      if (normalizePhone(contactIdentity).startsWith("group:")) {
+        return;
+      }
+
+      const evidence = inboundIntakeEventEvidence(input);
+
+      if (!contact) {
+        contact = createCanonicalContactForIdentity(database, contactIdentity, {
+          name: input.displayName ?? null,
+          status: desiredStatus!,
+          source: "inbound",
+          tags: [],
+          notes: {},
         });
-        const tagsEvent = insertContactEvent(database, {
+        createdContact = true;
+        const createdEvent = insertContactEvent(database, {
           contactId: contact.id,
-          eventType: "profile.tag_added",
+          eventType: "profile.created",
           source: intakeSource,
           actorType: "system",
           confidence: 1,
           chatId: input.chatId,
           messageId: input.providerMessageId ?? input.sourceEventId,
           payload: {
-            tags: appliedSlugs,
-            reason: "instance_default_contact_tags",
-            instanceId,
+            status: desiredStatus,
+            contactIdentity,
+            displayName: input.displayName ?? null,
           },
           evidence,
         });
-        eventIds.push(tagsEvent.id);
+        eventIds.push(createdEvent.id);
+      } else {
+        upsertCanonicalContactRecord(database, {
+          id: contact.id,
+          displayName: input.displayName ?? null,
+          avatarUrl: input.avatarUrl ?? null,
+          coalesceDisplayName: true,
+        });
+        contact = getCanonicalCompatContactById(database, contact.id);
       }
-    }
 
-    contact = getCanonicalCompatContactById(database, contact.id);
-    policy = contact ? getContactPolicyById(database, contact.id) : null;
-  });
+      if (!contact) return;
+      policy = getContactPolicyById(database, contact.id);
+      if (desiredStatus && shouldApplyInboundIntakeStatus(policy, desiredStatus)) {
+        const previousStatus = policy?.status ?? null;
+        upsertCanonicalContactPolicy(database, {
+          contactId: contact.id,
+          status: desiredStatus,
+          source: "inbound",
+        });
+        policy = getContactPolicyById(database, contact.id);
+        const statusEvent = insertContactEvent(database, {
+          contactId: contact.id,
+          eventType: "policy.status_changed",
+          source: intakeSource,
+          actorType: "system",
+          confidence: 1,
+          chatId: input.chatId,
+          messageId: input.providerMessageId ?? input.sourceEventId,
+          payload: { previousStatus, status: desiredStatus },
+          evidence,
+        });
+        eventIds.push(statusEvent.id);
+      }
 
-  txn();
+      const linked = upsertInboundContactPlatformIdentity(database, contact.id, {
+        channel,
+        instanceId,
+        platformUserId: platformSenderId,
+        displayName: input.displayName ?? null,
+        avatarUrl: input.avatarUrl ?? null,
+        profileData:
+          input.profileData === undefined
+            ? {
+                source: "inbound_contact_intake",
+                rawPlatformUserId: platformSenderId,
+                instanceId,
+                provenance: input.provenance ?? null,
+              }
+            : input.profileData,
+      });
+      platformIdentity = linked.identity;
+      createdPlatformIdentity = linked.created;
+
+      database
+        .prepare(
+          `
+        INSERT OR IGNORE INTO identity_link_events (
+          id, event_type, target_owner_type, target_owner_id, platform_identity_id,
+          confidence, reason, actor_type, metadata_json
+        )
+        VALUES (?, 'auto_link', 'contact', ?, ?, 1.0, 'inbound_contact_intake', 'system', ?)
+      `,
+        )
+        .run(
+          stableId("ile", ["auto_link", contact.id, platformIdentity.id, "inbound_contact_intake"]),
+          contact.id,
+          platformIdentity.id,
+          metadataJson({ source: "inbound_contact_intake", channel, instanceId, chatId: input.chatId ?? null }),
+        );
+
+      if (linked.created) {
+        const linkEvent = insertContactEvent(database, {
+          contactId: contact.id,
+          eventType: "identity.linked",
+          source: intakeSource,
+          actorType: "system",
+          platformIdentityId: platformIdentity.id,
+          chatId: input.chatId,
+          messageId: input.providerMessageId ?? input.sourceEventId,
+          confidence: 1,
+          payload: {
+            channel,
+            instanceId,
+            platformUserId: platformSenderId,
+            normalizedPlatformUserId: platformIdentity.normalizedPlatformUserId,
+          },
+          evidence,
+        });
+        eventIds.push(linkEvent.id);
+      }
+
+      if (createdContact && Array.isArray(input.defaultTags) && input.defaultTags.length > 0) {
+        const refreshedContact = getCanonicalCompatContactById(database, contact.id);
+        const existingTags = refreshedContact?.tags ?? contact.tags;
+        const appliedSlugs: string[] = [];
+        for (const tag of input.defaultTags) {
+          const slug = attachCanonicalContactTag(contact.id, tag, "inbound_contact_intake_default_tag");
+          if (slug) appliedSlugs.push(slug);
+        }
+        if (appliedSlugs.length > 0) {
+          const mergedTags = mergeTagLists(existingTags, appliedSlugs);
+          upsertCanonicalContactPolicy(database, {
+            contactId: contact.id,
+            tags: mergedTags,
+          });
+          const tagsEvent = insertContactEvent(database, {
+            contactId: contact.id,
+            eventType: "profile.tag_added",
+            source: intakeSource,
+            actorType: "system",
+            confidence: 1,
+            chatId: input.chatId,
+            messageId: input.providerMessageId ?? input.sourceEventId,
+            payload: {
+              tags: appliedSlugs,
+              reason: "instance_default_contact_tags",
+              instanceId,
+            },
+            evidence,
+          });
+          eventIds.push(tagsEvent.id);
+        }
+      }
+
+      contact = getCanonicalCompatContactById(database, contact.id);
+      policy = contact ? getContactPolicyById(database, contact.id) : null;
+    },
+    { label: "contacts:ensureContactFromInbound" },
+  );
 
   return {
     contact,
@@ -7459,26 +7505,29 @@ export function deleteContact(phone: string): boolean {
   const database = ensureDb();
   const contact = resolveContact(phone);
   if (!contact) return false;
-  const txn = database.transaction(() => {
-    if (getCanonicalContactById(database, contact.id)) {
-      insertContactEvent(database, {
-        contactId: contact.id,
-        eventType: "profile.deleted",
-        source: "contacts",
-        actorType: "system",
-        confidence: 1,
-        payload: {
+  executeWrite(
+    database,
+    () => {
+      if (getCanonicalContactById(database, contact.id)) {
+        insertContactEvent(database, {
           contactId: contact.id,
-          name: contact.name,
-          email: contact.email,
-          status: contact.status,
-          identities: contact.identities,
-        },
-      });
-    }
-    deleteContactProjection(database, contact.id);
-  });
-  txn();
+          eventType: "profile.deleted",
+          source: "contacts",
+          actorType: "system",
+          confidence: 1,
+          payload: {
+            contactId: contact.id,
+            name: contact.name,
+            email: contact.email,
+            status: contact.status,
+            identities: contact.identities,
+          },
+        });
+      }
+      deleteContactProjection(database, contact.id);
+    },
+    { label: "contacts:deleteContact" },
+  );
   return true;
 }
 
@@ -8599,43 +8648,45 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
   const sourceIdentities = getCanonicalCompatIdentities(database, sourceId);
   let movedCanonicalIdentityIds: string[] = [];
 
-  const txn = database.transaction(() => {
-    insertContactEvent(database, {
-      contactId: sourceId,
-      eventType: "identity.merged",
-      source: "contacts",
-      actorType: "system",
-      confidence: 1,
-      payload: {
-        sourceContactId: sourceId,
-        targetContactId: targetId,
-        mergedIntoContactId: targetId,
-      },
-    });
+  executeWrite(
+    database,
+    () => {
+      insertContactEvent(database, {
+        contactId: sourceId,
+        eventType: "identity.merged",
+        source: "contacts",
+        actorType: "system",
+        confidence: 1,
+        payload: {
+          sourceContactId: sourceId,
+          targetContactId: targetId,
+          mergedIntoContactId: targetId,
+        },
+      });
 
-    movedCanonicalIdentityIds = moveCanonicalPlatformIdentities(database, sourceId, targetId);
-    moveCanonicalContactTagBindings(sourceId, targetId);
-    mergeCrmContactData(database, sourceId, targetId);
+      movedCanonicalIdentityIds = moveCanonicalPlatformIdentities(database, sourceId, targetId);
+      moveCanonicalContactTagBindings(sourceId, targetId);
+      mergeCrmContactData(database, sourceId, targetId);
 
-    if (!target.name && source.name) {
+      if (!target.name && source.name) {
+        database
+          .prepare("UPDATE contacts SET display_name = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(source.name, targetId);
+      }
+      if (!target.email && source.email) {
+        database
+          .prepare("UPDATE contacts SET primary_email = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(source.email, targetId);
+      }
+      const mergedTags = target.tags.length === 0 && source.tags.length > 0 ? source.tags : target.tags;
+      const mergedNotes =
+        Object.keys(target.notes).length === 0 && Object.keys(source.notes).length > 0 ? source.notes : target.notes;
+      if (target.tags.length === 0 && source.tags.length > 0) {
+        syncCanonicalContactTags(targetId, source.tags);
+      }
       database
-        .prepare("UPDATE contacts SET display_name = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(source.name, targetId);
-    }
-    if (!target.email && source.email) {
-      database
-        .prepare("UPDATE contacts SET primary_email = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(source.email, targetId);
-    }
-    const mergedTags = target.tags.length === 0 && source.tags.length > 0 ? source.tags : target.tags;
-    const mergedNotes =
-      Object.keys(target.notes).length === 0 && Object.keys(source.notes).length > 0 ? source.notes : target.notes;
-    if (target.tags.length === 0 && source.tags.length > 0) {
-      syncCanonicalContactTags(targetId, source.tags);
-    }
-    database
-      .prepare(
-        `
+        .prepare(
+          `
         UPDATE contact_policies
         SET tags_json = ?,
             notes_json = ?,
@@ -8655,71 +8706,71 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
             updated_at = datetime('now')
         WHERE contact_id = ?
       `,
-      )
-      .run(
-        JSON.stringify(mergedTags),
-        JSON.stringify(mergedNotes),
-        source.interaction_count,
-        source.last_inbound_at,
-        source.last_inbound_at,
-        source.last_inbound_at,
-        source.last_inbound_at,
-        source.last_outbound_at,
-        source.last_outbound_at,
-        source.last_outbound_at,
-        source.last_outbound_at,
-        targetId,
-      );
+        )
+        .run(
+          JSON.stringify(mergedTags),
+          JSON.stringify(mergedNotes),
+          source.interaction_count,
+          source.last_inbound_at,
+          source.last_inbound_at,
+          source.last_inbound_at,
+          source.last_inbound_at,
+          source.last_outbound_at,
+          source.last_outbound_at,
+          source.last_outbound_at,
+          source.last_outbound_at,
+          targetId,
+        );
 
-    deleteContactProjection(database, sourceId);
+      deleteContactProjection(database, sourceId);
 
-    database
-      .prepare(
-        `
+      database
+        .prepare(
+          `
         INSERT OR IGNORE INTO identity_link_events (
           id, event_type, source_owner_type, source_owner_id, target_owner_type, target_owner_id,
           confidence, reason, actor_type, metadata_json
         )
         VALUES (?, 'merge', 'contact', ?, 'contact', ?, 1.0, 'contact_merge', 'system', ?)
       `,
-      )
-      .run(
-        stableId("ile", ["merge", sourceId, targetId, String(Date.now())]),
-        sourceId,
-        targetId,
-        metadataJson({ movedIdentityCount: sourceIdentities.length, movedCanonicalIdentityIds }),
-      );
-    insertContactEvent(database, {
-      contactId: targetId,
-      eventType: "identity.merged",
-      source: "contacts",
-      actorType: "system",
-      confidence: 1,
-      payload: {
-        sourceContactId: sourceId,
-        targetContactId: targetId,
-        movedIdentityCount: sourceIdentities.length,
-        movedCanonicalIdentityIds,
-      },
-    });
-    insertCrmEvent(database, {
-      eventType: "crm.contact.merged",
-      entityType: "contact",
-      entityId: targetId,
-      contactId: targetId,
-      source: "contacts",
-      actorType: "system",
-      confidence: 1,
-      payload: {
-        sourceContactId: sourceId,
-        targetContactId: targetId,
-        movedIdentityCount: sourceIdentities.length,
-        movedCanonicalIdentityIds,
-      },
-    });
-  });
-
-  txn();
+        )
+        .run(
+          stableId("ile", ["merge", sourceId, targetId, String(Date.now())]),
+          sourceId,
+          targetId,
+          metadataJson({ movedIdentityCount: sourceIdentities.length, movedCanonicalIdentityIds }),
+        );
+      insertContactEvent(database, {
+        contactId: targetId,
+        eventType: "identity.merged",
+        source: "contacts",
+        actorType: "system",
+        confidence: 1,
+        payload: {
+          sourceContactId: sourceId,
+          targetContactId: targetId,
+          movedIdentityCount: sourceIdentities.length,
+          movedCanonicalIdentityIds,
+        },
+      });
+      insertCrmEvent(database, {
+        eventType: "crm.contact.merged",
+        entityType: "contact",
+        entityId: targetId,
+        contactId: targetId,
+        source: "contacts",
+        actorType: "system",
+        confidence: 1,
+        payload: {
+          sourceContactId: sourceId,
+          targetContactId: targetId,
+          movedIdentityCount: sourceIdentities.length,
+          movedCanonicalIdentityIds,
+        },
+      });
+    },
+    { label: "contacts:mergeContacts" },
+  );
   return { merged: sourceIdentities.length };
 }
 
