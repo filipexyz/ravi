@@ -17,6 +17,7 @@ import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
 import { getMainSession } from "./router/sessions.js";
+import { closeAllRaviDbs } from "./db/close-all.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
@@ -149,6 +150,11 @@ async function shutdown(signal: string) {
 
     // Close NATS connection
     await closeNats();
+
+    // Close all SQLite handles AFTER bot/runners/gateway/omni have shut down,
+    // so writes-in-flight have settled. Best-effort: failures are logged but
+    // never block the shutdown sequence.
+    closeAllRaviDbs();
   } catch (err) {
     log.error("Error during shutdown", err);
   }
