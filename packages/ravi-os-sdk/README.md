@@ -136,18 +136,60 @@ const recentTasks = await ravi.tasks.list({
 });
 ```
 
-### Send A Prompt To A Session
+### Manage Agents
 
 ```ts
-const result = await ravi.sessions.send("main", "What changed in the repo?", {
+// List all agents
+const agents = await ravi.agents.list({ limit: "50" });
+
+// Create a new agent rooted at a workspace directory
+await ravi.agents.create("support", "/home/luis/ravi/support");
+
+// Inspect and tune
+await ravi.agents.show("support");
+await ravi.agents.set("support", "model", "claude-opus-4-7");
+await ravi.agents.debounce("support", "3000"); // ms
+
+// Inspect or reset the agent's primary session
+await ravi.agents.session("support");
+await ravi.agents.reset("support");
+
+// Remove an agent permanently
+await ravi.agents.delete("support");
+```
+
+### Drive Sessions
+
+```ts
+// List sessions for one agent, with live runtime snapshot
+await ravi.sessions.list({ agent: "support", live: true, limit: "20" });
+
+// Send a prompt and wait for the structured response
+const result = await ravi.sessions.send("support", "Resumo do dia.", {
   wait: true,
 });
 
-console.log(result);
+// Walk the message history
+const history = await ravi.sessions.read("support", { count: "10" });
+
+// Hand off between sessions (fire-and-forget). Sessions can ask, inform,
+// and answer one another — the runtime delivers as system messages.
+await ravi.sessions.ask("support", "Conseguiu rodar o build?", "agent:main");
+await ravi.sessions.inform("support", "Daemon reiniciado às 11:20.");
+await ravi.sessions.answer("support", "Build OK em 12s.", "agent:main");
+
+// Steer / interrupt / rollback the active runtime turn
+await ravi.sessions.runtime.interrupt("support");
+await ravi.sessions.runtime.steer("support", "Mais conciso, por favor.");
+await ravi.sessions.runtime.rollback("support", "1"); // undo last turn
+
+// Lifecycle
+await ravi.sessions.reset("support");
+await ravi.sessions.delete("support");
 ```
 
-`wait: true` maps to the CLI's `--wait`. Without it, the command is
-fire-and-forget.
+`wait: true` maps to the CLI's `--wait`. Without it, `send` returns immediately
+and the session processes the prompt in the background.
 
 ### Stream Session Events
 
@@ -187,16 +229,85 @@ Streams always require a valid context key and the matching scope, such as
 `view:system:events`, `view:system:tasks`, `access:session:<name>`, or
 `view:system:audit`.
 
-### Work With Contacts And CRM
+### Manage Contacts
 
 ```ts
-const contacts = await ravi.contacts.list({ limit: "20" });
+// Approval queue: incoming DMs land here until you allow them
+const pending = await ravi.contacts.pending();
+await ravi.contacts.approve("contact_5511…", "auto", { agent: "support" });
+
+// Or add a contact manually (also acts as allow)
+await ravi.contacts.add("+5511999999999", "Alice", {
+  kind: "person",
+  agent: "support",
+});
+
+// Browse and drill into a contact
+const list = await ravi.contacts.list({ status: "approved", limit: "50" });
+const card = await ravi.contacts.profile("contact_123", { includeCrm: true });
+const recent = await ravi.contacts.messages("contact_123", { limit: "20" });
+
+// Tag, untag, find by tag
+await ravi.contacts.tag("contact_123", "lifecycle:active");
+await ravi.contacts.untag("contact_123", "lifecycle:new");
+const matches = await ravi.contacts.find("lifecycle:active", { tag: true });
+
+// Scoped custom metadata (one row per source)
+await ravi.contacts.metadata.set("contact_123", "billing_id", "cus_42", {
+  scope: "stripe",
+  source: "dashboard",
+});
+
+// Append a note to the contact timeline
+await ravi.contacts.note("contact_123", "Cliente pediu desconto em call.", {
+  source: "crm",
+});
+
+// Moderation
+await ravi.contacts.block("contact_spam");
+```
+
+CRM-specific helpers (accounts, opportunities, lifecycle facts) live under
+`ravi.crm.*`:
+
+```ts
 const crmCards = await ravi.crm.contacts({ limit: "20" });
 const nextActions = await ravi.crm.next({ owner: "agent:main", limit: "10" });
 
 await ravi.crm.contact.set("contact_123", "lifecycle", "active", {
   source: "dashboard",
 });
+```
+
+### Tag Anything
+
+Ravi tags are first-class. The same tag slug can bind contacts, sessions,
+agents, projects, tasks, chats, instances, artifacts, and more — Ravi
+maintains the inverse index so you can query the graph from either end.
+
+```ts
+// Define the tag once
+await ravi.tags.create("priority:high", {
+  label: "High priority",
+  kind: "user",
+});
+
+// Attach to any target type — the option key picks the binding
+await ravi.tags.attach("priority:high", { contact: "contact_123" });
+await ravi.tags.attach("priority:high", { session: "support" });
+await ravi.tags.attach("priority:high", { chat: "5511999@s.whatsapp.net" });
+await ravi.tags.attach("priority:high", { task: "task_42" });
+
+// Search bindings — pivot from tag to all assets, or from one asset to its tags
+const tagged = await ravi.tags.search({ tag: "priority:high", limit: "100" });
+const onContact = await ravi.tags.search({ contact: "contact_123" });
+
+// Browse the catalog
+await ravi.tags.list({ kind: "user", query: "lifecycle" });
+await ravi.tags.show("priority:high");
+
+// Detach (mirror of attach)
+await ravi.tags.detach("priority:high", { contact: "contact_123" });
 ```
 
 ### Create And Version Artifacts
