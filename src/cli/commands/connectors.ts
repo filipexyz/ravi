@@ -90,16 +90,31 @@ export class ConnectorsCommands {
   @CliOnly()
   async list(
     @Option({ flags: "--provider <provider>", description: "Filter by provider id" }) provider?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limitOpt?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching connectors to skip (default: 0)" })
+    offsetOpt?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runConnectorCommand(asJson, async () => {
-      const connections = await listConnectors({ provider });
+      const all = await listConnectors({ provider });
+      const limit = Math.min(Math.max(Number.parseInt(limitOpt ?? "", 10) || 50, 1), 500);
+      const offset = Math.max(Number.parseInt(offsetOpt ?? "", 10) || 0, 0);
+      const connections = all.slice(offset, offset + limit);
       if (asJson) {
-        console.log(JSON.stringify({ connections }, null, 2));
-      } else if (connections.length === 0) {
+        console.log(
+          JSON.stringify(
+            {
+              connections,
+              pagination: { total: all.length, limit, offset, returned: connections.length },
+            },
+            null,
+            2,
+          ),
+        );
+      } else if (all.length === 0) {
         console.log("No connectors configured. Run `ravi connectors connect <provider>` to add one.");
       } else {
-        console.log(`Connectors (${connections.length}):`);
+        console.log(`Connectors (${connections.length}/${all.length}):`);
         for (const conn of connections) printConnectorSummary(conn);
       }
       return connections;
