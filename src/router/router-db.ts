@@ -1845,6 +1845,10 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN filter TEXT");
     log.info("Added filter column to triggers table");
   }
+  if (!triggerColumns.some((c) => c.name === "reply_source")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN reply_source TEXT");
+    log.info("Added reply_source column to triggers table");
+  }
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;

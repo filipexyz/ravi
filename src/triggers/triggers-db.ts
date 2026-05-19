@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { getDb, getDbChanges } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
-import type { Trigger, TriggerInput, SessionTarget } from "./types.js";
+import type { Trigger, TriggerInput, SessionTarget, TriggerReplySource } from "./types.js";
 
 const log = logger.child("triggers:db");
 
@@ -24,6 +24,7 @@ interface TriggerRow {
   message: string;
   session: string;
   reply_session: string | null;
+  reply_source: string | null;
   enabled: number;
   cooldown_ms: number;
   filter: string | null;
@@ -31,6 +32,43 @@ interface TriggerRow {
   fire_count: number;
   created_at: number;
   updated_at: number;
+}
+
+function parseReplySource(raw: string | null): TriggerReplySource | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Partial<TriggerReplySource>;
+    if (
+      typeof parsed.channel === "string" &&
+      typeof parsed.accountId === "string" &&
+      typeof parsed.chatId === "string"
+    ) {
+      const source: TriggerReplySource = {
+        channel: parsed.channel,
+        accountId: parsed.accountId,
+        chatId: parsed.chatId,
+      };
+      if (typeof parsed.threadId === "string" && parsed.threadId.length > 0) {
+        source.threadId = parsed.threadId;
+      }
+      return source;
+    }
+  } catch {
+    // malformed JSON — treat as missing
+  }
+  return undefined;
+}
+
+function serializeReplySource(source: TriggerReplySource | undefined): string | null {
+  if (!source) return null;
+  if (!source.channel || !source.accountId || !source.chatId) return null;
+  const payload: TriggerReplySource = {
+    channel: source.channel,
+    accountId: source.accountId,
+    chatId: source.chatId,
+    ...(source.threadId ? { threadId: source.threadId } : {}),
+  };
+  return JSON.stringify(payload);
 }
 
 // ============================================================================
@@ -54,6 +92,8 @@ function rowToTrigger(row: TriggerRow): Trigger {
   if (row.agent_id !== null) trigger.agentId = row.agent_id;
   if (row.account_id !== null) trigger.accountId = row.account_id;
   if (row.reply_session !== null) trigger.replySession = row.reply_session;
+  const replySource = parseReplySource(row.reply_source);
+  if (replySource) trigger.replySource = replySource;
   if (row.filter !== null) trigger.filter = row.filter;
   if (row.last_fired_at !== null) trigger.lastFiredAt = row.last_fired_at;
 
@@ -74,9 +114,9 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
 
   const stmt = db.prepare(`
     INSERT INTO triggers (
-      id, name, agent_id, account_id, topic, message, session, reply_session, enabled, cooldown_ms,
+      id, name, agent_id, account_id, topic, message, session, reply_session, reply_source, enabled, cooldown_ms,
       filter, fire_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -88,6 +128,7 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     input.message,
     input.session ?? "isolated",
     input.replySession ?? null,
+    serializeReplySource(input.replySource),
     input.enabled !== false ? 1 : 0,
     input.cooldownMs ?? 5000,
     input.filter ?? null,
@@ -167,6 +208,10 @@ export function dbUpdateTrigger(id: string, updates: Partial<Trigger>): Trigger 
   if (updates.replySession !== undefined) {
     fields.push("reply_session = ?");
     values.push(updates.replySession ?? null);
+  }
+  if (updates.replySource !== undefined) {
+    fields.push("reply_source = ?");
+    values.push(serializeReplySource(updates.replySource));
   }
   if (updates.enabled !== undefined) {
     fields.push("enabled = ?");

@@ -8,6 +8,19 @@
 export type SessionTarget = "main" | "isolated";
 
 /**
+ * Outbound source captured at trigger creation time.
+ * Frozen snapshot of where the trigger should reply when the live
+ * session can no longer resolve a target (lastChannel/lastTo empty,
+ * or routed through a non-deliverable channel like "tui").
+ */
+export interface TriggerReplySource {
+  channel: string;
+  accountId: string;
+  chatId: string;
+  threadId?: string;
+}
+
+/**
  * Full trigger record as stored in database
  */
 export interface Trigger {
@@ -20,6 +33,8 @@ export interface Trigger {
   message: string;
   session: SessionTarget;
   replySession?: string;
+  /** Frozen outbound source captured from the creator's runtime context */
+  replySource?: TriggerReplySource;
   enabled: boolean;
   cooldownMs: number;
   /** Optional filter expression. If set, trigger only fires when event data matches. */
@@ -45,6 +60,7 @@ export interface TriggerInput {
   message: string;
   session?: SessionTarget;
   replySession?: string;
+  replySource?: TriggerReplySource;
   enabled?: boolean;
   cooldownMs?: number;
   /** Optional filter expression. If set, trigger only fires when event data matches. */

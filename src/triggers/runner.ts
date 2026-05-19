@@ -267,6 +267,16 @@ export class TriggerRunner {
       }
     }
 
+    // Final fallback: the source the creator was talking to when the trigger
+    // was registered. Frozen at creation time, immune to later session edits.
+    if (!source && trigger.replySource) {
+      source = {
+        channel: trigger.replySource.channel,
+        accountId: trigger.accountId ?? trigger.replySource.accountId,
+        chatId: trigger.replySource.chatId,
+      };
+    }
+
     // Override accountId in source if trigger has explicit accountId
     if (source && trigger.accountId) {
       source.accountId = trigger.accountId;

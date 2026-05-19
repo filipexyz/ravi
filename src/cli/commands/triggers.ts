@@ -254,6 +254,20 @@ export class TriggersCommands {
     // Capture reply session from caller context for source routing
     const replySession = ctx?.sessionKey;
 
+    // Freeze the creator's outbound source as a fallback for when the live
+    // session can no longer resolve a deliverable target (lastChannel empty,
+    // channel routed to "tui", etc).
+    const callerSource = ctx?.source;
+    const replySource =
+      callerSource?.channel && callerSource?.accountId && callerSource?.chatId
+        ? {
+            channel: callerSource.channel,
+            accountId: callerSource.accountId,
+            chatId: callerSource.chatId,
+            ...(callerSource.threadId ? { threadId: callerSource.threadId } : {}),
+          }
+        : undefined;
+
     const input: TriggerInput = {
       name,
       topic,
@@ -261,6 +275,7 @@ export class TriggersCommands {
       agentId: resolvedAgent,
       accountId: resolvedAccount,
       replySession,
+      replySource,
       session: sessionTarget,
       cooldownMs,
       filter,
