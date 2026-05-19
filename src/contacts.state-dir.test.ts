@@ -25,7 +25,9 @@ describe("contacts state dir", () => {
     expect(getContact("5511999999999")?.name).toBe("Alice");
 
     const chatDb = new Database(join(stateDir!, "chat.db"));
-    const row = chatDb.prepare("SELECT name FROM contacts_v2 WHERE name = ?").get("Alice") as { name: string } | null;
+    const row = chatDb.prepare("SELECT display_name AS name FROM contacts WHERE display_name = ?").get("Alice") as {
+      name: string;
+    } | null;
     chatDb.close();
 
     expect(row?.name).toBe("Alice");

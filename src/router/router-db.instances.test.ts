@@ -82,6 +82,7 @@ describe("Instances CRUD", () => {
       agent: TEST_AGENT_ID,
       dmPolicy: "pairing",
       groupPolicy: "allowlist",
+      contactIntakeMode: "pending",
       dmScope: "per-peer",
     });
 
@@ -91,6 +92,7 @@ describe("Instances CRUD", () => {
     expect(inst.agent).toBe(TEST_AGENT_ID);
     expect(inst.dmPolicy).toBe("pairing");
     expect(inst.groupPolicy).toBe("allowlist");
+    expect(inst.contactIntakeMode).toBe("pending");
     expect(inst.dmScope).toBe("per-peer");
     expect(inst.createdAt).toBeGreaterThan(0);
     expect(inst.updatedAt).toBeGreaterThan(0);
@@ -101,6 +103,7 @@ describe("Instances CRUD", () => {
 
     expect(inst.dmPolicy).toBe("open");
     expect(inst.groupPolicy).toBe("open");
+    expect(inst.contactIntakeMode).toBe("off");
     expect(inst.channel).toBe("whatsapp");
     expect(inst.enabled).toBe(true);
     expect(inst.agent).toBeUndefined();
@@ -153,6 +156,34 @@ describe("Instances CRUD", () => {
       const inst = dbUpsertInstance({ name: "test-inst-main", groupPolicy });
       expect(inst.groupPolicy).toBe(groupPolicy);
     }
+  });
+
+  it("persists default contact tags and clears them when null is passed", () => {
+    const inst = dbUpsertInstance({
+      name: "test-inst-main",
+      defaultContactTags: ["new-contact", "needs-triage", "  duplicate  ", "duplicate"],
+    });
+    expect(inst.defaultContactTags).toEqual(["new-contact", "needs-triage", "duplicate"]);
+
+    const partial = dbUpdateInstance("test-inst-main", { dmPolicy: "closed" });
+    expect(partial.defaultContactTags).toEqual(["new-contact", "needs-triage", "duplicate"]);
+
+    const replaced = dbUpdateInstance("test-inst-main", { defaultContactTags: ["crm-pending"] });
+    expect(replaced.defaultContactTags).toEqual(["crm-pending"]);
+
+    const cleared = dbUpdateInstance("test-inst-main", { defaultContactTags: null });
+    expect(cleared.defaultContactTags).toBeUndefined();
+  });
+
+  it("accepts and updates contact intake modes", () => {
+    const modes: Array<"off" | "discovered" | "pending"> = ["off", "discovered", "pending"];
+    for (const contactIntakeMode of modes) {
+      const inst = dbUpsertInstance({ name: "test-inst-main", contactIntakeMode });
+      expect(inst.contactIntakeMode).toBe(contactIntakeMode);
+    }
+
+    const updated = dbUpdateInstance("test-inst-main", { contactIntakeMode: "discovered" });
+    expect(updated.contactIntakeMode).toBe("discovered");
   });
 
   // ============================================================================

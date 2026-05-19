@@ -3,7 +3,8 @@ import { homedir } from "node:os";
 import { basename, extname, isAbsolute, resolve as resolvePath } from "node:path";
 import {
   getArtifact as defaultGetArtifact,
-  listArtifacts as defaultListArtifacts,
+  listArtifactsPage as defaultListArtifactsPage,
+  type ArtifactListPage,
   type ArtifactRecord,
 } from "../artifacts/store.js";
 import type { ListArtifactsOptions } from "../artifacts/store.js";
@@ -11,6 +12,13 @@ import { dbGetAgent } from "../router/router-db.js";
 import { listSessions, resolveSession as resolveSessionEntry } from "../router/sessions.js";
 import type { SessionEntry } from "../router/types.js";
 import { buildTaskStreamSnapshot, type TaskStatus, type TaskStreamTaskEntity } from "../tasks/index.js";
+import {
+  buildCommand,
+  buildOffsetPagination,
+  normalizePageLimit,
+  normalizePageOffset,
+  type OffsetPagination,
+} from "../utils/pagination.js";
 import type { OverlayActivity, OverlayLiveState } from "./model.js";
 
 const DEFAULT_ARTIFACTS_LIMIT = 80;
@@ -93,6 +101,7 @@ export interface OverlayArtifactItem {
 
 export interface OverlayArtifactsQuery {
   limit: number;
+  offset: number;
   lifecycle: OverlayArtifactLifecycle | null;
   kind: string | null;
   taskId: string | null;
@@ -107,16 +116,20 @@ export interface OverlayArtifactsStats {
   recentCount: number;
 }
 
+export type OverlayArtifactsPagination = OffsetPagination;
+
 export interface OverlayArtifactsSnapshot {
   ok: true;
   generatedAt: number;
   query: OverlayArtifactsQuery;
+  pagination: OverlayArtifactsPagination;
   stats: OverlayArtifactsStats;
   items: OverlayArtifactItem[];
 }
 
 export interface BuildOverlayArtifactsPayloadArgs {
   limit?: number;
+  offset?: number;
   lifecycle?: OverlayArtifactLifecycle | null;
   kind?: string | null;
   taskId?: string | null;
@@ -125,6 +138,7 @@ export interface BuildOverlayArtifactsPayloadArgs {
   liveBySessionName?: Map<string, OverlayLiveState>;
   sessions?: SessionEntry[];
   listArtifacts?: (options: ListArtifactsOptions) => ArtifactRecord[];
+  listArtifactsPage?: (options: ListArtifactsOptions) => ArtifactListPage;
   resolveTask?: (taskId: string) => TaskStreamTaskEntity | null;
   resolveSession?: (nameOrKey: string) => SessionEntry | null;
   resolveAgentName?: (agentId: string) => string | null;
@@ -133,27 +147,43 @@ export interface BuildOverlayArtifactsPayloadArgs {
 
 export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadArgs = {}): OverlayArtifactsSnapshot {
   const limit = normalizeArtifactsLimit(args.limit);
+  const offset = normalizeArtifactsOffset(args.offset);
   const lifecycle = normalizeLifecycle(args.lifecycle ?? null);
   const kind = cleanFilterToken(args.kind);
   const taskId = cleanFilterToken(args.taskId);
   const sessionId = cleanFilterToken(args.sessionId);
   const agentId = cleanFilterToken(args.agentId);
   const sessions = sortSessionsByUpdatedAt(args.sessions ?? listSessions());
-  const listArtifactsImpl = args.listArtifacts ?? defaultListArtifacts;
+  const listArtifactsPageImpl = args.listArtifactsPage ?? (args.listArtifacts ? null : defaultListArtifactsPage);
   const resolveTask = args.resolveTask ?? defaultResolveTask;
   const resolveSession = args.resolveSession ?? resolveSessionEntry;
   const resolveAgentName = args.resolveAgentName ?? defaultResolveAgentName;
   const now = (args.now ?? Date.now)();
 
   const storeOptions: ListArtifactsOptions = {
-    limit: Math.min(STORE_MAX_LIMIT, limit * STORE_OVERFETCH_FACTOR),
     includeDeleted: lifecycle === "archived" || lifecycle === null,
     ...(kind ? { kind } : {}),
     ...(sessionId ? { session: sessionId } : {}),
     ...(taskId ? { taskId } : {}),
+    ...(agentId ? { agentId } : {}),
+    ...(lifecycle ? { lifecycle } : {}),
   };
 
-  const records = listArtifactsImpl(storeOptions);
+  const page = listArtifactsPageImpl
+    ? listArtifactsPageImpl({
+        ...storeOptions,
+        limit,
+        offset,
+      })
+    : null;
+  const records =
+    page?.items ??
+    args.listArtifacts?.({
+      ...storeOptions,
+      limit: Math.min(STORE_MAX_LIMIT, (offset + limit) * STORE_OVERFETCH_FACTOR),
+      offset: 0,
+    }) ??
+    [];
 
   const taskCache = new Map<string, OverlayArtifactTaskRef | null>();
   const sessionCache = new Map<string, OverlayArtifactSessionRef | null>();
@@ -190,31 +220,47 @@ export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadA
       },
     });
     filtered.push(item);
-    if (filtered.length >= limit) break;
   }
 
-  const stats = buildArtifactsStats(filtered, now);
+  const pageItems = page ? filtered : filtered.slice(offset, offset + limit);
+  const total = page ? page.total : filtered.length;
+  const stats = buildArtifactsStats(pageItems, now, total);
+  const pagination = buildArtifactsPagination({
+    limit,
+    offset,
+    returned: pageItems.length,
+    total,
+    lifecycle,
+    kind,
+    taskId,
+    sessionId,
+    agentId,
+  });
 
   return {
     ok: true,
     generatedAt: now,
     query: {
       limit,
+      offset,
       lifecycle,
       kind,
       taskId,
       sessionId,
       agentId,
     },
+    pagination,
     stats,
-    items: filtered,
+    items: pageItems,
   };
 }
 
 export function normalizeArtifactsLimit(limit: number | string | null | undefined): number {
-  const parsed = typeof limit === "number" ? limit : Number.parseInt(String(limit ?? ""), 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_ARTIFACTS_LIMIT;
-  return Math.max(1, Math.min(MAX_ARTIFACTS_LIMIT, Math.floor(parsed)));
+  return normalizePageLimit(limit, { defaultLimit: DEFAULT_ARTIFACTS_LIMIT, maxLimit: MAX_ARTIFACTS_LIMIT });
+}
+
+export function normalizeArtifactsOffset(offset: number | string | null | undefined): number {
+  return normalizePageOffset(offset);
 }
 
 export function normalizeLifecycle(value: string | null | undefined): OverlayArtifactLifecycle | null {
@@ -478,7 +524,7 @@ function buildArtifactLinks(
   return links;
 }
 
-function buildArtifactsStats(items: OverlayArtifactItem[], now: number): OverlayArtifactsStats {
+function buildArtifactsStats(items: OverlayArtifactItem[], now: number, total = items.length): OverlayArtifactsStats {
   const byKind: Record<string, number> = {};
   const byLifecycle: Record<OverlayArtifactLifecycle, number> = {
     pending: 0,
@@ -498,11 +544,59 @@ function buildArtifactsStats(items: OverlayArtifactItem[], now: number): Overlay
   }
 
   return {
-    total: items.length,
+    total,
     byKind,
     byLifecycle,
     recentCount,
   };
+}
+
+function buildArtifactsPagination(args: {
+  limit: number;
+  offset: number;
+  returned: number;
+  total: number;
+  lifecycle: OverlayArtifactLifecycle | null;
+  kind: string | null;
+  taskId: string | null;
+  sessionId: string | null;
+  agentId: string | null;
+}): OverlayArtifactsPagination {
+  return buildOffsetPagination({
+    limit: args.limit,
+    offset: args.offset,
+    returned: args.returned,
+    total: args.total,
+    nextCommand: (nextOffset) => buildArtifactsNextCommand({ ...args, offset: nextOffset }),
+  });
+}
+
+function buildArtifactsNextCommand(args: {
+  limit: number;
+  offset: number;
+  lifecycle: OverlayArtifactLifecycle | null;
+  kind: string | null;
+  taskId: string | null;
+  sessionId: string | null;
+  agentId: string | null;
+}): string {
+  const parts = [
+    "ravi",
+    "artifacts",
+    "list",
+    "--rich",
+    "--json",
+    "--limit",
+    String(args.limit),
+    "--offset",
+    String(args.offset),
+  ];
+  if (args.kind) parts.push("--kind", args.kind);
+  if (args.sessionId) parts.push("--session", args.sessionId);
+  if (args.taskId) parts.push("--task", args.taskId);
+  if (args.lifecycle) parts.push("--lifecycle", args.lifecycle);
+  if (args.agentId) parts.push("--agent", args.agentId);
+  return buildCommand(parts);
 }
 
 function isAbsoluteUrl(value: string): boolean {

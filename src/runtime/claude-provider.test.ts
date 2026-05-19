@@ -183,8 +183,14 @@ describe("createClaudeRuntimeProvider", () => {
     expect(toolCompleted?.toolUseId).toBe("tool_1");
     expect(toolCompleted?.content).toBe("file contents");
     expect(completions[0]?.providerSessionId).toBe("claude-session-1");
-    expect(completions[0]?.session).toEqual({
-      params: { sessionId: "claude-session-1" },
+    expect(completions[0]?.session).toMatchObject({
+      params: {
+        sessionId: "claude-session-1",
+        skillVisibility: {
+          loadedSkills: [],
+          skills: [],
+        },
+      },
       displayId: "claude-session-1",
     });
     expect(completions[0]?.execution).toEqual({

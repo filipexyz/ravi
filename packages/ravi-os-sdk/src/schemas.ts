@@ -14,6 +14,14 @@ export type SdkJsonSchema = Record<string, unknown>;
 export const AdaptersListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching adapters to skip (default: 0)",
+      "type": "string"
+    },
     "session": {
       "description": "Filter by session key",
       "type": "string"
@@ -130,6 +138,14 @@ export const AgentsDeleteInputSchema = {
 export const AgentsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching agents to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical tag slug",
       "type": "string"
@@ -314,6 +330,14 @@ export const ArtifactsBlobInputSchema = {
 export const ArtifactsCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "assetBase": {
+      "description": "Package asset base intent when --path is a directory",
+      "type": "string"
+    },
+    "basePath": {
+      "description": "Package base path intent when --path is a directory",
+      "type": "string"
+    },
     "command": {
       "description": "Command that produced the artifact",
       "type": "string"
@@ -326,6 +350,10 @@ export const ArtifactsCreateInputSchema = {
       "description": "Generation duration in milliseconds",
       "type": "string"
     },
+    "entrypoint": {
+      "description": "Package entrypoint when --path is a directory",
+      "type": "string"
+    },
     "input": {
       "description": "Raw/structured input JSON",
       "type": "string"
@@ -335,7 +363,7 @@ export const ArtifactsCreateInputSchema = {
       "type": "string"
     },
     "kind": {
-      "description": "Artifact kind, e.g. image, audio, report, trace",
+      "description": "Optional semantic artifact kind, e.g. image, report, trace",
       "type": "string"
     },
     "lineage": {
@@ -371,7 +399,7 @@ export const ArtifactsCreateInputSchema = {
       "type": "string"
     },
     "path": {
-      "description": "Local file to ingest into artifact blob storage",
+      "description": "Local file or directory to ingest into artifact blob storage",
       "type": "string"
     },
     "prompt": {
@@ -411,9 +439,6 @@ export const ArtifactsCreateInputSchema = {
       "type": "string"
     }
   },
-  "required": [
-    "kind"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -485,11 +510,15 @@ export const ArtifactsListInputSchema = {
       "type": "string"
     },
     "lifecycle": {
-      "description": "Filter rich projection by lifecycle: active|archived|stale",
+      "description": "Filter rich projection by lifecycle: pending|running|completed|failed|archived",
       "type": "string"
     },
     "limit": {
-      "description": "Max artifacts to list (default: 50)",
+      "description": "Page size (default: 50, max: 500; rich max: 200)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching artifacts to skip (default: 0)",
       "type": "string"
     },
     "rich": {
@@ -512,12 +541,189 @@ export const ArtifactsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `artifacts.publish`. */
+export const ArtifactsPublishInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifactVersion": {
+      "description": "Local artifact version number (default: latest)",
+      "type": "string"
+    },
+    "assetBase": {
+      "description": "Package asset base intent",
+      "type": "string"
+    },
+    "basePath": {
+      "description": "Package base path intent",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "description": {
+      "description": "Published artifact description",
+      "type": "string"
+    },
+    "entrypoint": {
+      "description": "Package entrypoint path",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for Console retries",
+      "type": "string"
+    },
+    "name": {
+      "description": "Published artifact name",
+      "type": "string"
+    },
+    "noActivate": {
+      "default": true,
+      "description": "Create publish records without activating a site release",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Release reason sent to Console",
+      "type": "string"
+    },
+    "replaceRelease": {
+      "description": "Replace the full active route map instead of merging",
+      "type": "boolean"
+    },
+    "route": {
+      "description": "Site route path to mount the artifact at",
+      "type": "string"
+    },
+    "site": {
+      "description": "Console site id or slug to release to",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Published artifact slug",
+      "type": "string"
+    },
+    "target": {
+      "description": "Local artifact id, file, or directory",
+      "type": "string"
+    },
+    "uploadSession": {
+      "description": "Use an existing Console upload session",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "Requested visibility: private|protected_link|public",
+      "type": "string"
+    }
+  },
+  "required": [
+    "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `artifacts.release.activate`. */
+export const ArtifactsReleaseActivateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "id": {
+      "description": "Local artifact id",
+      "type": "string"
+    },
+    "release": {
+      "description": "Explicit Console release id to activate",
+      "type": "string"
+    },
+    "site": {
+      "description": "Console site id or slug, required when --release is not recorded locally",
+      "type": "string"
+    },
+    "version": {
+      "description": "Local artifact version whose recorded release should be activated",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `artifacts.restore`. */
+export const ArtifactsRestoreInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Artifact id",
+      "type": "string"
+    },
+    "message": {
+      "description": "Event message for the restore",
+      "type": "string"
+    },
+    "version": {
+      "description": "Version number to restore",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.show`. */
 export const ArtifactsShowInputSchema = {
   "additionalProperties": false,
   "properties": {
     "id": {
       "description": "Artifact id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `artifacts.snapshot`. */
+export const ArtifactsSnapshotInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Artifact id",
+      "type": "string"
+    },
+    "label": {
+      "description": "Human label for this version",
+      "type": "string"
+    },
+    "manifest": {
+      "description": "Extra manifest JSON object",
+      "type": "string"
+    },
+    "message": {
+      "description": "Event message for the snapshot",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Version metadata JSON object",
+      "type": "string"
+    },
+    "source": {
+      "description": "Snapshot source",
+      "type": "string"
+    },
+    "status": {
+      "description": "Version status (default: active)",
       "type": "string"
     }
   },
@@ -638,6 +844,40 @@ export const ArtifactsUpdateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `artifacts.version`. */
+export const ArtifactsVersionInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Artifact id",
+      "type": "string"
+    },
+    "version": {
+      "description": "Version number (default: latest)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `artifacts.versions`. */
+export const ArtifactsVersionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Artifact id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `audio.generate`. */
 export const AudioGenerateInputSchema = {
   "additionalProperties": false,
@@ -685,12 +925,369 @@ export const AudioGenerateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `chats.list`. */
+export const ChatsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Filter by agent id",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Filter by channel, e.g. whatsapp",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Filter by contact id, phone, or identity",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Filter by instance name or Omni instance id",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 25, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching chats to skip (default: 0)",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search chat ids, titles, and message content",
+      "type": "string"
+    },
+    "type": {
+      "description": "Filter by chat type: dm|group|thread|room",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.add`. */
+export const ChatsListsAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "priority": {
+      "description": "Sort priority (default: 0)",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why this chat is in the list",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat",
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.create`. */
+export const ChatsListsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "List description",
+      "type": "string"
+    },
+    "mode": {
+      "description": "static|dynamic|hybrid (default: static)",
+      "type": "string"
+    },
+    "name": {
+      "description": "Reading list name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope (default: current agent or system:ravi)",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "private|team|system (default: system)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.delta`. */
+export const ChatsListsDeltaInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Max delta messages (default: 50, max: 500)",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "markRead": {
+      "description": "Advance the cursor to the last returned message",
+      "type": "boolean"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "reader": {
+      "description": "Reader cursor scope (default: current agent)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat",
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.list`. */
+export const ChatsListsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeArchived": {
+      "description": "Include archived lists",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching lists to skip (default: 0)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner, e.g. agent:ravi-crm",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.mark-read`. */
+export const ChatsListsMarkReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "message": {
+      "description": "Mark read through this durable message id (default: latest)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "reader": {
+      "description": "Reader cursor scope (default: current agent)",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Cursor update reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat",
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.members`. */
+export const ChatsListsMembersInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching members to skip (default: 0)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "reader": {
+      "description": "Reader cursor scope (default: current agent)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.remove`. */
+export const ChatsListsRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat",
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.read`. */
+export const ChatsReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Resolve chat within a channel",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Chat id, platform chat id, phone, group id, or normalized chat id",
+      "type": "string"
+    },
+    "includeRaw": {
+      "description": "Include raw provider ids and provenance in JSON output",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Resolve chat within an instance",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching messages to skip (default: 0)",
+      "type": "string"
+    },
+    "order": {
+      "description": "Message order (default: asc)",
+      "type": "string"
+    },
+    "type": {
+      "description": "Resolve chat type: dm|group|thread|room",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chat"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `commands.list`. */
 export const CommandsListInputSchema = {
   "additionalProperties": false,
   "properties": {
     "agent": {
       "description": "Resolve agent-scoped commands for this agent",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching commands to skip (default: 0)",
       "type": "string"
     },
     "tag": {
@@ -758,6 +1355,33 @@ export const CommandsValidateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `contacts.activity`. */
+export const ContactsActivityInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching events to skip (default: 0)",
+      "type": "string"
+    },
+    "raw": {
+      "description": "Include low-level runtime/tool/adapter events",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.add`. */
 export const ContactsAddInputSchema = {
   "additionalProperties": false,
@@ -767,7 +1391,7 @@ export const ContactsAddInputSchema = {
       "type": "string"
     },
     "identity": {
-      "description": "Phone number or LID",
+      "description": "Phone number or WhatsApp identity",
       "type": "string"
     },
     "kind": {
@@ -820,6 +1444,46 @@ export const ContactsApproveInputSchema = {
   "required": [
     "contact"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.backfill`. */
+export const ContactsBackfillInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Write canonical contacts and actor links. Without this, runs dry-run.",
+      "type": "boolean"
+    },
+    "channel": {
+      "description": "Limit to one channel, e.g. whatsapp",
+      "type": "string"
+    },
+    "createList": {
+      "description": "When applying, add linked chats to this reading list",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Force preview mode even if --apply is present",
+      "type": "boolean"
+    },
+    "instance": {
+      "description": "Limit to one channel instance/account",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum candidates to inspect/apply",
+      "type": "string"
+    },
+    "listOwner": {
+      "description": "Owner for --create-list (default: agent:ravi-crm)",
+      "type": "string"
+    },
+    "mode": {
+      "description": "Contact intake status: pending|discovered (default: pending)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -894,96 +1558,6 @@ export const ContactsGetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `contacts.group-tag`. */
-export const ContactsGroupTagInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "contact": {
-      "description": "Contact ID or identity",
-      "type": "string"
-    },
-    "group": {
-      "description": "Group contact ID or identity",
-      "type": "string"
-    },
-    "tag": {
-      "description": "Tag label",
-      "type": "string"
-    }
-  },
-  "required": [
-    "contact",
-    "group",
-    "tag"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `contacts.group-untag`. */
-export const ContactsGroupUntagInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "contact": {
-      "description": "Contact ID or identity",
-      "type": "string"
-    },
-    "group": {
-      "description": "Group contact ID or identity",
-      "type": "string"
-    }
-  },
-  "required": [
-    "contact",
-    "group"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `contacts.identity-add`. */
-export const ContactsIdentityAddInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "contact": {
-      "description": "Contact ID or identity",
-      "type": "string"
-    },
-    "platform": {
-      "description": "Platform (phone, whatsapp_lid, telegram, email)",
-      "type": "string"
-    },
-    "value": {
-      "description": "Identity value",
-      "type": "string"
-    }
-  },
-  "required": [
-    "contact",
-    "platform",
-    "value"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `contacts.identity-remove`. */
-export const ContactsIdentityRemoveInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "platform": {
-      "description": "Platform",
-      "type": "string"
-    },
-    "value": {
-      "description": "Identity value",
-      "type": "string"
-    }
-  },
-  "required": [
-    "platform",
-    "value"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `contacts.info`. */
 export const ContactsInfoInputSchema = {
   "additionalProperties": false,
@@ -1034,6 +1608,14 @@ export const ContactsLinkInputSchema = {
 export const ContactsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching contacts to skip (default: 0)",
+      "type": "string"
+    },
     "status": {
       "description": "Filter by status",
       "type": "string"
@@ -1062,6 +1644,145 @@ export const ContactsMergeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `contacts.messages`. */
+export const ContactsMessagesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching messages to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.metadata.list`. */
+export const ContactsMetadataListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching metadata entries to skip (default: 0)",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Filter by scoped context",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.metadata.remove`. */
+export const ContactsMetadataRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "key": {
+      "description": "Namespaced metadata key",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scoped context, e.g. project:ravi-web",
+      "type": "string"
+    },
+    "source": {
+      "description": "Event source (default: cli)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.metadata.set`. */
+export const ContactsMetadataSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "key": {
+      "description": "Namespaced metadata key",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scoped context, e.g. project:ravi-web",
+      "type": "string"
+    },
+    "source": {
+      "description": "Event source (default: cli)",
+      "type": "string"
+    },
+    "value": {
+      "description": "JSON value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "key",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.note`. */
+export const ContactsNoteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scoped context for this note",
+      "type": "string"
+    },
+    "source": {
+      "description": "Event source (default: cli)",
+      "type": "string"
+    },
+    "text": {
+      "description": "Note text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.pending`. */
 export const ContactsPendingInputSchema = {
   "additionalProperties": false,
@@ -1074,12 +1795,58 @@ export const ContactsPendingInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `contacts.profile`. */
+export const ContactsProfileInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "includeCrm": {
+      "description": "Include CRM profile/account/opportunity/task summary",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Evidence rows per section (default: 10, max: 50)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.remove`. */
 export const ContactsRemoveInputSchema = {
   "additionalProperties": false,
   "properties": {
     "contact": {
       "description": "Contact ID or identity",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.sessions`. */
+export const ContactsSessionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching sessions to skip (default: 0)",
       "type": "string"
     }
   },
@@ -1130,6 +1897,37 @@ export const ContactsTagInputSchema = {
   "required": [
     "contact",
     "tag"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.timeline`. */
+export const ContactsTimelineInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "event": {
+      "description": "Filter by event type",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching events to skip (default: 0)",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Filter by scoped context",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -1299,7 +2097,16 @@ export const ContextCredentialsAddInputSchema = {
 /** JSON Schema for the input body of `context.credentials.list`. */
 export const ContextCredentialsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching credential entries to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -1404,6 +2211,14 @@ export const ContextListInputSchema = {
     },
     "kind": {
       "description": "Filter by context kind",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching contexts to skip (default: 0)",
       "type": "string"
     },
     "session": {
@@ -1530,6 +2345,562 @@ export const CostsTopSessionsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.account`. */
+export const CrmAccountInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID or org contact ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.account.create`. */
+export const CrmAccountCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Organization contact ID",
+      "type": "string"
+    },
+    "domain": {
+      "description": "Account domain",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated account creation",
+      "type": "string"
+    },
+    "name": {
+      "description": "Account name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner, e.g. agent:main",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.account.link-contact`. */
+export const CrmAccountLinkContactInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "primary": {
+      "description": "Mark as primary account contact",
+      "type": "boolean"
+    },
+    "role": {
+      "description": "Membership role (default: member)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.account.show`. */
+export const CrmAccountShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID or org contact ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.board`. */
+export const CrmBoardInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.contact`. */
+export const CrmContactInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.contact.set`. */
+export const CrmContactSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "field": {
+      "description": "CRM field",
+      "type": "string"
+    },
+    "source": {
+      "description": "Mutation source (default: cli)",
+      "type": "string"
+    },
+    "value": {
+      "description": "Field value, '-' to clear nullable fields",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "field",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.contact.show`. */
+export const CrmContactShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.contacts`. */
+export const CrmContactsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching contacts to skip (default: 0)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by CRM lifecycle",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.fact.confirm`. */
+export const CrmFactConfirmInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fact": {
+      "description": "CRM fact ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.fact.list`. */
+export const CrmFactListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Filter by CRM account",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Filter by contact",
+      "type": "string"
+    },
+    "entity": {
+      "description": "Filter by CRM entity id",
+      "type": "string"
+    },
+    "entityType": {
+      "description": "Filter by CRM entity type",
+      "type": "string"
+    },
+    "key": {
+      "description": "Filter by fact key",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 25, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching facts to skip (default: 0)",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "Filter by CRM opportunity",
+      "type": "string"
+    },
+    "status": {
+      "description": "proposed|confirmed|rejected|superseded",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.fact.propose`. */
+export const CrmFactProposeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Related account",
+      "type": "string"
+    },
+    "confidence": {
+      "description": "Confidence between 0 and 1",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Related contact",
+      "type": "string"
+    },
+    "entity": {
+      "description": "CRM entity id",
+      "type": "string"
+    },
+    "entityType": {
+      "description": "CRM entity type",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated fact writes",
+      "type": "string"
+    },
+    "key": {
+      "description": "Fact key",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "Related opportunity",
+      "type": "string"
+    },
+    "status": {
+      "description": "proposed|confirmed",
+      "type": "string"
+    },
+    "value": {
+      "description": "JSON value or plain string",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entity",
+    "entityType",
+    "key",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.fact.reject`. */
+export const CrmFactRejectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fact": {
+      "description": "CRM fact ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.next`. */
+export const CrmNextInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Filter by account",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Filter by contact",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 25, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching actions to skip (default: 0)",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "Filter by opportunity",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner, e.g. agent:main",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity`. */
+export const CrmOpportunityInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity.contacts`. */
+export const CrmOpportunityContactsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity.create`. */
+export const CrmOpportunityCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "currency": {
+      "description": "Currency (default: BRL)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated opportunity creation",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner, e.g. agent:main",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Pipeline stage key or ID",
+      "type": "string"
+    },
+    "title": {
+      "description": "Opportunity title",
+      "type": "string"
+    },
+    "value": {
+      "description": "Opportunity value in cents",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity.link-contact`. */
+export const CrmOpportunityLinkContactInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    },
+    "primary": {
+      "description": "Mark as primary opportunity contact",
+      "type": "boolean"
+    },
+    "role": {
+      "description": "Opportunity role (default: stakeholder)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity.move`. */
+export const CrmOpportunityMoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "lostReason": {
+      "description": "Lost reason when moving to lost",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Pipeline stage key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "opportunity",
+    "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity.show`. */
+export const CrmOpportunityShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.task.create`. */
+export const CrmTaskCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "due": {
+      "description": "Due date/time",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated task creation",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner, e.g. agent:main",
+      "type": "string"
+    },
+    "priority": {
+      "description": "low|normal|high|urgent",
+      "type": "string"
+    },
+    "title": {
+      "description": "Task title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.task.done`. */
+export const CrmTaskDoneInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "task": {
+      "description": "CRM task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.task.show`. */
+export const CrmTaskShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "task": {
+      "description": "CRM task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cron.add`. */
 export const CronAddInputSchema = {
   "additionalProperties": false,
@@ -1619,6 +2990,14 @@ export const CronEnableInputSchema = {
 export const CronListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching cron jobs to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical cron job tag",
       "type": "string"
@@ -1980,6 +3359,10 @@ export const DevinSessionsListInputSchema = {
       "description": "Max sessions to show (default: 20)",
       "type": "string"
     },
+    "offset": {
+      "description": "Number of matching sessions to skip (default: 0)",
+      "type": "string"
+    },
     "remote": {
       "description": "Fetch remote sessions and update local cache",
       "type": "boolean"
@@ -2332,6 +3715,14 @@ export const HooksEnableInputSchema = {
 export const HooksListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching hooks to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical hook tag",
       "type": "string"
@@ -2650,6 +4041,10 @@ export const InsightsListInputSchema = {
       "description": "Result limit",
       "type": "string"
     },
+    "offset": {
+      "description": "Number of matching insights to skip (default: 0)",
+      "type": "string"
+    },
     "profile": {
       "description": "Filter by linked profile",
       "type": "string"
@@ -2723,6 +4118,10 @@ export const InstancesCreateInputSchema = {
     },
     "channel": {
       "description": "Channel type (default: whatsapp)",
+      "type": "string"
+    },
+    "contactIntakeMode": {
+      "description": "Inbound DM contact intake: off|discovered|pending (default: off)",
       "type": "string"
     },
     "dmPolicy": {
@@ -2816,7 +4215,7 @@ export const InstancesGetInputSchema = {
   "additionalProperties": false,
   "properties": {
     "key": {
-      "description": "Property key (agent, dmPolicy, groupPolicy, dmScope, instanceId, channel, enabled, defaults)",
+      "description": "Property key (agent, dmPolicy, groupPolicy, contactIntakeMode, defaultContactTags, dmScope, instanceId, channel, enabled, defaults)",
       "type": "string"
     },
     "name": {
@@ -2835,6 +4234,14 @@ export const InstancesGetInputSchema = {
 export const InstancesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching instances to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical instance tag",
       "type": "string"
@@ -2871,8 +4278,16 @@ export const InstancesPendingApproveInputSchema = {
 export const InstancesPendingListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "name": {
       "description": "Instance name",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching pending entries to skip (default: 0)",
       "type": "string"
     }
   },
@@ -2982,8 +4397,16 @@ export const InstancesRoutesDeletedInputSchema = {
 export const InstancesRoutesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "name": {
       "description": "Instance name",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching routes to skip (default: 0)",
       "type": "string"
     },
     "tag": {
@@ -3104,7 +4527,7 @@ export const InstancesSetInputSchema = {
   "additionalProperties": false,
   "properties": {
     "key": {
-      "description": "Property key (agent, dmPolicy, groupPolicy, dmScope, instanceId, channel, enabled, defaults)",
+      "description": "Property key (agent, dmPolicy, groupPolicy, contactIntakeMode, defaultContactTags, dmScope, instanceId, channel, enabled, defaults)",
       "type": "string"
     },
     "name": {
@@ -3224,6 +4647,14 @@ export const ObserversListInputSchema = {
       "description": "Filter by observer agent id",
       "type": "string"
     },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching observer bindings to skip (default: 0)",
+      "type": "string"
+    },
     "session": {
       "description": "Filter by source session name/key",
       "type": "string"
@@ -3258,7 +4689,16 @@ export const ObserversProfilesInitInputSchema = {
 /** JSON Schema for the input body of `observers.profiles.list`. */
 export const ObserversProfilesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching observer profiles to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -3371,7 +4811,16 @@ export const ObserversRulesExplainInputSchema = {
 /** JSON Schema for the input body of `observers.rules.list`. */
 export const ObserversRulesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching observer rules to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -3613,8 +5062,16 @@ export const PermissionsInitInputSchema = {
 export const PermissionsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "object": {
       "description": "Filter by object (e.g., group:contacts)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching relations to skip (default: 0)",
       "type": "string"
     },
     "relation": {
@@ -3837,6 +5294,14 @@ export const ProjectsLinkInputSchema = {
 export const ProjectsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching projects to skip (default: 0)",
+      "type": "string"
+    },
     "status": {
       "description": "Filter by status",
       "type": "string"
@@ -3956,6 +5421,14 @@ export const ProjectsResourcesImportInputSchema = {
 export const ProjectsResourcesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching resources to skip (default: 0)",
+      "type": "string"
+    },
     "project": {
       "description": "Project id or slug",
       "type": "string"
@@ -4339,6 +5812,14 @@ export const ProxCallsProfilesConfigureInputSchema = {
 export const ProxCallsProfilesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching call profiles to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical call profile tag",
       "type": "string"
@@ -4524,6 +6005,14 @@ export const ProxCallsToolsCreateInputSchema = {
 export const ProxCallsToolsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching call tools to skip (default: 0)",
+      "type": "string"
+    },
     "profile": {
       "description": "Filter tools by profile binding",
       "type": "string"
@@ -4712,6 +6201,14 @@ export const ProxCallsVoiceAgentsCreateInputSchema = {
 export const ProxCallsVoiceAgentsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching voice agents to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical call voice agent tag",
       "type": "string"
@@ -4822,8 +6319,16 @@ export const RoutesExplainInputSchema = {
 export const RoutesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "name": {
       "description": "Instance name (omit for all)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching routes to skip (default: 0)",
       "type": "string"
     },
     "tag": {
@@ -5307,9 +6812,17 @@ export const SessionsListInputSchema = {
       "description": "Show only ephemeral sessions",
       "type": "boolean"
     },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "live": {
       "description": "Include live runtime state snapshot",
       "type": "boolean"
+    },
+    "offset": {
+      "description": "Number of matching sessions to skip (default: 0)",
+      "type": "string"
     },
     "tag": {
       "description": "Filter by canonical session tag slug",
@@ -5632,6 +7145,26 @@ export const SessionsSendInputSchema = {
       "description": "Prompt to send (omit for interactive mode)",
       "type": "string"
     },
+    "thread": {
+      "description": "Attach or auto-create a Ravi thread",
+      "type": "string"
+    },
+    "threadOwner": {
+      "description": "Owner for thread auto-create",
+      "type": "string"
+    },
+    "threadScope": {
+      "description": "Scope for thread lookup/create",
+      "type": "string"
+    },
+    "threadSummary": {
+      "description": "Initial summary when --thread auto-creates",
+      "type": "string"
+    },
+    "threadTitle": {
+      "description": "Title required when --thread auto-creates",
+      "type": "string"
+    },
     "to": {
       "description": "Override delivery target",
       "type": "string"
@@ -5846,6 +7379,14 @@ export const SettingsListInputSchema = {
     "legacy": {
       "description": "Show legacy account.* settings shadowed by instances",
       "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching settings to skip (default: 0)",
+      "type": "string"
     }
   },
   "type": "object"
@@ -5905,6 +7446,14 @@ export const SkillGatesEnableInputSchema = {
 export const SkillGatesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching skill gate rules to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical skill gate rule tag",
       "type": "string"
@@ -6058,6 +7607,14 @@ export const SkillsListInputSchema = {
       "description": "List operator-installed skills instead of the Ravi catalog",
       "type": "boolean"
     },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching skills to skip (default: 0)",
+      "type": "string"
+    },
     "source": {
       "description": "List skills available in a GitHub URL, git URL or local path",
       "type": "string"
@@ -6130,6 +7687,14 @@ export const SpecsListInputSchema = {
     },
     "kind": {
       "description": "Filter by kind: domain|capability|feature",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching specs to skip (default: 0)",
       "type": "string"
     }
   },
@@ -6221,7 +7786,16 @@ export const StickersAddInputSchema = {
 /** JSON Schema for the input body of `stickers.list`. */
 export const StickersListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching stickers to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6283,6 +7857,99 @@ export const StickersShowInputSchema = {
   "required": [
     "id"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.evaluate`. */
+export const TagRulesEvaluateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Actually apply tag changes (default: dry-run)",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Load rule from a file path instead of the registry",
+      "type": "string"
+    },
+    "ruleId": {
+      "description": "Rule id to evaluate",
+      "type": "string"
+    },
+    "target": {
+      "description": "Target (e.g. contact:<id>)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ruleId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.explain`. */
+export const TagRulesExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "target": {
+      "description": "Target (e.g. contact:<id>)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.list`. */
+export const TagRulesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of rules to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.show`. */
+export const TagRulesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.tick`. */
+export const TagRulesTickInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Apply tag changes (default: dry-run)",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Limit number of contacts processed",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tag-rules.validate`. */
+export const TagRulesValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6943,6 +8610,14 @@ export const TasksAutomationsEnableInputSchema = {
 export const TasksAutomationsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching automations to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical task automation tag",
       "type": "string"
@@ -7145,6 +8820,14 @@ export const TasksDepsAddInputSchema = {
 export const TasksDepsLsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching dependency edges to skip (default: 0)",
+      "type": "string"
+    },
     "taskId": {
       "description": "Task id to inspect",
       "type": "string"
@@ -7380,7 +9063,16 @@ export const TasksProfilesInitInputSchema = {
 /** JSON Schema for the input body of `tasks.profiles.list`. */
 export const TasksProfilesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching profiles to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7518,10 +9210,274 @@ export const TasksUnarchiveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `threads.brief`. */
+export const ThreadsBriefInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.close`. */
+export const ThreadsCloseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "description": "Closure reason",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.comment`. */
+export const ThreadsCommentInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "description": "Comment body",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "default|internal|private|restricted",
+      "type": "string"
+    }
+  },
+  "required": [
+    "body",
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.create`. */
+export const ThreadsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "defaultAgent": {
+      "description": "Default agent id",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner pointer",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope pointer, e.g. chat:<id> or session:<key>",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Thread slug",
+      "type": "string"
+    },
+    "status": {
+      "description": "Initial status",
+      "type": "string"
+    },
+    "summary": {
+      "description": "Initial thread summary",
+      "type": "string"
+    },
+    "title": {
+      "description": "Thread title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "slug"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.entries`. */
+export const ThreadsEntriesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Page offset",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.link`. */
+export const ThreadsLinkInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "label": {
+      "description": "Display label",
+      "type": "string"
+    },
+    "role": {
+      "description": "Link role",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "target": {
+      "description": "Target pointer, e.g. chat:<id>",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "default|internal|private|restricted",
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.list`. */
+export const ThreadsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Page offset",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Filter by scope",
+      "type": "string"
+    },
+    "search": {
+      "description": "Search title, slug, or summary",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.note`. */
+export const ThreadsNoteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "description": "Note body",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "default|internal|private|restricted",
+      "type": "string"
+    }
+  },
+  "required": [
+    "body",
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `threads.show`. */
+export const ThreadsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "description": "Number of entries to include",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scope when resolving a slug",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.list`. */
 export const ToolsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching tools to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7670,6 +9626,14 @@ export const TriggersEnableInputSchema = {
 export const TriggersListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching triggers to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical trigger tag",
       "type": "string"
@@ -7780,7 +9744,7 @@ export const WhatsappDmAckInputSchema = {
       "type": "string"
     },
     "contact": {
-      "description": "Contact ID, phone, or LID",
+      "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
     },
     "messageId": {
@@ -7804,7 +9768,7 @@ export const WhatsappDmReadInputSchema = {
       "type": "string"
     },
     "contact": {
-      "description": "Contact ID, phone, or LID",
+      "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
     },
     "last": {
@@ -7832,7 +9796,7 @@ export const WhatsappDmSendInputSchema = {
       "type": "string"
     },
     "contact": {
-      "description": "Contact ID, phone, or LID",
+      "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
     },
     "message": {
@@ -8030,6 +9994,14 @@ export const WhatsappGroupListInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching groups to skip (default: 0)",
+      "type": "string"
     }
   },
   "type": "object"
@@ -8193,7 +10165,16 @@ export const WorkflowsRunsCancelInputSchema = {
 /** JSON Schema for the input body of `workflows.runs.list`. */
 export const WorkflowsRunsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching workflow runs to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8367,7 +10348,16 @@ export const WorkflowsSpecsCreateInputSchema = {
 /** JSON Schema for the input body of `workflows.specs.list`. */
 export const WorkflowsSpecsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching workflow specs to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

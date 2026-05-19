@@ -8,26 +8,42 @@ It stores durable outputs and their context so agents can inspect, reuse, edit, 
 
 Each artifact can carry:
 
-- identity: `id`, `kind`, `title`, `summary`, `status`, `tags`
+- identity: `id`, optional semantic `kind`, `title`, `summary`, `status`, `tags`
 - file data: original path, blob-store copy, MIME type, size, `sha256`
 - generation context: provider, model, prompt, command, duration, tokens, and known cost when explicitly available
 - Ravi context: session, agent, task, run, turn, channel, account, chat, message
 - structured data: metadata, metrics, lineage, input, output
 - relationships: links to tasks, sessions, messages, projects, or arbitrary targets
 - audit events: created, updated, attached, archived
+- immutable versions: content snapshots with manifest data and version assets
 
 ## Commands
 
 ```bash
-ravi artifacts create image --path /tmp/image.png --provider openai --model gpt-image-2
+ravi artifacts create --path /tmp/image.png --kind image --provider openai --model gpt-image-2
 ravi artifacts list --kind image
 ravi artifacts show art_xxx --json
+ravi artifacts versions art_xxx --json
+ravi artifacts version art_xxx --version 1 --json
+ravi artifacts snapshot art_xxx --label "before edit"
+ravi artifacts restore art_xxx --version 1
 ravi artifacts update art_xxx --metadata '{"approved":true}'
 ravi artifacts attach art_xxx task task-123 --relation evidence
 ravi artifacts archive art_xxx
 ```
 
 All commands support typed `--json` output where applicable.
+
+## Versioning
+
+Artifacts keep the mutable high-level record for current state, while versions
+snapshot content. Creating an artifact with a file, blob, URI, or structured
+output creates an initial version. Updating file/blob/URI/output content creates
+the next version. Metadata-only edits do not create a version unless you call
+`ravi artifacts snapshot`.
+
+Restoring a previous version reapplies that version to the current artifact and
+creates a new version for the restore, preserving the full history.
 
 ## Image Integration
 

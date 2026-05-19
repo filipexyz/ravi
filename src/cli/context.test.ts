@@ -1,4 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 afterAll(() => mock.restore());
 
@@ -34,6 +36,7 @@ describe("cli context resolution", () => {
     RAVI_CHANNEL: process.env.RAVI_CHANNEL,
     RAVI_ACCOUNT_ID: process.env.RAVI_ACCOUNT_ID,
     RAVI_CHAT_ID: process.env.RAVI_CHAT_ID,
+    RAVI_CREDENTIALS_PATH: process.env.RAVI_CREDENTIALS_PATH,
   };
 
   beforeEach(() => {
@@ -45,16 +48,18 @@ describe("cli context resolution", () => {
     delete process.env.RAVI_CHANNEL;
     delete process.env.RAVI_ACCOUNT_ID;
     delete process.env.RAVI_CHAT_ID;
+    process.env.RAVI_CREDENTIALS_PATH = join(tmpdir(), `ravi-cli-context-test-missing-${process.pid}.json`);
   });
 
   afterEach(() => {
-    process.env.RAVI_CONTEXT_KEY = originalEnv.RAVI_CONTEXT_KEY;
-    process.env.RAVI_SESSION_KEY = originalEnv.RAVI_SESSION_KEY;
-    process.env.RAVI_SESSION_NAME = originalEnv.RAVI_SESSION_NAME;
-    process.env.RAVI_AGENT_ID = originalEnv.RAVI_AGENT_ID;
-    process.env.RAVI_CHANNEL = originalEnv.RAVI_CHANNEL;
-    process.env.RAVI_ACCOUNT_ID = originalEnv.RAVI_ACCOUNT_ID;
-    process.env.RAVI_CHAT_ID = originalEnv.RAVI_CHAT_ID;
+    restoreEnv("RAVI_CONTEXT_KEY", originalEnv.RAVI_CONTEXT_KEY);
+    restoreEnv("RAVI_SESSION_KEY", originalEnv.RAVI_SESSION_KEY);
+    restoreEnv("RAVI_SESSION_NAME", originalEnv.RAVI_SESSION_NAME);
+    restoreEnv("RAVI_AGENT_ID", originalEnv.RAVI_AGENT_ID);
+    restoreEnv("RAVI_CHANNEL", originalEnv.RAVI_CHANNEL);
+    restoreEnv("RAVI_ACCOUNT_ID", originalEnv.RAVI_ACCOUNT_ID);
+    restoreEnv("RAVI_CHAT_ID", originalEnv.RAVI_CHAT_ID);
+    restoreEnv("RAVI_CREDENTIALS_PATH", originalEnv.RAVI_CREDENTIALS_PATH);
   });
 
   it("prefers resolved runtime context when RAVI_CONTEXT_KEY is present", () => {
@@ -97,3 +102,11 @@ describe("cli context resolution", () => {
     });
   });
 });
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+  process.env[key] = value;
+}

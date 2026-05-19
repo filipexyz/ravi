@@ -1,7 +1,8 @@
 import { getClient, callBinary, NoActiveServerError, InvalidContextKeyError } from "./lib/client.js";
-import { getViewState, setViewState, upsertBinding, findBinding } from "./lib/storage.js";
+import { getViewState, setViewState } from "./lib/storage.js";
 import { buildOverlayV3PlaceholderSnapshot } from "./lib/dom-model.js";
 import {
+  buildCrmSnapshot,
   buildSnapshot,
   buildTasksSnapshot,
   buildOmniPanelSnapshot,
@@ -13,6 +14,7 @@ const HANDLERS = {
   "ravi:get-snapshot": fetchSnapshot,
   "ravi:get-session-workspace": fetchSessionWorkspace,
   "ravi:get-tasks": fetchTasks,
+  "ravi:get-crm": fetchCrm,
   "ravi:get-insights": fetchInsights,
   "ravi:get-artifacts": fetchArtifacts,
   "ravi:get-artifact-blob": fetchArtifactBlob,
@@ -241,6 +243,11 @@ async function fetchTasks(payload = {}) {
   return await buildTasksSnapshot(client, payload);
 }
 
+async function fetchCrm(payload = {}) {
+  const { client } = await getClient();
+  return await buildCrmSnapshot(client, payload);
+}
+
 async function publishViewState(payload = {}) {
   await setViewState(payload);
   return { ok: true };
@@ -257,21 +264,96 @@ async function postV3Command(payload = {}) {
   if (name === "chat.bindSession") {
     const args = payload.args ?? {};
     try {
-      const binding = await upsertBinding({
+      const { client } = await getClient();
+      const result = await executeOmniRoute(client, {
+        action: "bind-existing",
         title: args.title,
         chatId: args.chatId,
         session: args.session,
+        agentId: args.agentId,
         instance: args.instance,
         chatType: args.chatType,
         chatName: args.chatName,
+        channel: args.channel,
       });
+      if (result?.ok === false) return result;
       const commandId = `v3c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
       return {
         ok: true,
-        ack: { body: { commandId, ok: true, result: { binding } } },
+        ack: { body: { commandId, ok: true, result } },
       };
     } catch (error) {
       return { ok: false, error: error?.message || String(error), code: "bind_failed" };
+    }
+  }
+  if (name === "chat.createSession") {
+    const args = payload.args ?? {};
+    const agentId = clean(args.agentId);
+    const chatId = clean(args.chatId);
+    const title = clean(args.title);
+    const session = clean(args.session);
+    if (!agentId || (!chatId && !title)) {
+      return { ok: false, error: "agentId and chatId/title required", code: "invalid_args" };
+    }
+    try {
+      const { client } = await getClient();
+      const result = await executeOmniRoute(client, {
+        action: "create-session",
+        title,
+        chatId,
+        session,
+        agentId,
+        instance: args.instance,
+        chatType: args.chatType,
+        chatName: args.chatName,
+        channel: args.channel,
+      });
+      if (result?.ok === false) return result;
+      const commandId = `v3c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        ok: true,
+        ack: {
+          body: {
+            commandId,
+            ok: true,
+            result,
+          },
+        },
+      };
+    } catch (error) {
+      return { ok: false, error: error?.message || String(error), code: "create_session_failed" };
+    }
+  }
+  if (name === "chat.unbindSession") {
+    const args = payload.args ?? {};
+    const chatId = clean(args.chatId);
+    const title = clean(args.title);
+    if (!chatId && !title) {
+      return { ok: false, error: "chatId or title required", code: "invalid_args" };
+    }
+    try {
+      const { client } = await getClient();
+      const result = await executeOmniRoute(client, {
+        action: "unbind",
+        chatId,
+        title,
+        instance: args.instance,
+        channel: args.channel,
+      });
+      if (result?.ok === false) return result;
+      const commandId = `v3c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        ok: true,
+        ack: {
+          body: {
+            commandId,
+            ok: true,
+            result,
+          },
+        },
+      };
+    } catch (error) {
+      return { ok: false, error: error?.message || String(error), code: "unbind_session_failed" };
     }
   }
   return { ok: false, error: `Unsupported v3 command: ${name}`, code: "unsupported_command" };

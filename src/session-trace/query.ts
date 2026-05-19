@@ -1,4 +1,5 @@
 import { getDb } from "../router/router-db.js";
+import { resolveSession } from "../router/sessions.js";
 import type { JsonValue, SessionEventRecord, SessionTraceBlobRecord, SessionTurnRecord } from "./types.js";
 
 interface SessionEventRow {
@@ -318,9 +319,31 @@ function addSessionFilter(
   const resolvedSessionKey = compactText(sessionKey);
   const resolvedSessionName = compactText(sessionName);
   const rawSession = compactText(session);
-  const keyCandidates = Array.from(
-    new Set([resolvedSessionKey, rawSession].filter((value): value is string => Boolean(value))),
-  );
+
+  // Fast path: caller already supplied a session_key (production CLI does this
+  // via resolveTraceTarget). Skip the OR — uses idx_session_events_key_time
+  // directly. With ~800k rows in session_events the OR fallback was scanning
+  // the whole table and producing 10s+ peaks.
+  if (resolvedSessionKey) {
+    where.push(`session_key = ?`);
+    params.push(resolvedSessionKey);
+    return;
+  }
+
+  // No explicit key — try the sessions table (42 rows, indexed lookup).
+  if (rawSession) {
+    const entry = resolveSession(rawSession);
+    if (entry) {
+      where.push(`session_key = ?`);
+      params.push(entry.sessionKey);
+      return;
+    }
+  }
+
+  // Fallback: session_events may exist without a `sessions` table row (test
+  // fixtures seed events directly; legacy data). Preserve original OR behavior
+  // — slower but functionally identical.
+  const keyCandidates = Array.from(new Set([rawSession].filter((value): value is string => Boolean(value))));
   const nameCandidates = Array.from(
     new Set([resolvedSessionName, rawSession].filter((value): value is string => Boolean(value))),
   );

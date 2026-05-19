@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { getSession, getSessionByName } from "../../router/index.js";
 import {
   dbDeleteObserverRule,
@@ -236,25 +237,45 @@ export class ObserverCommands {
     observerAgentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching observer bindings to skip (default: 0)" })
+    offset?: string,
   ) {
     const session = sessionKeyForNameOrKey(sessionName);
     const bindings = dbListObserverBindings({
       ...(session.sessionKey ? { sourceSessionKey: session.sessionKey } : {}),
       ...(observerAgentId?.trim() ? { observerAgentId: observerAgentId.trim() } : {}),
     });
+    const page = paginateCliItems(bindings, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "observers", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: ["--session", sessionName, "--agent", observerAgentId],
+    });
     const payload = {
-      total: bindings.length,
-      bindings: bindings.map(serializeBinding),
+      total: page.total,
+      pagination,
+      items: page.items.map(serializeBinding),
+      bindings: page.items.map(serializeBinding),
     };
     if (asJson) {
       printJson(payload);
-    } else if (bindings.length === 0) {
+    } else if (page.items.length === 0) {
       console.log("\nNo observer bindings found.\n");
     } else {
-      console.log(`\nObserver bindings (${bindings.length}):\n`);
-      for (const binding of bindings) {
+      console.log(
+        `\nObserver bindings (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+      );
+      for (const binding of page.items) {
         printBinding(binding);
         console.log("");
+      }
+      if (pagination.nextCommand) {
+        console.log("Next page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
     return payload;
@@ -321,18 +342,40 @@ export class ObserverRuleCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching observer rules to skip (default: 0)" })
+    offset?: string,
   ) {
     const rules = dbListObserverRules();
-    const payload = { total: rules.length, rules: rules.map(serializeRule) };
+    const page = paginateCliItems(rules, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "observers", "rules", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+    });
+    const payload = {
+      total: page.total,
+      pagination,
+      items: page.items.map(serializeRule),
+      rules: page.items.map(serializeRule),
+    };
     if (asJson) {
       printJson(payload);
-    } else if (rules.length === 0) {
+    } else if (page.items.length === 0) {
       console.log("\nNo observer rules configured.\n");
     } else {
-      console.log(`\nObserver rules (${rules.length}):\n`);
-      for (const rule of rules) {
+      console.log(
+        `\nObserver rules (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+      );
+      for (const rule of page.items) {
         printRule(rule);
         console.log("");
+      }
+      if (pagination.nextCommand) {
+        console.log("Next page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
     return payload;
@@ -606,18 +649,40 @@ export class ObserverProfileCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching observer profiles to skip (default: 0)" })
+    offset?: string,
   ) {
     const profiles = listObserverProfiles();
-    const payload = { total: profiles.length, profiles: profiles.map(serializeProfile) };
+    const page = paginateCliItems(profiles, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "observers", "profiles", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+    });
+    const payload = {
+      total: page.total,
+      pagination,
+      items: page.items.map(serializeProfile),
+      profiles: page.items.map(serializeProfile),
+    };
     if (asJson) {
       printJson(payload);
-    } else if (profiles.length === 0) {
+    } else if (page.items.length === 0) {
       console.log("\nNo observer profiles found.\n");
     } else {
-      console.log(`\nObserver profiles (${profiles.length}):\n`);
-      for (const profile of profiles) {
+      console.log(
+        `\nObserver profiles (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+      );
+      for (const profile of page.items) {
         printProfile(profile);
         console.log("");
+      }
+      if (pagination.nextCommand) {
+        console.log("Next page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
     return payload;

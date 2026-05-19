@@ -81,12 +81,20 @@ mágico.
 
 Channels ativos:
 
-| Channel              | Endpoint                         | Topic NATS subjacente             | Escopo REBAC              |
-|----------------------|----------------------------------|-----------------------------------|---------------------------|
-| `events`             | `/api/v1/_stream/events`         | `>` com filtros                   | `view system:events`      |
-| `tasks`              | `/api/v1/_stream/tasks`          | `ravi.task.*.event`               | `view system:tasks`       |
-| `sessions/<name>`    | `/api/v1/_stream/sessions/<name>`| `ravi.session.<name>.*` + approval| `access session:<name>`   |
-| `audit`              | `/api/v1/_stream/audit`          | `ravi.audit.>`                    | `view system:audit`       |
+| Channel                  | Endpoint                              | Topic NATS subjacente                                                                | Escopo REBAC                |
+|--------------------------|---------------------------------------|--------------------------------------------------------------------------------------|-----------------------------|
+| `events`                 | `/api/v1/_stream/events`              | `>` com filtros                                                                      | `view system:events`        |
+| `tasks`                  | `/api/v1/_stream/tasks`               | `ravi.task.*.event`                                                                  | `view system:tasks`         |
+| `sessions/<name>`        | `/api/v1/_stream/sessions/<name>`     | `ravi.session.<name>.*` + approval                                                   | `access session:<name>`     |
+| `chats/<chatId>`         | `/api/v1/_stream/chats/<chatId>`      | `message.received.>`, `reaction.received.>`, `presence.typing`, `chat.unread-updated`, filtrado por `chatId` | `view chat:<chatId>`        |
+| `instances/<instanceId>` | `/api/v1/_stream/instances/<id>`      | `instance.>` filtrado por `instanceId`                                               | `view instance:<instanceId>`|
+| `audit`                  | `/api/v1/_stream/audit`               | `ravi.audit.>`                                                                       | `view system:audit`         |
+
+`chats/<chatId>` é o canal alvo para clientes de UI (mobile, web) que renderizam um chat específico em tempo real. O servidor MUST descartar qualquer evento em que `data.payload.chatId` (ou `data.chatId` como fallback) não case com `<chatId>` para evitar leak entre chats. O channel propaga o topic original em `data.topic` e o payload bruto em `data.data`, sem reformatar — clientes ficam responsáveis pelo shape do payload upstream.
+
+`instances/<instanceId>` resolve o `instanceId` em ordem: `data.payload.instanceId`, `data.metadata.instanceId`, `data.instanceId`, sufixo do subject `instance.{action}.{channelType}.{instanceId}`. Eventos sem identificador resolvido são descartados.
+
+O channel `events` deliberadamente NÃO emite `message.*`, `reaction.*`, `instance.*`, `presence.typing` nem `chat.unread-updated` — esse channel mantém paridade com `ravi events stream` (debug firehose). Para esses topics use os channels dedicados acima.
 
 `tmux.watch`, `tmux.attach`, `daemon.run`, `daemon.dev`, `instances.connect`
 permanecem permanentemente CLI-only — não fazem sentido remotos.

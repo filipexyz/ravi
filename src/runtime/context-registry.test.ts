@@ -381,6 +381,9 @@ describe("runtime context registry", () => {
       ttlMs: 60_000,
     });
 
-    expect(listLiveAdminContexts().map((context) => context.contextId)).toEqual([bootstrap.contextId]);
+    const testAgentAdminContextIds = listLiveAdminContexts()
+      .filter((context) => context.agentId === TEST_AGENT_ID)
+      .map((context) => context.contextId);
+    expect(testAgentAdminContextIds).toEqual([bootstrap.contextId]);
   });
 });

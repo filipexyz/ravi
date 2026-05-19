@@ -267,6 +267,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
 
       return {
         provider: "codex",
+        concurrentInputStrategy: "native_steer",
         skillVisibility,
         events: normalizeCodexEvents(
           input,
@@ -1429,6 +1430,15 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         if (turn) {
           const item = normalizeAppServerItem(params.item);
           if (item) {
+            if (item.type === "context_compaction") {
+              turn.queue.push({
+                type: "thread.compaction.started",
+                source: "codex.app-server",
+                thread_id: turn.threadId ?? currentThreadId,
+                turn_id: turn.turnId,
+                item,
+              });
+            }
             turn.queue.push({
               type: "item.started",
               source: "codex.app-server",
@@ -1451,6 +1461,15 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               turn_id: turn.turnId,
               item,
             });
+            if (item.type === "context_compaction") {
+              turn.queue.push({
+                type: "thread.compacted",
+                source: "codex.app-server",
+                thread_id: turn.threadId ?? currentThreadId,
+                turn_id: turn.turnId,
+                item,
+              });
+            }
           }
         }
         break;
@@ -1474,6 +1493,18 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       case "thread/tokenUsage/updated": {
         if (turn) {
           turn.lastUsage = extractAppServerUsage(params.tokenUsage);
+        }
+        break;
+      }
+      case "thread/compacted": {
+        if (turn) {
+          const threadId = firstString(params.threadId, params.thread_id, turn.threadId, currentThreadId);
+          turn.queue.push({
+            type: "thread.compacted",
+            source: "codex.app-server",
+            thread_id: threadId,
+            turn_id: turn.turnId,
+          });
         }
         break;
       }
@@ -2082,10 +2113,18 @@ function mapCliUsage(usage: unknown): RuntimeUsage {
 }
 
 function mapStatusFromCliEvent(type: string): RuntimeStatus | null {
+  if (type === "thread.compaction.started") {
+    return "compacting";
+  }
   if (type === "turn.started") {
     return "thinking";
   }
-  if (type === "turn.completed" || type === "turn.failed" || type === "turn.interrupted") {
+  if (
+    type === "thread.compacted" ||
+    type === "turn.completed" ||
+    type === "turn.failed" ||
+    type === "turn.interrupted"
+  ) {
     return "idle";
   }
   return null;
@@ -2258,7 +2297,7 @@ function hasExplicitStart(item: Record<string, unknown>): boolean {
 }
 
 function isNonToolItemType(type: string): boolean {
-  return type === "agent_message" || type === "user_message" || type === "reasoning";
+  return type === "agent_message" || type === "user_message" || type === "reasoning" || type === "context_compaction";
 }
 
 function normalizeCliToolName(type: string): string {
@@ -2401,6 +2440,12 @@ function normalizeAppServerItem(value: unknown): Record<string, unknown> | null 
         type: "reasoning",
         text: item.text,
         summary: item.summary,
+      };
+    case "contextCompaction":
+    case "context_compaction":
+      return {
+        ...base,
+        type: "context_compaction",
       };
     case "userMessage":
       return {

@@ -42,7 +42,7 @@ A provider MAY implement:
 - `setModel(model)`: live model switch.
 - `control(request)`: provider-native runtime controls such as thread read, fork, rollback, steer, or interrupt.
 
-The host dispatcher MAY route a concurrent human prompt through `control({ operation: "turn.steer" })` when the active handle supports runtime control and the delivery barrier is `after_tool`. If control fails or is unsupported, the host MUST fall back to the normal Ravi queue/interruption path without losing the prompt.
+The host dispatcher MAY route a concurrent human prompt through `control({ operation: "turn.steer" })` only when the live handle explicitly opts into native concurrent input steering and the delivery barrier is `after_tool`. If control fails, is unsupported, or the handle did not opt in, the host MUST fall back to the normal Ravi queue/interruption path without losing the prompt.
 
 Host-side debounce and provider-native steering are different layers:
 
@@ -50,7 +50,7 @@ Host-side debounce and provider-native steering are different layers:
 - Runtime `pendingMessages` is the host delivery queue used after a session handle exists.
 - Provider-native `turn.steer` is a control operation for injecting an additional prompt into an existing native run.
 
-Adapters with native steering MAY bypass Ravi `pendingMessages` for interactive `after_tool` messages after a live handle exists, but MUST NOT disable debounce unless the agent/channel config says so.
+Adapters with native steering MAY bypass Ravi `pendingMessages` for interactive `after_tool` messages after a live handle exists, but MUST opt in through the runtime handle and MUST NOT disable debounce unless the agent/channel config says so. Handles that only expose generic runtime control default to Ravi queue + interrupt semantics.
 
 ## Model Selectors
 
@@ -64,6 +64,18 @@ Minimum validation:
 - For Pi, reject known provider ids used alone as model selectors, such as `kimi-coding`; use `kimi-coding/kimi-for-coding` instead.
 
 Deep validation against a live provider catalog or credentials MAY be implemented as explicit preflight, but MUST NOT be required for every config write unless the provider can do it cheaply and deterministically.
+
+## Credential Fallback
+
+Provider credential selection and fallback are governed by `runtime/providers/credential-fallback`.
+
+Provider adapters MUST expose enough structured, redacted failure data for the host to distinguish rate limits, quota exhaustion, billing failures, invalid credentials, permission failures, provider overload, network transients, context limits, invalid requests, and unknown failures.
+
+Provider adapters MUST NOT implement hidden credential rotation in provider-local code. Selection, cooldowns, health transitions, retry limits, replay safety, and operator-visible events belong in the generic runtime credential fallback layer.
+
+Provider adapters MAY own provider-specific secret/env/profile mapping, but MUST NOT leak raw credential values into logs, traces, provider raw summaries, shell tool env, or session params.
+
+Provider session ids and resume/fork state used with managed credentials MUST be credential-compatible. A provider adapter MUST NOT resume or fork native state across different account/profile credential boundaries unless it explicitly declares that the native provider session is account-independent.
 
 ## Canonical Events
 

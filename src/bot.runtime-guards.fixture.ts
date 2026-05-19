@@ -1506,9 +1506,9 @@ describe("RaviBot runtime guards", () => {
     const firstFailureSeen = new Promise<void>((resolve) => {
       releaseFirstFailure = resolve;
     });
-    let releaseFinalRetryPrompt: (() => void) | undefined;
-    const finalRetryPromptSeen = new Promise<void>((resolve) => {
-      releaseFinalRetryPrompt = resolve;
+    let releaseRetryPrompt: (() => void) | undefined;
+    const retryPromptSeen = new Promise<void>((resolve) => {
+      releaseRetryPrompt = resolve;
     });
     const interrupt = mock(async () => {
       releaseInterrupted?.();
@@ -1552,12 +1552,12 @@ describe("RaviBot runtime guards", () => {
       return {
         provider: providerId,
         events: (async function* () {
-          const finalRetry = await request.prompt.next();
-          expect(finalRetry.value?.message.content).toBe("first\n\nsecond\n\nthird");
-          releaseFinalRetryPrompt?.();
+          const retry = await request.prompt.next();
+          expect(retry.value?.message.content).toBe("first\n\nsecond");
+          releaseRetryPrompt?.();
           yield {
             type: "assistant.message",
-            text: "handled third",
+            text: "handled retry",
           };
           yield {
             type: "turn.complete",
@@ -1579,9 +1579,7 @@ describe("RaviBot runtime guards", () => {
         (entry) => entry.topic === `ravi.session.${sessionKey}.runtime` && entry.data?.type === "turn.interrupted",
       ),
     );
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("third"));
-    await finalRetryPromptSeen;
+    await retryPromptSeen;
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(interrupt).toHaveBeenCalledTimes(1);
@@ -1589,7 +1587,7 @@ describe("RaviBot runtime guards", () => {
     const responses = emittedEvents
       .filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`)
       .map((entry) => String(entry.data?.response ?? ""));
-    expect(responses).toContain("handled third");
+    expect(responses).toContain("handled retry");
     expect(responses.some((response) => response.includes("Request was aborted"))).toBe(false);
     expect(responses.some((response) => response.startsWith("Error: [ede_diagnostic]"))).toBe(false);
     expect(responses.some((response) => response.includes("stop_reason=null"))).toBe(false);

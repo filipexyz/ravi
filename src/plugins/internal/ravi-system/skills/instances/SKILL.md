@@ -5,6 +5,7 @@ description: |
   - Criar, listar ou configurar instâncias (contas omni)
   - Conectar/desconectar contas WhatsApp, Matrix, etc
   - Definir policies de DM e grupo por instância
+  - Configurar contact intake automático por instância
   - Gerenciar rotas de uma instância específica
   - Aprovar ou rejeitar pendências de acesso
 ---
@@ -12,6 +13,23 @@ description: |
 # Instances Manager
 
 Instâncias são a entidade central de configuração do Ravi. Cada instância representa uma conta conectada (WhatsApp, Matrix, etc) com seu próprio agent, policies e rotas.
+
+## Inspeção Cruzada
+
+Instância isolada não conta a história toda. Ao diagnosticar o estado, combine instância com o que ela produz:
+
+```bash
+ravi instances list --json                    # canais conectados, intake mode, default tags
+ravi instances show <name> --json             # detalhes + rotas + omni status
+ravi contacts list --json                     # quantos contatos cada instância gerou
+ravi chats list --json                        # quantos chats por instância
+```
+
+⚠️ **Instância sem `contactIntakeMode=discovered|pending`** = mensagens chegam mas não viram contato canônico. Cheque sempre.
+
+⚠️ **Instância conectada mas sem agent** = mensagens caem na fila default ou em pending. Pode ser intencional (catch-all manual) ou esquecimento.
+
+⚠️ **`defaultContactTags` vazia** + intake ligado = contatos criam sem etiqueta inicial. Sem etiqueta inicial, regras de classificação não têm gatilho.
 
 ## Comandos Principais
 
@@ -41,6 +59,7 @@ Keys disponíveis:
 - `dmPolicy` - Política para DMs: `open` | `pairing` | `closed`
 - `groupPolicy` - Política para grupos: `open` | `allowlist` | `closed`
 - `dmScope` - Escopo de sessões DM: `main` | `per-peer` | `per-channel-peer` | `per-account-channel-peer`
+- `contactIntakeMode` - Criação/link automático de contatos em DMs: `off` | `discovered` | `pending`
 - `instanceId` - UUID omni (normalmente auto-preenchido no connect)
 - `channel` - Canal: `whatsapp` | `matrix` | etc
 
@@ -84,6 +103,29 @@ Policies controlam quem pode iniciar conversa com o bot desta instância:
 ravi instances set main dmPolicy pairing
 ravi instances set vendas groupPolicy allowlist
 ```
+
+## Contact Intake
+
+`contactIntakeMode` controla se DMs recebidas criam/linkam contatos canônicos automaticamente.
+
+```bash
+ravi instances show main --json
+ravi instances set main contactIntakeMode discovered
+```
+
+Modos:
+- `off`: não cria/linka contato automaticamente.
+- `discovered`: cria/linka contato como descoberto, sem marcar como pendente operacional.
+- `pending`: cria/linka contato como pendente.
+
+Isso vale para mensagens novas. Para chats antigos já capturados, use:
+
+```bash
+ravi contacts backfill --instance main --mode discovered --dry-run --json
+ravi contacts backfill --instance main --mode discovered --create-list crm-analysis-pending --apply --json
+```
+
+Contact intake não aprova rotas, não responde por si só e não grava análise CRM. Ele só garante identidade canônica, platform identity e vínculo com o ledger de chats.
 
 ## Rotas por Instância
 

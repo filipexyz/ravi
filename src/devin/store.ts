@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
 import { canonicalAssetIdsForTag, replaceMirroredTagSlugsForAsset } from "../tags/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
+import { executeWrite } from "../db/write-retry.js";
 import { toDevinApiId, type DevinSession, type DevinSessionAttachment, type DevinSessionMessage } from "./client.js";
 
 let db: Database | null = null;
@@ -449,12 +450,15 @@ export function upsertDevinMessages(devinId: string, messages: DevinSessionMessa
        message = excluded.message,
        synced_at = excluded.synced_at`,
   );
-  const insertAll = database.transaction(() => {
-    for (const message of messages) {
-      stmt.run(devinId, message.event_id, message.created_at, message.source, message.message, syncedAt);
-    }
-  });
-  insertAll();
+  executeWrite(
+    database,
+    () => {
+      for (const message of messages) {
+        stmt.run(devinId, message.event_id, message.created_at, message.source, message.message, syncedAt);
+      }
+    },
+    { label: "devin:upsertMessages" },
+  );
   return listDevinMessages(devinId);
 }
 
@@ -483,20 +487,23 @@ export function upsertDevinAttachments(
        content_type = excluded.content_type,
        synced_at = excluded.synced_at`,
   );
-  const insertAll = database.transaction(() => {
-    for (const attachment of attachments) {
-      stmt.run(
-        devinId,
-        attachment.attachment_id,
-        attachment.name,
-        attachment.source,
-        attachment.url,
-        attachment.content_type ?? null,
-        syncedAt,
-      );
-    }
-  });
-  insertAll();
+  executeWrite(
+    database,
+    () => {
+      for (const attachment of attachments) {
+        stmt.run(
+          devinId,
+          attachment.attachment_id,
+          attachment.name,
+          attachment.source,
+          attachment.url,
+          attachment.content_type ?? null,
+          syncedAt,
+        );
+      }
+    },
+    { label: "devin:upsertAttachments" },
+  );
   return listDevinAttachments(devinId);
 }
 

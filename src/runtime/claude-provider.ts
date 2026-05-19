@@ -5,7 +5,7 @@ import {
   type PermissionResult,
   type Query,
 } from "@anthropic-ai/claude-agent-sdk";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { delimiter, join } from "node:path";
 import type {
@@ -348,13 +348,38 @@ function resolveNativeClaudeCodeExecutable(): string | undefined {
 
   for (const packageName of getNativePackagePreference()) {
     try {
-      return nodeRequire.resolve(`${packageName}/${executableName}`);
+      const candidate = nodeRequire.resolve(`${packageName}/${executableName}`);
+      if (ensureExecutable(candidate)) {
+        return candidate;
+      }
     } catch {
       // Optional native packages are platform/package-manager dependent.
     }
   }
 
   return undefined;
+}
+
+function ensureExecutable(candidate: string): boolean {
+  if (process.platform === "win32") {
+    return true;
+  }
+
+  try {
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    // Bun/global installs can occasionally leave optional native package files
+    // without executable bits. Repair when the current user owns the install.
+  }
+
+  try {
+    chmodSync(candidate, statSync(candidate).mode | 0o111);
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function getNativePackagePreference(): string[] {
@@ -378,10 +403,58 @@ function isMuslRuntime(): boolean {
 
   try {
     const report = process.report?.getReport?.() as { header?: { glibcVersionRuntime?: string } } | undefined;
-    return !report?.header?.glibcVersionRuntime;
+    if (report?.header) {
+      return !report.header.glibcVersionRuntime;
+    }
   } catch {
+    // Fall through to loader inspection for runtimes such as Bun.
+  }
+
+  if (hasAnyExistingPath(getGlibcLoaderPaths())) {
     return false;
   }
+  if (hasAnyExistingPath(getMuslLoaderPaths())) {
+    return true;
+  }
+  return scanRuntimeLoaderDirectories().some((name) => name.startsWith("ld-musl-"));
+}
+
+function getGlibcLoaderPaths(): string[] {
+  switch (process.arch) {
+    case "arm64":
+      return ["/lib/ld-linux-aarch64.so.1", "/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"];
+    case "x64":
+      return ["/lib64/ld-linux-x86-64.so.2", "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"];
+    default:
+      return [];
+  }
+}
+
+function getMuslLoaderPaths(): string[] {
+  switch (process.arch) {
+    case "arm64":
+      return ["/lib/ld-musl-aarch64.so.1", "/usr/lib/ld-musl-aarch64.so.1"];
+    case "x64":
+      return ["/lib/ld-musl-x86_64.so.1", "/usr/lib/ld-musl-x86_64.so.1"];
+    default:
+      return [];
+  }
+}
+
+function hasAnyExistingPath(paths: string[]): boolean {
+  return paths.some((path) => existsSync(path));
+}
+
+function scanRuntimeLoaderDirectories(): string[] {
+  const names: string[] = [];
+  for (const directory of ["/lib", "/lib64", "/usr/lib"]) {
+    try {
+      names.push(...readdirSync(directory));
+    } catch {
+      // Ignore missing or unreadable system directories.
+    }
+  }
+  return names;
 }
 
 function resolveExecutableFromPath(command: string, env: Record<string, string | undefined>): string | undefined {

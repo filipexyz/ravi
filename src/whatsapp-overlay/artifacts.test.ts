@@ -5,6 +5,7 @@ import {
   buildOverlayArtifactsPayload,
   deriveLifecycle,
   normalizeArtifactsLimit,
+  normalizeArtifactsOffset,
   normalizeLifecycle,
   resolveArtifactBlob,
 } from "./artifacts.js";
@@ -166,6 +167,14 @@ describe("buildOverlayArtifactsPayload", () => {
     });
 
     expect(payload.ok).toBe(true);
+    expect(payload.pagination).toMatchObject({
+      limit: 50,
+      offset: 0,
+      returned: 3,
+      total: 3,
+      hasMore: false,
+      nextOffset: null,
+    });
     expect(payload.stats.total).toBe(3);
     expect(payload.stats.byKind.image).toBe(2);
     expect(payload.stats.byKind["devin.session"]).toBe(1);
@@ -227,6 +236,38 @@ describe("buildOverlayArtifactsPayload", () => {
     expect(payload.items).toHaveLength(1);
     expect(payload.items[0]?.id).toBe("art_b");
     expect(payload.stats.byLifecycle.running).toBe(1);
+  });
+
+  it("returns standard pagination with total and next command", () => {
+    const records: ArtifactRecord[] = [
+      makeRecord({ id: "art_a", status: "completed", updatedAt: 10 }),
+      makeRecord({ id: "art_b", status: "completed", updatedAt: 20 }),
+      makeRecord({ id: "art_c", status: "completed", updatedAt: 30 }),
+    ];
+
+    const payload = buildOverlayArtifactsPayload({
+      limit: 2,
+      offset: 0,
+      lifecycle: "completed",
+      sessions: [],
+      listArtifacts: () => records,
+      resolveTask: () => null,
+      resolveSession: () => null,
+      resolveAgentName: () => null,
+      now: () => 100,
+    });
+
+    expect(payload.items).toHaveLength(2);
+    expect(payload.stats.total).toBe(3);
+    expect(payload.pagination).toMatchObject({
+      limit: 2,
+      offset: 0,
+      returned: 2,
+      total: 3,
+      hasMore: true,
+      nextOffset: 2,
+    });
+    expect(payload.pagination.nextCommand).toContain("ravi artifacts list --rich --json --limit 2 --offset 2");
   });
 
   it("includes archived artifacts only when lifecycle filter allows it", () => {
@@ -315,6 +356,13 @@ describe("artifacts helpers", () => {
     expect(normalizeArtifactsLimit(5)).toBe(5);
     expect(normalizeArtifactsLimit(99999)).toBe(200);
     expect(normalizeArtifactsLimit("12")).toBe(12);
+  });
+
+  it("normalizes artifact pagination offsets", () => {
+    expect(normalizeArtifactsOffset(undefined)).toBe(0);
+    expect(normalizeArtifactsOffset(-1)).toBe(0);
+    expect(normalizeArtifactsOffset("12")).toBe(12);
+    expect(normalizeArtifactsOffset(12.8)).toBe(12);
   });
 
   it("derives lifecycle from raw status and deletion flag", () => {

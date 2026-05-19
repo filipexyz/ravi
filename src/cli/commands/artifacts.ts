@@ -4,25 +4,36 @@
 
 import "reflect-metadata";
 import { file as bunFile } from "bun";
+import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
   archiveArtifact,
   appendArtifactEvent,
   attachArtifact,
   createArtifact,
+  createArtifactPackage,
+  createArtifactVersion,
+  getArtifactVersion,
   getArtifactDetails,
   listArtifactEvents,
-  listArtifacts,
+  listArtifactVersions,
+  listArtifactsPage,
+  restoreArtifactVersion,
   updateArtifact,
   type ArtifactEvent,
   type ArtifactRecord,
+  type ArtifactVersion,
 } from "../../artifacts/store.js";
 import {
   buildOverlayArtifactsPayload,
   normalizeLifecycle,
   resolveArtifactBlob,
 } from "../../whatsapp-overlay/artifacts.js";
+import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { activateArtifactReleaseInConsole, publishArtifactToConsole } from "../../artifacts/publish-client.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -122,6 +133,117 @@ function summarizeEvent(event: ArtifactEvent): Record<string, unknown> {
   };
 }
 
+function summarizeVersion(version: ArtifactVersion): Record<string, unknown> {
+  return {
+    id: version.id,
+    artifactId: version.artifactId,
+    versionNumber: version.versionNumber,
+    status: version.status,
+    label: version.label ?? null,
+    source: version.source,
+    createdBy: version.createdBy ?? null,
+    createdAt: version.createdAt,
+    assetCount: version.assets.length,
+    assets: version.assets.map((asset) => ({
+      id: asset.id,
+      path: asset.path,
+      role: asset.role,
+      visibility: asset.visibility,
+      uri: asset.uri ?? null,
+      filePath: asset.filePath ?? null,
+      blobPath: asset.blobPath ?? null,
+      mimeType: asset.mimeType ?? null,
+      sizeBytes: asset.sizeBytes ?? null,
+      sha256: asset.sha256 ?? null,
+      metadata: asset.metadata ?? null,
+    })),
+    manifest: version.manifest,
+    metadata: version.metadata ?? null,
+  };
+}
+
+function printPublishResult(result: {
+  artifact: unknown;
+  artifactVersion: unknown;
+  publish: unknown;
+  release: unknown;
+  routes: unknown[];
+  url: string | null;
+  upload: { attempted: number; skipped: number };
+  localSync?: {
+    status: string;
+    artifactId?: string;
+    versionNumber?: number;
+    error?: string;
+  };
+}): void {
+  const artifact = objectSummary(result.artifact);
+  const version = objectSummary(result.artifactVersion);
+  const publish = objectSummary(result.publish);
+  const release = objectSummary(result.release);
+
+  console.log("✓ Artifact publish finalized");
+  if (artifact.id) console.log(`  Artifact: ${artifact.id}`);
+  if (version.id) console.log(`  Version:  ${version.id}`);
+  if (publish.id) console.log(`  Publish:  ${publish.id}`);
+  if (release.id) console.log(`  Release:  ${release.id}`);
+  if (result.routes.length > 0) console.log(`  Routes:   ${result.routes.length}`);
+  console.log(`  Upload:   ${result.upload.attempted} direct, ${result.upload.skipped} staged`);
+  console.log(`  URL:      ${result.url ?? "not returned by Console"}`);
+  if (result.localSync?.status === "recorded") {
+    console.log(
+      `  Local:    recorded on ${result.localSync.artifactId ?? "artifact"} v${result.localSync.versionNumber ?? "?"}`,
+    );
+  } else if (result.localSync?.status === "failed") {
+    console.log(`  Local:    remote published, but local sync failed: ${result.localSync.error ?? "unknown error"}`);
+  }
+}
+
+function printReleaseActivationResult(result: {
+  release: unknown;
+  site: unknown;
+  routes: unknown[];
+  url: string | null;
+  localSync?: {
+    status: string;
+    artifactId?: string;
+    versionNumber?: number;
+    error?: string;
+  };
+}): void {
+  const release = objectSummary(result.release);
+  const site = objectSummary(result.site);
+
+  console.log("✓ Artifact release activated");
+  if (site.id) console.log(`  Site:     ${site.id}`);
+  if (release.id) console.log(`  Release:  ${release.id}`);
+  if (result.routes.length > 0) console.log(`  Routes:   ${result.routes.length}`);
+  console.log(`  URL:      ${result.url ?? "not returned by Console"}`);
+  if (result.localSync?.status === "recorded") {
+    console.log(
+      `  Local:    recorded on ${result.localSync.artifactId ?? "artifact"}${
+        result.localSync.versionNumber ? ` v${result.localSync.versionNumber}` : ""
+      }`,
+    );
+  } else if (result.localSync?.status === "failed") {
+    console.log(`  Local:    release activated, but local sync failed: ${result.localSync.error ?? "unknown error"}`);
+  }
+}
+
+function objectSummary(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const id = (value as Record<string, unknown>).id;
+  return typeof id === "string" ? { id } : {};
+}
+
+function isDirectoryPath(path: string): boolean {
+  try {
+    return statSync(resolve(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 @Group({
   name: "artifacts",
   description: "Generic artifact ledger and lineage tools",
@@ -130,11 +252,18 @@ function summarizeEvent(event: ArtifactEvent): Record<string, unknown> {
 export class ArtifactsCommands {
   @Command({ name: "create", description: "Create a generic Ravi artifact record" })
   create(
-    @Arg("kind", { description: "Artifact kind, e.g. image, audio, report, trace" }) kind: string,
+    @Option({ flags: "--kind <kind>", description: "Optional semantic artifact kind, e.g. image, report, trace" })
+    kind?: string,
     @Option({ flags: "--title <text>", description: "Human title" }) title?: string,
     @Option({ flags: "--summary <text>", description: "Human summary" }) summary?: string,
-    @Option({ flags: "--path <path>", description: "Local file to ingest into artifact blob storage" })
+    @Option({ flags: "--path <path>", description: "Local file or directory to ingest into artifact blob storage" })
     filePath?: string,
+    @Option({ flags: "--entrypoint <path>", description: "Package entrypoint when --path is a directory" })
+    entrypoint?: string,
+    @Option({ flags: "--base-path <path>", description: "Package base path intent when --path is a directory" })
+    basePath?: string,
+    @Option({ flags: "--asset-base <path>", description: "Package asset base intent when --path is a directory" })
+    assetBase?: string,
     @Option({ flags: "--uri <uri>", description: "External URI/reference" }) uri?: string,
     @Option({ flags: "--mime <type>", description: "MIME type override" }) mimeType?: string,
     @Option({ flags: "--provider <provider>", description: "Provider that produced the artifact" }) provider?: string,
@@ -159,8 +288,8 @@ export class ArtifactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ctx = contextDefaults();
-    const artifact = createArtifact({
-      kind,
+    const artifactInput = {
+      ...(kind?.trim() ? { kind } : {}),
       ...(title?.trim() ? { title } : {}),
       ...(summary?.trim() ? { summary } : {}),
       ...(filePath?.trim() ? { filePath } : {}),
@@ -190,14 +319,40 @@ export class ArtifactsCommands {
       ...(input ? { input: parseJsonValue(input, "--input") } : {}),
       ...(output ? { output: parseJsonValue(output, "--output") } : {}),
       tags: parseCsv(tags) ?? [],
-    });
+    };
 
-    const payload = { success: true, artifact };
+    const packageResult =
+      filePath?.trim() && isDirectoryPath(filePath)
+        ? createArtifactPackage({
+            rootPath: filePath,
+            artifact: artifactInput,
+            ...(entrypoint?.trim() ? { entrypoint } : {}),
+            ...(basePath?.trim() ? { basePath } : {}),
+            ...(assetBase?.trim() ? { assetBase } : {}),
+            ...(ctx.agentId ? { createdBy: ctx.agentId } : {}),
+          })
+        : null;
+    const artifact = packageResult?.artifact ?? createArtifact(artifactInput);
+
+    const payload = {
+      success: true,
+      artifact,
+      ...(packageResult
+        ? {
+            version: summarizeVersion(packageResult.version),
+            package: packageResult.package,
+          }
+        : {}),
+    };
     if (asJson) {
       printJson(payload);
     } else {
       console.log(`✓ Artifact created: ${artifact.id}`);
       if (artifact.blobPath) console.log(`  Blob: ${artifact.blobPath}`);
+      if (packageResult) {
+        console.log(`  Version: v${packageResult.version.versionNumber}`);
+        console.log(`  Package: ${packageResult.package.fileCount} files, ${packageResult.package.entrypoint}`);
+      }
     }
     return payload;
   }
@@ -208,7 +363,9 @@ export class ArtifactsCommands {
     @Option({ flags: "--session <nameOrKey>", description: "Filter by session key or name" }) session?: string,
     @Option({ flags: "--task <id>", description: "Filter by task id" }) taskId?: string,
     @Option({ flags: "--tag <tag>", description: "Filter by tag" }) tag?: string,
-    @Option({ flags: "--limit <n>", description: "Max artifacts to list (default: 50)" }) limit?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500; rich max: 200)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching artifacts to skip (default: 0)" })
+    offset?: string,
     @Option({ flags: "--include-deleted", description: "Include archived/deleted artifacts" }) includeDeleted?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
@@ -219,7 +376,7 @@ export class ArtifactsCommands {
     rich?: boolean,
     @Option({
       flags: "--lifecycle <type>",
-      description: "Filter rich projection by lifecycle: active|archived|stale",
+      description: "Filter rich projection by lifecycle: pending|running|completed|failed|archived",
     })
     lifecycle?: string,
     @Option({ flags: "--agent <id>", description: "Filter rich projection by agent id" })
@@ -228,10 +385,11 @@ export class ArtifactsCommands {
     if (rich) {
       const normalizedLifecycle = lifecycle?.trim() ? normalizeLifecycle(lifecycle.trim()) : null;
       if (lifecycle?.trim() && !normalizedLifecycle) {
-        fail(`Invalid --lifecycle: ${lifecycle}. Use active|archived|stale.`);
+        fail(`Invalid --lifecycle: ${lifecycle}. Use pending|running|completed|failed|archived.`);
       }
       const payload = buildOverlayArtifactsPayload({
         ...(limit ? { limit: parseInteger(limit, "--limit") } : {}),
+        ...(offset ? { offset: parseCliListOffset(offset) } : {}),
         ...(normalizedLifecycle ? { lifecycle: normalizedLifecycle } : {}),
         ...(kind?.trim() ? { kind: kind.trim() } : {}),
         ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
@@ -242,16 +400,43 @@ export class ArtifactsCommands {
       return payload;
     }
 
-    const artifacts = listArtifacts({
-      ...(kind?.trim() ? { kind } : {}),
-      ...(session?.trim() ? { session } : {}),
-      ...(taskId?.trim() ? { taskId } : {}),
-      ...(tag?.trim() ? { tag } : {}),
-      ...(limit ? { limit: parseInteger(limit, "--limit") } : {}),
+    const pageLimit = parseCliListLimit(limit);
+    const pageOffset = parseCliListOffset(offset);
+    const filterOptions = {
+      ...(kind?.trim() ? { kind: kind.trim() } : {}),
+      ...(session?.trim() ? { session: session.trim() } : {}),
+      ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
+      ...(tag?.trim() ? { tag: tag.trim() } : {}),
       includeDeleted: includeDeleted === true,
+    };
+    const page = listArtifactsPage({
+      ...filterOptions,
+      limit: pageLimit,
+      offset: pageOffset,
+    });
+    const artifacts = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "artifacts", "list"],
+      limit: pageLimit,
+      offset: pageOffset,
+      returned: artifacts.length,
+      total: page.total,
+      options: [
+        "--kind",
+        kind?.trim() || null,
+        "--session",
+        session?.trim() || null,
+        "--task",
+        taskId?.trim() || null,
+        "--tag",
+        tag?.trim() || null,
+        includeDeleted ? "--include-deleted" : null,
+      ],
     });
     const payload = {
-      total: artifacts.length,
+      total: page.total,
+      pagination,
+      items: artifacts.map(summarizeArtifact),
       artifacts: artifacts.map(summarizeArtifact),
     };
     if (asJson) {
@@ -259,9 +444,16 @@ export class ArtifactsCommands {
     } else if (artifacts.length === 0) {
       console.log("No artifacts found.");
     } else {
+      console.log(
+        `Artifacts (${artifacts.length} returned of ${page.total}, limit ${pageLimit}, offset ${pageOffset}):`,
+      );
       for (const artifact of artifacts) {
         const label = artifact.title ?? artifact.summary ?? artifact.filePath ?? artifact.uri ?? artifact.kind;
         console.log(`${artifact.id} — ${artifact.kind} — ${label}`);
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
     return payload;
@@ -285,7 +477,114 @@ export class ArtifactsCommands {
       if (artifact.filePath) console.log(`File: ${artifact.filePath}`);
       if (artifact.blobPath) console.log(`Blob: ${artifact.blobPath}`);
       console.log(`Status: ${artifact.status}`);
-      console.log(`Links: ${details.links.length} | Events: ${details.events.length}`);
+      console.log(
+        `Links: ${details.links.length} | Events: ${details.events.length} | Versions: ${details.versions.length}`,
+      );
+    }
+    return payload;
+  }
+
+  @Command({ name: "snapshot", description: "Create an immutable version snapshot for an artifact" })
+  snapshot(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--label <text>", description: "Human label for this version" }) label?: string,
+    @Option({ flags: "--status <status>", description: "Version status (default: active)" }) status?: string,
+    @Option({ flags: "--source <source>", description: "Snapshot source" }) source?: string,
+    @Option({ flags: "--message <text>", description: "Event message for the snapshot" }) message?: string,
+    @Option({ flags: "--manifest <json>", description: "Extra manifest JSON object" }) manifest?: string,
+    @Option({ flags: "--metadata <json>", description: "Version metadata JSON object" }) metadata?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const ctx = contextDefaults();
+    const version = createArtifactVersion(id, {
+      ...(label?.trim() ? { label } : {}),
+      ...(status?.trim() ? { status } : {}),
+      ...(source?.trim() ? { source } : {}),
+      ...(message?.trim() ? { message } : {}),
+      ...(manifest ? { manifest: parseJsonObject(manifest, "--manifest") } : {}),
+      ...(metadata ? { metadata: parseJsonObject(metadata, "--metadata") } : {}),
+      ...(ctx.agentId ? { createdBy: ctx.agentId } : {}),
+    });
+    const payload = { success: true, version: summarizeVersion(version) };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Artifact version created: ${version.artifactId} v${version.versionNumber}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "versions", description: "List immutable versions for an artifact" })
+  versions(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const versions = listArtifactVersions(id);
+    const payload = {
+      artifactId: id,
+      total: versions.length,
+      versions: versions.map(summarizeVersion),
+    };
+    if (asJson) {
+      printJson(payload);
+    } else if (versions.length === 0) {
+      console.log("No artifact versions found.");
+    } else {
+      for (const version of versions) {
+        console.log(`v${version.versionNumber} ${version.id} — ${version.status} — ${version.assets.length} asset(s)`);
+      }
+    }
+    return payload;
+  }
+
+  @Command({ name: "version", description: "Show one immutable artifact version" })
+  version(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--version <n>", description: "Version number (default: latest)" }) versionNumber?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const parsedVersion = versionNumber ? parseInteger(versionNumber, "--version") : undefined;
+    const version = getArtifactVersion(id, parsedVersion);
+    if (!version) fail(`Artifact version not found: ${id}${parsedVersion ? ` v${parsedVersion}` : ""}`);
+    const payload = { artifactId: id, version: summarizeVersion(version) };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`${version.artifactId} v${version.versionNumber} — ${version.status}`);
+      for (const asset of version.assets) {
+        console.log(`  ${asset.role}: ${asset.path}${asset.sha256 ? ` (${asset.sha256.slice(0, 12)})` : ""}`);
+      }
+    }
+    return payload;
+  }
+
+  @Command({ name: "restore", description: "Restore current artifact content from an immutable version" })
+  restore(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--version <n>", description: "Version number to restore" }) versionNumber?: string,
+    @Option({ flags: "--message <text>", description: "Event message for the restore" }) message?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!versionNumber?.trim()) fail("--version is required.");
+    const parsedVersion = parseInteger(versionNumber, "--version");
+    if (parsedVersion === undefined) fail("--version is required.");
+    const ctx = contextDefaults();
+    const result = restoreArtifactVersion(id, parsedVersion, {
+      ...(ctx.agentId ? { actor: ctx.agentId } : {}),
+      ...(message?.trim() ? { message } : {}),
+    });
+    const payload = {
+      success: true,
+      artifact: summarizeArtifact(result.artifact),
+      restoredFrom: summarizeVersion(result.restoredFrom),
+      restoreVersion: summarizeVersion(result.restoreVersion),
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(
+        `✓ Artifact restored: ${id} v${result.restoredFrom.versionNumber} -> v${result.restoreVersion.versionNumber}`,
+      );
     }
     return payload;
   }
@@ -454,6 +753,76 @@ export class ArtifactsCommands {
     }
   }
 
+  @Command({ name: "publish", description: "Publish a local artifact package through a Console-compatible endpoint" })
+  async publish(
+    @Arg("target", { description: "Local artifact id, file, or directory" }) target: string,
+    @Option({ flags: "--project <project>", description: "Console project id or slug" }) project?: string,
+    @Option({ flags: "--site <site>", description: "Console site id or slug to release to" }) site?: string,
+    @Option({ flags: "--route <path>", description: "Site route path to mount the artifact at" }) route?: string,
+    @Option({ flags: "--visibility <visibility>", description: "Requested visibility: private|protected_link|public" })
+    visibility?: string,
+    @Option({ flags: "--name <name>", description: "Published artifact name" }) name?: string,
+    @Option({ flags: "--slug <slug>", description: "Published artifact slug" }) slug?: string,
+    @Option({ flags: "--description <text>", description: "Published artifact description" }) description?: string,
+    @Option({ flags: "--entrypoint <path>", description: "Package entrypoint path" }) entrypoint?: string,
+    @Option({ flags: "--artifact-version <n>", description: "Local artifact version number (default: latest)" })
+    artifactVersion?: string,
+    @Option({ flags: "--base-path <path>", description: "Package base path intent" }) basePath?: string,
+    @Option({ flags: "--asset-base <path>", description: "Package asset base intent" }) assetBase?: string,
+    @Option({ flags: "--upload-session <id>", description: "Use an existing Console upload session" })
+    uploadSession?: string,
+    @Option({ flags: "--idempotency-key <key>", description: "Idempotency key for Console retries" })
+    idempotencyKey?: string,
+    @Option({ flags: "--reason <text>", description: "Release reason sent to Console" }) reason?: string,
+    @Option({ flags: "--replace-release", description: "Replace the full active route map instead of merging" })
+    replaceRelease?: boolean,
+    @Option({ flags: "--no-activate", description: "Create publish records without activating a site release" })
+    activate?: boolean,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
+      const result = await publishArtifactToConsole(target, {
+        project,
+        site,
+        route,
+        visibility,
+        name,
+        slug,
+        description,
+        entrypoint,
+        artifactVersion: parsedArtifactVersion,
+        basePath,
+        assetBase,
+        uploadSession,
+        idempotencyKey,
+        reason,
+        replaceRelease,
+        activate,
+        console: consoleUrl,
+        json: asJson,
+      });
+      if (asJson) {
+        printJson(result);
+      } else {
+        printPublishResult(result);
+      }
+      return result;
+    } catch (error) {
+      const cloudError = cloudAuthErrorFromUnknown(error);
+      if (asJson) {
+        printJson(formatCloudAuthError(cloudError));
+      } else {
+        console.error(`${cloudError.code}: ${cloudError.message}`);
+        if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
+          console.error("Next: run `ravi login`.");
+        }
+      }
+      process.exit(cloudError.exitCode);
+    }
+  }
+
   @Command({ name: "blob", description: "Stream raw artifact bytes" })
   @Returns.binary()
   async blob(@Arg("id", { description: "Artifact id" }) id: string): Promise<Response> {
@@ -467,5 +836,59 @@ export class ArtifactsCommands {
       "Cache-Control": "private, max-age=60",
     };
     return new Response(bunFile(result.path), { headers });
+  }
+}
+
+@Group({
+  name: "artifacts.release",
+  description: "Manage hosted artifact releases",
+  scope: "open",
+})
+export class ArtifactReleaseCommands {
+  @Command({ name: "activate", description: "Activate an existing Pages release for a local artifact" })
+  async activate(
+    @Arg("id", { description: "Local artifact id" }) id: string,
+    @Option({
+      flags: "--version <n>",
+      description: "Local artifact version whose recorded release should be activated",
+    })
+    artifactVersion?: string,
+    @Option({ flags: "--release <id>", description: "Explicit Console release id to activate" })
+    release?: string,
+    @Option({
+      flags: "--site <site>",
+      description: "Console site id or slug, required when --release is not recorded locally",
+    })
+    site?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--version") : undefined;
+      const result = await activateArtifactReleaseInConsole(id, {
+        artifactVersion: parsedArtifactVersion,
+        release,
+        site,
+        console: consoleUrl,
+        json: asJson,
+      });
+      if (asJson) {
+        printJson(result);
+      } else {
+        printReleaseActivationResult(result);
+      }
+      return result;
+    } catch (error) {
+      const cloudError = cloudAuthErrorFromUnknown(error);
+      if (asJson) {
+        printJson(formatCloudAuthError(cloudError));
+      } else {
+        console.error(`${cloudError.code}: ${cloudError.message}`);
+        if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
+          console.error("Next: run `ravi login`.");
+        }
+      }
+      process.exit(cloudError.exitCode);
+    }
   }
 }

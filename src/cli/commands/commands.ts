@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { configStore } from "../../config-store.js";
 import {
   discoverRaviCommands,
@@ -95,6 +96,8 @@ export class RaviCommandsCommands {
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical command tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching commands to skip (default: 0)" }) offset?: string,
   ) {
     const agent = resolveAgent(agentId);
     const registry = discoverRaviCommands({ agentCwd: agent.cwd });
@@ -105,15 +108,27 @@ export class RaviCommandsCommands {
       tagFilter ?? undefined,
       (command) => command.id,
     );
+    const page = paginateCliItems(commands, { limit, offset });
+    const pageCommands = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "commands", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageCommands.length,
+      total: page.total,
+      options: ["--agent", agentId, "--tag", tagFilter],
+    });
     const payload = {
-      total: commands.length,
+      total: page.total,
+      pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
       agent: { id: agent.id, cwd: agent.cwd },
       locations: {
         agent: registry.agentCommandsDir ?? null,
         global: registry.globalCommandsDir,
       },
-      commands: commands.map((command) => serializeCommand(command)),
+      items: pageCommands.map((command) => serializeCommand(command)),
+      commands: pageCommands.map((command) => serializeCommand(command)),
       issues: registry.issues.map(serializeIssue),
     };
 
@@ -121,13 +136,19 @@ export class RaviCommandsCommands {
       printJson(payload);
       return payload;
     }
-    if (commands.length === 0) {
+    if (pageCommands.length === 0) {
       console.log("No Ravi commands found.");
       return payload;
     }
-    console.log(`Ravi commands (${commands.length}):`);
-    for (const command of commands) {
+    console.log(
+      `Ravi commands (${pageCommands.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):`,
+    );
+    for (const command of pageCommands) {
       printCommandSummary(command);
+    }
+    if (pagination.nextCommand) {
+      console.log("\nNext page:");
+      console.log(`  ${pagination.nextCommand}`);
     }
     if (registry.issues.length > 0) {
       console.log("");

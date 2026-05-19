@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { requestReply } from "../../utils/request-reply.js";
 import { findContactsByTag, getContact, searchContacts } from "../../contacts.js";
 import { dbCreateRoute, dbGetInstance, dbUpsertChat, getFirstAccountName } from "../../router/router-db.js";
@@ -92,39 +93,59 @@ export class GroupCommands {
   async list(
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching groups to skip (default: 0)" }) offset?: string,
   ) {
     const result = await groupRequest<{
       groups: { id: string; subject: string; size: number; isCommunity: boolean }[];
       total: number;
     }>("list", {}, account);
+    const groups = result.groups.filter((group) => !group.isCommunity);
+    const page = paginateCliItems(groups, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "whatsapp", "group", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: ["--account", account],
+    });
+    const payload = {
+      accountId: resolveGroupAccount(account),
+      total: page.total,
+      pagination,
+      items: page.items,
+      groups: page.items,
+    };
 
     if (asJson) {
-      printJson({
-        accountId: resolveGroupAccount(account),
-        total: result.total,
-        groups: result.groups,
-      });
-      return result;
+      printJson(payload);
+      return payload;
     }
 
-    if (result.total === 0) {
+    if (page.items.length === 0) {
       console.log("No groups found.");
-      return result;
+      return payload;
     }
 
-    console.log(`\nGroups (${result.total}):\n`);
+    console.log(
+      `\nGroups (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+    );
     console.log("  ID                              NAME                           SIZE");
     console.log("  ──────────────────────────────  ─────────────────────────────  ────");
 
-    for (const g of result.groups) {
-      if (g.isCommunity) continue; // Skip communities in main list
+    for (const g of page.items) {
       const id = g.id.padEnd(30);
       const name = (g.subject ?? "").slice(0, 29).padEnd(29);
       const size = String(g.size ?? "?").padStart(4);
       console.log(`  ${id}  ${name}  ${size}`);
     }
+    if (pagination.nextCommand) {
+      console.log("\nNext page:");
+      console.log(`  ${pagination.nextCommand}`);
+    }
 
-    return result;
+    return payload;
   }
 
   @Command({ name: "info", description: "Show group metadata" })

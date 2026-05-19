@@ -140,11 +140,13 @@ interface MethodNode {
 }
 interface NamespaceNode {
   kind: "namespace";
+  path: string[];
   children: Map<string, NamespaceNode | MethodNode>;
 }
 
 function buildTree(commands: CommandRegistryEntry[]): NamespaceNode {
-  const root: NamespaceNode = { kind: "namespace", children: new Map() };
+  const root: NamespaceNode = { kind: "namespace", path: [], children: new Map() };
+  const namespaceKeys = buildNamespaceChildKeys(commands);
   for (const cmd of commands) {
     let node: NamespaceNode = root;
     for (const segment of cmd.groupSegments) {
@@ -155,14 +157,18 @@ function buildTree(commands: CommandRegistryEntry[]): NamespaceNode {
         throw new Error(`Codegen: namespace/method collision at ${cmd.fullName} — ${key} already used as a method`);
       }
       if (!existing) {
-        const fresh: NamespaceNode = { kind: "namespace", children: new Map() };
+        const fresh: NamespaceNode = { kind: "namespace", path: [...node.path, segment], children: new Map() };
         node.children.set(key, fresh);
         node = fresh;
       } else {
         node = existing;
       }
     }
-    const method = methodName(cmd.command);
+    const baseMethod = methodName(cmd.command);
+    const reservedAtNode = namespaceKeys.get(namespacePathKey(node.path)) ?? new Set<string>();
+    const method = reservedAtNode.has(baseMethod)
+      ? disambiguatedIntermediateCommandName(baseMethod, reservedAtNode, node.children)
+      : baseMethod;
     assertIdentifier(method, `methodName(${cmd.fullName})`);
     if (node.children.has(method)) {
       throw new Error(`Codegen: duplicate method ${method} under ${cmd.groupPath}`);
@@ -170,6 +176,39 @@ function buildTree(commands: CommandRegistryEntry[]): NamespaceNode {
     node.children.set(method, { kind: "method", cmd });
   }
   return root;
+}
+
+function buildNamespaceChildKeys(commands: CommandRegistryEntry[]): Map<string, Set<string>> {
+  const byPath = new Map<string, Set<string>>();
+  for (const cmd of commands) {
+    for (let index = 0; index < cmd.groupSegments.length; index++) {
+      const parentPath = cmd.groupSegments.slice(0, index);
+      const childKey = namespaceProp(cmd.groupSegments[index]);
+      const pathKey = namespacePathKey(parentPath);
+      const set = byPath.get(pathKey) ?? new Set<string>();
+      set.add(childKey);
+      byPath.set(pathKey, set);
+    }
+  }
+  return byPath;
+}
+
+function namespacePathKey(path: readonly string[]): string {
+  return path.join("\u0000");
+}
+
+function disambiguatedIntermediateCommandName(
+  baseMethod: string,
+  reservedNamespaceKeys: Set<string>,
+  siblings: Map<string, NamespaceNode | MethodNode>,
+): string {
+  let candidate = `${baseMethod}Command`;
+  let suffix = 2;
+  while (reservedNamespaceKeys.has(candidate) || siblings.has(candidate)) {
+    candidate = `${baseMethod}Command${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
 }
 
 export function emitClient(commands: CommandRegistryEntry[]): string {

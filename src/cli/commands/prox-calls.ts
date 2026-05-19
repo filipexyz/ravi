@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   listCallProfiles,
   getCallProfile,
@@ -218,6 +219,9 @@ export class ProxCallsProfileCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical call profile tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching call profiles to skip (default: 0)" })
+    offset?: string,
   ) {
     initCallsDefaults();
     const tagFilter = tagSlug?.trim() || null;
@@ -227,24 +231,42 @@ export class ProxCallsProfileCommands {
       tagFilter ?? undefined,
       (profile) => profile.id,
     );
+    const page = paginateCliItems(profiles, { limit, offset });
+    const pageProfiles = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "prox", "calls", "profiles", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageProfiles.length,
+      total: page.total,
+      options: ["--tag", tagFilter],
+    });
     const payload = {
-      total: profiles.length,
+      total: page.total,
+      pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      profiles: profiles.map(serializeProfile),
+      items: pageProfiles.map(serializeProfile),
+      profiles: pageProfiles.map(serializeProfile),
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (profiles.length === 0) {
+    } else if (pageProfiles.length === 0) {
       console.log("\nNo call profiles found.\n");
     } else {
-      console.log(`\nCall profiles (${profiles.length})\n`);
+      console.log(
+        `\nCall profiles (${pageProfiles.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset})\n`,
+      );
       console.log("  ID                  NAME                PROVIDER     LANGUAGE  VOICEMAIL");
       console.log("  ------------------  ------------------  -----------  --------  ---------");
-      for (const p of profiles) {
+      for (const p of pageProfiles) {
         console.log(
           `  ${p.id.padEnd(18)}  ${p.name.padEnd(18)}  ${p.provider.padEnd(11)}  ${p.language.padEnd(8)}  ${p.voicemail_policy}`,
         );
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
       console.log();
     }
@@ -835,6 +857,9 @@ export class ProxCallsVoiceAgentCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical call voice agent tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching voice agents to skip (default: 0)" })
+    offset?: string,
   ) {
     initCallsDefaults();
     const tagFilter = tagSlug?.trim() || null;
@@ -844,24 +869,42 @@ export class ProxCallsVoiceAgentCommands {
       tagFilter ?? undefined,
       (agent) => agent.id,
     );
+    const page = paginateCliItems(agents, { limit, offset });
+    const pageAgents = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "prox", "calls", "voice-agents", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageAgents.length,
+      total: page.total,
+      options: ["--tag", tagFilter],
+    });
     const payload = {
-      total: agents.length,
+      total: page.total,
+      pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      voice_agents: agents.map(serializeVoiceAgent),
+      items: pageAgents.map(serializeVoiceAgent),
+      voice_agents: pageAgents.map(serializeVoiceAgent),
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (agents.length === 0) {
+    } else if (pageAgents.length === 0) {
       console.log("\nNo voice agents found.\n");
     } else {
-      console.log(`\nVoice agents (${agents.length})\n`);
+      console.log(
+        `\nVoice agents (${pageAgents.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset})\n`,
+      );
       console.log("  ID                      NAME                    PROVIDER     LANGUAGE  V  ENABLED");
       console.log("  -----------------------  ----------------------  -----------  --------  -  -------");
-      for (const a of agents) {
+      for (const a of pageAgents) {
         console.log(
           `  ${a.id.padEnd(23)}  ${a.name.padEnd(22)}  ${a.provider.padEnd(11)}  ${a.language.padEnd(8)}  ${String(a.version).padEnd(1)}  ${a.enabled ? "yes" : "no"}`,
         );
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
       console.log();
     }
@@ -1146,6 +1189,9 @@ export class ProxCallsToolCommands {
     @Option({ flags: "--profile <profile_id>", description: "Filter tools by profile binding" }) profileId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical call tool tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching call tools to skip (default: 0)" })
+    offset?: string,
   ) {
     initCallsDefaults();
     const tagFilter = tagSlug?.trim() || null;
@@ -1155,24 +1201,42 @@ export class ProxCallsToolCommands {
       tagFilter ?? undefined,
       (tool) => tool.id,
     );
+    const page = paginateCliItems(tools, { limit, offset });
+    const pageTools = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "prox", "calls", "tools", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageTools.length,
+      total: page.total,
+      options: ["--profile", profileId, "--tag", tagFilter],
+    });
     const payload = {
-      total: tools.length,
+      total: page.total,
+      pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      tools: tools.map(serializeCallTool),
+      items: pageTools.map(serializeCallTool),
+      tools: pageTools.map(serializeCallTool),
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (tools.length === 0) {
+    } else if (pageTools.length === 0) {
       console.log("\nNo call tools found.\n");
     } else {
-      console.log(`\nCall tools (${tools.length})${profileId ? ` for profile ${profileId}` : ""}\n`);
+      console.log(
+        `\nCall tools (${pageTools.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset})${profileId ? ` for profile ${profileId}` : ""}\n`,
+      );
       console.log("  ID                       NAME                    EXECUTOR  SIDE-EFFECT           ENABLED");
       console.log("  -------------------------  ----------------------  --------  --------------------  -------");
-      for (const t of tools) {
+      for (const t of pageTools) {
         console.log(
           `  ${t.id.padEnd(25)}  ${t.name.padEnd(22)}  ${t.executor_type.padEnd(8)}  ${t.side_effect.padEnd(20)}  ${t.enabled ? "yes" : "no"}`,
         );
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
       console.log();
     }

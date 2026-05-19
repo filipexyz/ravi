@@ -17,6 +17,7 @@ const LAYOUT_BRANCH_HIDDEN_CLASS = "ravi-wa-layout-branch-hidden";
 const INLINE_PROBE_ID = "ravi-wa-inline-probe";
 const CHAT_ROW_SELECTOR = "div[role='grid'] [role='row']";
 const CHAT_ROW_BADGE_ATTR = "data-ravi-chat-chip";
+const CHAT_SESSION_EDITOR_ID = "ravi-wa-chat-session-editor";
 const MESSAGE_CHIP_ATTR = "data-ravi-message-chip";
 const CHAT_ARTIFACT_ATTR = "data-ravi-chat-artifact";
 const CHAT_ARTIFACT_KEY_ATTR = "data-ravi-chat-artifact-key";
@@ -41,6 +42,7 @@ const V3_PLACEHOLDER_POLL_INTERVAL_MS = 5000;
 const TASKS_POLL_INTERVAL_MS = 5000;
 const INSIGHTS_POLL_INTERVAL_MS = 10000;
 const ARTIFACTS_POLL_INTERVAL_MS = 10000;
+const CRM_POLL_INTERVAL_MS = 10000;
 const TASKS_EVENTS_LIMIT = 20;
 const TASK_SESSION_CREATION_WINDOW_MS = 30 * 60 * 1000;
 const WORKSPACE_NAV_ID = "ravi-wa-workspace-launcher";
@@ -48,6 +50,7 @@ const V3_PLACEHOLDER_LAYER_ID = "ravi-wa-v3-placeholder-layer";
 const TASK_SELECTED_ID_STORAGE = "ravi-wa-overlay-task";
 const WORKSPACE_NAV_ITEMS = [
   { id: "ravi", label: "Ravi", glyph: "R" },
+  { id: "crm", label: "CRM", glyph: "C" },
   { id: "artifacts", label: "Artifacts", glyph: "A" },
   { id: "tasks", label: "Tasks", glyph: "T" },
 ];
@@ -92,11 +95,14 @@ let latestTasksSnapshot = null;
 let latestViewState = null;
 let latestTimelineDebug = null;
 let latestChatListItems = [];
+let latestChatListSessions = [];
+let latestChatListAgents = [];
 let latestPageChat = null;
 let latestOmniPanel = null;
 let latestV3Placeholders = null;
 let latestInsightsSnapshot = null;
 let latestArtifactsSnapshot = null;
+let latestCrmSnapshot = null;
 let v3CommandNotice = null;
 const messageMetaCache = new Map();
 const taskSelectionCache = new Map();
@@ -118,6 +124,8 @@ let insightsFilter = "";
 let artifactsFilter = "";
 let artifactsLifecycleFilter = "all";
 let artifactsKindFilter = "all";
+let crmFilter = "";
+let crmLifecycleFilter = "all";
 let taskSearchFilter = "";
 let taskStatusFilter = "all";
 let taskAgentFilter = "all";
@@ -133,6 +141,12 @@ let selectedWorkspaceSessionKey = loadWorkspaceSessionKey();
 let selectedTaskId = loadSelectedTaskId();
 let taskDetailDrawerOpen = false;
 let taskDetailDrawerShouldAnimate = false;
+let chatSessionEditor = null;
+let chatSessionEditorFilter = "";
+let chatSessionEditorSelectedAgentId = null;
+let chatSessionEditorDraftSessionName = null;
+let chatSessionEditorNotice = null;
+let chatSessionEditorInFlight = false;
 let preferredOmniInstance = loadPreferredOmniInstance();
 let v3PlaceholdersEnabled = loadV3PlaceholdersEnabled();
 let selectedOmniChatId = null;
@@ -159,6 +173,7 @@ let v3PlaceholderInFlight = false;
 let tasksInFlight = false;
 let insightsInFlight = false;
 let artifactsInFlight = false;
+let crmInFlight = false;
 let taskDispatchInFlightTaskId = null;
 let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
@@ -215,6 +230,8 @@ function boot() {
   document.addEventListener(PAGE_CHAT_RESPONSE_EVENT, handlePageChatEvent);
   document.addEventListener("pointerdown", handleHumanChatListPointerDown, true);
   document.addEventListener("keydown", handleHumanChatListKeydown, true);
+  document.addEventListener("pointerdown", handleChatSessionEditorOutsidePointerDown, true);
+  document.addEventListener("keydown", handleChatSessionEditorKeydown, true);
   ensureShell();
   syncLayoutChrome();
   syncWorkspaceLauncher();
@@ -238,9 +255,11 @@ function boot() {
   intervalIds.push(setInterval(refreshTasks, TASKS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshInsights, INSIGHTS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshArtifacts, ARTIFACTS_POLL_INTERVAL_MS));
+  intervalIds.push(setInterval(refreshCrm, CRM_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(pollDomCommands, DOM_COMMAND_POLL_INTERVAL_MS));
   window.addEventListener("resize", syncMessagePopoverPosition);
   window.addEventListener("resize", scheduleV3PlaceholderRender);
+  window.addEventListener("resize", renderChatSessionEditor);
   document.addEventListener("scroll", syncMessagePopoverPosition, true);
   document.addEventListener("scroll", scheduleV3PlaceholderRender, true);
 }
@@ -297,6 +316,8 @@ function getWorkspaceScrollSelectors(workspace = activeWorkspace) {
   switch (workspace) {
     case "tasks":
       return [".ravi-wa-task-board-wrap", ".ravi-wa-task-column__list"];
+    case "crm":
+      return [".ravi-wa-crm-page", ".ravi-wa-crm-list", ".ravi-wa-crm-board"];
     case "insights":
       return [".ravi-wa-insights-page"];
     case "artifacts":
@@ -489,7 +510,7 @@ function buildTasksRequestPayload(taskId = selectedTaskId) {
 
 async function refreshTasks(force = false) {
   if (pollingStopped || tasksInFlight) return;
-  if (!force && activeWorkspace === "omni") return;
+  if (!force && activeWorkspace !== "tasks" && activeWorkspace !== "ravi") return;
 
   tasksInFlight = true;
   try {
@@ -585,6 +606,37 @@ async function refreshArtifacts(force = false) {
   }
 }
 
+async function refreshCrm(force = false) {
+  if (pollingStopped || crmInFlight) return;
+  if (!force && activeWorkspace !== "crm") return;
+
+  crmInFlight = true;
+  try {
+    const next = await chrome.runtime.sendMessage({
+      type: "ravi:get-crm",
+      payload: {
+        limit: 120,
+      },
+    });
+    if (next?.ok) {
+      latestCrmSnapshot = next;
+      if (activeWorkspace === "crm") bridgeError = null;
+      if (
+        activeWorkspace === "crm" &&
+        shouldRenderSnapshot("workspace:crm", next, force)
+      ) {
+        requestRender();
+      }
+    } else if (activeWorkspace === "crm") {
+      setBridgeErrorFromResponse(next, "não consegui carregar CRM");
+    }
+  } catch (error) {
+    if (activeWorkspace === "crm") handleRuntimeError(error);
+  } finally {
+    crmInFlight = false;
+  }
+}
+
 function setBridgeErrorFromResponse(response, fallbackMessage) {
   const status =
     typeof response?.status === "number" && response.status > 0 ? response.status : null;
@@ -623,6 +675,7 @@ function refreshAll() {
   refreshSessionWorkspace(true);
   refreshTasks(true);
   refreshArtifacts(true);
+  refreshCrm(true);
   refreshChatListOverlay();
   refreshMessageChips();
   refreshV3Placeholders();
@@ -1164,6 +1217,7 @@ function rememberHumanChatListIntent(target) {
   if (!selectedWorkspaceSessionKey) return;
   const element = resolveEventElement(target);
   if (!(element instanceof Element)) return;
+  if (element.closest(`[${CHAT_ROW_BADGE_ATTR}], #${CHAT_SESSION_EDITOR_ID}`)) return;
 
   const row = element.closest(CHAT_ROW_SELECTOR);
   const chatList = detectChatList();
@@ -1577,6 +1631,9 @@ async function refreshChatListOverlay() {
   const rows = detectVisibleChatRows();
   if (rows.length === 0) {
     latestChatListItems = [];
+    latestChatListSessions = [];
+    latestChatListAgents = [];
+    closeChatSessionEditor();
     clearChatListBadges();
     return;
   }
@@ -1601,6 +1658,12 @@ async function refreshChatListOverlay() {
     });
 
     latestChatListItems = Array.isArray(response?.items) ? response.items : [];
+    latestChatListSessions = Array.isArray(response?.sessions)
+      ? response.sessions
+      : latestChatListSessions;
+    latestChatListAgents = Array.isArray(response?.agents)
+      ? response.agents
+      : latestChatListAgents;
     renderChatListBadges(rows, latestChatListItems);
   } catch (error) {
     handleRuntimeError(error);
@@ -1631,24 +1694,767 @@ function renderChatListBadges(rows, items) {
     }
 
     const chip = existing || createChatListBadge();
+    chip.__raviChatSessionEditorContext = { row, item };
     chip.setAttribute("data-ravi-chat-row-id", row.id);
     chip.className = `ravi-wa-chat-chip ravi-wa-chat-chip--${chipActivityClass(item.session.live?.activity)}`;
+    chip.setAttribute("aria-expanded", chatSessionEditor?.rowId === row.id ? "true" : "false");
     chip.textContent = formatChatListBadge(item.session);
     chip.title = `${item.session.sessionName} · ${item.session.live?.summary || item.session.live?.activity || "idle"}`;
     row.titleContainer.appendChild(chip);
   }
+  renderChatSessionEditor();
 }
 
 function createChatListBadge() {
-  const chip = document.createElement("span");
+  const chip = document.createElement("button");
+  chip.type = "button";
   chip.setAttribute(CHAT_ROW_BADGE_ATTR, "true");
+  chip.setAttribute("aria-haspopup", "dialog");
+  ["pointerdown", "mousedown", "mouseup"].forEach((eventName) => {
+    chip.addEventListener(eventName, stopChatListBadgeEvent);
+  });
+  chip.addEventListener("click", (event) => {
+    stopChatListBadgeEvent(event);
+    const context = chip.__raviChatSessionEditorContext;
+    if (!context?.row || !context?.item) return;
+    openChatSessionEditor(chip, context.row, context.item);
+  });
+  chip.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    stopChatListBadgeEvent(event);
+    const context = chip.__raviChatSessionEditorContext;
+    if (!context?.row || !context?.item) return;
+    openChatSessionEditor(chip, context.row, context.item);
+  });
   return chip;
 }
 
 function clearChatListBadges() {
+  closeChatSessionEditor();
   document
     .querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`)
     .forEach((node) => node.remove());
+}
+
+function stopChatListBadgeEvent(event) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function openChatSessionEditor(anchor, row, item) {
+  const currentSession = normalizeChatSessionOption(item?.session);
+  chatSessionEditor = {
+    rowId: row.id,
+    title: row.title || item?.query?.title || null,
+    chatId: row.chatIdCandidate || item?.query?.chatId || null,
+    item,
+  };
+  chatSessionEditorFilter = "";
+  chatSessionEditorSelectedAgentId = currentSession?.agentId || null;
+  chatSessionEditorDraftSessionName = null;
+  chatSessionEditorNotice = null;
+  renderChatListBadges(detectVisibleChatRows(), latestChatListItems);
+  renderChatSessionEditor();
+  requestAnimationFrame(() => {
+    const input = document.querySelector(`#${CHAT_SESSION_EDITOR_ID} input`);
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.select();
+    } else if (anchor instanceof HTMLElement) {
+      anchor.focus();
+    }
+  });
+}
+
+function closeChatSessionEditor() {
+  chatSessionEditor = null;
+  chatSessionEditorFilter = "";
+  chatSessionEditorSelectedAgentId = null;
+  chatSessionEditorDraftSessionName = null;
+  chatSessionEditorNotice = null;
+  chatSessionEditorInFlight = false;
+  document.getElementById(CHAT_SESSION_EDITOR_ID)?.remove();
+  document.querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`).forEach((node) => {
+    node.setAttribute("aria-expanded", "false");
+  });
+}
+
+function handleChatSessionEditorOutsidePointerDown(event) {
+  if (!chatSessionEditor) return;
+  const element = resolveEventElement(event.target);
+  if (!(element instanceof Element)) return;
+  if (element.closest(`#${CHAT_SESSION_EDITOR_ID}, [${CHAT_ROW_BADGE_ATTR}]`)) return;
+  closeChatSessionEditor();
+}
+
+function handleChatSessionEditorKeydown(event) {
+  if (!chatSessionEditor || event.key !== "Escape") return;
+  closeChatSessionEditor();
+}
+
+function ensureChatSessionEditorContainer() {
+  let container = document.getElementById(CHAT_SESSION_EDITOR_ID);
+  if (container) return container;
+  container = document.createElement("div");
+  container.id = CHAT_SESSION_EDITOR_ID;
+  container.setAttribute("role", "dialog");
+  container.setAttribute("aria-label", "Editar sessão do chat");
+  ["pointerdown", "mousedown", "mouseup", "click", "keydown"].forEach((eventName) => {
+    container.addEventListener(eventName, (event) => event.stopPropagation());
+  });
+  document.body.appendChild(container);
+  return container;
+}
+
+function renderChatSessionEditor() {
+  if (!chatSessionEditor) return;
+  const anchor = findChatSessionEditorAnchor(chatSessionEditor.rowId);
+  if (!(anchor instanceof HTMLElement)) {
+    closeChatSessionEditor();
+    return;
+  }
+
+  const container = ensureChatSessionEditorContainer();
+  const focusState = captureChatSessionEditorFocus(container);
+  const item =
+    latestChatListItems.find((entry) => entry?.id === chatSessionEditor.rowId) ||
+    chatSessionEditor.item ||
+    null;
+  chatSessionEditor.item = item;
+  const currentSession = normalizeChatSessionOption(item?.session);
+  const options = getChatSessionEditorSessionOptions(item, currentSession);
+  const agents = getChatSessionEditorAgentOptions(options, currentSession);
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  if (chatSessionEditorSelectedAgentId && !agentIds.has(chatSessionEditorSelectedAgentId)) {
+    chatSessionEditorSelectedAgentId = currentSession?.agentId || agents[0]?.id || null;
+  }
+  const selectedAgent =
+    agents.find((agent) => agent.id === chatSessionEditorSelectedAgentId) ||
+    (chatSessionEditorSelectedAgentId
+      ? { id: chatSessionEditorSelectedAgentId, name: chatSessionEditorSelectedAgentId }
+      : null);
+  const filteredAgents = filterChatSessionEditorAgentOptions(agents, chatSessionEditorFilter).slice(0, 7);
+  const filteredOptions = filterChatSessionEditorOptions(options, chatSessionEditorFilter, currentSession);
+  const visibleSessions = (selectedAgent
+    ? filteredOptions.filter((session) => session.agentId === selectedAgent.id)
+    : filteredOptions
+  ).slice(0, selectedAgent ? 5 : 6);
+  const query = getChatSessionEditorQuery(item);
+  const manualBinding = Boolean(item?.session?.boundChatId || item?.session?.boundTitle);
+  const currentActivity = chipActivityClass(currentSession?.live?.activity);
+  const currentLabel = currentSession
+    ? `${currentSession.sessionName} · ${chipActivityLabel(currentSession.live?.activity)}`
+    : "sem sessão";
+  const defaultDraftSessionName = selectedAgent
+    ? buildChatSessionEditorDraftSessionName(query, selectedAgent.id)
+    : "";
+  if (selectedAgent && chatSessionEditorDraftSessionName === null) {
+    chatSessionEditorDraftSessionName = defaultDraftSessionName;
+  }
+  const draftSessionName = selectedAgent
+    ? (chatSessionEditorDraftSessionName ?? defaultDraftSessionName)
+    : "";
+  const notice = chatSessionEditorNotice
+    ? `<div class="ravi-wa-chat-session-editor__notice ravi-wa-chat-session-editor__notice--${escapeAttribute(chatSessionEditorNotice.kind)}">${escapeHtml(chatSessionEditorNotice.text)}</div>`
+    : "";
+
+  positionChatSessionEditor(container, anchor);
+  container.className = "ravi-wa-chat-session-editor";
+  container.innerHTML = `
+    <div class="ravi-wa-chat-session-editor__head">
+      <div>
+        <span>${escapeHtml(shorten(query.title || query.chatId || "chat", 34))}</span>
+        <strong>${escapeHtml(currentLabel)}</strong>
+      </div>
+      <button type="button" data-ravi-chat-session-editor-close title="Fechar">x</button>
+    </div>
+    <div class="ravi-wa-chat-session-editor__current">
+      <span class="ravi-wa-chat-session-editor__dot ravi-wa-chat-session-editor__dot--${currentActivity}"></span>
+      <span>${escapeHtml(currentSession?.agentId ? `agent ${currentSession.agentId}` : "agent -")}</span>
+      <em>${escapeHtml(manualBinding ? "manual" : "auto")}</em>
+    </div>
+    <label class="ravi-wa-chat-session-editor__search">
+      <input type="text" placeholder="filtrar sessão ou agent" value="${escapeAttribute(chatSessionEditorFilter)}" data-ravi-chat-session-editor-input="search" />
+    </label>
+    <div class="ravi-wa-chat-session-editor__agents" aria-label="Agentes">
+      ${
+        filteredAgents.length
+          ? filteredAgents.map((agent) => renderChatSessionEditorAgentOption(agent, selectedAgent, currentSession)).join("")
+          : `<p class="ravi-wa-chat-session-editor__empty">nenhum agent</p>`
+      }
+    </div>
+    ${
+      selectedAgent
+        ? renderChatSessionEditorCreateControl(selectedAgent, draftSessionName)
+        : ""
+    }
+    <div class="ravi-wa-chat-session-editor__list">
+      ${
+        visibleSessions.length
+          ? visibleSessions.map((session) => renderChatSessionEditorSessionOption(session, currentSession)).join("")
+          : `<p class="ravi-wa-chat-session-editor__empty">${escapeHtml(selectedAgent ? "sem sessões desse agent" : "nenhuma sessão")}</p>`
+      }
+    </div>
+    <div class="ravi-wa-chat-session-editor__foot">
+      <button type="button" data-ravi-chat-session-editor-unbind${manualBinding && !chatSessionEditorInFlight ? "" : " disabled"}>limpar</button>
+      <span>${escapeHtml(`${agents.length} agents · ${options.length} sessões`)}</span>
+    </div>
+    ${notice}
+  `;
+
+  container
+    .querySelector("[data-ravi-chat-session-editor-close]")
+    ?.addEventListener("click", closeChatSessionEditor);
+  const input = container.querySelector(".ravi-wa-chat-session-editor__search input");
+  input?.addEventListener("input", (event) => {
+    chatSessionEditorFilter = event.target.value || "";
+    renderChatSessionEditor();
+  });
+  container.querySelectorAll("[data-ravi-chat-session-editor-agent]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const agentId = button.getAttribute("data-ravi-chat-session-editor-agent");
+      if (!agentId || chatSessionEditorInFlight) return;
+      chatSessionEditorSelectedAgentId =
+        chatSessionEditorSelectedAgentId === agentId ? null : agentId;
+      chatSessionEditorDraftSessionName = null;
+      renderChatSessionEditor();
+    });
+  });
+  const draftInput = container.querySelector("[data-ravi-chat-session-editor-input='draft']");
+  draftInput?.addEventListener("input", (event) => {
+    chatSessionEditorDraftSessionName = event.target.value || "";
+    const createButton = container.querySelector("[data-ravi-chat-session-editor-create]");
+    if (createButton instanceof HTMLButtonElement) {
+      createButton.disabled =
+        chatSessionEditorInFlight ||
+        !normalizeTaskSessionName(chatSessionEditorDraftSessionName);
+    }
+  });
+  container.querySelectorAll("[data-ravi-chat-session-editor-create]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const agentId = button.getAttribute("data-ravi-chat-session-editor-create");
+      if (!agentId) return;
+      await createChatSessionEditorSession(agentId);
+    });
+  });
+  container.querySelectorAll("[data-ravi-chat-session-editor-choice]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const sessionKey = button.getAttribute("data-ravi-chat-session-editor-choice");
+      if (!sessionKey) return;
+      await bindChatSessionEditorChoice(sessionKey);
+    });
+  });
+  container
+    .querySelector("[data-ravi-chat-session-editor-unbind]")
+    ?.addEventListener("click", unbindChatSessionEditorChoice);
+  restoreChatSessionEditorFocus(container, focusState);
+}
+
+function captureChatSessionEditorFocus(container) {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !container.contains(active)) return null;
+  if (active instanceof HTMLInputElement) {
+    const inputId = active.getAttribute("data-ravi-chat-session-editor-input");
+    return {
+      kind: "input",
+      selector: inputId
+        ? `[data-ravi-chat-session-editor-input="${escapeCssIdentifier(inputId)}"]`
+        : ".ravi-wa-chat-session-editor__search input",
+      selectionStart: active.selectionStart,
+      selectionEnd: active.selectionEnd,
+    };
+  }
+  const selector = [
+    "data-ravi-chat-session-editor-agent",
+    "data-ravi-chat-session-editor-create",
+    "data-ravi-chat-session-editor-choice",
+  ]
+    .map((attr) => {
+      const value = active.getAttribute(attr);
+      return value ? `[${attr}="${escapeCssIdentifier(value)}"]` : null;
+    })
+    .find(Boolean);
+  return selector ? { kind: "button", selector } : null;
+}
+
+function restoreChatSessionEditorFocus(container, focusState) {
+  if (!focusState) return;
+  requestAnimationFrame(() => {
+    if (!chatSessionEditor || !document.body.contains(container)) return;
+    if (focusState.kind === "input") {
+      const input = container.querySelector(focusState.selector);
+      if (!(input instanceof HTMLInputElement)) return;
+      input.focus({ preventScroll: true });
+      const start = focusState.selectionStart ?? input.value.length;
+      const end = focusState.selectionEnd ?? start;
+      input.setSelectionRange(start, end);
+      return;
+    }
+    if (focusState.kind === "button") {
+      const button = container.querySelector(focusState.selector);
+      if (button instanceof HTMLElement) button.focus({ preventScroll: true });
+    }
+  });
+}
+
+function findChatSessionEditorAnchor(rowId) {
+  if (!rowId) return null;
+  return Array.from(document.querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`)).find(
+    (node) => node.getAttribute("data-ravi-chat-row-id") === rowId,
+  );
+}
+
+function positionChatSessionEditor(container, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const width = 278;
+  const height = 320;
+  const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8));
+  const below = rect.bottom + 8;
+  const top = below + height <= window.innerHeight ? below : Math.max(8, rect.top - height - 8);
+  container.style.left = `${Math.round(left)}px`;
+  container.style.top = `${Math.round(top)}px`;
+}
+
+function escapeCssIdentifier(value) {
+  if (globalThis.CSS?.escape) return CSS.escape(value);
+  return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function renderChatSessionEditorAgentOption(agent, selectedAgent, currentSession) {
+  const selected = selectedAgent?.id === agent.id;
+  const current = currentSession?.agentId === agent.id;
+  const label = agent.name || agent.displayName || agent.id;
+  const detail = [
+    current ? "atual" : null,
+    agent.provider || agent.model || agent.description || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <button
+      type="button"
+      class="ravi-wa-chat-session-editor__agent${selected ? " ravi-wa-chat-session-editor__agent--selected" : ""}"
+      data-ravi-chat-session-editor-agent="${escapeAttribute(agent.id)}"
+      ${chatSessionEditorInFlight ? " disabled" : ""}
+      title="${escapeAttribute(agent.id)}"
+    >
+      <strong>${escapeHtml(shorten(label, 18))}</strong>
+      ${detail ? `<small>${escapeHtml(shorten(detail, 22))}</small>` : ""}
+    </button>
+  `;
+}
+
+function renderChatSessionEditorCreateControl(agent, draftSessionName) {
+  const normalizedDraft = normalizeTaskSessionName(draftSessionName);
+  return `
+    <div class="ravi-wa-chat-session-editor__create">
+      <span class="ravi-wa-chat-session-editor__avatar">+</span>
+      <input
+        type="text"
+        value="${escapeAttribute(draftSessionName)}"
+        placeholder="nome da sessão"
+        spellcheck="false"
+        aria-label="Nome da nova sessão"
+        data-ravi-chat-session-editor-input="draft"
+      />
+      <button
+        type="button"
+        data-ravi-chat-session-editor-create="${escapeAttribute(agent.id)}"
+        ${chatSessionEditorInFlight || !normalizedDraft ? " disabled" : ""}
+        title="${escapeAttribute(`criar sessão para ${agent.id}`)}"
+      >criar</button>
+    </div>
+  `;
+}
+
+function renderChatSessionEditorSessionOption(session, currentSession) {
+  const selected = isSameChatSessionOption(session, currentSession);
+  const activityClass = chipActivityClass(session.live?.activity);
+  const activityLabel = chipActivityLabel(session.live?.activity);
+  const elapsed = formatSessionElapsedCompact(session);
+  const detail = [
+    session.agentId ? `agent ${session.agentId}` : null,
+    session.displayName || session.chatId || session.channel || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <button
+      type="button"
+      class="ravi-wa-chat-session-editor__option${selected ? " ravi-wa-chat-session-editor__option--selected" : ""}"
+      data-ravi-chat-session-editor-choice="${escapeAttribute(session.sessionKey)}"
+      ${selected || chatSessionEditorInFlight ? " disabled" : ""}
+      title="${escapeAttribute(session.sessionName)}"
+    >
+      <span class="ravi-wa-chat-session-editor__avatar">${escapeHtml(shorten((session.agentId || session.sessionName || "S").slice(0, 2).toUpperCase(), 2))}</span>
+      <span class="ravi-wa-chat-session-editor__body">
+        <strong>${escapeHtml(shorten(session.sessionName, 26))}</strong>
+        <small>${escapeHtml(shorten(detail || "sem detalhe", 36))}</small>
+      </span>
+      <span class="ravi-wa-chat-session-editor__state ravi-wa-chat-session-editor__state--${activityClass}">
+        ${escapeHtml(elapsed ? `${activityLabel} ${elapsed}` : activityLabel)}
+      </span>
+    </button>
+  `;
+}
+
+function getChatSessionEditorQuery(item) {
+  const session = item?.session || null;
+  const chatId = item?.query?.chatId || chatSessionEditor?.chatId || null;
+  const title = item?.query?.title || chatSessionEditor?.title || null;
+  const snapshotSession = latestSnapshot?.session || null;
+  const snapshotChatId = snapshotSession?.boundChatId || snapshotSession?.chatId || null;
+  const snapshotTitle = snapshotSession?.boundTitle || latestSnapshot?.query?.title || null;
+  const snapshotMatches =
+    Boolean(snapshotSession) &&
+    ((chatId && snapshotChatId === chatId) || (!chatId && title && snapshotTitle === title));
+  return {
+    chatId,
+    title,
+    accountId:
+      session?.accountId ||
+      session?.lastAccountId ||
+      session?.instance ||
+      (snapshotMatches ? snapshotSession.accountId : null) ||
+      null,
+  };
+}
+
+function buildChatSessionEditorDraftSessionName(query, agentId) {
+  const agentStem = slugifyOmniToken(agentId || "agent") || "agent";
+  const chatStem = slugifyOmniToken(query?.title || query?.chatId || "chat") || "chat";
+  return `${agentStem}-${chatStem}`.slice(0, 48);
+}
+
+function getChatSessionEditorSessionOptions(item, currentSession) {
+  const byKey = new Map();
+  const add = (session) => {
+    const normalized = normalizeChatSessionOption(session);
+    if (!normalized) return;
+    const key = normalized.sessionKey || normalized.sessionName;
+    if (!key || byKey.has(key)) return;
+    byKey.set(key, normalized);
+  };
+
+  add(currentSession);
+  add(item?.session);
+  add(latestSnapshot?.session);
+  (latestSnapshot?.activeSessions || []).forEach(add);
+  (latestSnapshot?.recentSessions || []).forEach(add);
+  (latestChatListSessions || []).forEach(add);
+  (latestOmniPanel?.sessions || []).forEach(add);
+
+  const currentKey = currentSession?.sessionKey || currentSession?.sessionName || null;
+  return [...byKey.values()].sort((left, right) => compareChatSessionEditorOptions(left, right, currentKey));
+}
+
+function getChatSessionEditorAgentOptions(sessionOptions, currentSession) {
+  const byId = new Map();
+  const add = (agent) => {
+    const normalized = normalizeChatSessionAgentOption(agent);
+    if (!normalized || byId.has(normalized.id)) return;
+    byId.set(normalized.id, normalized);
+  };
+
+  (latestChatListAgents || []).forEach(add);
+  (latestOmniPanel?.agents || []).forEach(add);
+  if (currentSession?.agentId) add({ id: currentSession.agentId, name: currentSession.agentId });
+  (sessionOptions || []).forEach((session) => {
+    if (session?.agentId) add({ id: session.agentId, name: session.agentId });
+  });
+
+  const currentAgentId = currentSession?.agentId || null;
+  return [...byId.values()].sort((left, right) => {
+    if (currentAgentId && left.id === currentAgentId && right.id !== currentAgentId) return -1;
+    if (currentAgentId && right.id === currentAgentId && left.id !== currentAgentId) return 1;
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function normalizeChatSessionAgentOption(agent) {
+  if (!agent || typeof agent !== "object") return null;
+  const id = normalizeTaskAgentId(agent.id || agent.agentId || agent.name);
+  if (!id) return null;
+  return {
+    ...agent,
+    id,
+    name: normalizeTaskAgentId(agent.name || agent.displayName || id) || id,
+    displayName: normalizeTaskAgentId(agent.displayName || agent.name || id) || id,
+    description: normalizeTaskSessionName(agent.description || agent.summary),
+    provider: normalizeTaskAgentId(agent.provider),
+    model: normalizeTaskSessionName(agent.model),
+  };
+}
+
+function filterChatSessionEditorAgentOptions(agents, filter) {
+  const token = normalizeLookupToken(filter);
+  if (!token) return agents;
+  return agents.filter((agent) => {
+    const haystack = [
+      agent.id,
+      agent.name,
+      agent.displayName,
+      agent.description,
+      agent.provider,
+      agent.model,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(token);
+  });
+}
+
+function filterChatSessionEditorOptions(options, filter, currentSession) {
+  const token = normalizeLookupToken(filter);
+  if (!token) return options;
+  const currentKey = currentSession?.sessionKey || currentSession?.sessionName || null;
+  return options
+    .filter((session) => {
+      const haystack = [
+        session.sessionName,
+        session.sessionKey,
+        session.agentId,
+        session.displayName,
+        session.chatId,
+        session.channel,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(token);
+    })
+    .sort((left, right) => compareChatSessionEditorOptions(left, right, currentKey));
+}
+
+function compareChatSessionEditorOptions(left, right, currentKey) {
+  const leftKey = left.sessionKey || left.sessionName;
+  const rightKey = right.sessionKey || right.sessionName;
+  if (currentKey && leftKey === currentKey && rightKey !== currentKey) return -1;
+  if (currentKey && rightKey === currentKey && leftKey !== currentKey) return 1;
+  const leftBusy = isBusyChatSessionActivity(left.live?.activity);
+  const rightBusy = isBusyChatSessionActivity(right.live?.activity);
+  if (leftBusy !== rightBusy) return leftBusy ? -1 : 1;
+  const leftUpdated = Number(left.live?.updatedAt || left.updatedAt || 0);
+  const rightUpdated = Number(right.live?.updatedAt || right.updatedAt || 0);
+  if (leftUpdated !== rightUpdated) return rightUpdated - leftUpdated;
+  return left.sessionName.localeCompare(right.sessionName);
+}
+
+function normalizeChatSessionOption(session) {
+  if (!session || typeof session !== "object") return null;
+  const sessionKey = normalizeTaskSessionName(
+    session.sessionKey || session.key || session.id || session.sessionName || session.name,
+  );
+  const sessionName = normalizeTaskSessionName(
+    session.sessionName || session.name || session.label || sessionKey,
+  );
+  if (!sessionName && !sessionKey) return null;
+  const agentId = normalizeTaskAgentId(session.agentId || session.agent) || null;
+  const live = normalizeChatSessionLive(session);
+  return {
+    ...session,
+    sessionKey: sessionKey || sessionName,
+    sessionName: sessionName || sessionKey,
+    agentId,
+    displayName: normalizeTaskSessionName(session.displayName || session.subject),
+    chatId: normalizeTaskSessionName(session.chatId || session.lastTo || session.boundChatId),
+    channel: normalizeTaskSessionName(session.channel || session.lastChannel),
+    accountId: normalizeTaskSessionName(session.accountId || session.lastAccountId || session.instance),
+    updatedAt: Number(session.updatedAt || live?.updatedAt || 0),
+    live,
+  };
+}
+
+function normalizeChatSessionLive(session) {
+  const live = session?.live && typeof session.live === "object" ? session.live : null;
+  return {
+    ...(live || {}),
+    activity: live?.activity || session?.activity || "idle",
+    summary: live?.summary || session?.summary || null,
+    updatedAt: Number(live?.updatedAt || session?.updatedAt || Date.now()),
+    busySince: live?.busySince || session?.busySince || undefined,
+  };
+}
+
+function isSameChatSessionOption(left, right) {
+  if (!left || !right) return false;
+  const leftKeys = new Set([left.sessionKey, left.sessionName].filter(Boolean));
+  return [right.sessionKey, right.sessionName].filter(Boolean).some((key) => leftKeys.has(key));
+}
+
+function isBusyChatSessionActivity(activity) {
+  return Boolean(activity && activity !== "idle" && activity !== "unknown");
+}
+
+async function createChatSessionEditorSession(agentId) {
+  if (chatSessionEditorInFlight || !chatSessionEditor) return;
+  const normalizedAgentId = normalizeTaskAgentId(agentId);
+  const item =
+    latestChatListItems.find((entry) => entry?.id === chatSessionEditor.rowId) ||
+    chatSessionEditor.item ||
+    null;
+  const query = getChatSessionEditorQuery(item);
+  if (!normalizedAgentId || !query.chatId || !query.accountId) {
+    chatSessionEditorNotice = { kind: "error", text: "agent, chatId e instância obrigatórios" };
+    renderChatSessionEditor();
+    return;
+  }
+  const sessionName = normalizeTaskSessionName(chatSessionEditorDraftSessionName);
+  if (!sessionName) {
+    chatSessionEditorNotice = { kind: "error", text: "nome da sessão obrigatório" };
+    renderChatSessionEditor();
+    return;
+  }
+  chatSessionEditorInFlight = true;
+  chatSessionEditorNotice = { kind: "info", text: "criando..." };
+  renderChatSessionEditor();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:v3-command",
+      payload: {
+        name: "chat.createSession",
+        args: {
+          agentId: normalizedAgentId,
+          session: sessionName,
+          chatId: query.chatId,
+          title: query.title,
+          chatName: query.title,
+          instance: query.accountId,
+          channel: "whatsapp",
+        },
+      },
+    });
+    const result = response?.ack?.body?.result || response;
+    if (response?.ok === false || result?.ok === false) {
+      throw new Error(formatOmniRouteError(result || response, "falha ao criar"));
+    }
+    const session = normalizeChatSessionOption(
+      result?.snapshot?.session || {
+        sessionKey: sessionName,
+        sessionName,
+        agentId: normalizedAgentId,
+        live: { activity: "idle", summary: "local binding", updatedAt: Date.now() },
+      },
+    );
+    applyChatSessionEditorOptimisticSession(session, query);
+    chatSessionEditorInFlight = false;
+    closeChatSessionEditor();
+    renderChatListBadges(detectVisibleChatRows(), latestChatListItems);
+    await refreshChatListOverlay();
+  } catch (error) {
+    chatSessionEditorInFlight = false;
+    chatSessionEditorNotice = { kind: "error", text: error?.message || String(error) };
+    renderChatSessionEditor();
+  }
+}
+
+async function bindChatSessionEditorChoice(sessionKey) {
+  if (chatSessionEditorInFlight || !chatSessionEditor) return;
+  const item =
+    latestChatListItems.find((entry) => entry?.id === chatSessionEditor.rowId) ||
+    chatSessionEditor.item ||
+    null;
+  const currentSession = normalizeChatSessionOption(item?.session);
+  const session = getChatSessionEditorSessionOptions(item, currentSession).find(
+    (entry) => entry.sessionKey === sessionKey || entry.sessionName === sessionKey,
+  );
+  if (!session) return;
+  const query = getChatSessionEditorQuery(item);
+  if (!session.agentId) {
+    chatSessionEditorNotice = { kind: "error", text: "sessão sem agent" };
+    renderChatSessionEditor();
+    return;
+  }
+  if (!query.chatId || !(query.accountId || session.accountId || session.lastAccountId)) {
+    chatSessionEditorNotice = { kind: "error", text: "chat sem id/instância" };
+    renderChatSessionEditor();
+    return;
+  }
+
+  chatSessionEditorInFlight = true;
+  chatSessionEditorNotice = { kind: "info", text: "salvando..." };
+  renderChatSessionEditor();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:v3-command",
+      payload: {
+        name: "chat.bindSession",
+        args: {
+          session: session.sessionName,
+          agentId: session.agentId,
+          chatId: query.chatId,
+          title: query.title,
+          chatName: query.title,
+          instance: query.accountId || session.accountId || session.lastAccountId,
+          channel: "whatsapp",
+        },
+      },
+    });
+    const result = response?.ack?.body?.result || response;
+    if (response?.ok === false || result?.ok === false) {
+      throw new Error(formatOmniRouteError(result || response, "falha ao vincular"));
+    }
+    applyChatSessionEditorOptimisticSession(session, query);
+    chatSessionEditorInFlight = false;
+    closeChatSessionEditor();
+    renderChatListBadges(detectVisibleChatRows(), latestChatListItems);
+    await refreshChatListOverlay();
+  } catch (error) {
+    chatSessionEditorInFlight = false;
+    chatSessionEditorNotice = { kind: "error", text: error?.message || String(error) };
+    renderChatSessionEditor();
+  }
+}
+
+async function unbindChatSessionEditorChoice() {
+  if (chatSessionEditorInFlight || !chatSessionEditor) return;
+  const item =
+    latestChatListItems.find((entry) => entry?.id === chatSessionEditor.rowId) ||
+    chatSessionEditor.item ||
+    null;
+  const query = getChatSessionEditorQuery(item);
+  if (!query.chatId && !query.title) return;
+  chatSessionEditorInFlight = true;
+  chatSessionEditorNotice = { kind: "info", text: "limpando..." };
+  renderChatSessionEditor();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:v3-command",
+      payload: {
+        name: "chat.unbindSession",
+        args: {
+          chatId: query.chatId,
+          title: query.title,
+          instance: query.accountId,
+          channel: "whatsapp",
+        },
+      },
+    });
+    const result = response?.ack?.body?.result || response;
+    if (result?.ok === false) {
+      throw new Error(formatOmniRouteError(result, "falha ao limpar"));
+    }
+    chatSessionEditorInFlight = false;
+    closeChatSessionEditor();
+    await refreshChatListOverlay();
+  } catch (error) {
+    chatSessionEditorInFlight = false;
+    chatSessionEditorNotice = { kind: "error", text: error?.message || String(error) };
+    renderChatSessionEditor();
+  }
+}
+
+function applyChatSessionEditorOptimisticSession(session, query) {
+  const item = latestChatListItems.find((entry) => entry?.id === chatSessionEditor?.rowId);
+  if (!item) return;
+  item.resolved = true;
+  item.session = {
+    ...session,
+    boundChatId: query.chatId,
+    boundTitle: query.title,
+    accountId: query.accountId || session.accountId || session.lastAccountId,
+  };
 }
 
 function refreshMessageChips() {
@@ -3056,6 +3862,7 @@ function syncLayoutChrome() {
   host.setAttribute("data-ravi-workspace", activeWorkspace);
   const fullWorkspace =
     activeWorkspace === "omni" ||
+    activeWorkspace === "crm" ||
     activeWorkspace === "tasks" ||
     activeWorkspace === "insights";
   mainPane.classList.toggle(MAIN_PANE_HIDDEN_CLASS, fullWorkspace);
@@ -3249,6 +4056,14 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
       latestInsightsSnapshot,
     );
     renderInsightsWorkspace(body);
+    return;
+  }
+
+  if (activeWorkspace === "crm") {
+    hideSessionWorkspaceMain();
+    panelTitle.textContent = "CRM";
+    panelSubtitle.textContent = buildCrmWorkspaceSubtitle();
+    renderCrmWorkspace(body);
     return;
   }
 
@@ -3853,6 +4668,7 @@ function renderOmniWorkspace(body, context) {
               args: {
                 actorSession: getCurrentOmniActorSession(),
                 session: formState.selectedSession.sessionName,
+                agentId: formState.selectedSession.agentId,
                 title: formState.selectedChat.name,
                 chatId:
                   formState.selectedChat.externalId ||
@@ -10284,6 +11100,465 @@ async function focusArtifactSessionByKey(sessionKey) {
   openSessionWorkspace(target);
 }
 
+function buildCrmWorkspaceSubtitle() {
+  const stats = latestCrmSnapshot?.stats || {};
+  return `${Number(stats.totalContacts || 0)} contatos · ${Number(stats.nextActions || 0)} próximos passos · ${Number(stats.openOpportunities || 0)} oportunidades`;
+}
+
+function renderCrmWorkspace(body) {
+  const preservedScrollState = captureWorkspaceScrollState("crm");
+  const snapshot = latestCrmSnapshot;
+  const stats = snapshot?.stats || {};
+  const contacts = getCrmContacts();
+  const actions = getCrmActions();
+  const opportunities = getCrmOpportunities();
+  const lifecycleContacts =
+    crmLifecycleFilter && crmLifecycleFilter !== "all"
+      ? contacts.filter((contact) => (contact?.lifecycle || "unknown") === crmLifecycleFilter)
+      : contacts;
+  const filteredContacts = filterCrmRecords(lifecycleContacts, crmFilter, [
+    "contactId",
+    "displayName",
+    "kind",
+    "lifecycle",
+    "relationshipHealth",
+    "priority",
+    "nextActionSummary",
+    "primaryAccountId",
+    "primaryOpportunityId",
+  ]);
+  const filteredActions = filterCrmRecords(actions, crmFilter, [
+    "taskId",
+    "title",
+    "contactName",
+    "accountName",
+    "opportunityTitle",
+    "priority",
+    "dueAt",
+  ]);
+  const filteredOpportunities = filterCrmRecords(opportunities, crmFilter, [
+    "opportunityId",
+    "title",
+    "status",
+    "priority",
+    "stageKey",
+    "stageName",
+    "accountName",
+    "primaryContactName",
+  ]);
+  const lifecycleChips = buildCrmLifecycleOptions(contacts, stats?.contactsByLifecycle)
+    .map((option) => {
+      const isActive = (crmLifecycleFilter || "all") === option.id;
+      return `
+        <button
+          type="button"
+          class="ravi-wa-meta-chip ravi-wa-crm-chip${isActive ? " ravi-wa-crm-chip--active" : ""}"
+          data-ravi-crm-lifecycle="${escapeAttribute(option.id)}"
+        >${escapeHtml(option.label)}</button>
+      `;
+    })
+    .join("");
+  const warningMarkup =
+    Array.isArray(snapshot?.warnings) && snapshot.warnings.length
+      ? `
+        <section class="ravi-wa-crm-notice ravi-wa-notice ravi-wa-notice--warning">
+          <p>${escapeHtml(shorten(snapshot.warnings[0]?.message || "CRM parcialmente indisponível", 180))}</p>
+        </section>
+      `
+      : "";
+
+  body.innerHTML = `
+    <div class="ravi-wa-crm-page">
+      <header class="ravi-wa-crm-hero">
+        <div class="ravi-wa-crm-hero__copy">
+          <span class="ravi-wa-crm-eyebrow">crm nativo</span>
+          <h2>Relacionamentos</h2>
+          <p>${escapeHtml(formatCrmFreshness(snapshot?.generatedAt))}</p>
+        </div>
+        <div class="ravi-wa-crm-metrics">
+          ${renderCrmMetric("contacts", stats?.totalContacts ?? contacts.length, "contatos", `${filteredContacts.length} visíveis`)}
+          ${renderCrmMetric("actions", stats?.nextActions ?? actions.length, "próximos", `${filteredActions.length} visíveis`)}
+          ${renderCrmMetric("opportunities", stats?.openOpportunities ?? opportunities.length, "oportunidades", `${filteredOpportunities.length} visíveis`)}
+          ${renderCrmMetric("attention", stats?.attention ?? 0, "atenção", `${stats?.overdueActions ?? 0} vencidos`)}
+        </div>
+      </header>
+      <section class="ravi-wa-crm-toolbar">
+        <label class="ravi-wa-sidebar-search ravi-wa-crm-search" for="ravi-wa-crm-search">
+          <span class="ravi-wa-visually-hidden">buscar no CRM</span>
+          <input
+            id="ravi-wa-crm-search"
+            type="text"
+            placeholder="buscar contato, conta, oportunidade..."
+            value="${escapeAttribute(crmFilter)}"
+          />
+        </label>
+        <div class="ravi-wa-chip-row ravi-wa-crm-chip-row">
+          ${lifecycleChips}
+        </div>
+      </section>
+      ${warningMarkup}
+      ${
+        sidebarNotice
+          ? `
+        <section class="ravi-wa-crm-notice ravi-wa-notice ravi-wa-notice--${escapeAttribute(sidebarNotice.kind || "info")}">
+          <p>${escapeHtml(sidebarNotice.message || "")}</p>
+        </section>
+      `
+          : ""
+      }
+      <main class="ravi-wa-crm-grid">
+        <section class="ravi-wa-crm-panel ravi-wa-crm-panel--contacts">
+          <div class="ravi-wa-crm-panel__head">
+            <div>
+              <span class="ravi-wa-crm-eyebrow">contacts</span>
+              <h3>Contatos</h3>
+            </div>
+            <span class="ravi-wa-crm-count">${escapeHtml(String(filteredContacts.length))}</span>
+          </div>
+          <div class="ravi-wa-crm-list">
+            ${
+              filteredContacts.length
+                ? filteredContacts.map((contact) => renderCrmContactRow(contact)).join("")
+                : `
+                  <div class="ravi-wa-crm-empty">
+                    <strong>sem contatos</strong>
+                    <span>nenhum card CRM bate com os filtros atuais.</span>
+                  </div>
+                `
+            }
+          </div>
+        </section>
+        <section class="ravi-wa-crm-panel ravi-wa-crm-panel--actions">
+          <div class="ravi-wa-crm-panel__head">
+            <div>
+              <span class="ravi-wa-crm-eyebrow">next</span>
+              <h3>Próximos passos</h3>
+            </div>
+            <span class="ravi-wa-crm-count">${escapeHtml(String(filteredActions.length))}</span>
+          </div>
+          <div class="ravi-wa-crm-list">
+            ${
+              filteredActions.length
+                ? filteredActions.map((action) => renderCrmActionRow(action)).join("")
+                : `
+                  <div class="ravi-wa-crm-empty">
+                    <strong>sem próximos passos</strong>
+                    <span>o CRM não retornou follow-ups abertos para estes filtros.</span>
+                  </div>
+                `
+            }
+          </div>
+        </section>
+        <section class="ravi-wa-crm-panel ravi-wa-crm-panel--opportunities">
+          <div class="ravi-wa-crm-panel__head">
+            <div>
+              <span class="ravi-wa-crm-eyebrow">pipeline</span>
+              <h3>Oportunidades</h3>
+            </div>
+            <span class="ravi-wa-crm-count">${escapeHtml(String(filteredOpportunities.length))}</span>
+          </div>
+          ${renderCrmOpportunityBoard(filteredOpportunities)}
+        </section>
+      </main>
+    </div>
+  `;
+
+  bindCrmWorkspaceInteractions(body);
+  restoreWorkspaceScrollState(preservedScrollState);
+}
+
+function getCrmContacts() {
+  return Array.isArray(latestCrmSnapshot?.contacts) ? latestCrmSnapshot.contacts : [];
+}
+
+function getCrmActions() {
+  return Array.isArray(latestCrmSnapshot?.actions) ? latestCrmSnapshot.actions : [];
+}
+
+function getCrmOpportunities() {
+  return Array.isArray(latestCrmSnapshot?.opportunities)
+    ? latestCrmSnapshot.opportunities
+    : [];
+}
+
+function buildCrmLifecycleOptions(contacts, byLifecycle = {}) {
+  const keys = new Set(["all", "lead", "qualified", "active", "dormant", "lost", "unknown"]);
+  Object.keys(byLifecycle || {}).forEach((key) => keys.add(key));
+  contacts.forEach((contact) => keys.add(contact?.lifecycle || "unknown"));
+  return Array.from(keys).map((key) => {
+    const count =
+      key === "all"
+        ? contacts.length
+        : Number(byLifecycle?.[key]) ||
+          contacts.filter((contact) => (contact?.lifecycle || "unknown") === key).length;
+    return {
+      id: key,
+      label: key === "all" ? `all ${count}` : `${labelizeCrmToken(key)} ${count}`,
+    };
+  });
+}
+
+function filterCrmRecords(items, filter, fields) {
+  const query = (filter || "").trim().toLowerCase();
+  if (!query) return items;
+  return items.filter((item) =>
+    fields.some((field) => {
+      const value = item?.[field];
+      return value !== undefined && value !== null && String(value).toLowerCase().includes(query);
+    }),
+  );
+}
+
+function renderCrmMetric(kind, value, label, note) {
+  return `
+    <div class="ravi-wa-crm-metric ravi-wa-crm-metric--${escapeAttribute(kind)}">
+      <strong>${escapeHtml(String(value ?? 0))}</strong>
+      <span>${escapeHtml(label)}</span>
+      <small>${escapeHtml(note || "")}</small>
+    </div>
+  `;
+}
+
+function renderCrmContactRow(contact) {
+  const id = contact?.contactId || "";
+  const name = contact?.displayName || id || "contato";
+  const lifecycle = contact?.lifecycle || "unknown";
+  const health = contact?.relationshipHealth || "unknown";
+  const priority = contact?.priority || "normal";
+  const owner = formatCrmOwner(contact?.ownerType, contact?.ownerId);
+  const next = contact?.nextActionSummary || "sem próximo passo";
+  const updated = formatCrmRelative(contact?.updatedAt || contact?.lastMeaningfulInteractionAt);
+
+  return `
+    <button
+      type="button"
+      class="ravi-wa-crm-contact"
+      data-ravi-crm-copy-value="${escapeAttribute(id)}"
+      data-ravi-crm-copy-label="contact"
+      title="${escapeAttribute(name)}"
+    >
+      <span class="ravi-wa-crm-avatar" aria-hidden="true">${escapeHtml(crmInitials(name))}</span>
+      <span class="ravi-wa-crm-contact__main">
+        <strong>${escapeHtml(shorten(name, 72))}</strong>
+        <small>${escapeHtml(shorten(next, 104))}</small>
+      </span>
+      <span class="ravi-wa-crm-contact__meta">
+        <span class="ravi-wa-crm-pill ravi-wa-crm-pill--${escapeAttribute(crmTokenClass(lifecycle))}">${escapeHtml(labelizeCrmToken(lifecycle))}</span>
+        <span class="ravi-wa-crm-soft">${escapeHtml(labelizeCrmToken(health))}</span>
+        <span class="ravi-wa-crm-soft">${escapeHtml(owner || priority || updated || "-")}</span>
+      </span>
+    </button>
+  `;
+}
+
+function renderCrmActionRow(action) {
+  const id = action?.taskId || "";
+  const title = action?.title || id || "próximo passo";
+  const priority = action?.priority || "normal";
+  const due = formatCrmDue(action?.dueAt);
+  const overdue = isCrmPastDate(action?.dueAt);
+  const target = [action?.contactName, action?.accountName, action?.opportunityTitle]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `
+    <button
+      type="button"
+      class="ravi-wa-crm-action${overdue ? " ravi-wa-crm-action--overdue" : ""}"
+      data-ravi-crm-copy-value="${escapeAttribute(id)}"
+      data-ravi-crm-copy-label="crm task"
+      title="${escapeAttribute(title)}"
+    >
+      <span class="ravi-wa-crm-action__top">
+        <strong>${escapeHtml(shorten(title, 96))}</strong>
+        <span class="ravi-wa-crm-pill ravi-wa-crm-pill--priority-${escapeAttribute(crmTokenClass(priority))}">${escapeHtml(labelizeCrmToken(priority))}</span>
+      </span>
+      <span class="ravi-wa-crm-action__meta">
+        <span>${escapeHtml(target || "sem alvo")}</span>
+        <span>${escapeHtml(due)}</span>
+      </span>
+    </button>
+  `;
+}
+
+function renderCrmOpportunityBoard(opportunities) {
+  if (!opportunities.length) {
+    return `
+      <div class="ravi-wa-crm-empty">
+        <strong>sem oportunidades</strong>
+        <span>nenhum card de pipeline bate com os filtros atuais.</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="ravi-wa-crm-board">
+      ${groupCrmOpportunitiesByStage(opportunities)
+        .map(
+          (stage) => `
+          <div class="ravi-wa-crm-stage">
+            <div class="ravi-wa-crm-stage__head">
+              <strong>${escapeHtml(stage.label)}</strong>
+              <span>${escapeHtml(String(stage.items.length))}</span>
+            </div>
+            <div class="ravi-wa-crm-stage__list">
+              ${stage.items.map((opportunity) => renderCrmOpportunityCard(opportunity)).join("")}
+            </div>
+          </div>
+        `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderCrmOpportunityCard(opportunity) {
+  const id = opportunity?.opportunityId || "";
+  const title = opportunity?.title || id || "oportunidade";
+  const priority = opportunity?.priority || "normal";
+  const value = formatCrmCurrency(opportunity?.valueCents, opportunity?.currency);
+  const account = opportunity?.accountName || "sem conta";
+  const contact = opportunity?.primaryContactName || "";
+
+  return `
+    <button
+      type="button"
+      class="ravi-wa-crm-opportunity"
+      data-ravi-crm-copy-value="${escapeAttribute(id)}"
+      data-ravi-crm-copy-label="opportunity"
+      title="${escapeAttribute(title)}"
+    >
+      <strong>${escapeHtml(shorten(title, 88))}</strong>
+      <span>${escapeHtml(shorten([account, contact].filter(Boolean).join(" · "), 96))}</span>
+      <small>
+        <span>${escapeHtml(value || labelizeCrmToken(priority))}</span>
+        <span>${escapeHtml(labelizeCrmToken(priority))}</span>
+      </small>
+    </button>
+  `;
+}
+
+function bindCrmWorkspaceInteractions(body) {
+  const searchInput = body.querySelector("#ravi-wa-crm-search");
+  searchInput?.addEventListener("input", (event) => {
+    const nextValue = event.target.value || "";
+    crmFilter = nextValue;
+    renderCrmWorkspace(body);
+    requestAnimationFrame(() => {
+      const nextInput = document.getElementById("ravi-wa-crm-search");
+      if (!(nextInput instanceof HTMLInputElement)) return;
+      nextInput.focus();
+      nextInput.setSelectionRange(nextValue.length, nextValue.length);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-crm-lifecycle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      crmLifecycleFilter = button.getAttribute("data-ravi-crm-lifecycle") || "all";
+      renderCrmWorkspace(body);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-crm-copy-value]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const value = button.getAttribute("data-ravi-crm-copy-value");
+      const label = button.getAttribute("data-ravi-crm-copy-label") || "crm";
+      if (!value) return;
+      await copyOverlayValue(value, label);
+    });
+  });
+}
+
+function groupCrmOpportunitiesByStage(opportunities) {
+  const groups = new Map();
+  opportunities.forEach((opportunity) => {
+    const key = opportunity?.stageKey || opportunity?.status || "unknown";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        label: opportunity?.stageName || labelizeCrmToken(key),
+        order: Number.isFinite(Number(opportunity?.stageOrder)) ? Number(opportunity.stageOrder) : 999,
+        items: [],
+      });
+    }
+    groups.get(key).items.push(opportunity);
+  });
+  return Array.from(groups.values()).sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+}
+
+function crmInitials(name) {
+  const parts = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return "?";
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("");
+}
+
+function crmTokenClass(value) {
+  return String(value || "unknown")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .slice(0, 40);
+}
+
+function labelizeCrmToken(value) {
+  return String(value || "unknown").replace(/[_-]+/g, " ");
+}
+
+function formatCrmOwner(ownerType, ownerId) {
+  if (!ownerType || !ownerId) return "";
+  return `${ownerType}:${ownerId}`;
+}
+
+function formatCrmFreshness(value) {
+  const relative = formatCrmRelative(value);
+  return relative ? `atualizado há ${relative}` : "CRM";
+}
+
+function formatCrmRelative(value) {
+  const time =
+    typeof value === "number" && Number.isFinite(value) ? value : Date.parse(value || "");
+  return Number.isFinite(time) ? formatElapsedCompact(time) : "";
+}
+
+function isCrmPastDate(value) {
+  const time = Date.parse(value || "");
+  return Number.isFinite(time) && time < Date.now();
+}
+
+function formatCrmDue(value) {
+  const time = Date.parse(value || "");
+  if (!Number.isFinite(time)) return "sem data";
+  const date = new Date(time);
+  const today = new Date();
+  const sameDay =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate();
+  const formatter = sameDay
+    ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" })
+    : new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "2-digit" });
+  return `${isCrmPastDate(value) ? "venceu" : "vence"} ${formatter.format(date)}`;
+}
+
+function formatCrmCurrency(valueCents, currency = "BRL") {
+  const numeric = Number(valueCents);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency || "BRL",
+      maximumFractionDigits: 0,
+    }).format(numeric / 100);
+  } catch {
+    return `${currency || "BRL"} ${Math.round(numeric / 100)}`;
+  }
+}
+
 function renderArtifactsWorkspace(body) {
   const preservedScrollState = captureWorkspaceScrollState("artifacts");
   const snapshot = latestArtifactsSnapshot;
@@ -13452,7 +14727,7 @@ function loadPinnedSessionKey() {
 function loadActiveWorkspace() {
   try {
     const stored = window.localStorage.getItem(ACTIVE_WORKSPACE_KEY_STORAGE);
-    return stored === "tasks" || stored === "artifacts"
+    return stored === "tasks" || stored === "artifacts" || stored === "crm"
       ? stored
       : "ravi";
   } catch {
@@ -13550,7 +14825,9 @@ function persistV3PlaceholdersEnabled(value) {
 
 function setActiveWorkspace(nextWorkspace) {
   activeWorkspace =
-    nextWorkspace === "tasks" || nextWorkspace === "artifacts"
+    nextWorkspace === "tasks" ||
+    nextWorkspace === "artifacts" ||
+    nextWorkspace === "crm"
       ? nextWorkspace
       : "ravi";
   if (activeWorkspace !== "tasks") {
@@ -13560,7 +14837,9 @@ function setActiveWorkspace(nextWorkspace) {
   persistActiveWorkspace(activeWorkspace);
   syncWorkspaceLauncher();
   render();
-  if (activeWorkspace === "artifacts") {
+  if (activeWorkspace === "crm") {
+    refreshCrm(true);
+  } else if (activeWorkspace === "artifacts") {
     refreshArtifacts(true);
   } else if (activeWorkspace === "tasks") {
     refreshTasks(true);

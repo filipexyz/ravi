@@ -16,20 +16,18 @@ function printJson(payload: unknown): void {
 
 /**
  * Resolve the best WhatsApp JID for a contact reference.
- * Prefers LID (direct chat) over phone number.
+ * Prefers WhatsApp platform identities over phone number.
  */
 function resolveWhatsAppJid(contactRef: string): { jid: string; displayName: string } {
   const contact = getContact(contactRef);
 
   if (contact) {
     const identities = getContactIdentities(contact.id);
-    // Prefer LID for DMs (direct WhatsApp internal ID)
-    const lid = identities.find((i) => i.platform === "whatsapp_lid");
-    if (lid) {
-      const jid = phoneToJid(`lid:${lid.value.replace(/^lid:/, "")}`);
+    const whatsapp = identities.find((i) => i.platform === "whatsapp");
+    if (whatsapp) {
+      const jid = phoneToJid(whatsapp.value);
       if (jid) return { jid, displayName: contact.name ?? formatPhone(contact.phone) };
     }
-    // Fallback to phone
     const phone = identities.find((i) => i.platform === "phone");
     if (phone) {
       const jid = phoneToJid(phone.value);
@@ -57,7 +55,7 @@ function resolveWhatsAppJid(contactRef: string): { jid: string; displayName: str
 export class WhatsAppDmCommands {
   @Command({ name: "send", description: "Send a direct message to a contact" })
   async send(
-    @Arg("contact", { description: "Contact ID, phone, or LID" }) contactRef: string,
+    @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Arg("message", { description: "Message text" }) message: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -96,7 +94,7 @@ export class WhatsAppDmCommands {
 
   @Command({ name: "read", description: "Read recent messages from a DM chat" })
   async read(
-    @Arg("contact", { description: "Contact ID, phone, or LID" }) contactRef: string,
+    @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Option({ flags: "--last <n>", description: "Number of messages to read (default: 10)" }) last?: string,
     @Option({ flags: "--no-ack", description: "Don't send read receipt" }) noAck?: boolean,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -177,7 +175,7 @@ export class WhatsAppDmCommands {
 
   @Command({ name: "ack", description: "Send read receipt (blue ticks) for a specific message" })
   async ack(
-    @Arg("contact", { description: "Contact ID, phone, or LID" }) contactRef: string,
+    @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Arg("messageId", { description: "Message ID to mark as read" }) messageId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

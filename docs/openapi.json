@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "4a32f3a49a08ddab"
+    "version": "a4c4ecac1818e7b9"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -25,6 +25,14 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching adapters to skip (default: 0)",
+                    "type": "string"
+                  },
                   "session": {
                     "description": "Filter by session key",
                     "type": "string"
@@ -399,6 +407,31 @@
     "/api/v1/agents/list": {
       "post": {
         "operationId": "agents.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching agents to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical tag slug",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -1255,11 +1288,15 @@
                     "type": "string"
                   },
                   "lifecycle": {
-                    "description": "Filter rich projection by lifecycle: active|archived|stale",
+                    "description": "Filter rich projection by lifecycle: pending|running|completed|failed|archived",
                     "type": "string"
                   },
                   "limit": {
-                    "description": "Max artifacts to list (default: 50)",
+                    "description": "Page size (default: 50, max: 500; rich max: 200)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching artifacts to skip (default: 0)",
                     "type": "string"
                   },
                   "rich": {
@@ -1505,63 +1542,6 @@
         ]
       }
     },
-    "/api/v1/artifacts/watch": {
-      "post": {
-        "operationId": "artifacts.watch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "description": "Artifact id",
-                    "type": "string"
-                  },
-                  "intervalMs": {
-                    "description": "Polling interval in milliseconds (default: 1000)",
-                    "type": "string"
-                  },
-                  "timeoutMs": {
-                    "description": "Timeout in milliseconds (default: 300000)",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "id"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success — no `@Returns` schema declared; payload shape is loose."
-          },
-          "400": {
-            "description": "Bad request — body failed schema validation."
-          },
-          "500": {
-            "description": "Internal error."
-          }
-        },
-        "security": [],
-        "summary": "Watch artifact lifecycle until a terminal status",
-        "tags": [
-          "artifacts"
-        ]
-      }
-    },
     "/api/v1/audio/generate": {
       "post": {
         "operationId": "audio.generate",
@@ -1640,6 +1620,223 @@
         "summary": "Generate speech from text using ElevenLabs TTS",
         "tags": [
           "audio"
+        ]
+      }
+    },
+    "/api/v1/commands/list": {
+      "post": {
+        "operationId": "commands.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Resolve agent-scoped commands for this agent",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching commands to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical command tag",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "List Ravi commands",
+        "tags": [
+          "commands"
+        ]
+      }
+    },
+    "/api/v1/commands/run": {
+      "post": {
+        "operationId": "commands.run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Resolve agent-scoped commands for this agent",
+                    "type": "string"
+                  },
+                  "args": {
+                    "description": "Command arguments",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "name": {
+                    "description": "Command name, with or without #",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Render a Ravi command into its composed prompt",
+        "tags": [
+          "commands"
+        ]
+      }
+    },
+    "/api/v1/commands/show": {
+      "post": {
+        "operationId": "commands.show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Resolve agent-scoped commands for this agent",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Command name, with or without #",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show one Ravi command",
+        "tags": [
+          "commands"
+        ]
+      }
+    },
+    "/api/v1/commands/validate": {
+      "post": {
+        "operationId": "commands.validate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Resolve agent-scoped commands for this agent",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Validate Ravi command files",
+        "tags": [
+          "commands"
         ]
       }
     },
@@ -2478,6 +2675,14 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching contacts to skip (default: 0)",
+                    "type": "string"
+                  },
                   "status": {
                     "description": "Filter by status",
                     "type": "string"
@@ -2574,6 +2779,288 @@
           }
         ],
         "summary": "Merge two contacts (move identities from source to target)",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
+    "/api/v1/contacts/metadata/list": {
+      "post": {
+        "operationId": "contacts.metadata.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching metadata entries to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Filter by scoped context",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "List current scoped metadata for a contact",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
+    "/api/v1/contacts/metadata/remove": {
+      "post": {
+        "operationId": "contacts.metadata.remove",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "Namespaced metadata key",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Scoped context, e.g. project:ravi-web",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Event source (default: cli)",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact",
+                  "key"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove scoped metadata from a contact",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
+    "/api/v1/contacts/metadata/set": {
+      "post": {
+        "operationId": "contacts.metadata.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "Namespaced metadata key",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Scoped context, e.g. project:ravi-web",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Event source (default: cli)",
+                    "type": "string"
+                  },
+                  "value": {
+                    "description": "JSON value",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set scoped metadata for a contact",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
+    "/api/v1/contacts/note": {
+      "post": {
+        "operationId": "contacts.note",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Scoped context for this note",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Event source (default: cli)",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "Note text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact",
+                  "text"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Append a note to a contact timeline",
         "tags": [
           "contacts"
         ]
@@ -2812,6 +3299,71 @@
           }
         ],
         "summary": "Add a tag to a contact",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
+    "/api/v1/contacts/timeline": {
+      "post": {
+        "operationId": "contacts.timeline",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "event": {
+                    "description": "Filter by event type",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching events to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Filter by scoped context",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show contact timeline events",
         "tags": [
           "contacts"
         ]
@@ -3250,6 +3802,27 @@
     "/api/v1/context/credentials/list": {
       "post": {
         "operationId": "context.credentials.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching credential entries to skip (default: 0)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -3554,6 +4127,14 @@
                     "description": "Filter by context kind",
                     "type": "string"
                   },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching contexts to skip (default: 0)",
+                    "type": "string"
+                  },
                   "session": {
                     "description": "Filter by session key",
                     "type": "string"
@@ -3644,6 +4225,35 @@
         },
         "security": [],
         "summary": "Revoke a runtime context by context ID",
+        "tags": [
+          "context"
+        ]
+      }
+    },
+    "/api/v1/context/visibility": {
+      "post": {
+        "operationId": "context.visibility",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show the current context session visibility",
         "tags": [
           "context"
         ]
@@ -4146,6 +4756,31 @@
     "/api/v1/cron/list": {
       "post": {
         "operationId": "cron.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching cron jobs to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical cron job tag",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -5198,6 +5833,10 @@
                     "description": "Max sessions to show (default: 20)",
                     "type": "string"
                   },
+                  "offset": {
+                    "description": "Number of matching sessions to skip (default: 0)",
+                    "type": "string"
+                  },
                   "remote": {
                     "description": "Fetch remote sessions and update local cache",
                     "type": "boolean"
@@ -6146,6 +6785,31 @@
     "/api/v1/hooks/list": {
       "post": {
         "operationId": "hooks.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching hooks to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical hook tag",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -6614,6 +7278,13 @@
                     "description": "Short actionable summary",
                     "type": "string"
                   },
+                  "tag": {
+                    "description": "Canonical tags; can be repeated or comma-separated",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "task": {
                     "description": "Link the insight to a task",
                     "type": "string"
@@ -6694,6 +7365,10 @@
                     "description": "Result limit",
                     "type": "string"
                   },
+                  "offset": {
+                    "description": "Number of matching insights to skip (default: 0)",
+                    "type": "string"
+                  },
                   "profile": {
                     "description": "Filter by linked profile",
                     "type": "string"
@@ -6708,6 +7383,10 @@
                   },
                   "session": {
                     "description": "Filter by linked session",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical tag",
                     "type": "string"
                   },
                   "task": {
@@ -7297,6 +7976,31 @@
     "/api/v1/instances/list": {
       "post": {
         "operationId": "instances.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching instances to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical instance tag",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -7410,8 +8114,16 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
                   "name": {
                     "description": "Instance name",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching pending entries to skip (default: 0)",
                     "type": "string"
                   }
                 },
@@ -7741,8 +8453,20 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
                   "name": {
                     "description": "Instance name",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching routes to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical route tag",
                     "type": "string"
                   }
                 },
@@ -8396,6 +9120,1035 @@
         ]
       }
     },
+    "/api/v1/observers/list": {
+      "post": {
+        "operationId": "observers.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Filter by observer agent id",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching observer bindings to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "session": {
+                    "description": "Filter by source session name/key",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List session observer bindings",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/profiles/init": {
+      "post": {
+        "operationId": "observers.profiles.init",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "overwrite": {
+                    "description": "Overwrite existing profile files",
+                    "type": "boolean"
+                  },
+                  "profileId": {
+                    "description": "Observer profile id",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "workspace|user",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "profileId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a Markdown observer profile scaffold",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/profiles/list": {
+      "post": {
+        "operationId": "observers.profiles.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching observer profiles to skip (default: 0)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List observer profiles",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/profiles/preview": {
+      "post": {
+        "operationId": "observers.profiles.preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "event": {
+                    "description": "Observation event type to preview",
+                    "type": "string"
+                  },
+                  "profileId": {
+                    "description": "Observer profile id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "profileId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Render an observer profile preview",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/profiles/show": {
+      "post": {
+        "operationId": "observers.profiles.show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "profileId": {
+                    "description": "Observer profile id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "profileId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Show one observer profile",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/profiles/validate": {
+      "post": {
+        "operationId": "observers.profiles.validate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "profileId": {
+                    "description": "Optional observer profile id",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Validate observer profiles",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/refresh": {
+      "post": {
+        "operationId": "observers.refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "session": {
+                    "description": "Source session name or key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Apply observer rules to an existing source session",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/rules/disable": {
+      "post": {
+        "operationId": "observers.rules.disable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Observer rule id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Disable an observer rule",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/rules/enable": {
+      "post": {
+        "operationId": "observers.rules.enable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Observer rule id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Enable an observer rule",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/rules/explain": {
+      "post": {
+        "operationId": "observers.rules.explain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "session": {
+                    "description": "Source session name or key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Explain observer rule matching for a source session",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/rules/list": {
+      "post": {
+        "operationId": "observers.rules.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching observer rules to skip (default: 0)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List observer rules",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/rules/rm": {
+      "post": {
+        "operationId": "observers.rules.rm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Observer rule id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete an observer rule",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/rules/set": {
+      "post": {
+        "operationId": "observers.rules.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "delivery": {
+                    "description": "realtime|debounce|end_of_turn|manual",
+                    "type": "string"
+                  },
+                  "disabled": {
+                    "description": "Create rule disabled",
+                    "type": "boolean"
+                  },
+                  "events": {
+                    "description": "Comma-separated observation event types",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "Observer rule id",
+                    "type": "string"
+                  },
+                  "meta": {
+                    "description": "Free JSON metadata for the rule",
+                    "type": "string"
+                  },
+                  "mode": {
+                    "description": "observe|summarize|report",
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "Runtime model for observer execution; use 'clear' to inherit the observer agent model",
+                    "type": "string"
+                  },
+                  "observerAgentId": {
+                    "description": "Agent id for the observer session",
+                    "type": "string"
+                  },
+                  "permissions": {
+                    "description": "Comma-separated permission grants for observer",
+                    "type": "string"
+                  },
+                  "priority": {
+                    "description": "Lower priority wins",
+                    "type": "string"
+                  },
+                  "profile": {
+                    "description": "Observer profile id for Markdown prompt rendering; use 'clear' to use the default profile",
+                    "type": "string"
+                  },
+                  "provider": {
+                    "description": "Runtime provider id for observer execution; use 'clear' to inherit the observer agent provider",
+                    "type": "string"
+                  },
+                  "role": {
+                    "description": "Observer role. Defaults to rule id.",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "global|agent|session|task|profile|project|tag",
+                    "type": "string"
+                  },
+                  "sourceAgent": {
+                    "description": "Match source agent id",
+                    "type": "string"
+                  },
+                  "sourceProfile": {
+                    "description": "Match source task profile id",
+                    "type": "string"
+                  },
+                  "sourceProject": {
+                    "description": "Match source project id",
+                    "type": "string"
+                  },
+                  "sourceSession": {
+                    "description": "Match source session name/key",
+                    "type": "string"
+                  },
+                  "sourceTask": {
+                    "description": "Match source task id",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Match tag slug for scope=tag",
+                    "type": "string"
+                  },
+                  "tagInherited": {
+                    "description": "Allow inherited tag matching",
+                    "type": "boolean"
+                  },
+                  "tagTarget": {
+                    "description": "agent|session|task|project|contact|profile|any",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "observerAgentId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create or overwrite an observer rule",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/rules/show": {
+      "post": {
+        "operationId": "observers.rules.show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Observer rule id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Show one observer rule",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/rules/validate": {
+      "post": {
+        "operationId": "observers.rules.validate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Validate observer rules",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
+    "/api/v1/observers/show": {
+      "post": {
+        "operationId": "observers.show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "bindingId": {
+                    "description": "Observer binding id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bindingId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Show one observer binding",
+        "tags": [
+          "observers"
+        ]
+      }
+    },
     "/api/v1/permissions/check": {
       "post": {
         "operationId": "permissions.check",
@@ -8663,8 +10416,16 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
                   "object": {
                     "description": "Filter by object (e.g., group:contacts)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching relations to skip (default: 0)",
                     "type": "string"
                   },
                   "relation": {
@@ -9143,8 +10904,20 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching projects to skip (default: 0)",
+                    "type": "string"
+                  },
                   "status": {
                     "description": "Filter by status",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical project tag",
                     "type": "string"
                   }
                 },
@@ -9191,6 +10964,10 @@
                 "properties": {
                   "status": {
                     "description": "Filter by project status",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical project tag",
                     "type": "string"
                   }
                 },
@@ -9390,6 +11167,14 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching resources to skip (default: 0)",
+                    "type": "string"
+                  },
                   "project": {
                     "description": "Project id or slug",
                     "type": "string"
@@ -10239,6 +12024,31 @@
     "/api/v1/prox/calls/profiles/list": {
       "post": {
         "operationId": "prox.calls.profiles.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching call profiles to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical call profile tag",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -10685,8 +12495,20 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching call tools to skip (default: 0)",
+                    "type": "string"
+                  },
                   "profile": {
                     "description": "Filter tools by profile binding",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical call tool tag",
                     "type": "string"
                   }
                 },
@@ -11169,6 +12991,31 @@
     "/api/v1/prox/calls/voice-agents/list": {
       "post": {
         "operationId": "prox.calls.voice-agents.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching voice agents to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical call voice agent tag",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -11482,8 +13329,20 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
                   "name": {
                     "description": "Instance name (omit for all)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching routes to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical route tag",
                     "type": "string"
                   }
                 },
@@ -11788,6 +13647,395 @@
         "summary": "Emit OpenAPI 3.1 spec from the CLI registry",
         "tags": [
           "sdk"
+        ]
+      }
+    },
+    "/api/v1/sdk/swift/check": {
+      "post": {
+        "operationId": "sdk.swift.check",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "out": {
+                    "default": "packages/ravi-os-swift-sdk/Sources/RaviSDK",
+                    "description": "Directory containing the generated Swift files",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "SDK semver baked into RaviVersion.generated.swift",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Compare on-disk Ravi Swift SDK sources to a fresh emit; exit 1 on drift",
+        "tags": [
+          "sdk"
+        ]
+      }
+    },
+    "/api/v1/sdk/swift/generate": {
+      "post": {
+        "operationId": "sdk.swift.generate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "out": {
+                    "default": "packages/ravi-os-swift-sdk/Sources/RaviSDK",
+                    "description": "Target directory for the generated Swift files",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "SDK semver baked into RaviVersion.generated.swift",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Generate the Ravi Swift SDK source files from the live registry",
+        "tags": [
+          "sdk"
+        ]
+      }
+    },
+    "/api/v1/self/chat": {
+      "post": {
+        "operationId": "self.chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "depth": {
+                    "description": "Depth: summary, normal, or full",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show the current chat binding and participants",
+        "tags": [
+          "self"
+        ]
+      }
+    },
+    "/api/v1/self/context": {
+      "post": {
+        "operationId": "self.context",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "depth": {
+                    "description": "Depth: summary, normal, or full",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Maximum recent messages to inspect",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show the full current self-context packet",
+        "tags": [
+          "self"
+        ]
+      }
+    },
+    "/api/v1/self/explain": {
+      "post": {
+        "operationId": "self.explain",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Explain how Ravi resolved the current self-context",
+        "tags": [
+          "self"
+        ]
+      }
+    },
+    "/api/v1/self/knowledge": {
+      "post": {
+        "operationId": "self.knowledge",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show current knowledge integration status for this context",
+        "tags": [
+          "self"
+        ]
+      }
+    },
+    "/api/v1/self/permissions": {
+      "post": {
+        "operationId": "self.permissions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show capabilities inherited by the current context",
+        "tags": [
+          "self"
+        ]
+      }
+    },
+    "/api/v1/self/recent": {
+      "post": {
+        "operationId": "self.recent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Maximum recent messages to inspect",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show bounded recent message metadata for the current chat",
+        "tags": [
+          "self"
+        ]
+      }
+    },
+    "/api/v1/self/route": {
+      "post": {
+        "operationId": "self.route",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show route information that led to the current session",
+        "tags": [
+          "self"
+        ]
+      }
+    },
+    "/api/v1/self/whoami": {
+      "post": {
+        "operationId": "self.whoami",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show the current agent/session identity",
+        "tags": [
+          "self"
         ]
       }
     },
@@ -12233,6 +14481,84 @@
         ]
       }
     },
+    "/api/v1/sessions/goal": {
+      "post": {
+        "operationId": "sessions.goal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "description": "get|set|create|pause|resume|complete|clear|account",
+                    "type": "string"
+                  },
+                  "budget": {
+                    "description": "Positive token budget for set/create",
+                    "type": "string"
+                  },
+                  "nameOrKey": {
+                    "description": "Session name or key",
+                    "type": "string"
+                  },
+                  "objective": {
+                    "description": "Goal objective for set/create",
+                    "type": "string"
+                  },
+                  "project": {
+                    "description": "Optional project id link for set/create",
+                    "type": "string"
+                  },
+                  "seconds": {
+                    "description": "Elapsed seconds delta for account",
+                    "type": "string"
+                  },
+                  "task": {
+                    "description": "Optional task id link for set/create",
+                    "type": "string"
+                  },
+                  "tokens": {
+                    "description": "Token delta for account",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "action",
+                  "nameOrKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Inspect or mutate persisted session goal state",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/info": {
       "post": {
         "operationId": "sessions.info",
@@ -12413,6 +14739,22 @@
                   "ephemeral": {
                     "description": "Show only ephemeral sessions",
                     "type": "boolean"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "live": {
+                    "description": "Include live runtime state snapshot",
+                    "type": "boolean"
+                  },
+                  "offset": {
+                    "description": "Number of matching sessions to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical session tag slug",
+                    "type": "string"
                   }
                 },
                 "type": "object"
@@ -12442,6 +14784,68 @@
         },
         "security": [],
         "summary": "List all sessions",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/prune": {
+      "post": {
+        "operationId": "sessions.prune",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Filter by agent ID",
+                    "type": "string"
+                  },
+                  "ephemeral": {
+                    "description": "Only match ephemeral sessions",
+                    "type": "boolean"
+                  },
+                  "execute": {
+                    "description": "Actually delete matching sessions; default is dry-run",
+                    "type": "boolean"
+                  },
+                  "inactiveFor": {
+                    "description": "Only match sessions inactive for this duration",
+                    "type": "string"
+                  },
+                  "namePrefix": {
+                    "description": "Only match sessions whose name or key starts with prefix",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Prune sessions inactive for a duration (dry-run by default)",
         "tags": [
           "sessions"
         ]
@@ -13508,6 +15912,55 @@
         ]
       }
     },
+    "/api/v1/sessions/visibility": {
+      "post": {
+        "operationId": "sessions.visibility",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "nameOrKey": {
+                    "description": "Session name or key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "nameOrKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show runtime session visibility state",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/settings/delete": {
       "post": {
         "operationId": "settings.delete",
@@ -13638,6 +16091,14 @@
                   "legacy": {
                     "description": "Show legacy account.* settings shadowed by instances",
                     "type": "boolean"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching settings to skip (default: 0)",
+                    "type": "string"
                   }
                 },
                 "type": "object"
@@ -13746,6 +16207,461 @@
         ]
       }
     },
+    "/api/v1/skill-gates/disable": {
+      "post": {
+        "operationId": "skill-gates.disable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Rule id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Disable a skill gate rule",
+        "tags": [
+          "skill-gates"
+        ]
+      }
+    },
+    "/api/v1/skill-gates/enable": {
+      "post": {
+        "operationId": "skill-gates.enable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Rule id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Enable a configured skill gate rule",
+        "tags": [
+          "skill-gates"
+        ]
+      }
+    },
+    "/api/v1/skill-gates/list": {
+      "post": {
+        "operationId": "skill-gates.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching skill gate rules to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical skill gate rule tag",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List skill gate rules",
+        "tags": [
+          "skill-gates"
+        ]
+      }
+    },
+    "/api/v1/skill-gates/reset": {
+      "post": {
+        "operationId": "skill-gates.reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Rule id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete a configured override and restore the default behavior",
+        "tags": [
+          "skill-gates"
+        ]
+      }
+    },
+    "/api/v1/skill-gates/rm": {
+      "post": {
+        "operationId": "skill-gates.rm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Rule id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove a custom gate or disable a default gate",
+        "tags": [
+          "skill-gates"
+        ]
+      }
+    },
+    "/api/v1/skill-gates/set": {
+      "post": {
+        "operationId": "skill-gates.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "command": {
+                    "description": "Exact shell command",
+                    "type": "string"
+                  },
+                  "commandPrefix": {
+                    "description": "Shell command prefix",
+                    "type": "string"
+                  },
+                  "commandRegex": {
+                    "description": "Regex against shell command text",
+                    "type": "string"
+                  },
+                  "groupRegex": {
+                    "description": "Alias for --pattern",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "Rule id. Use a default id to override it, or a new id for a custom rule.",
+                    "type": "string"
+                  },
+                  "pattern": {
+                    "description": "Regex against normalized Ravi group/tool names",
+                    "type": "string"
+                  },
+                  "skill": {
+                    "description": "Skill name loaded by this gate",
+                    "type": "string"
+                  },
+                  "tool": {
+                    "description": "Exact runtime tool name",
+                    "type": "string"
+                  },
+                  "toolPrefix": {
+                    "description": "Runtime tool name prefix",
+                    "type": "string"
+                  },
+                  "toolRegex": {
+                    "description": "Regex against runtime tool names",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "skill"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create or overwrite a skill gate rule",
+        "tags": [
+          "skill-gates"
+        ]
+      }
+    },
+    "/api/v1/skill-gates/show": {
+      "post": {
+        "operationId": "skill-gates.show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Rule id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Show one skill gate rule",
+        "tags": [
+          "skill-gates"
+        ]
+      }
+    },
     "/api/v1/skills/install": {
       "post": {
         "operationId": "skills.install",
@@ -13833,8 +16749,20 @@
                     "description": "List operator-installed skills instead of the Ravi catalog",
                     "type": "boolean"
                   },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching skills to skip (default: 0)",
+                    "type": "string"
+                  },
                   "source": {
                     "description": "List skills available in a GitHub URL, git URL or local path",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical skill tag",
                     "type": "string"
                   }
                 },
@@ -14025,6 +16953,14 @@
                   },
                   "kind": {
                     "description": "Filter by kind: domain|capability|feature",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching specs to skip (default: 0)",
                     "type": "string"
                   }
                 },
@@ -14235,6 +17171,27 @@
     "/api/v1/stickers/list": {
       "post": {
         "operationId": "stickers.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching stickers to skip (default: 0)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -14437,16 +17394,120 @@
                     "description": "Target agent id",
                     "type": "string"
                   },
+                  "artifact": {
+                    "description": "Target artifact id",
+                    "type": "string"
+                  },
+                  "callProfile": {
+                    "description": "Target prox call profile id",
+                    "type": "string"
+                  },
+                  "callRequest": {
+                    "description": "Target prox call request id",
+                    "type": "string"
+                  },
+                  "callTool": {
+                    "description": "Target prox call tool id",
+                    "type": "string"
+                  },
+                  "callVoiceAgent": {
+                    "description": "Target prox call voice agent id",
+                    "type": "string"
+                  },
+                  "chat": {
+                    "description": "Target canonical chat id",
+                    "type": "string"
+                  },
+                  "command": {
+                    "description": "Target Ravi command id",
+                    "type": "string"
+                  },
+                  "contact": {
+                    "description": "Target contact id",
+                    "type": "string"
+                  },
+                  "cronJob": {
+                    "description": "Target cron job id",
+                    "type": "string"
+                  },
+                  "devinSession": {
+                    "description": "Target Devin session id",
+                    "type": "string"
+                  },
+                  "hook": {
+                    "description": "Target hook id",
+                    "type": "string"
+                  },
+                  "insight": {
+                    "description": "Target insight id",
+                    "type": "string"
+                  },
+                  "instance": {
+                    "description": "Target Ravi channel instance name",
+                    "type": "string"
+                  },
                   "meta": {
                     "description": "Free JSON metadata for this binding",
+                    "type": "string"
+                  },
+                  "profile": {
+                    "description": "Target task profile id",
+                    "type": "string"
+                  },
+                  "project": {
+                    "description": "Target project id",
+                    "type": "string"
+                  },
+                  "route": {
+                    "description": "Target route id",
                     "type": "string"
                   },
                   "session": {
                     "description": "Target session name",
                     "type": "string"
                   },
+                  "skill": {
+                    "description": "Target skill name",
+                    "type": "string"
+                  },
+                  "skillGateRule": {
+                    "description": "Target skill gate rule id",
+                    "type": "string"
+                  },
                   "slug": {
                     "description": "Tag slug",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Binding provenance source",
+                    "type": "string"
+                  },
+                  "target": {
+                    "description": "Generic target selector, e.g. task:task-123 or workflow_run:wfr-123",
+                    "type": "string"
+                  },
+                  "task": {
+                    "description": "Target task id",
+                    "type": "string"
+                  },
+                  "taskAutomation": {
+                    "description": "Target task automation id",
+                    "type": "string"
+                  },
+                  "trigger": {
+                    "description": "Target trigger id",
+                    "type": "string"
+                  },
+                  "workflowNode": {
+                    "description": "Target workflow node id",
+                    "type": "string"
+                  },
+                  "workflowRun": {
+                    "description": "Target workflow run id",
+                    "type": "string"
+                  },
+                  "workflowSpec": {
+                    "description": "Target workflow spec id",
                     "type": "string"
                   }
                 },
@@ -14489,7 +17550,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Attach a tag to an agent or session",
+        "summary": "Attach a tag to a Ravi asset",
         "tags": [
           "tags"
         ]
@@ -14523,6 +17584,10 @@
                   },
                   "slug": {
                     "description": "Stable tag slug",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Tag definition provenance source",
                     "type": "string"
                   }
                 },
@@ -14584,12 +17649,116 @@
                     "description": "Target agent id",
                     "type": "string"
                   },
+                  "artifact": {
+                    "description": "Target artifact id",
+                    "type": "string"
+                  },
+                  "callProfile": {
+                    "description": "Target prox call profile id",
+                    "type": "string"
+                  },
+                  "callRequest": {
+                    "description": "Target prox call request id",
+                    "type": "string"
+                  },
+                  "callTool": {
+                    "description": "Target prox call tool id",
+                    "type": "string"
+                  },
+                  "callVoiceAgent": {
+                    "description": "Target prox call voice agent id",
+                    "type": "string"
+                  },
+                  "chat": {
+                    "description": "Target canonical chat id",
+                    "type": "string"
+                  },
+                  "command": {
+                    "description": "Target Ravi command id",
+                    "type": "string"
+                  },
+                  "contact": {
+                    "description": "Target contact id",
+                    "type": "string"
+                  },
+                  "cronJob": {
+                    "description": "Target cron job id",
+                    "type": "string"
+                  },
+                  "devinSession": {
+                    "description": "Target Devin session id",
+                    "type": "string"
+                  },
+                  "hook": {
+                    "description": "Target hook id",
+                    "type": "string"
+                  },
+                  "insight": {
+                    "description": "Target insight id",
+                    "type": "string"
+                  },
+                  "instance": {
+                    "description": "Target Ravi channel instance name",
+                    "type": "string"
+                  },
+                  "profile": {
+                    "description": "Target task profile id",
+                    "type": "string"
+                  },
+                  "project": {
+                    "description": "Target project id",
+                    "type": "string"
+                  },
+                  "route": {
+                    "description": "Target route id",
+                    "type": "string"
+                  },
                   "session": {
                     "description": "Target session name",
                     "type": "string"
                   },
+                  "skill": {
+                    "description": "Target skill name",
+                    "type": "string"
+                  },
+                  "skillGateRule": {
+                    "description": "Target skill gate rule id",
+                    "type": "string"
+                  },
                   "slug": {
                     "description": "Tag slug",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Detach audit/provenance source",
+                    "type": "string"
+                  },
+                  "target": {
+                    "description": "Generic target selector, e.g. task:task-123 or workflow_run:wfr-123",
+                    "type": "string"
+                  },
+                  "task": {
+                    "description": "Target task id",
+                    "type": "string"
+                  },
+                  "taskAutomation": {
+                    "description": "Target task automation id",
+                    "type": "string"
+                  },
+                  "trigger": {
+                    "description": "Target trigger id",
+                    "type": "string"
+                  },
+                  "workflowNode": {
+                    "description": "Target workflow node id",
+                    "type": "string"
+                  },
+                  "workflowRun": {
+                    "description": "Target workflow run id",
+                    "type": "string"
+                  },
+                  "workflowSpec": {
+                    "description": "Target workflow spec id",
                     "type": "string"
                   }
                 },
@@ -14632,7 +17801,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Detach a tag from an agent or session",
+        "summary": "Detach a tag from a Ravi asset",
         "tags": [
           "tags"
         ]
@@ -14641,6 +17810,47 @@
     "/api/v1/tags/list": {
       "post": {
         "operationId": "tags.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "cursor": {
+                    "description": "Opaque cursor returned by the previous page",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "description": "Filter by kind: system|user",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 30, max: 500)",
+                    "type": "string"
+                  },
+                  "order": {
+                    "description": "Sort direction: asc|desc",
+                    "type": "string"
+                  },
+                  "query": {
+                    "description": "Search slug, label, or description",
+                    "type": "string"
+                  },
+                  "sort": {
+                    "description": "Sort field: updated|created",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Filter by provenance source",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -14690,12 +17900,136 @@
                     "description": "Filter by agent id",
                     "type": "string"
                   },
+                  "artifact": {
+                    "description": "Filter by artifact id",
+                    "type": "string"
+                  },
+                  "callProfile": {
+                    "description": "Filter by prox call profile id",
+                    "type": "string"
+                  },
+                  "callRequest": {
+                    "description": "Filter by prox call request id",
+                    "type": "string"
+                  },
+                  "callTool": {
+                    "description": "Filter by prox call tool id",
+                    "type": "string"
+                  },
+                  "callVoiceAgent": {
+                    "description": "Filter by prox call voice agent id",
+                    "type": "string"
+                  },
+                  "chat": {
+                    "description": "Filter by canonical chat id",
+                    "type": "string"
+                  },
+                  "command": {
+                    "description": "Filter by Ravi command id",
+                    "type": "string"
+                  },
+                  "contact": {
+                    "description": "Filter by contact id",
+                    "type": "string"
+                  },
+                  "cronJob": {
+                    "description": "Filter by cron job id",
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "description": "Opaque cursor returned by the previous page",
+                    "type": "string"
+                  },
+                  "devinSession": {
+                    "description": "Filter by Devin session id",
+                    "type": "string"
+                  },
+                  "hook": {
+                    "description": "Filter by hook id",
+                    "type": "string"
+                  },
+                  "insight": {
+                    "description": "Filter by insight id",
+                    "type": "string"
+                  },
+                  "instance": {
+                    "description": "Filter by Ravi channel instance name",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "description": "Filter by tag kind: system|user",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 30, max: 500)",
+                    "type": "string"
+                  },
+                  "order": {
+                    "description": "Sort direction: asc|desc",
+                    "type": "string"
+                  },
+                  "profile": {
+                    "description": "Filter by task profile id",
+                    "type": "string"
+                  },
+                  "project": {
+                    "description": "Filter by project id",
+                    "type": "string"
+                  },
+                  "route": {
+                    "description": "Filter by route id",
+                    "type": "string"
+                  },
                   "session": {
                     "description": "Filter by session name",
                     "type": "string"
                   },
+                  "skill": {
+                    "description": "Filter by skill name",
+                    "type": "string"
+                  },
+                  "skillGateRule": {
+                    "description": "Filter by skill gate rule id",
+                    "type": "string"
+                  },
+                  "sort": {
+                    "description": "Sort field: updated|created",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Filter by binding provenance source",
+                    "type": "string"
+                  },
                   "tag": {
                     "description": "Filter by tag slug",
+                    "type": "string"
+                  },
+                  "target": {
+                    "description": "Generic target selector, e.g. task:task-123 or workflow_run:wfr-123",
+                    "type": "string"
+                  },
+                  "task": {
+                    "description": "Filter by task id",
+                    "type": "string"
+                  },
+                  "taskAutomation": {
+                    "description": "Filter by task automation id",
+                    "type": "string"
+                  },
+                  "trigger": {
+                    "description": "Filter by trigger id",
+                    "type": "string"
+                  },
+                  "workflowNode": {
+                    "description": "Filter by workflow node id",
+                    "type": "string"
+                  },
+                  "workflowRun": {
+                    "description": "Filter by workflow run id",
+                    "type": "string"
+                  },
+                  "workflowSpec": {
+                    "description": "Filter by workflow spec id",
                     "type": "string"
                   }
                 },
@@ -14736,6 +18070,75 @@
           }
         ],
         "summary": "Search bindings by tag or asset",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/api/v1/tags/set": {
+      "post": {
+        "operationId": "tags.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "key": {
+                    "description": "Property: label, description, kind, source, metadata",
+                    "type": "string"
+                  },
+                  "slug": {
+                    "description": "Tag slug",
+                    "type": "string"
+                  },
+                  "value": {
+                    "description": "Property value",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "slug",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set tag definition metadata",
         "tags": [
           "tags"
         ]
@@ -15078,6 +18481,31 @@
     "/api/v1/tasks/automations/list": {
       "post": {
         "operationId": "tasks.automations.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching automations to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical task automation tag",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -15381,6 +18809,13 @@
                     "description": "Working session name to use when auto-dispatching",
                     "type": "string"
                   },
+                  "tag": {
+                    "description": "Attach canonical task tags; repeat or pass comma-separated slugs",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "thinking": {
                     "description": "Runtime thinking: off|normal|verbose",
                     "type": "string"
@@ -15500,6 +18935,14 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching dependency edges to skip (default: 0)",
+                    "type": "string"
+                  },
                   "taskId": {
                     "description": "Task id to inspect",
                     "type": "string"
@@ -15802,17 +19245,33 @@
                     "description": "Include archived and visible tasks",
                     "type": "boolean"
                   },
+                  "allTime": {
+                    "description": "Disable the default 1d updated_at window",
+                    "type": "boolean"
+                  },
                   "archived": {
                     "description": "List only archived tasks",
                     "type": "boolean"
+                  },
+                  "cursor": {
+                    "description": "Opaque cursor returned by the previous page",
+                    "type": "string"
                   },
                   "last": {
                     "description": "Number of newest tasks to show by default (default: 30; use 0 or \"all\" to disable)",
                     "type": "string"
                   },
+                  "limit": {
+                    "description": "Page size (default: 30, max: 500)",
+                    "type": "string"
+                  },
                   "mine": {
                     "description": "Filter by current agent/session context",
                     "type": "boolean"
+                  },
+                  "order": {
+                    "description": "Sort direction: asc|desc",
+                    "type": "string"
                   },
                   "parent": {
                     "description": "Filter direct children of one parent task",
@@ -15834,12 +19293,28 @@
                     "description": "Filter by assigned session",
                     "type": "string"
                   },
+                  "since": {
+                    "description": "Lower updated_at bound: 1d, epoch ms, or ISO datetime",
+                    "type": "string"
+                  },
+                  "sort": {
+                    "description": "Sort field: updated|created",
+                    "type": "string"
+                  },
                   "status": {
                     "description": "Filter by status",
                     "type": "string"
                   },
+                  "tag": {
+                    "description": "Filter by canonical task tag",
+                    "type": "string"
+                  },
                   "text": {
                     "description": "Free-text match across id, title, instructions, summary, blocker, profile, agent and session",
+                    "type": "string"
+                  },
+                  "until": {
+                    "description": "Upper updated_at bound: 1d, epoch ms, or ISO datetime",
                     "type": "string"
                   }
                 },
@@ -15936,6 +19411,27 @@
     "/api/v1/tasks/profiles/list": {
       "post": {
         "operationId": "tasks.profiles.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching profiles to skip (default: 0)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -16300,111 +19796,30 @@
         ]
       }
     },
-    "/api/v1/tmux/list": {
+    "/api/v1/tools/list": {
       "post": {
-        "operationId": "tmux.list",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success — no `@Returns` schema declared; payload shape is loose."
-          },
-          "400": {
-            "description": "Bad request — body failed schema validation."
-          },
-          "401": {
-            "description": "Unauthorized — bearer token missing or invalid."
-          },
-          "403": {
-            "description": "Forbidden — caller lacks the required scope."
-          },
-          "500": {
-            "description": "Internal error."
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "List Ravi-managed tmux sessions and windows",
-        "tags": [
-          "tmux"
-        ]
-      }
-    },
-    "/api/v1/tmux/open": {
-      "post": {
-        "operationId": "tmux.open",
+        "operationId": "tools.list",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "additionalProperties": false,
                 "properties": {
-                  "agent": {
-                    "description": "Agent ID",
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
                     "type": "string"
                   },
-                  "session": {
-                    "description": "Optional Ravi session name/key",
+                  "offset": {
+                    "description": "Number of matching tools to skip (default: 0)",
                     "type": "string"
                   }
                 },
-                "required": [
-                  "agent"
-                ],
                 "type": "object"
               }
             }
           },
-          "required": true
+          "required": false
         },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success — no `@Returns` schema declared; payload shape is loose."
-          },
-          "400": {
-            "description": "Bad request — body failed schema validation."
-          },
-          "401": {
-            "description": "Unauthorized — bearer token missing or invalid."
-          },
-          "403": {
-            "description": "Forbidden — caller lacks the required scope."
-          },
-          "500": {
-            "description": "Internal error."
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "Ensure a tmux session/window exists for an agent or session",
-        "tags": [
-          "tmux"
-        ]
-      }
-    },
-    "/api/v1/tools/list": {
-      "post": {
-        "operationId": "tools.list",
         "responses": {
           "200": {
             "content": {
@@ -16853,6 +20268,31 @@
     "/api/v1/triggers/list": {
       "post": {
         "operationId": "triggers.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching triggers to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "Filter by canonical trigger tag",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -17910,6 +21350,14 @@
                   "account": {
                     "description": "WhatsApp account ID",
                     "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching groups to skip (default: 0)",
+                    "type": "string"
                   }
                 },
                 "type": "object"
@@ -18400,6 +21848,27 @@
     "/api/v1/workflows/runs/list": {
       "post": {
         "operationId": "workflows.runs.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching workflow runs to skip (default: 0)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -18834,6 +22303,27 @@
     "/api/v1/workflows/specs/list": {
       "post": {
         "operationId": "workflows.specs.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching workflow specs to skip (default: 0)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -18934,6 +22424,10 @@
       "name": "audio"
     },
     {
+      "description": "Manage Ravi prompt commands",
+      "name": "commands"
+    },
+    {
       "description": "Contact management",
       "name": "contacts"
     },
@@ -18952,6 +22446,10 @@
     {
       "description": "Manage ravi via PM2",
       "name": "daemon"
+    },
+    {
+      "description": "Inspect ravi.db state (locks, WAL, holders)",
+      "name": "db"
     },
     {
       "name": "devin"
@@ -18989,6 +22487,14 @@
       "name": "media"
     },
     {
+      "description": "Daily metrics rollup and reporting",
+      "name": "metrics"
+    },
+    {
+      "description": "Inspect Observation Plane bindings",
+      "name": "observers"
+    },
+    {
       "description": "REBAC permission management",
       "name": "permissions"
     },
@@ -19011,6 +22517,10 @@
       "name": "sdk"
     },
     {
+      "description": "Read the current Ravi agent/session/chat context",
+      "name": "self"
+    },
+    {
       "description": "Bot service management",
       "name": "service"
     },
@@ -19021,6 +22531,10 @@
     {
       "description": "Global settings management",
       "name": "settings"
+    },
+    {
+      "description": "Manage runtime skill gate rules",
+      "name": "skill-gates"
     },
     {
       "description": "Skill discovery, install and inspection tools",
@@ -19035,16 +22549,12 @@
       "name": "stickers"
     },
     {
-      "description": "Unified tags for agents and sessions",
+      "description": "Unified tags for Ravi assets",
       "name": "tags"
     },
     {
       "description": "Task runtime for dispatching work to Ravi agents",
       "name": "tasks"
-    },
-    {
-      "description": "Orchestrate Ravi TUI sessions inside tmux",
-      "name": "tmux"
     },
     {
       "description": "CLI tools inspection and export",

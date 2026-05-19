@@ -59,6 +59,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
       ...(runtimeResolution.options.thinking ? { runtimeThinking: runtimeResolution.options.thinking } : {}),
       runtimeModelSource: runtimeResolution.sources.model,
       ...(approvalSource ? { approvalSource } : {}),
+      ...(prompt._thread ? { raviThread: prompt._thread } : {}),
     },
   });
   runtimeContext = refreshRuntimeContextCapabilities(runtimeContext, capabilities);
@@ -206,12 +207,26 @@ function buildRaviRuntimeEnv(options: {
     raviEnv.RAVI_CHANNEL = resolvedSource.channel;
     raviEnv.RAVI_ACCOUNT_ID = resolvedSource.accountId;
     raviEnv.RAVI_CHAT_ID = resolvedSource.chatId;
+    if (resolvedSource.instanceId) raviEnv.RAVI_INSTANCE_ID = resolvedSource.instanceId;
   } else if (prompt.context?.accountId) {
     raviEnv.RAVI_ACCOUNT_ID = prompt.context.accountId;
     if (prompt.context.channelId) raviEnv.RAVI_CHANNEL = prompt.context.channelId;
+    if (prompt.context.instanceId) raviEnv.RAVI_INSTANCE_ID = prompt.context.instanceId;
+    if (prompt.context.chatId) raviEnv.RAVI_CHAT_ID = prompt.context.chatId;
   } else if (agent.mode === "sentinel") {
     const accountId = getAccountForAgent(agent.id);
     if (accountId) raviEnv.RAVI_ACCOUNT_ID = accountId;
+  }
+
+  const actorMetadata = resolvedSource ?? prompt.context;
+  if (actorMetadata) {
+    if (actorMetadata.canonicalChatId) raviEnv.RAVI_CANONICAL_CHAT_ID = actorMetadata.canonicalChatId;
+    if (actorMetadata.actorType) raviEnv.RAVI_ACTOR_TYPE = actorMetadata.actorType;
+    if (actorMetadata.contactId) raviEnv.RAVI_CONTACT_ID = actorMetadata.contactId;
+    if (actorMetadata.actorAgentId) raviEnv.RAVI_ACTOR_AGENT_ID = actorMetadata.actorAgentId;
+    if (actorMetadata.platformIdentityId) raviEnv.RAVI_PLATFORM_IDENTITY_ID = actorMetadata.platformIdentityId;
+    if (actorMetadata.rawSenderId) raviEnv.RAVI_RAW_SENDER_ID = actorMetadata.rawSenderId;
+    if (actorMetadata.normalizedSenderId) raviEnv.RAVI_NORMALIZED_SENDER_ID = actorMetadata.normalizedSenderId;
   }
 
   if (prompt.context) {
@@ -222,6 +237,12 @@ function buildRaviRuntimeEnv(options: {
       if (prompt.context.groupId) raviEnv.RAVI_GROUP_ID = prompt.context.groupId;
       if (prompt.context.groupName) raviEnv.RAVI_GROUP_NAME = prompt.context.groupName;
     }
+  }
+
+  if (prompt._thread) {
+    raviEnv.RAVI_THREAD_ID = prompt._thread.id;
+    raviEnv.RAVI_THREAD_HANDOFF_ID = prompt._thread.handoffId;
+    if (prompt._thread.slug) raviEnv.RAVI_THREAD_SLUG = prompt._thread.slug;
   }
 
   Object.assign(raviEnv, buildTaskRuntimeEnv(sessionName, sessionCwd, prompt.taskBarrierTaskId));

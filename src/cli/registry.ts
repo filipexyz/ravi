@@ -109,7 +109,12 @@ function registerCommand(
   groupName: string,
   scope: ScopeType,
 ): void {
-  const sub = group.command(cmdMeta.name).description(cmdMeta.description);
+  // A command can also be an intermediate group when it has nested subcommands:
+  // e.g. `ravi crm account <id>` and `ravi crm account create ...`.
+  // If the nested group was registered first, Commander already has the node.
+  const sub =
+    group.commands.find((c) => c.name() === cmdMeta.name) ??
+    group.command(cmdMeta.name).description(cmdMeta.description);
 
   // Add aliases if specified
   if (cmdMeta.aliases) {

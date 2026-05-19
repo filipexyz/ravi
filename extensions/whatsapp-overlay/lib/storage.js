@@ -29,11 +29,12 @@ export async function setBindings(list) {
   });
 }
 
-export async function upsertBinding({ title, chatId, session, instance, chatType, chatName }) {
+export async function upsertBinding({ title, chatId, session, agentId, instance, chatType, chatName }) {
   const list = await getBindings();
   const cleanTitle = clean(title);
   const cleanChatId = clean(chatId);
   const cleanSession = clean(session);
+  const cleanAgentId = clean(agentId);
   const cleanInstance = clean(instance);
   if (!cleanSession) throw new Error("session is required for binding");
   if (!cleanTitle && !cleanChatId) throw new Error("title or chatId is required for binding");
@@ -47,6 +48,7 @@ export async function upsertBinding({ title, chatId, session, instance, chatType
     title: cleanTitle,
     chatId: cleanChatId,
     session: cleanSession,
+    agentId: cleanAgentId ?? (idx >= 0 ? clean(list[idx]?.agentId) : null),
     instance: cleanInstance,
     chatType: clean(chatType),
     chatName: clean(chatName),

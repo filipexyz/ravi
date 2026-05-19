@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { configStore } from "../../config-store.js";
 import { dbGetChat, dbGetSessionChatBinding } from "../../router/router-db.js";
@@ -197,21 +198,40 @@ export class StickerCommands {
   }
 
   @Command({ name: "list", description: "List stickers in the typed catalog" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching stickers to skip (default: 0)" }) offset?: string,
+  ) {
     const stickers = listStickers();
+    const page = paginateCliItems(stickers, { limit, offset });
+    const pageStickers = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "stickers", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageStickers.length,
+      total: page.total,
+    });
     const payload = {
-      total: stickers.length,
-      stickers: stickers.map(serializeSticker),
+      total: page.total,
+      pagination,
+      items: pageStickers.map(serializeSticker),
+      stickers: pageStickers.map(serializeSticker),
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (stickers.length === 0) {
+    } else if (pageStickers.length === 0) {
       console.log("No stickers configured.");
     } else {
-      for (const sticker of stickers) {
+      for (const sticker of pageStickers) {
         const state = sticker.enabled ? "enabled" : "disabled";
         console.log(`${sticker.id} — ${sticker.label} (${state})`);
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
 

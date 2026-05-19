@@ -25,9 +25,12 @@ import { configStore } from "../config-store.js";
 import {
   getContact,
   getContactName,
+  ensureContactFromInbound,
   isContactAllowedForAgent,
+  recordInbound,
   resolvePlatformIdentity,
   saveAccountPending,
+  type PlatformIdentity,
   upsertAgentPlatformIdentity,
 } from "../contacts.js";
 import {
@@ -35,6 +38,7 @@ import {
   dbGetMessageMeta,
   dbSaveMessageMeta,
   dbUpsertChat,
+  dbUpsertChatMessage,
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
 } from "../router/router-db.js";
@@ -63,6 +67,7 @@ import type { AgentConfig } from "../router/types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
+import { runTagRulesForContact } from "../tag-rules/index.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
@@ -237,6 +242,50 @@ function parseSubject(subject: string): { channelType: string; instanceId: strin
   const instanceId = parts.slice(3).join(".");
   if (!channelType || !instanceId) return null;
   return { channelType, instanceId };
+}
+
+function uniqueStrings(values: Array<string | undefined | null>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim()))));
+}
+
+function isWhatsAppLidSender(value: string): boolean {
+  return value.trim().toLowerCase().endsWith("@lid");
+}
+
+function resolveSenderPlatformIdentity(input: {
+  channel: string;
+  instanceId: string;
+  normalizedSenderId: string;
+  rawSenderId: string;
+  rawProviderSenderId: string;
+}): PlatformIdentity | null {
+  const rawSenderIsLid = input.channel === "whatsapp" && isWhatsAppLidSender(input.rawProviderSenderId);
+  const senderIds = uniqueStrings([
+    input.normalizedSenderId,
+    input.rawSenderId,
+    rawSenderIsLid ? `lid:${input.rawSenderId}` : undefined,
+  ]);
+  const phoneFallbackIds =
+    input.channel === "whatsapp" && rawSenderIsLid && input.normalizedSenderId === input.rawSenderId
+      ? []
+      : uniqueStrings([input.normalizedSenderId, input.rawSenderId]);
+
+  const channelLookups = [
+    { channel: input.channel, instanceIds: uniqueStrings([input.instanceId, ""]), senderIds },
+    ...(input.channel === "whatsapp" ? [{ channel: "phone", instanceIds: [""], senderIds: phoneFallbackIds }] : []),
+  ];
+
+  for (const lookup of channelLookups) {
+    for (const instanceId of lookup.instanceIds) {
+      if (lookup.senderIds.length === 0) continue;
+      for (const platformUserId of lookup.senderIds) {
+        const identity = resolvePlatformIdentity({ channel: lookup.channel, instanceId, platformUserId });
+        if (identity) return identity;
+      }
+    }
+  }
+
+  return null;
 }
 
 export class OmniConsumer {
@@ -485,21 +534,10 @@ export class OmniConsumer {
     // Skip reaction messages — these are handled by the REACTION stream consumer
     if (payload.content.type === "reaction") return;
 
-    // Skip messages from Baileys history sync.
-    // Omni sets ingestMode='history-sync' for messages replayed during reconnect.
-    // Fallback: also filter by timestamp for older omni versions without the flag.
-    if (event.metadata?.ingestMode === "history-sync") {
-      log.debug("Skipping history sync message (ingestMode flag)", {
-        instanceId,
-        externalId: (event.payload as MessageReceivedPayload)?.externalId,
-      });
-      return;
-    }
     const msgTs = event.timestamp > 1e12 ? event.timestamp : event.timestamp * 1000;
-    if (msgTs < this.startedAt - 5_000) {
-      log.debug("Skipping history sync message (timestamp fallback)", { instanceId, msgTs, startedAt: this.startedAt });
-      return;
-    }
+    // History-sync/old messages must still feed the durable chat/contact ledger.
+    // They are suppressed only before route/runtime dispatch to avoid replaying prompts.
+    const suppressRuntimeReplay = event.metadata?.ingestMode === "history-sync" || msgTs < this.startedAt - 5_000;
 
     // Derive phone and group status from JIDs
     const rawPayload = payload.rawPayload as Record<string, unknown> | undefined;
@@ -605,23 +643,70 @@ export class OmniConsumer {
       seenAt: msgTs,
     });
     const normalizedSenderId = resolvedSenderPhone || senderPhone;
-    const senderPlatformIdentity =
-      resolvePlatformIdentity({
-        channel: sessionChannel,
-        instanceId,
-        platformUserId: normalizedSenderId,
-      }) ??
-      (normalizedSenderId !== senderPhone
-        ? resolvePlatformIdentity({
-            channel: sessionChannel,
-            instanceId,
-            platformUserId: senderPhone,
-          })
-        : null);
-    const senderContact =
+    let senderPlatformIdentity = resolveSenderPlatformIdentity({
+      channel: sessionChannel,
+      instanceId,
+      normalizedSenderId,
+      rawSenderId: senderPhone,
+      rawProviderSenderId: payload.from,
+    });
+    let senderContact =
       senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
         ? getContact(senderPlatformIdentity.ownerId)
         : (getContact(resolvedSenderPhone) ?? getContact(senderPhone));
+
+    if (
+      !isGroup &&
+      senderPlatformIdentity?.ownerType !== "agent" &&
+      instanceConfig?.contactIntakeMode &&
+      instanceConfig.contactIntakeMode !== "off"
+    ) {
+      try {
+        const explicitResolvedSender =
+          rawPayloadString(rawPayload, "resolvedSenderPhone") ??
+          cleanString((rawPayload?.key as Record<string, unknown> | undefined)?.participantAlt);
+        const rawSenderIsLid = sessionChannel === "whatsapp" && isWhatsAppLidSender(payload.from);
+        const contactIdentity = rawSenderIsLid && !explicitResolvedSender ? `lid:${senderPhone}` : resolvedSenderPhone;
+        const intake = ensureContactFromInbound({
+          channel: sessionChannel,
+          instanceId,
+          platformSenderId: payload.from || senderPhone,
+          contactIdentity,
+          displayName: rawPayloadString(rawPayload, "pushName") ?? null,
+          avatarUrl: rawPayloadString(rawPayload, "avatarUrl") ?? null,
+          profileData: {
+            source: "omni.message.received",
+            eventId: event.id,
+            accountId: effectiveAccountId,
+            rawSenderId: senderPhone,
+            resolvedSenderPhone,
+          },
+          chatId: canonicalChat.id,
+          chatType: canonicalChat.chatType,
+          sourceEventId: event.id,
+          providerMessageId: payload.externalId,
+          intakeMode: instanceConfig?.contactIntakeMode ?? "off",
+          defaultTags: instanceConfig?.defaultContactTags ?? null,
+          provenance: {
+            subject,
+            omniChannelType: channelType,
+            providerChatId: chatJid,
+            providerSenderId: payload.from,
+          },
+        });
+        if (intake.platformIdentity) senderPlatformIdentity = intake.platformIdentity;
+        if (intake.contact) senderContact = intake.contact;
+      } catch (error) {
+        log.warn("Failed to ensure inbound contact", {
+          instanceId,
+          accountId: effectiveAccountId,
+          chatId: chatJid,
+          senderPhone,
+          error,
+        });
+      }
+    }
+
     const actorType = senderPlatformIdentity?.ownerType === "agent" ? "agent" : senderContact ? "contact" : "unknown";
     const actorAgentId =
       senderPlatformIdentity?.ownerType === "agent" ? (senderPlatformIdentity.ownerId ?? undefined) : undefined;
@@ -659,6 +744,51 @@ export class OmniConsumer {
     const effectivePlatformIdentityId = effectiveActorMetadata.platformIdentityId ?? senderPlatformIdentity?.id;
     const effectiveRawSenderId = effectiveActorMetadata.rawSenderId ?? senderPhone;
     const effectiveNormalizedSenderId = effectiveActorMetadata.normalizedSenderId ?? normalizedSenderId;
+    dbUpsertChatMessage({
+      chatId: canonicalChat.id,
+      channel: sessionChannel,
+      instanceId,
+      providerMessageId: payload.externalId,
+      rawChatId: chatJid,
+      rawSenderId: effectiveRawSenderId,
+      normalizedSenderId: effectiveNormalizedSenderId,
+      actorType: effectiveActorType ?? "unknown",
+      contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+      agentId: effectiveActorAgentId ?? null,
+      platformIdentityId: effectivePlatformIdentityId ?? null,
+      messageType: payload.content?.type ?? null,
+      content: {
+        type: payload.content?.type ?? null,
+        text: editInfo?.newText ?? payload.content?.text ?? null,
+        mediaUrl: payload.content?.mediaUrl ?? null,
+        mimeType: payload.content?.mimeType ?? null,
+        localPath: payload.content?.localPath ?? null,
+        isVoiceNote: payload.content?.isVoiceNote ?? null,
+        replyToId: payload.replyToId ?? null,
+        edit: editInfo
+          ? {
+              editedMessageId: editInfo.editedMessageId,
+              editEventId: editInfo.editEventId,
+              editedAt: editInfo.editedAt ?? null,
+              source: editInfo.source,
+            }
+          : null,
+      },
+      rawProvenance: {
+        source: "omni.message.received",
+        eventId: event.id,
+        subject,
+        ingestMode: event.metadata?.ingestMode ?? null,
+        accountId: effectiveAccountId,
+        instanceId,
+        channelType,
+        chatId: chatJid,
+        from: payload.from,
+        rawPayload: rawPayload ?? null,
+      },
+      providerTimestamp: msgTs,
+      ingestedAt: Date.now(),
+    });
     dbUpsertChatParticipant({
       chatId: canonicalChat.id,
       platformIdentityId: effectivePlatformIdentityId ?? null,
@@ -678,6 +808,39 @@ export class OmniConsumer {
       },
       seenAt: msgTs,
     });
+
+    if (!isGroup && effectiveActorType === "contact" && effectiveContactId) {
+      const contactIdForRules = effectiveContactId;
+      queueMicrotask(() => {
+        try {
+          runTagRulesForContact({
+            contactRef: contactIdForRules,
+            cause: { evaluation: "reactive", triggerType: "message.received" },
+            apply: true,
+          });
+        } catch (error) {
+          log.warn("Failed to run tag rules for inbound contact", {
+            contactId: contactIdForRules,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    }
+
+    if (suppressRuntimeReplay) {
+      log.debug("Historical inbound captured without runtime replay", {
+        instanceId,
+        accountId: effectiveAccountId,
+        channelType,
+        chatId: chatJid,
+        canonicalChatId: canonicalChat.id,
+        externalId: payload.externalId,
+        msgTs,
+        startedAt: this.startedAt,
+        ingestMode: event.metadata?.ingestMode ?? null,
+      });
+      return;
+    }
 
     // Resolve route to get session key
     const resolved = resolveRoute(routerConfig, {
@@ -924,6 +1087,7 @@ export class OmniConsumer {
         return;
       }
     }
+    this.recordInboundContactInteraction(effectiveActorMetadata);
 
     // Resolve sender display name: pushName (from rawPayload) → contacts DB → phone
     const pushName = rawPayloadString(rawPayload, "pushName");
@@ -1449,6 +1613,18 @@ export class OmniConsumer {
         },
       },
     };
+  }
+
+  private recordInboundContactInteraction(actorMetadata: MessageActorMetadata): void {
+    if (actorMetadata.actorType !== "contact" || !actorMetadata.contactId) return;
+    try {
+      recordInbound(actorMetadata.contactId);
+    } catch (error) {
+      log.warn("Failed to record inbound contact interaction", {
+        contactId: actorMetadata.contactId,
+        error,
+      });
+    }
   }
 
   private formatEditedMessageRestartNotice(

@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent } from "../router/router-db.js";
+import { dbCreateAgent, dbUpsertSessionParticipant } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/index.js";
 import { dbCreateTagDefinition, dbUpsertTagBinding } from "../tags/index.js";
 import {
@@ -78,6 +78,49 @@ describe("Observation Plane", () => {
     });
     expect(second.created).toHaveLength(0);
     expect(dbListObserverBindings({ sourceSessionKey: "source-session" })).toHaveLength(1);
+  });
+
+  it("matches contact-tagged observer rules via session participants", () => {
+    const tag = dbCreateTagDefinition({
+      slug: "new-contact",
+      label: "New Contact",
+    });
+    dbUpsertTagBinding({
+      slug: tag.slug,
+      assetType: "contact",
+      assetId: "contact-abc",
+    });
+    const session = getOrCreateSession("contact-session", "worker", "/tmp/worker", { name: "contact-session" });
+    dbUpsertSessionParticipant({
+      sessionKey: session.sessionKey,
+      ownerType: "contact",
+      ownerId: "contact-abc",
+      role: "human",
+    });
+    dbUpsertObserverRule({
+      id: "new-contact-watcher",
+      scope: "tag",
+      tagTargetType: "contact",
+      tagSlug: tag.slug,
+      observerAgentId: "observer",
+      observerRole: "new-contact-watch",
+      observerMode: "summarize",
+    });
+
+    const result = ensureObserverBindingsForSession({
+      sessionName: "contact-session",
+      session,
+    });
+    const explanation = explainObserverRulesForSession("contact-session");
+
+    expect(result.created).toHaveLength(1);
+    expect(explanation.source?.contactIds).toContain("contact-abc");
+    expect(explanation.source?.tags).toContainEqual({
+      targetType: "contact",
+      slug: "new-contact",
+      assetId: "contact-abc",
+      inherited: false,
+    });
   });
 
   it("matches inherited tag-scoped rules against source agent tags", () => {

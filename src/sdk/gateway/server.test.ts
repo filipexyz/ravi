@@ -19,7 +19,15 @@ class ServerDemoCommands {
   }
 }
 
-const registry = buildRegistry([ServerDemoCommands]);
+@Group({ name: "tasks", description: "Server task reads", scope: "open" })
+class ServerTasksCommands {
+  @Command({ name: "list", description: "List tasks" })
+  list() {
+    return { ok: true };
+  }
+}
+
+const registry = buildRegistry([ServerDemoCommands, ServerTasksCommands]);
 
 let handle: GatewayHandle;
 let adminContextId: string;
@@ -128,6 +136,19 @@ describe("gateway server — dispatch over HTTP", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; name: string };
     expect(body).toEqual({ ok: true, name: "luis" });
+  });
+
+  it("does not enforce runtime skill gates for API routes", async () => {
+    const res = await fetch(`${handle.url}/api/v1/tasks/list`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${allowedContext.contextKey}`,
+        "content-type": "application/json",
+      },
+      body: "{}",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
   });
 
   it("POST with empty body returns 400 ValidationError with structured issues", async () => {

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { getProjectSurfaceByWorkflowRunId } from "../projects/service.js";
 import { getSession, getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
-import { dbGetAgent, getDb, getRaviDbPath } from "../router/router-db.js";
+import { dbGetAgent, dbListSessionParticipants, getDb, getRaviDbPath } from "../router/router-db.js";
 import { canonicalTagSlugsForAsset, dbGetTagDefinition } from "../tags/index.js";
 import type { TagAssetType } from "../tags/types.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
@@ -159,6 +159,7 @@ export interface ObservationSourceDescriptor {
   profileId?: string;
   projectId?: string;
   projectSlug?: string;
+  contactIds?: string[];
   tags: ObservationSourceTag[];
 }
 
@@ -870,6 +871,23 @@ function collectTagsForTarget(
   }));
 }
 
+function resolveSessionContactIds(session: SessionEntry): string[] {
+  try {
+    const participants = dbListSessionParticipants(session.sessionKey);
+    const contactIds = participants
+      .filter((participant) => participant.ownerType === "contact" && participant.ownerId)
+      .map((participant) => participant.ownerId!.trim())
+      .filter((value) => value.length > 0);
+    return Array.from(new Set(contactIds));
+  } catch (error) {
+    log.warn("Failed to resolve session contact ids for observation descriptor", {
+      sessionKey: session.sessionKey,
+      error,
+    });
+    return [];
+  }
+}
+
 export function buildObservationSourceDescriptor(input: {
   sessionName: string;
   session: SessionEntry;
@@ -881,6 +899,7 @@ export function buildObservationSourceDescriptor(input: {
   const task = activeTask?.task;
   const workflow = task?.id ? dbGetTaskWorkflowSurface(task.id) : null;
   const project = workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null;
+  const contactIds = resolveSessionContactIds(input.session);
   const tags = uniqueTags([
     ...collectTagsForTarget("session", sourceSessionName),
     ...(sourceSessionName !== input.session.sessionKey
@@ -893,6 +912,7 @@ export function buildObservationSourceDescriptor(input: {
     ...(project?.projectSlug && project.projectSlug !== project.projectId
       ? collectTagsForTarget("project", project.projectSlug, true)
       : []),
+    ...contactIds.flatMap((contactId) => collectTagsForTarget("contact", contactId)),
   ]);
 
   return {
@@ -903,6 +923,7 @@ export function buildObservationSourceDescriptor(input: {
     ...(task?.profileId ? { profileId: task.profileId } : {}),
     ...(project?.projectId ? { projectId: project.projectId } : {}),
     ...(project?.projectSlug ? { projectSlug: project.projectSlug } : {}),
+    ...(contactIds.length > 0 ? { contactIds } : {}),
     tags,
   };
 }

@@ -21,17 +21,32 @@ import * as allCommands from "./commands/index.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
+import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
 import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
+import { spawnDirectTui } from "./tui-launcher.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
+const projectRoot = join(__dirname, "../..");
 
 configureCliLogging();
 
 const program = new Command();
 
-program.name("ravi").description("Ravi Bot CLI - Claude-powered bot management").version(pkg.version);
+function isRootVersionRequest(args: string[]): boolean {
+  return args.length === 1 && (args[0] === "--version" || args[0] === "-V");
+}
+
+if (isRootVersionRequest(process.argv.slice(2))) {
+  console.log(pkg.version);
+  process.exit(0);
+}
+
+program
+  .name("ravi")
+  .description("Ravi Bot CLI - Claude-powered bot management")
+  .addHelpText("after", "\nRoot options:\n  ravi --version    Print Ravi CLI version");
 
 // Register all command groups (auto-discovered from barrel)
 registerCommands(program, Object.values(allCommands) as Array<new () => object>);
@@ -87,6 +102,73 @@ program
     );
   });
 
+program
+  .command("login")
+  .description("Link this local Ravi CLI to a Console-compatible endpoint")
+  .option("--console <url>", "Console base URL", "https://console.ravi.bot")
+  .option("--json", "Print raw JSON result")
+  .option("--no-open", "Do not open a browser")
+  .option("--no-poll", "Do not poll the exchange endpoint when auth is pending")
+  .option("--timeout-seconds <seconds>", "Maximum login polling time", "300")
+  .option("--interval-seconds <seconds>", "Login polling interval")
+  .action(
+    async (options: {
+      console?: string;
+      json?: boolean;
+      open?: boolean;
+      poll?: boolean;
+      timeoutSeconds?: string;
+      intervalSeconds?: string;
+    }) => {
+      await runWithCliAudit(
+        {
+          group: "_root",
+          name: "login",
+          tool: "root_login",
+          input: options,
+          closeLazyConnection: true,
+        },
+        () => runCloudAuthRootCommand(options.json, () => runLogin(options)),
+      );
+    },
+  );
+
+program
+  .command("whoami")
+  .description("Show the linked Ravi Cloud CLI identity")
+  .option("--console <url>", "Console base URL")
+  .option("--json", "Print raw JSON result")
+  .action(async (options: { console?: string; json?: boolean }) => {
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "whoami",
+        tool: "root_whoami",
+        input: options,
+        closeLazyConnection: true,
+      },
+      () => runCloudAuthRootCommand(options.json, () => runWhoami(options)),
+    );
+  });
+
+program
+  .command("logout")
+  .description("Remove local Ravi Cloud CLI credentials and revoke them in Console when possible")
+  .option("--console <url>", "Console base URL")
+  .option("--json", "Print raw JSON result")
+  .action(async (options: { console?: string; json?: boolean }) => {
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "logout",
+        tool: "root_logout",
+        input: options,
+        closeLazyConnection: true,
+      },
+      () => runCloudAuthRootCommand(options.json, () => runLogout(options)),
+    );
+  });
+
 // TUI - full-screen terminal interface
 program
   .command("tui")
@@ -102,7 +184,7 @@ program
         closeLazyConnection: true,
       },
       async () => {
-        await spawnDirectTui(session);
+        await spawnDirectTui(session, projectRoot);
       },
     );
   });
@@ -143,27 +225,3 @@ program
 
 // Parse and execute
 program.parse();
-
-async function spawnDirectTui(session: string): Promise<void> {
-  const { spawn } = await import("node:child_process");
-  const { existsSync } = await import("node:fs");
-  const projectRoot = join(__dirname, "../..");
-  const tuiPath = existsSync(join(projectRoot, "src/tui/index.tsx"))
-    ? join(projectRoot, "src/tui/index.tsx")
-    : join(projectRoot, "dist/tui/index.tsx");
-
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn("bun", [tuiPath, session], {
-      stdio: "inherit",
-      env: process.env,
-    });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if ((code ?? 0) !== 0) {
-        reject(new Error(`TUI exited with code ${code ?? 0}`));
-        return;
-      }
-      resolve();
-    });
-  });
-}

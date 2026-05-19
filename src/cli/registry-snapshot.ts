@@ -109,7 +109,7 @@ export interface CommandRegistryEntry {
    * handlers that have no remote-call semantics. See `@CliOnly()`.
    */
   cliOnly?: boolean;
-  /** Skill gate declaration enforced for runtime/gateway tool calls. */
+  /** Skill gate declaration enforced by runtime tools and interactive CLI hooks. */
   skillGate?: SkillGateMetadata;
 }
 

@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
 import { discoverPlugins } from "../../plugins/index.js";
 import {
@@ -59,6 +60,8 @@ export class SkillsCommands {
     @Option({ flags: "--codex", description: "Include materialized Codex skills" }) includeCodex?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical skill tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching skills to skip (default: 0)" }) offset?: string,
   ) {
     const discovered = source
       ? withResolvedSkillSource(source, (resolved) => discoverSkills(resolved))
@@ -67,25 +70,48 @@ export class SkillsCommands {
         : listCatalogSkills();
     const tagFilter = tagSlug?.trim() || null;
     const skills = filterItemsByCanonicalTag(discovered, "skill", tagFilter ?? undefined, (skill) => skill.name);
+    const page = paginateCliItems(skills, { limit, offset });
+    const pageSkills = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "skills", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageSkills.length,
+      total: page.total,
+      options: [
+        "--source",
+        source,
+        installed ? "--installed" : null,
+        includeCodex ? "--codex" : null,
+        "--tag",
+        tagFilter,
+      ],
+    });
 
     const sourceLabel = source ?? (installed === true || includeCodex === true ? "installed" : "catalog");
 
     const payload = {
-      total: skills.length,
+      total: page.total,
+      pagination,
       source: sourceLabel,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      skills: skills.map((skill) => serializeSkill(skill)),
+      items: pageSkills.map((skill) => serializeSkill(skill)),
+      skills: pageSkills.map((skill) => serializeSkill(skill)),
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (skills.length === 0) {
+    } else if (pageSkills.length === 0) {
       console.log(source ? "No skills found in source." : "No skills found.");
     } else {
-      for (const skill of skills) {
+      for (const skill of pageSkills) {
         const description = skill.description ? ` — ${skill.description.split("\n")[0]}` : "";
         console.log(`${skill.name}${description}`);
         console.log(`  ${skill.source} ${skill.path}`);
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
 

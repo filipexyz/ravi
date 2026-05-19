@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems, parseCliListOffset } from "../pagination.js";
 import {
   dbAddInsightComment,
   dbCreateInsight,
@@ -228,11 +229,13 @@ export class InsightCommands {
         "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters are ignored.",
     })
     rich?: boolean,
+    @Option({ flags: "--offset <n>", description: "Number of matching insights to skip (default: 0)" }) offset?: string,
   ) {
     const parsedLimit = Number.parseInt(limit ?? "20", 10);
     if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
       fail(`Invalid --limit: ${limit}`);
     }
+    const pageOffset = parseCliListOffset(offset);
 
     if (rich) {
       const payload = buildOverlayInsightsPayload({ limit: parsedLimit });
@@ -249,27 +252,64 @@ export class InsightCommands {
       ...(query?.trim() ? { text: query.trim() } : {}),
       ...(linkFilter.linkType && linkFilter.linkId ? linkFilter : {}),
       ...(insightIds ? { insightIds } : {}),
-      limit: parsedLimit,
+      limit: Math.min(parsedLimit + pageOffset, 200),
     };
-    const items = dbListInsights(queryInput);
+    const fetchedItems = dbListInsights(queryInput);
+    const page = paginateCliItems(fetchedItems, { limit: parsedLimit, offset: pageOffset }, { defaultLimit: 20 });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "insights", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: [
+        "--kind",
+        kind,
+        "--confidence",
+        confidence,
+        "--importance",
+        importance,
+        "--task",
+        taskId,
+        "--session",
+        sessionName,
+        "--agent",
+        agentId,
+        "--profile",
+        profileId,
+        "--tag",
+        tag?.trim() || null,
+        "--query",
+        query?.trim() || null,
+      ],
+    });
     const payload = {
-      count: items.length,
+      count: page.items.length,
+      total: page.total,
+      pagination,
       query: { ...queryInput, tag: tag?.trim() || undefined },
-      insights: items,
+      items: page.items,
+      insights: page.items,
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (items.length === 0) {
+    } else if (page.items.length === 0) {
       console.log("No insights found.");
     } else {
-      console.log(`\nInsights (${items.length})\n`);
+      console.log(
+        `\nInsights (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset})\n`,
+      );
       console.log("  ID              KIND         CONF.   IMP.    UPDATED      SUMMARY");
       console.log("  --------------  -----------  ------  ------  ----------  --------------------------------");
-      for (const item of items) {
+      for (const item of page.items) {
         console.log(
           `  ${item.id.padEnd(14)}  ${item.kind.padEnd(11)}  ${item.confidence.padEnd(6)}  ${item.importance.padEnd(6)}  ${formatTimestamp(item.updatedAt).padEnd(10)}  ${item.summary.slice(0, 32)}`,
         );
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
     return payload;

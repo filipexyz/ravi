@@ -1,4 +1,6 @@
 import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js";
+import { configStore } from "../config-store.js";
+import { getAgentPlatformIdentity } from "../contacts.js";
 import { getSessionByName } from "../router/index.js";
 import { dbFindChat, dbGetMessageMeta, dbGetSessionChatBinding, type ChatType } from "../router/router-db.js";
 import { recordSessionEvent } from "./session-trace-db.js";
@@ -173,20 +175,68 @@ function mergeSourceMetadata(
   };
 }
 
+function uniqueStrings(values: Array<string | undefined | null>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim()))));
+}
+
+function resolveInstanceIdForAccount(accountId: string | null): string | undefined {
+  if (!accountId) return undefined;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(accountId)) return accountId;
+  const cfg = configStore.getConfig();
+  for (const [instanceId, accountName] of Object.entries(cfg.instanceToAccount)) {
+    if (accountName === accountId) return instanceId;
+  }
+  return undefined;
+}
+
+function resolveOutboundAgentPlatformIdentity(
+  agentId: string | null | undefined,
+  source: NormalizedSessionTraceSource,
+) {
+  if (!agentId) return null;
+
+  const resolvedInstanceId = resolveInstanceIdForAccount(source.accountId);
+  const instanceCandidates = uniqueStrings([source.instanceId, resolvedInstanceId, source.accountId]);
+  const candidates: Array<string | undefined> = [...instanceCandidates, undefined];
+
+  for (const instanceId of candidates) {
+    const identity = getAgentPlatformIdentity({
+      agentId,
+      channel: source.channel,
+      instanceId,
+    });
+    if (identity) return identity;
+  }
+
+  return null;
+}
+
 function withOutboundAgentActor(
   source: NormalizedSessionTraceSource,
   agentId: string | null | undefined,
 ): NormalizedSessionTraceSource {
+  const agentIdentity = resolveOutboundAgentPlatformIdentity(agentId, source);
   return {
     ...source,
     actorType: agentId ? "agent" : source.actorType,
     contactId: null,
     actorAgentId: agentId ?? source.actorAgentId,
-    platformIdentityId: null,
-    rawSenderId: null,
-    normalizedSenderId: null,
-    identityConfidence: null,
-    identityProvenance: agentId ? { source: "ravi.outbound", agentId } : source.identityProvenance,
+    platformIdentityId: agentIdentity?.id ?? null,
+    rawSenderId: agentIdentity?.platformUserId ?? null,
+    normalizedSenderId: agentIdentity?.normalizedPlatformUserId ?? null,
+    identityConfidence: agentIdentity?.confidence ?? null,
+    identityProvenance: agentId
+      ? {
+          source: "ravi.outbound",
+          agentId,
+          ...(agentIdentity
+            ? {
+                platformIdentityId: agentIdentity.id,
+                instanceId: agentIdentity.instanceId,
+              }
+            : {}),
+        }
+      : source.identityProvenance,
   };
 }
 
@@ -360,6 +410,7 @@ export function recordPromptPublishedTrace(input: RecordPromptPublishedTraceInpu
       taskBarrierTaskId: payload.taskBarrierTaskId,
       source: payload.source,
       context: payload.context,
+      thread: payload._thread,
       promptChars: prompt?.length ?? 0,
     },
     preview: previewText(prompt),

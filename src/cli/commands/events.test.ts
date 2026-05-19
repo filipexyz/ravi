@@ -26,7 +26,8 @@ mock.module("../../nats.js", () => ({
   },
 }));
 
-const { formatData, formatLiveEventJsonRecord, matchesReplayFilters, parseReplayTime } = await import("./events.js");
+const { formatData, formatLiveEventJsonRecord, isLowSignalRuntimeEvent, matchesReplayFilters, parseReplayTime } =
+  await import("./events.js");
 
 describe("formatData", () => {
   it("includes runtime failure details", () => {
@@ -166,5 +167,14 @@ describe("event stream JSONL records", () => {
       timestamp: "2026-04-19T12:00:00.000Z",
       data: { type: "turn.done", sessionName: "main" },
     });
+  });
+});
+
+describe("event stream low-signal filters", () => {
+  it("classifies noisy provider runtime events without hiding high-signal runtime events", () => {
+    expect(isLowSignalRuntimeEvent("ravi.session.dev.runtime", { type: "provider.raw" })).toBe(true);
+    expect(isLowSignalRuntimeEvent("ravi.session.dev.runtime", { type: "status", status: "thinking" })).toBe(true);
+    expect(isLowSignalRuntimeEvent("ravi.session.dev.runtime", { type: "turn.complete" })).toBe(false);
+    expect(isLowSignalRuntimeEvent("ravi.session.dev.tool", { type: "status" })).toBe(false);
   });
 });

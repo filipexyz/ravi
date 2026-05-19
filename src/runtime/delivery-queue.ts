@@ -3,12 +3,12 @@ import type { RuntimeTraceTurnStartResult } from "../session-trace/runtime-trace
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
-import type { RaviCommandPromptMetadata } from "./message-types.js";
+import type { RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimePromptMessage } from "./types.js";
 
 const log = logger.child("runtime:delivery-queue");
 
-export interface RuntimePromptDeliveryMessage {
+export interface RuntimePromptDeliveryMessage extends Partial<Omit<RuntimeLaunchPrompt, "prompt">> {
   prompt: string;
   deliveryBarrier?: DeliveryBarrier;
   taskBarrierTaskId?: string;
@@ -28,8 +28,19 @@ export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMess
     deliveryBarrier: getRuntimePromptDeliveryBarrier(prompt),
     taskBarrierTaskId: prompt.taskBarrierTaskId,
     commands: prompt.commands,
+    launchPrompt: cloneRuntimeLaunchPrompt(prompt),
     pendingId: Math.random().toString(36).slice(2, 10),
     queuedAt: Date.now(),
+  };
+}
+
+function cloneRuntimeLaunchPrompt(prompt: RuntimePromptDeliveryMessage): RuntimeLaunchPrompt {
+  return {
+    ...prompt,
+    source: prompt.source ? { ...prompt.source } : undefined,
+    context: prompt.context ? { ...prompt.context } : undefined,
+    _approvalSource: prompt._approvalSource ? { ...prompt._approvalSource } : undefined,
+    commands: prompt.commands ? prompt.commands.map((command) => ({ ...command })) : undefined,
   };
 }
 
@@ -102,11 +113,14 @@ export function shouldInterruptRuntimeForIncoming(
   if (session.starting) {
     return { interrupt: false, reason: "starting" };
   }
-  if (barrier === "after_task" && dbHasActiveTaskForSession(sessionName, taskBarrierTaskId)) {
-    return { interrupt: false, reason: "active_task" };
-  }
   if (session.compacting) {
     return { interrupt: false, reason: "compacting" };
+  }
+  if (!session.turnActive) {
+    return { interrupt: false, reason: "idle_gap" };
+  }
+  if (barrier === "after_task" && dbHasActiveTaskForSession(sessionName, taskBarrierTaskId)) {
+    return { interrupt: false, reason: "active_task" };
   }
   if (session.toolRunning) {
     if (barrier !== "immediate_interrupt") {
@@ -201,6 +215,10 @@ export async function* createRuntimeMessageGenerator({
       session.onTurnComplete = resolve;
     });
     session.turnActive = true;
+    if (session.idleGapRecoveryTimer) {
+      clearTimeout(session.idleGapRecoveryTimer);
+      session.idleGapRecoveryTimer = undefined;
+    }
     session.lastActivity = Date.now();
     session.currentTraceTurnTerminalRecorded = false;
 

@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   grantRelation,
   revokeRelation,
@@ -198,6 +199,9 @@ export class PermissionsCommands {
     @Option({ flags: "--relation <r>", description: "Filter by relation" }) relation?: string,
     @Option({ flags: "--source <src>", description: "Filter by source (config|manual)" }) source?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching relations to skip (default: 0)" })
+    offset?: string,
   ) {
     const filter: RelationFilter = {};
 
@@ -215,31 +219,47 @@ export class PermissionsCommands {
     if (source) filter.source = source;
 
     const relations = listRelations(Object.keys(filter).length > 0 ? filter : undefined);
+    const page = paginateCliItems(relations, { limit, offset });
+    const pageRelations = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "permissions", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageRelations.length,
+      total: page.total,
+      options: ["--subject", subject, "--object", object, "--relation", relation, "--source", source],
+    });
 
     if (asJson) {
       const payload = {
-        total: relations.length,
+        total: page.total,
+        pagination,
         filter,
-        relations: relations.map(serializeRelation),
+        items: pageRelations.map(serializeRelation),
+        relations: pageRelations.map(serializeRelation),
       };
       printJson(payload);
       return payload;
     }
 
-    if (relations.length === 0) {
+    if (pageRelations.length === 0) {
       console.log("No relations found.");
       return {
-        total: relations.length,
+        total: page.total,
+        pagination,
         filter,
-        relations: relations.map(serializeRelation),
+        items: pageRelations.map(serializeRelation),
+        relations: pageRelations.map(serializeRelation),
       };
     }
 
-    console.log(`\nRelations (${relations.length}):\n`);
+    console.log(
+      `\nRelations (${pageRelations.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+    );
     console.log("  SUBJECT              RELATION              OBJECT                SOURCE");
     console.log("  -------------------  --------------------  --------------------  ------");
 
-    for (const r of relations) {
+    for (const r of pageRelations) {
       const sub = `${r.subjectType}:${r.subjectId}`.padEnd(19);
       const rel = r.relation.padEnd(20);
       let objStr = `${r.objectType}:${r.objectId}`;
@@ -251,10 +271,16 @@ export class PermissionsCommands {
       const src = r.source;
       console.log(`  ${sub}  ${rel}  ${obj}  ${src}`);
     }
+    if (pagination.nextCommand) {
+      console.log("\nNext page:");
+      console.log(`  ${pagination.nextCommand}`);
+    }
     return {
-      total: relations.length,
+      total: page.total,
+      pagination,
       filter,
-      relations: relations.map(serializeRelation),
+      items: pageRelations.map(serializeRelation),
+      relations: pageRelations.map(serializeRelation),
     };
   }
 

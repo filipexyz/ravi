@@ -36,6 +36,7 @@ import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
   buildRuntimeSessionPoolSnapshot,
+  classifyRuntimeSessionStartLane,
   resolveRuntimeStreamingSession,
   type RuntimeSessionPoolSnapshot,
   type RuntimeStreamingSessionIdentity,
@@ -43,6 +44,7 @@ import {
 
 const log = logger.child("runtime:session-dispatcher");
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
+const IDLE_GAP_RECOVERY_MS = Math.max(1_000, Number(process.env.RAVI_RUNTIME_IDLE_GAP_RECOVERY_MS) || 5_000);
 
 interface DebounceState {
   messages: RuntimeLaunchPrompt[];
@@ -53,6 +55,7 @@ interface DebounceState {
 export interface RuntimeSessionDispatcherOptions {
   instanceId: string;
   maxConcurrentSessions: number;
+  interactiveReservedSessions: number;
   safeEmit: RuntimeSafeEmit;
   getConfigModel(): string;
 }
@@ -73,6 +76,7 @@ export class RuntimeSessionDispatcher {
   readonly pendingStarts: PendingRuntimeSessionStart[] = [];
   readonly startReservations = new Set<string>();
   readonly stashedMessages = new Map<string, RuntimeUserMessage[]>();
+  readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
@@ -81,6 +85,7 @@ export class RuntimeSessionDispatcher {
     return buildRuntimeSessionPoolSnapshot(this.streamingSessions, {
       limit: this.options.maxConcurrentSessions,
       pendingStarts: this.pendingStarts.length,
+      interactiveReserved: this.options.interactiveReservedSessions,
     });
   }
 
@@ -88,10 +93,10 @@ export class RuntimeSessionDispatcher {
     if (sessionName) {
       const streaming = this.streamingSessions.get(sessionName);
       if (streaming && !streaming.done) return true;
+      if (this.pendingStartSessions.has(sessionName)) return true;
       if (this.startingSessions.has(sessionName)) return true;
     }
-    if (this.pendingStarts.length > 0) return false;
-    return this.getRuntimeSessionPoolUsedSlots() < this.options.maxConcurrentSessions;
+    return this.hasRuntimeSessionPoolSlotForStart(sessionName);
   }
 
   shutdownAll(): void {
@@ -119,6 +124,10 @@ export class RuntimeSessionDispatcher {
     if (this.startingSessions.size > 0) {
       log.info("Clearing session cold starts", { count: this.startingSessions.size });
       this.startingSessions.clear();
+    }
+    if (this.pendingStartSessions.size > 0) {
+      log.info("Clearing pending-start session index", { count: this.pendingStartSessions.size });
+      this.pendingStartSessions.clear();
     }
     if (this.startReservations.size > 0) {
       log.info("Clearing session start reservations", { count: this.startReservations.size });
@@ -714,6 +723,10 @@ export class RuntimeSessionDispatcher {
               .catch((error) => {
                 log.warn("Failed to emit dispatch.queued event", { sessionName, error });
               });
+            if (decision.reason === "idle_gap") {
+              wakeRuntimeSessionIfDeliverable(sessionName, this.streamingSessions);
+              this.scheduleIdleGapRecovery(sessionName, existing, sessionEntry?.sessionKey ?? sessionName);
+            }
           } else {
             nats
               .emit(`ravi.session.${sessionName}.runtime`, {
@@ -766,6 +779,65 @@ export class RuntimeSessionDispatcher {
 
     if (existing?.done) {
       this.releaseRuntimeSessionSlot(sessionName);
+    }
+
+    if (!existing && this.pendingStartSessions.has(sessionName)) {
+      log.info("Streaming: queueing while session start waits for runtime pool slot", { sessionName });
+      if (sessionEntry) {
+        updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
+      }
+      saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
+        agentId: sessionEntry?.agentId ?? agent.id,
+        channel: prompt.source?.channel ?? prompt.context?.channelId,
+        accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+        chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+        sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+        commands: prompt.commands,
+      });
+      const queued = stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
+      const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
+      const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
+      recordRuntimeTraceEvent({
+        sessionKey: traceIdentity.sessionKey,
+        sessionName,
+        agentId: traceIdentity.agentId ?? agent.id,
+        provider: requestedProvider,
+        eventType: "dispatch.queued_busy",
+        eventGroup: "dispatch",
+        status: "queued",
+        source: prompt.source,
+        messageId: prompt.context?.messageId,
+        payloadJson: {
+          queueSize: queued.length,
+          reason: "pending_start_backpressure",
+          lane,
+          active: this.streamingSessions.size,
+          reserved: this.getStartReservationCount(),
+          queued: this.pendingStarts.length,
+          max: this.options.maxConcurrentSessions,
+          interactiveReserved: this.options.interactiveReservedSessions,
+          backgroundLimit: this.getBackgroundStartLimit(),
+          deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+        },
+      });
+      this.options
+        .safeEmit(`ravi.session.${sessionName}.runtime`, {
+          type: "dispatch.queued",
+          provider: requestedProvider,
+          reason: "pending_start_backpressure",
+          lane,
+          queueSize: queued.length,
+          active: this.streamingSessions.size,
+          reserved: this.getStartReservationCount(),
+          queued: this.pendingStarts.length,
+          max: this.options.maxConcurrentSessions,
+          timestamp: new Date().toISOString(),
+        })
+        .catch((error) => {
+          log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+        });
+      return;
     }
 
     if (!existing && this.startingSessions.has(sessionName)) {
@@ -866,13 +938,15 @@ export class RuntimeSessionDispatcher {
     prompt: RuntimeLaunchPrompt,
     options: { retainReleasedSlot?: boolean } = {},
   ): Promise<void> {
-    this.startingSessions.add(sessionName);
+    this.pendingStartSessions.add(sessionName);
     let reserved = false;
     try {
       reserved = await this.reserveRuntimeSessionStart(sessionName, prompt, options);
       if (!reserved) {
         return;
       }
+      this.pendingStartSessions.delete(sessionName);
+      this.startingSessions.add(sessionName);
       await startRuntimeSession({
         sessionName,
         prompt,
@@ -882,9 +956,12 @@ export class RuntimeSessionDispatcher {
         stashedMessages: this.stashedMessages,
         safeEmit: this.options.safeEmit,
         drainPendingStarts: () => this.drainPendingStarts(),
+        restartStashedSession: ({ sessionName: stashedSessionName, reason }) =>
+          this.restartStashedSession(stashedSessionName, reason),
       });
     } finally {
       this.startingSessions.delete(sessionName);
+      this.pendingStartSessions.delete(sessionName);
       if (reserved) {
         this.releaseRuntimeSessionStartReservation(sessionName);
       }
@@ -905,8 +982,45 @@ export class RuntimeSessionDispatcher {
     return this.streamingSessions.size + this.getStartReservationCount();
   }
 
-  private hasRuntimeSessionPoolSlot(): boolean {
-    return this.getRuntimeSessionPoolUsedSlots() < this.options.maxConcurrentSessions;
+  private getBackgroundStartLimit(): number {
+    return Math.max(0, this.options.maxConcurrentSessions - this.options.interactiveReservedSessions);
+  }
+
+  private hasRuntimeSessionPoolSlotForStart(sessionName?: string, prompt?: RuntimeLaunchPrompt): boolean {
+    const used = this.getRuntimeSessionPoolUsedSlots();
+    if (used >= this.options.maxConcurrentSessions) {
+      return false;
+    }
+    const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
+    if (lane === "interactive" || this.options.interactiveReservedSessions <= 0) {
+      return true;
+    }
+    return used < this.getBackgroundStartLimit();
+  }
+
+  private getRuntimeSessionPoolNoSlotReason(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+  ): "concurrency_limit" | "interactive_reserved_capacity" | "pending_start_backpressure" {
+    if (
+      classifyRuntimeSessionStartLane(sessionName, prompt) === "background" &&
+      this.getRuntimeSessionPoolUsedSlots() < this.options.maxConcurrentSessions &&
+      this.getRuntimeSessionPoolUsedSlots() >= this.getBackgroundStartLimit()
+    ) {
+      return "interactive_reserved_capacity";
+    }
+    return this.pendingStarts.length > 0 ? "pending_start_backpressure" : "concurrency_limit";
+  }
+
+  private resolvePendingStartTraceIdentity(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+  ): { sessionKey: string; agentId?: string | null } {
+    const entry = getSessionByName(sessionName) ?? getSession(sessionName);
+    return {
+      sessionKey: entry?.sessionKey ?? sessionName,
+      agentId: entry?.agentId ?? prompt._agentId ?? null,
+    };
   }
 
   private async reserveRuntimeSessionStart(
@@ -923,21 +1037,27 @@ export class RuntimeSessionDispatcher {
       return true;
     }
 
-    if (this.pendingStarts.length > 0 || !this.hasRuntimeSessionPoolSlot()) {
+    if (!this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
       const queued = this.pendingStarts.length + 1;
-      const reason = this.pendingStarts.length > 0 ? "pending_start_backpressure" : "concurrency_limit";
+      const reason = this.getRuntimeSessionPoolNoSlotReason(sessionName, prompt);
       const reserved = this.getStartReservationCount();
+      const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
+      const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
       log.warn("Session start queued - runtime session pool busy", {
         sessionName,
         active: this.streamingSessions.size,
         reserved,
         queued,
         max: this.options.maxConcurrentSessions,
+        interactiveReserved: this.options.interactiveReservedSessions,
+        backgroundLimit: this.getBackgroundStartLimit(),
+        lane,
         reason,
       });
       recordRuntimeTraceEvent({
-        sessionKey: sessionName,
+        sessionKey: traceIdentity.sessionKey,
         sessionName,
+        agentId: traceIdentity.agentId,
         eventType: "dispatch.queued_busy",
         eventGroup: "dispatch",
         status: "queued",
@@ -949,6 +1069,9 @@ export class RuntimeSessionDispatcher {
           reserved,
           queued,
           max: this.options.maxConcurrentSessions,
+          interactiveReserved: this.options.interactiveReservedSessions,
+          backgroundLimit: this.getBackgroundStartLimit(),
+          lane,
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
           deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
         },
@@ -961,6 +1084,9 @@ export class RuntimeSessionDispatcher {
           reserved,
           queued,
           max: this.options.maxConcurrentSessions,
+          interactiveReserved: this.options.interactiveReservedSessions,
+          backgroundLimit: this.getBackgroundStartLimit(),
+          lane,
           timestamp: new Date().toISOString(),
         })
         .catch((error) => {
@@ -1013,9 +1139,51 @@ export class RuntimeSessionDispatcher {
     return released;
   }
 
+  private async restartStashedSession(sessionName: string, reason: string): Promise<void> {
+    const stashed = this.stashedMessages.get(sessionName);
+    if (!stashed || stashed.length === 0) {
+      return;
+    }
+
+    const prompt = buildStashedRestartPrompt(stashed);
+    if (!prompt) {
+      return;
+    }
+
+    const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
+    recordRuntimeTraceEvent({
+      sessionKey: traceIdentity.sessionKey,
+      sessionName,
+      agentId: traceIdentity.agentId ?? prompt._agentId,
+      provider: prompt._runtimeProviderId,
+      eventType: "dispatch.restart_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      source: prompt.source,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        reason,
+        stashedQueueSize: stashed.length,
+        resumeStashedMessages: true,
+      },
+    });
+
+    await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
+  }
+
   drainPendingStarts(): void {
-    while (this.pendingStarts.length > 0 && this.hasRuntimeSessionPoolSlot()) {
-      const next = this.pendingStarts.shift()!;
+    while (this.pendingStarts.length > 0) {
+      const nextIndex = this.pendingStarts.findIndex(
+        (candidate) =>
+          !candidate.cancelled && this.hasRuntimeSessionPoolSlotForStart(candidate.sessionName, candidate.prompt),
+      );
+      if (nextIndex < 0) {
+        break;
+      }
+      const next = this.pendingStarts.splice(nextIndex, 1)[0];
+      if (!next) {
+        break;
+      }
       if (next.cancelled) {
         continue;
       }
@@ -1026,9 +1194,89 @@ export class RuntimeSessionDispatcher {
         reserved: this.getStartReservationCount(),
         queued: this.pendingStarts.length,
         max: this.options.maxConcurrentSessions,
+        lane: classifyRuntimeSessionStartLane(next.sessionName, next.prompt),
+        interactiveReserved: this.options.interactiveReservedSessions,
+        backgroundLimit: this.getBackgroundStartLimit(),
       });
       next.resolve();
     }
+  }
+
+  private scheduleIdleGapRecovery(
+    sessionName: string,
+    session: RuntimeHostStreamingSession,
+    sessionKey = sessionName,
+  ): void {
+    if (session.idleGapRecoveryTimer) {
+      return;
+    }
+
+    session.idleGapRecoveryTimer = setTimeout(() => {
+      session.idleGapRecoveryTimer = undefined;
+      void this.recoverIdleGapSession(sessionName, session, sessionKey).catch((error) => {
+        log.warn("Failed to recover idle-gap runtime session", { sessionName, error });
+      });
+    }, IDLE_GAP_RECOVERY_MS);
+    session.idleGapRecoveryTimer.unref?.();
+  }
+
+  private async recoverIdleGapSession(
+    sessionName: string,
+    session: RuntimeHostStreamingSession,
+    sessionKey = sessionName,
+  ): Promise<void> {
+    const current = this.streamingSessions.get(sessionName);
+    if (current !== session) {
+      return;
+    }
+    if (
+      current.done ||
+      current.turnActive ||
+      current.pushMessage ||
+      current.starting ||
+      current.compacting ||
+      current.toolRunning ||
+      !hasDeliverableRuntimeMessages(sessionName, current)
+    ) {
+      return;
+    }
+
+    const restartPrompt = buildStashedRestartPrompt(current.pendingMessages);
+    if (!restartPrompt) {
+      return;
+    }
+
+    log.warn("Recovering idle-gap runtime session", {
+      sessionName,
+      provider: current.queryHandle.provider,
+      queueSize: current.pendingMessages.length,
+      timeoutMs: IDLE_GAP_RECOVERY_MS,
+    });
+
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName,
+      agentId: current.agentId,
+      runId: current.traceRunId,
+      turnId: current.currentTraceTurnId,
+      provider: current.queryHandle.provider,
+      model: current.currentModel,
+      eventType: "dispatch.restart_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      source: current.currentSource,
+      payloadJson: {
+        reason: "idle_gap_stuck",
+        queueSize: current.pendingMessages.length,
+        timeoutMs: IDLE_GAP_RECOVERY_MS,
+      },
+    });
+
+    stashPendingRuntimeMessages(sessionName, current, this.stashedMessages);
+    recordStreamingTurnInterruptedTrace(sessionName, current, "idle_gap_stuck", sessionKey, "aborted");
+    shutdownRuntimeStreamingSession(current, "idle_gap_stuck");
+    this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+    await this.restartStashedSession(sessionName, "idle_gap_stuck");
   }
 
   private async tryNativeRuntimeSteer(
@@ -1117,8 +1365,11 @@ export class RuntimeSessionDispatcher {
 }
 
 export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, barrier: DeliveryBarrier): boolean {
-  const piPreTurnQueue =
-    session.queryHandle.provider === "pi" &&
+  const supportsNativeSteer =
+    session.queryHandle.concurrentInputStrategy === "native_steer" && Boolean(session.queryHandle.control);
+  const nativeSteerPreTurnQueue =
+    supportsNativeSteer &&
+    session.queryHandle.provider !== "codex" &&
     !session.turnActive &&
     !session.pushMessage &&
     session.pendingMessages.length > 0 &&
@@ -1128,8 +1379,8 @@ export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, b
 
   return (
     barrier === "after_tool" &&
-    Boolean(session.queryHandle.control) &&
-    (session.turnActive || piPreTurnQueue) &&
+    supportsNativeSteer &&
+    (session.turnActive || nativeSteerPreTurnQueue) &&
     activeTurnIsFresh &&
     !session.done &&
     !session.starting &&
@@ -1203,6 +1454,46 @@ export function stashPromptForStartingSession(
   queued.push(createQueuedRuntimeUserMessage(prompt));
   stashedMessages.set(sessionName, queued);
   return queued;
+}
+
+function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {
+  if (messages.length === 0) {
+    return null;
+  }
+
+  const launchPrompts = messages
+    .map((message) => message.launchPrompt)
+    .filter((prompt): prompt is RuntimeLaunchPrompt => Boolean(prompt));
+  const newestLaunchPrompt = launchPrompts[launchPrompts.length - 1];
+  const first = messages[0];
+  if (!first) {
+    return null;
+  }
+
+  const deliveryBarrier = messages.reduce<DeliveryBarrier>(
+    (current, message) => chooseMoreUrgentBarrier(current, message.deliveryBarrier ?? "after_tool"),
+    first.deliveryBarrier ?? "after_tool",
+  );
+  const combinedPrompt = messages
+    .map((message) => message.message.content)
+    .join("\n\n")
+    .trim();
+
+  return {
+    ...(newestLaunchPrompt ?? {
+      prompt: combinedPrompt,
+      deliveryBarrier,
+      taskBarrierTaskId: first.taskBarrierTaskId,
+      commands: messages.flatMap((message) => message.commands ?? []),
+    }),
+    prompt: combinedPrompt || newestLaunchPrompt?.prompt || first.message.content,
+    deliveryBarrier,
+    commands:
+      launchPrompts.length > 0
+        ? messages.flatMap((message) => message.commands ?? message.launchPrompt?.commands ?? [])
+        : messages.flatMap((message) => message.commands ?? []),
+    _resumeStashedMessages: true,
+  };
 }
 
 function recordStreamingAbortTrace(

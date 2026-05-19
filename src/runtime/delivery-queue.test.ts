@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "./delivery-queue.js";
+import {
+  createQueuedRuntimeUserMessage,
+  createRuntimeMessageGenerator,
+  shouldInterruptRuntimeForIncoming,
+} from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeSessionHandle } from "./types.js";
 
@@ -61,5 +65,72 @@ describe("runtime delivery queue", () => {
     session.done = true;
     session.onTurnComplete?.();
     await generator.return(undefined);
+  });
+
+  it("keeps the original launch prompt envelope on queued messages", () => {
+    const queuedMessage = createQueuedRuntimeUserMessage({
+      prompt: "continua",
+      deliveryBarrier: "after_response",
+      taskBarrierTaskId: "task-1",
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "group:1",
+        sourceMessageId: "wamid-1",
+      },
+      context: {
+        channelId: "whatsapp",
+        channelName: "WhatsApp",
+        accountId: "main",
+        chatId: "group:1",
+        messageId: "wamid-1",
+        senderId: "user-1",
+        isGroup: true,
+        timestamp: 1,
+      },
+      _agentId: "e2-filipe",
+    });
+
+    expect(queuedMessage.launchPrompt).toMatchObject({
+      prompt: "continua",
+      deliveryBarrier: "after_response",
+      taskBarrierTaskId: "task-1",
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "group:1",
+        sourceMessageId: "wamid-1",
+      },
+      context: {
+        messageId: "wamid-1",
+        senderId: "user-1",
+      },
+      _agentId: "e2-filipe",
+    });
+  });
+
+  it("does not request provider interrupt while the runtime is between turns", () => {
+    const session = makeStreamingSession({
+      turnActive: false,
+      pushMessage: null,
+      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "continua" })],
+    });
+
+    expect(shouldInterruptRuntimeForIncoming("dev", session, "after_tool")).toEqual({
+      interrupt: false,
+      reason: "idle_gap",
+    });
+  });
+
+  it("still requests provider interrupt for active text generation", () => {
+    const session = makeStreamingSession({
+      turnActive: true,
+      pushMessage: null,
+    });
+
+    expect(shouldInterruptRuntimeForIncoming("dev", session, "after_tool")).toEqual({
+      interrupt: true,
+      reason: "response",
+    });
   });
 });

@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
 import { nats } from "../../nats.js";
 import {
@@ -238,6 +239,8 @@ export class AgentsCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical tag slug" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching agents to skip (default: 0)" }) offset?: string,
   ) {
     const ctx = getScopeContext();
     const agents = filterItemsByCanonicalTag(
@@ -247,19 +250,31 @@ export class AgentsCommands {
       (agent) => agent.id,
     );
     const config = loadRouterConfig();
-    const agentRows = agents.map((agent) => buildAgentJson(agent, config.defaultAgent));
+    const page = paginateCliItems(agents, { limit, offset });
+    const pageAgents = page.items;
+    const agentRows = pageAgents.map((agent) => buildAgentJson(agent, config.defaultAgent));
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "agents", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: agentRows.length,
+      total: page.total,
+      options: ["--tag", tagSlug?.trim() || null],
+    });
     const payload = {
-      total: agents.length,
+      total: page.total,
+      pagination,
       defaultAgent: config.defaultAgent,
       filters: {
         tag: tagSlug?.trim() || null,
       },
+      items: agentRows,
       agents: agentRows,
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (agents.length === 0) {
+    } else if (pageAgents.length === 0) {
       console.log("No agents configured.");
       console.log("\nCreate an agent: ravi agents create <id> <cwd>");
     } else {
@@ -275,7 +290,13 @@ export class AgentsCommands {
         console.log(`  ${id}  ${cwd}  ${formatTagSlugs(agent.tags)}`);
       }
 
-      console.log(`\n  Total: ${agents.length} (* = default)`);
+      console.log(
+        `\n  Total: ${page.total} (${agentRows.length} returned, limit ${page.limit}, offset ${page.offset}; * = default)`,
+      );
+      if (pagination.nextCommand) {
+        console.log("\n  Next page:");
+        console.log(`    ${pagination.nextCommand}`);
+      }
     }
     return payload;
   }

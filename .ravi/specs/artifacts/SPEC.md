@@ -34,6 +34,20 @@ file exists, while it is being produced, and after completion or failure.
 
 ## Invariants
 
+- Artifact `kind` is a semantic classification, not the artifact storage
+  primitive. It MUST NOT be required from the human CLI create flow.
+- Generic artifact creation SHOULD work without an explicit `kind`; the system
+  MAY store a conservative fallback kind such as `artifact` for compatibility.
+- Callers MAY provide `kind` explicitly when they need semantic filtering,
+  task-profile matching, or producer-specific classification.
+- Content shape MUST be derived from the content itself. A single local file,
+  local directory/package, URI-only reference, and structured output are content
+  shapes, not mandatory artifact kinds.
+- Local directory/package ingestion MUST copy package files into the artifact
+  blob store and MUST reject symlinks, traversal paths, hidden path segments, and
+  reserved `_ravi` segments.
+- Publishability MUST be determined from version assets and manifests, not from
+  `artifact.kind`.
 - Artifact creation for long-running generation SHOULD happen before provider
   execution starts.
 - Async generation MUST return an `artifact_id` immediately once the handle is
@@ -58,6 +72,22 @@ file exists, while it is being produced, and after completion or failure.
 - Synchronous generation MAY continue to exist, but it SHOULD still use the same
   artifact lifecycle internally.
 
+## Versioning
+
+- Artifacts MAY have immutable versions.
+- A version MUST snapshot the artifact content locators that existed when the
+  version was created, including local file/blob paths, MIME type, size, hash,
+  URI, and structured manifest data when available.
+- File/blob/URI/output updates SHOULD create a new version instead of mutating
+  prior version rows.
+- Metadata-only edits SHOULD NOT create a new version unless the caller
+  explicitly requests a manual snapshot.
+- Restoring an older version MUST NOT delete or overwrite version history; it
+  MUST reapply the selected version to the current artifact and create a new
+  version representing the restore.
+- Version assets MUST use Ravi-relative asset paths and MUST NOT allow absolute
+  paths or `..` traversal segments.
+
 ## Event Types
 
 Recommended event names:
@@ -69,6 +99,8 @@ Recommended event names:
 - `provider_processing`
 - `file_saved`
 - `blob_ingested`
+- `version_created`
+- `version_restored`
 - `completed`
 - `failed`
 - `notified`
@@ -96,7 +128,13 @@ Expected immediate result:
 Artifact inspection SHOULD support:
 
 ```bash
+ravi artifacts create --path ./output
+ravi artifacts create --path ./output --kind report
 ravi artifacts show art_...
+ravi artifacts versions art_...
+ravi artifacts version art_... --version 1
+ravi artifacts snapshot art_... --label "before edit"
+ravi artifacts restore art_... --version 1
 ravi artifacts events art_...
 ravi artifacts watch art_...
 ```
@@ -111,6 +149,8 @@ ravi image generate "..." --sync
 
 - `ravi artifacts show <id> --json` MUST show status, file/blob references, and
   lineage.
+- `ravi artifacts versions <id> --json` SHOULD show immutable version snapshots
+  and their assets.
 - `ravi artifacts events <id> --json` SHOULD show the ordered timeline for the
   artifact.
 - Async image generation SHOULD return before provider completion and still

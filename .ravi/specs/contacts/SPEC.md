@@ -5,6 +5,7 @@ kind: domain
 domain: contacts
 capabilities:
   - identity-graph
+  - timeline
   - policy
   - discovery
   - routing-context
@@ -12,6 +13,7 @@ tags:
   - contacts
   - crm
   - identity
+  - timeline
   - routing
 applies_to:
   - src/contacts.ts
@@ -53,6 +55,8 @@ Contacts participates in Ravi's channel abstraction boundary: Omni supplies raw 
 - `contact`: canonical CRM record for a person or organization.
 - `platform_identity`: channel-specific identifier for a contact or agent.
 - `contact_policy`: operational rules and preferences attached to a contact.
+- `contact_event`: append-only timeline entry for identity, policy, profile, context, or interaction changes about a contact.
+  - contact events are scoped (`global` by default, explicit scope otherwise) to prevent context bleed between chats/sessions/projects.
 - `chat`: channel conversation container such as DM, group, thread, or room.
 - `chat_participant`: relationship between a chat and a platform identity/contact.
 - `session_participant`: relationship between a Ravi runtime session and the actors that have participated in it.
@@ -104,6 +108,7 @@ An internal `identity` service/module MAY exist, but the user-facing command SHO
 - Ravi MUST abstract Omni behind normalized contacts/chats/sessions/actors for product and agent-facing code.
 - Raw Omni/channel ids MUST remain available for provenance, debugging, replay, and transport-level repair.
 - `contacts` owns canonical CRM/person records and policy.
+- `contact_events` owns contact timeline/audit/context history. Current contact fields, tags, metadata, and policies are projections over explicit state and timeline events, not replacements for identity resolution.
 - `agents` owns Ravi agents.
 - `sessions` owns runtime continuity and conversation state. A session MAY store a primary contact for DM convenience, but MUST NOT be the source of identity truth.
 - `session_participants`, message metadata, and session events SHOULD carry actor identity for each participant/message because multiple contacts can interact in the same session.
@@ -117,4 +122,6 @@ An internal `identity` service/module MAY exist, but the user-facing command SHO
 - Treating an agent channel account as a human contact.
 - Merging two people because they share a display name.
 - Encoding approval, routing, and identity in the same table without clear semantics.
+- Treating operational approval status as a general relationship/lifecycle status.
+- Letting agents mutate contact identity/profile from weak context without event provenance or review.
 - Reconstructing identity from sessions instead of durable channel identity records.

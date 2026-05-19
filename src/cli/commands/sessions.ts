@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
@@ -86,6 +87,15 @@ import { buildCliInvocationMetadata, hashForAudit, type CliInvocationMetadata } 
 import { canonicalAssetIdsForTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
+import {
+  buildThreadHandoffPrompt,
+  markThreadHandoffDelivered,
+  markThreadHandoffFailed,
+  parseThreadPointer,
+  prepareThreadHandoff,
+  type PreparedThreadHandoff,
+  type ThreadActor,
+} from "../../threads/index.js";
 import type {
   JsonValue,
   SessionEventRecord,
@@ -328,6 +338,30 @@ function buildDeliveryJson(
       agentId: session.agentId,
     },
   };
+}
+
+function buildSendThreadJson(prepared: PreparedThreadHandoff): Record<string, unknown> {
+  return {
+    id: prepared.thread.id,
+    slug: prepared.thread.slug ?? null,
+    title: prepared.thread.title,
+    status: prepared.thread.status,
+    created: prepared.createdThread,
+    entryId: prepared.entry.id,
+    handoff: {
+      id: prepared.handoff.id,
+      status: prepared.handoff.status,
+      snapshotHash: prepared.handoff.snapshotHash ?? null,
+      snapshotVersion: prepared.handoff.snapshotVersion ?? null,
+      includedEntryIds: prepared.handoff.includedEntryIds,
+      includedLinkIds: prepared.handoff.includedLinkIds,
+      deliveredAt: prepared.handoff.deliveredAt ?? null,
+    },
+  };
+}
+
+function errorToMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function buildRelatedContextJson(context: ContextRecord): Record<string, unknown> {
@@ -1314,6 +1348,8 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--live", description: "Include live runtime state snapshot" }) includeLive?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical session tag slug" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching sessions to skip (default: 0)" }) offset?: string,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -1329,16 +1365,35 @@ export class SessionCommands {
     if (tagSlug?.trim()) {
       sessions = sessions.filter((s) => sessionMatchesTag(s, tagSlug));
     }
+    const page = paginateCliItems(sessions, { limit, offset });
+    const pageSessions = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "sessions", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageSessions.length,
+      total: page.total,
+      options: [
+        "--agent",
+        agentId,
+        ephemeralOnly ? "--ephemeral" : null,
+        includeLive ? "--live" : null,
+        "--tag",
+        tagSlug?.trim() || null,
+      ],
+    });
 
     const payload = {
-      total: sessions.length,
+      total: page.total,
+      pagination,
       filters: {
         agentId: agentId ?? null,
         ephemeralOnly: Boolean(ephemeralOnly),
         live: Boolean(includeLive),
         tag: tagSlug?.trim() || null,
       },
-      sessions: sessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+      items: pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+      sessions: pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
     };
 
     if (asJson) {
@@ -1346,19 +1401,21 @@ export class SessionCommands {
       return payload;
     }
 
-    if (sessions.length === 0) {
+    if (pageSessions.length === 0) {
       console.log(agentId ? `No sessions for agent: ${agentId}` : "No sessions found.");
       return payload;
     }
 
     const label = agentId ? `Sessions for ${agentId}` : ephemeralOnly ? "Ephemeral sessions" : "All sessions";
-    console.log(`\n${label} (${sessions.length}):\n`);
+    console.log(
+      `\n${label} (${pageSessions.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+    );
 
     if (ephemeralOnly) {
       console.log("  NAME                                  AGENT     EXPIRES AT          DISPLAY");
       console.log("  ────────────────────────────────────  ────────  ──────────────────  ──────────────────");
 
-      for (const s of sessions) {
+      for (const s of pageSessions) {
         const name = (s.name ?? s.sessionKey).padEnd(38);
         const agent = (s.agentId ?? "-").padEnd(8);
         const expires = s.expiresAt ? formatDate(s.expiresAt).padEnd(18) : "never".padEnd(18);
@@ -1373,7 +1430,7 @@ export class SessionCommands {
         "  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ───────────────  ──────────────────",
       );
 
-      for (const s of sessions) {
+      for (const s of pageSessions) {
         const ephTag = s.ephemeral ? "⏳" : "  ";
         const name = (s.name ?? s.sessionKey).padEnd(36);
         const agent = (s.agentId ?? "-").padEnd(8);
@@ -1387,6 +1444,10 @@ export class SessionCommands {
       }
     }
 
+    if (pagination.nextCommand) {
+      console.log("\nNext page:");
+      console.log(`  ${pagination.nextCommand}`);
+    }
     console.log();
     return payload;
   }
@@ -2398,6 +2459,14 @@ export class SessionCommands {
     @Option({ flags: "-a, --agent <id>", description: "Agent to use when creating a new session" }) agentId?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--thread <thread>", description: "Attach or auto-create a Ravi thread" })
+    threadRef?: string,
+    @Option({ flags: "--thread-title <title>", description: "Title required when --thread auto-creates" })
+    threadTitle?: string,
+    @Option({ flags: "--thread-summary <summary>", description: "Initial summary when --thread auto-creates" })
+    threadSummary?: string,
+    @Option({ flags: "--thread-scope <type:id>", description: "Scope for thread lookup/create" }) threadScope?: string,
+    @Option({ flags: "--thread-owner <type:id>", description: "Owner for thread auto-create" }) threadOwner?: string,
     @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -2426,24 +2495,76 @@ export class SessionCommands {
       return;
     }
 
+    if ((threadRef || threadTitle || threadSummary || threadScope || threadOwner) && !threadRef) {
+      fail("--thread-title, --thread-summary, --thread-scope and --thread-owner require --thread.");
+      return;
+    }
+
+    if (threadRef && (interactive || !prompt)) {
+      fail("sessions send --thread requires a prompt and cannot be combined with --interactive.");
+      return;
+    }
+
     if (interactive || !prompt) {
       return this.interactiveMode(sessionName, session, channel, to);
     }
 
     const origin = getContext()?.sessionKey ?? "unknown";
-    const fullPrompt = `[System] Inform: [from: ${origin}] ${prompt}`;
     const { source, context } = this.resolveSource(session, channel, to);
     const delivery = buildDeliveryJson(session, deliveryBarrier, source, context);
+    let fullPrompt = `[System] Inform: [from: ${origin}] ${prompt}`;
+    let preparedThread: PreparedThreadHandoff | undefined;
+    let promptPayload: Record<string, unknown> | undefined;
+
+    if (threadRef) {
+      preparedThread = prepareThreadHandoff({
+        threadRef,
+        prompt,
+        targetSession: session,
+        sourceSessionKey: getContext()?.sessionKey,
+        sourceSessionName: getContext()?.sessionName,
+        source,
+        actor: this.buildThreadActorForSend(),
+        create: {
+          title: threadTitle,
+          summary: threadSummary,
+          scope: this.parseThreadPointerOption(threadScope, "--thread-scope"),
+          owner: this.parseThreadPointerOption(threadOwner, "--thread-owner"),
+          metadata: {
+            targetSessionKey: session.sessionKey,
+            targetSessionName: sessionName,
+          },
+        },
+        metadata: {
+          origin,
+          targetSessionKey: session.sessionKey,
+          targetSessionName: sessionName,
+          deliveryBarrier,
+        },
+      });
+      fullPrompt = buildThreadHandoffPrompt(preparedThread, origin, prompt);
+      promptPayload = { _thread: preparedThread.promptMetadata };
+    }
 
     if (wait) {
       if (asJson) {
         let responseText = "";
-        const chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, {
-          silent: true,
-          onResponse: (chunk) => {
-            responseText += chunk;
-          },
-        });
+        let chars = 0;
+        try {
+          chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, {
+            silent: true,
+            promptPayload,
+            onResponse: (chunk) => {
+              responseText += chunk;
+            },
+          });
+          if (preparedThread) {
+            preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
+          }
+        } catch (error) {
+          if (preparedThread) markThreadHandoffFailed(preparedThread.handoff.id, errorToMessage(error));
+          throw error;
+        }
         const payload = {
           action: "send",
           mode: "wait",
@@ -2452,6 +2573,7 @@ export class SessionCommands {
           session: buildSessionJson(session),
           promptLength: prompt.length,
           delivery,
+          thread: preparedThread ? buildSendThreadJson(preparedThread) : null,
           response: {
             length: chars,
             text: responseText,
@@ -2464,11 +2586,30 @@ export class SessionCommands {
       console.log(`\n📤 Sending to ${sessionName}\n`);
       console.log(`Prompt: ${prompt}\n`);
       console.log("─".repeat(50));
-      const chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier);
+      let chars = 0;
+      try {
+        chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, {
+          promptPayload,
+        });
+        if (preparedThread) {
+          preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
+        }
+      } catch (error) {
+        if (preparedThread) markThreadHandoffFailed(preparedThread.handoff.id, errorToMessage(error));
+        throw error;
+      }
       console.log("\n" + "─".repeat(50));
       console.log(`\n✅ Done (${chars} chars)`);
     } else {
-      await this.emitToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier);
+      try {
+        await this.emitToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, promptPayload);
+        if (preparedThread) {
+          preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
+        }
+      } catch (error) {
+        if (preparedThread) markThreadHandoffFailed(preparedThread.handoff.id, errorToMessage(error));
+        throw error;
+      }
       if (asJson) {
         const payload = {
           action: "send",
@@ -2478,6 +2619,7 @@ export class SessionCommands {
           session: buildSessionJson(session),
           promptLength: prompt.length,
           delivery,
+          thread: preparedThread ? buildSendThreadJson(preparedThread) : null,
         };
         printJson(payload);
         return payload;
@@ -3233,6 +3375,27 @@ export class SessionCommands {
     return undefined;
   }
 
+  private buildThreadActorForSend(): ThreadActor {
+    const ctx = getContext();
+    return {
+      type: ctx?.sessionKey ? "session" : ctx?.agentId ? "agent" : "system",
+      id: ctx?.sessionKey ?? ctx?.agentId ?? "unknown",
+      agentId: ctx?.agentId,
+      sessionKey: ctx?.sessionKey,
+      sessionName: ctx?.sessionName,
+      contextId: ctx?.contextId,
+    };
+  }
+
+  private parseThreadPointerOption(value: string | undefined, label: string) {
+    if (!value?.trim()) return undefined;
+    try {
+      return parseThreadPointer(value);
+    } catch (error) {
+      fail(`${label}: ${errorToMessage(error)}`);
+    }
+  }
+
   /**
    * Fire-and-forget emit to a session (for ask/answer/execute/inform).
    */
@@ -3243,16 +3406,21 @@ export class SessionCommands {
     channelOverride?: string,
     toOverride?: string,
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
+    promptPayload?: Record<string, unknown>,
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
     // Resolve caller's source for approval delegation (cascading approvals)
     const _approvalSource = this.resolveCallerApprovalSource();
 
-    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource, deliveryBarrier } as Record<
-      string,
-      unknown
-    >);
+    await publishSessionPrompt(sessionName, {
+      prompt,
+      source,
+      context,
+      _approvalSource,
+      deliveryBarrier,
+      ...(promptPayload ?? {}),
+    } as Record<string, unknown>);
   }
 
   /**
@@ -3265,7 +3433,7 @@ export class SessionCommands {
     channelOverride?: string,
     toOverride?: string,
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
-    options: { silent?: boolean; onResponse?: (chunk: string) => void } = {},
+    options: { silent?: boolean; onResponse?: (chunk: string) => void; promptPayload?: Record<string, unknown> } = {},
   ): Promise<number> {
     let responseLength = 0;
     let settled = false;
@@ -3365,10 +3533,14 @@ export class SessionCommands {
 
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
     const _approvalSource = this.resolveCallerApprovalSource();
-    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource, deliveryBarrier } as Record<
-      string,
-      unknown
-    >);
+    await publishSessionPrompt(sessionName, {
+      prompt,
+      source,
+      context,
+      _approvalSource,
+      deliveryBarrier,
+      ...(options.promptPayload ?? {}),
+    } as Record<string, unknown>);
 
     const completionState = await completion;
     cleanup();

@@ -475,6 +475,7 @@ rl.on("line", (line) => {
     const assistantMessages = findEventsByType(events, "assistant.message").map((event) => event.text);
     const completions = findEventsByType(events, "turn.complete");
 
+    expect(session.concurrentInputStrategy).toBe("native_steer");
     expect(calls).toHaveLength(1);
     expect(calls[0]?.model).toBeUndefined();
     expect(calls[0]?.resume).toBe("thread_prev");
@@ -1021,6 +1022,30 @@ rl.on("line", (line) => {
       method: "item/started",
       params: {
         item: {
+          id: "compact_app",
+          type: "contextCompaction",
+          status: "inProgress",
+          parentItemId: "turn_app",
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "item/completed",
+      params: {
+        item: {
+          id: "compact_app",
+          type: "contextCompaction",
+          status: "completed",
+          parentItemId: "turn_app",
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "item/started",
+      params: {
+        item: {
           id: "cmd_app",
           type: "commandExecution",
           command: "pwd",
@@ -1087,13 +1112,16 @@ rl.on("line", (line) => {
     const threadStarted = findEventsByType(events, "thread.started");
     const turnStarted = findEventsByType(events, "turn.started");
     const itemStarted = findEventsByType(events, "item.started");
+    const commandStarted = itemStarted.find((event) => event.item?.type === "command_execution");
     const toolStarted = findEventsByType(events, "tool.started");
     const assistantMessages = findEventsByType(events, "assistant.message");
     const completions = findEventsByType(events, "turn.complete");
+    const statuses = findEventsByType(events, "status").map((event) => event.status);
 
+    expect(statuses).toContain("compacting");
     expect(threadStarted[0]?.thread).toEqual({ id: "thread_app", title: "App thread" });
     expect(turnStarted[0]?.turn).toEqual({ id: "turn_app", status: "in_progress" });
-    expect(itemStarted[0]?.item).toEqual({
+    expect(commandStarted?.item).toEqual({
       id: "cmd_app",
       type: "command_execution",
       status: "in_progress",

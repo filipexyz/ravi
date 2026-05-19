@@ -1,4 +1,5 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
+import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
 import type { RuntimeProviderId } from "./types.js";
 
@@ -111,6 +112,13 @@ export interface PromptMessage {
   _runtimeModel?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
+  /** Ravi thread metadata. Distinct from provider-native thread/topic IDs. */
+  _thread?: ThreadHandoffPromptMetadata;
+  /**
+   * Internal restart envelope: start a fresh runtime only to drain messages that
+   * were already persisted and stashed by the previous runtime session.
+   */
+  _resumeStashedMessages?: boolean;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

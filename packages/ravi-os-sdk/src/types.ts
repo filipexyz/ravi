@@ -4,6 +4,8 @@
 
 /** Input shape for `adapters.list`. */
 export type AdaptersListInput = {
+  limit?: string;
+  offset?: string;
   session?: string;
   status?: string;
 };
@@ -59,6 +61,8 @@ export type AgentsDeleteReturn = unknown;
 
 /** Input shape for `agents.list`. */
 export type AgentsListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -148,12 +152,15 @@ export type ArtifactsBlobReturn = Response;
 
 /** Input shape for `artifacts.create`. */
 export type ArtifactsCreateInput = {
+  assetBase?: string;
+  basePath?: string;
   command?: string;
   costUsd?: string;
   durationMs?: string;
+  entrypoint?: string;
   input?: string;
   inputTokens?: string;
-  kind: string;
+  kind?: string;
   lineage?: string;
   message?: string;
   metadata?: string;
@@ -205,6 +212,7 @@ export type ArtifactsListInput = {
   kind?: string;
   lifecycle?: string;
   limit?: string;
+  offset?: string;
   rich?: boolean;
   session?: string;
   tag?: string;
@@ -214,6 +222,53 @@ export type ArtifactsListInput = {
 /** Return shape for `artifacts.list`. (no @Returns declared) */
 export type ArtifactsListReturn = unknown;
 
+/** Input shape for `artifacts.publish`. */
+export type ArtifactsPublishInput = {
+  artifactVersion?: string;
+  assetBase?: string;
+  basePath?: string;
+  console?: string;
+  description?: string;
+  entrypoint?: string;
+  idempotencyKey?: string;
+  name?: string;
+  noActivate?: boolean;
+  project?: string;
+  reason?: string;
+  replaceRelease?: boolean;
+  route?: string;
+  site?: string;
+  slug?: string;
+  target: string;
+  uploadSession?: string;
+  visibility?: string;
+};
+
+/** Return shape for `artifacts.publish`. (no @Returns declared) */
+export type ArtifactsPublishReturn = unknown;
+
+/** Input shape for `artifacts.release.activate`. */
+export type ArtifactsReleaseActivateInput = {
+  console?: string;
+  id: string;
+  release?: string;
+  site?: string;
+  version?: string;
+};
+
+/** Return shape for `artifacts.release.activate`. (no @Returns declared) */
+export type ArtifactsReleaseActivateReturn = unknown;
+
+/** Input shape for `artifacts.restore`. */
+export type ArtifactsRestoreInput = {
+  id: string;
+  message?: string;
+  version?: string;
+};
+
+/** Return shape for `artifacts.restore`. (no @Returns declared) */
+export type ArtifactsRestoreReturn = unknown;
+
 /** Input shape for `artifacts.show`. */
 export type ArtifactsShowInput = {
   id: string;
@@ -221,6 +276,20 @@ export type ArtifactsShowInput = {
 
 /** Return shape for `artifacts.show`. (no @Returns declared) */
 export type ArtifactsShowReturn = unknown;
+
+/** Input shape for `artifacts.snapshot`. */
+export type ArtifactsSnapshotInput = {
+  id: string;
+  label?: string;
+  manifest?: string;
+  message?: string;
+  metadata?: string;
+  source?: string;
+  status?: string;
+};
+
+/** Return shape for `artifacts.snapshot`. (no @Returns declared) */
+export type ArtifactsSnapshotReturn = unknown;
 
 /** Input shape for `artifacts.update`. */
 export type ArtifactsUpdateInput = {
@@ -254,6 +323,23 @@ export type ArtifactsUpdateInput = {
 /** Return shape for `artifacts.update`. (no @Returns declared) */
 export type ArtifactsUpdateReturn = unknown;
 
+/** Input shape for `artifacts.version`. */
+export type ArtifactsVersionInput = {
+  id: string;
+  version?: string;
+};
+
+/** Return shape for `artifacts.version`. (no @Returns declared) */
+export type ArtifactsVersionReturn = unknown;
+
+/** Input shape for `artifacts.versions`. */
+export type ArtifactsVersionsInput = {
+  id: string;
+};
+
+/** Return shape for `artifacts.versions`. (no @Returns declared) */
+export type ArtifactsVersionsReturn = unknown;
+
 /** Input shape for `audio.generate`. */
 export type AudioGenerateInput = {
   caption?: string;
@@ -270,9 +356,137 @@ export type AudioGenerateInput = {
 /** Return shape for `audio.generate`. (no @Returns declared) */
 export type AudioGenerateReturn = unknown;
 
+/** Input shape for `chats.list`. */
+export type ChatsListInput = {
+  agent?: string;
+  channel?: string;
+  contact?: string;
+  includeRaw?: boolean;
+  instance?: string;
+  limit?: string;
+  offset?: string;
+  query?: string;
+  type?: string;
+};
+
+/** Return shape for `chats.list`. (no @Returns declared) */
+export type ChatsListReturn = unknown;
+
+/** Input shape for `chats.lists.add`. */
+export type ChatsListsAddInput = {
+  channel?: string;
+  chat: string;
+  includeRaw?: boolean;
+  instance?: string;
+  list: string;
+  owner?: string;
+  priority?: string;
+  reason?: string;
+};
+
+/** Return shape for `chats.lists.add`. (no @Returns declared) */
+export type ChatsListsAddReturn = unknown;
+
+/** Input shape for `chats.lists.create`. */
+export type ChatsListsCreateInput = {
+  description?: string;
+  mode?: string;
+  name: string;
+  owner?: string;
+  visibility?: string;
+};
+
+/** Return shape for `chats.lists.create`. (no @Returns declared) */
+export type ChatsListsCreateReturn = unknown;
+
+/** Input shape for `chats.lists.delta`. */
+export type ChatsListsDeltaInput = {
+  channel?: string;
+  chat: string;
+  includeRaw?: boolean;
+  instance?: string;
+  limit?: string;
+  list: string;
+  markRead?: boolean;
+  owner?: string;
+  reader?: string;
+};
+
+/** Return shape for `chats.lists.delta`. (no @Returns declared) */
+export type ChatsListsDeltaReturn = unknown;
+
+/** Input shape for `chats.lists.list`. */
+export type ChatsListsListInput = {
+  includeArchived?: boolean;
+  limit?: string;
+  offset?: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.list`. (no @Returns declared) */
+export type ChatsListsListReturn = unknown;
+
+/** Input shape for `chats.lists.mark-read`. */
+export type ChatsListsMarkReadInput = {
+  channel?: string;
+  chat: string;
+  includeRaw?: boolean;
+  instance?: string;
+  list: string;
+  message?: string;
+  owner?: string;
+  reader?: string;
+  reason?: string;
+};
+
+/** Return shape for `chats.lists.mark-read`. (no @Returns declared) */
+export type ChatsListsMarkReadReturn = unknown;
+
+/** Input shape for `chats.lists.members`. */
+export type ChatsListsMembersInput = {
+  includeRaw?: boolean;
+  limit?: string;
+  list: string;
+  offset?: string;
+  owner?: string;
+  reader?: string;
+};
+
+/** Return shape for `chats.lists.members`. (no @Returns declared) */
+export type ChatsListsMembersReturn = unknown;
+
+/** Input shape for `chats.lists.remove`. */
+export type ChatsListsRemoveInput = {
+  channel?: string;
+  chat: string;
+  instance?: string;
+  list: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.remove`. (no @Returns declared) */
+export type ChatsListsRemoveReturn = unknown;
+
+/** Input shape for `chats.read`. */
+export type ChatsReadInput = {
+  channel?: string;
+  chat: string;
+  includeRaw?: boolean;
+  instance?: string;
+  limit?: string;
+  offset?: string;
+  order?: string;
+  type?: string;
+};
+
+/** Return shape for `chats.read`. (no @Returns declared) */
+export type ChatsReadReturn = unknown;
+
 /** Input shape for `commands.list`. */
 export type CommandsListInput = {
   agent?: string;
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -306,6 +520,17 @@ export type CommandsValidateInput = {
 /** Return shape for `commands.validate`. (no @Returns declared) */
 export type CommandsValidateReturn = unknown;
 
+/** Input shape for `contacts.activity`. */
+export type ContactsActivityInput = {
+  contact: string;
+  limit?: string;
+  offset?: string;
+  raw?: boolean;
+};
+
+/** Return shape for `contacts.activity`. (no @Returns declared) */
+export type ContactsActivityReturn = unknown;
+
 /** Input shape for `contacts.add`. */
 export type ContactsAddInput = {
   agent?: string;
@@ -334,6 +559,21 @@ export type ContactsApproveInput = {
 
 /** Return shape for `contacts.approve`. (no @Returns declared) */
 export type ContactsApproveReturn = unknown;
+
+/** Input shape for `contacts.backfill`. */
+export type ContactsBackfillInput = {
+  apply?: boolean;
+  channel?: string;
+  createList?: string;
+  dryRun?: boolean;
+  instance?: string;
+  limit?: string;
+  listOwner?: string;
+  mode?: string;
+};
+
+/** Return shape for `contacts.backfill`. (no @Returns declared) */
+export type ContactsBackfillReturn = unknown;
 
 /** Input shape for `contacts.block`. */
 export type ContactsBlockInput = {
@@ -374,44 +614,6 @@ export type ContactsGetInput = {
 /** Return shape for `contacts.get`. (no @Returns declared) */
 export type ContactsGetReturn = unknown;
 
-/** Input shape for `contacts.group-tag`. */
-export type ContactsGroupTagInput = {
-  contact: string;
-  group: string;
-  tag: string;
-};
-
-/** Return shape for `contacts.group-tag`. (no @Returns declared) */
-export type ContactsGroupTagReturn = unknown;
-
-/** Input shape for `contacts.group-untag`. */
-export type ContactsGroupUntagInput = {
-  contact: string;
-  group: string;
-};
-
-/** Return shape for `contacts.group-untag`. (no @Returns declared) */
-export type ContactsGroupUntagReturn = unknown;
-
-/** Input shape for `contacts.identity-add`. */
-export type ContactsIdentityAddInput = {
-  contact: string;
-  platform: string;
-  value: string;
-};
-
-/** Return shape for `contacts.identity-add`. (no @Returns declared) */
-export type ContactsIdentityAddReturn = unknown;
-
-/** Input shape for `contacts.identity-remove`. */
-export type ContactsIdentityRemoveInput = {
-  platform: string;
-  value: string;
-};
-
-/** Return shape for `contacts.identity-remove`. (no @Returns declared) */
-export type ContactsIdentityRemoveReturn = unknown;
-
 /** Input shape for `contacts.info`. */
 export type ContactsInfoInput = {
   contact: string;
@@ -434,6 +636,8 @@ export type ContactsLinkReturn = unknown;
 
 /** Input shape for `contacts.list`. */
 export type ContactsListInput = {
+  limit?: string;
+  offset?: string;
   status?: string;
 };
 
@@ -449,6 +653,61 @@ export type ContactsMergeInput = {
 /** Return shape for `contacts.merge`. (no @Returns declared) */
 export type ContactsMergeReturn = unknown;
 
+/** Input shape for `contacts.messages`. */
+export type ContactsMessagesInput = {
+  contact: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `contacts.messages`. (no @Returns declared) */
+export type ContactsMessagesReturn = unknown;
+
+/** Input shape for `contacts.metadata.list`. */
+export type ContactsMetadataListInput = {
+  contact: string;
+  limit?: string;
+  offset?: string;
+  scope?: string;
+};
+
+/** Return shape for `contacts.metadata.list`. (no @Returns declared) */
+export type ContactsMetadataListReturn = unknown;
+
+/** Input shape for `contacts.metadata.remove`. */
+export type ContactsMetadataRemoveInput = {
+  contact: string;
+  key: string;
+  scope?: string;
+  source?: string;
+};
+
+/** Return shape for `contacts.metadata.remove`. (no @Returns declared) */
+export type ContactsMetadataRemoveReturn = unknown;
+
+/** Input shape for `contacts.metadata.set`. */
+export type ContactsMetadataSetInput = {
+  contact: string;
+  key: string;
+  scope?: string;
+  source?: string;
+  value: string;
+};
+
+/** Return shape for `contacts.metadata.set`. (no @Returns declared) */
+export type ContactsMetadataSetReturn = unknown;
+
+/** Input shape for `contacts.note`. */
+export type ContactsNoteInput = {
+  contact: string;
+  scope?: string;
+  source?: string;
+  text: string;
+};
+
+/** Return shape for `contacts.note`. (no @Returns declared) */
+export type ContactsNoteReturn = unknown;
+
 /** Input shape for `contacts.pending`. */
 export type ContactsPendingInput = {
   account?: string;
@@ -457,6 +716,16 @@ export type ContactsPendingInput = {
 /** Return shape for `contacts.pending`. (no @Returns declared) */
 export type ContactsPendingReturn = unknown;
 
+/** Input shape for `contacts.profile`. */
+export type ContactsProfileInput = {
+  contact: string;
+  includeCrm?: boolean;
+  limit?: string;
+};
+
+/** Return shape for `contacts.profile`. (no @Returns declared) */
+export type ContactsProfileReturn = unknown;
+
 /** Input shape for `contacts.remove`. */
 export type ContactsRemoveInput = {
   contact: string;
@@ -464,6 +733,16 @@ export type ContactsRemoveInput = {
 
 /** Return shape for `contacts.remove`. (no @Returns declared) */
 export type ContactsRemoveReturn = unknown;
+
+/** Input shape for `contacts.sessions`. */
+export type ContactsSessionsInput = {
+  contact: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `contacts.sessions`. (no @Returns declared) */
+export type ContactsSessionsReturn = unknown;
 
 /** Input shape for `contacts.set`. */
 export type ContactsSetInput = {
@@ -483,6 +762,18 @@ export type ContactsTagInput = {
 
 /** Return shape for `contacts.tag`. (no @Returns declared) */
 export type ContactsTagReturn = unknown;
+
+/** Input shape for `contacts.timeline`. */
+export type ContactsTimelineInput = {
+  contact: string;
+  event?: string;
+  limit?: string;
+  offset?: string;
+  scope?: string;
+};
+
+/** Return shape for `contacts.timeline`. (no @Returns declared) */
+export type ContactsTimelineReturn = unknown;
 
 /** Input shape for `contacts.unlink`. */
 export type ContactsUnlinkInput = {
@@ -559,7 +850,10 @@ export type ContextCredentialsAddInput = {
 export type ContextCredentialsAddReturn = unknown;
 
 /** Input shape for `context.credentials.list`. */
-export type ContextCredentialsListInput = Record<string, never>;
+export type ContextCredentialsListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `context.credentials.list`. (no @Returns declared) */
 export type ContextCredentialsListReturn = unknown;
@@ -612,6 +906,8 @@ export type ContextListInput = {
   agent?: string;
   all?: boolean;
   kind?: string;
+  limit?: string;
+  offset?: string;
   session?: string;
 };
 
@@ -683,6 +979,243 @@ export type CostsTopSessionsInput = {
 /** Return shape for `costs.top-sessions`. (no @Returns declared) */
 export type CostsTopSessionsReturn = unknown;
 
+/** Input shape for `crm.account`. */
+export type CrmAccountInput = {
+  account: string;
+};
+
+/** Return shape for `crm.account`. (no @Returns declared) */
+export type CrmAccountReturn = unknown;
+
+/** Input shape for `crm.account.create`. */
+export type CrmAccountCreateInput = {
+  contact?: string;
+  domain?: string;
+  idempotencyKey?: string;
+  name: string;
+  owner?: string;
+};
+
+/** Return shape for `crm.account.create`. (no @Returns declared) */
+export type CrmAccountCreateReturn = unknown;
+
+/** Input shape for `crm.account.link-contact`. */
+export type CrmAccountLinkContactInput = {
+  account: string;
+  contact: string;
+  primary?: boolean;
+  role?: string;
+};
+
+/** Return shape for `crm.account.link-contact`. (no @Returns declared) */
+export type CrmAccountLinkContactReturn = unknown;
+
+/** Input shape for `crm.account.show`. */
+export type CrmAccountShowInput = {
+  account: string;
+};
+
+/** Return shape for `crm.account.show`. (no @Returns declared) */
+export type CrmAccountShowReturn = unknown;
+
+/** Input shape for `crm.board`. */
+export type CrmBoardInput = Record<string, never>;
+
+/** Return shape for `crm.board`. (no @Returns declared) */
+export type CrmBoardReturn = unknown;
+
+/** Input shape for `crm.contact`. */
+export type CrmContactInput = {
+  contact: string;
+};
+
+/** Return shape for `crm.contact`. (no @Returns declared) */
+export type CrmContactReturn = unknown;
+
+/** Input shape for `crm.contact.set`. */
+export type CrmContactSetInput = {
+  contact: string;
+  field: string;
+  source?: string;
+  value: string;
+};
+
+/** Return shape for `crm.contact.set`. (no @Returns declared) */
+export type CrmContactSetReturn = unknown;
+
+/** Input shape for `crm.contact.show`. */
+export type CrmContactShowInput = {
+  contact: string;
+};
+
+/** Return shape for `crm.contact.show`. (no @Returns declared) */
+export type CrmContactShowReturn = unknown;
+
+/** Input shape for `crm.contacts`. */
+export type CrmContactsInput = {
+  limit?: string;
+  offset?: string;
+  owner?: string;
+  status?: string;
+};
+
+/** Return shape for `crm.contacts`. (no @Returns declared) */
+export type CrmContactsReturn = unknown;
+
+/** Input shape for `crm.fact.confirm`. */
+export type CrmFactConfirmInput = {
+  fact: string;
+};
+
+/** Return shape for `crm.fact.confirm`. (no @Returns declared) */
+export type CrmFactConfirmReturn = unknown;
+
+/** Input shape for `crm.fact.list`. */
+export type CrmFactListInput = {
+  account?: string;
+  contact?: string;
+  entity?: string;
+  entityType?: string;
+  key?: string;
+  limit?: string;
+  offset?: string;
+  opportunity?: string;
+  status?: string;
+};
+
+/** Return shape for `crm.fact.list`. (no @Returns declared) */
+export type CrmFactListReturn = unknown;
+
+/** Input shape for `crm.fact.propose`. */
+export type CrmFactProposeInput = {
+  account?: string;
+  confidence?: string;
+  contact?: string;
+  entity: string;
+  entityType: string;
+  idempotencyKey?: string;
+  key: string;
+  opportunity?: string;
+  status?: string;
+  value: string;
+};
+
+/** Return shape for `crm.fact.propose`. (no @Returns declared) */
+export type CrmFactProposeReturn = unknown;
+
+/** Input shape for `crm.fact.reject`. */
+export type CrmFactRejectInput = {
+  fact: string;
+};
+
+/** Return shape for `crm.fact.reject`. (no @Returns declared) */
+export type CrmFactRejectReturn = unknown;
+
+/** Input shape for `crm.next`. */
+export type CrmNextInput = {
+  account?: string;
+  contact?: string;
+  limit?: string;
+  offset?: string;
+  opportunity?: string;
+  owner?: string;
+};
+
+/** Return shape for `crm.next`. (no @Returns declared) */
+export type CrmNextReturn = unknown;
+
+/** Input shape for `crm.opportunity`. */
+export type CrmOpportunityInput = {
+  opportunity: string;
+};
+
+/** Return shape for `crm.opportunity`. (no @Returns declared) */
+export type CrmOpportunityReturn = unknown;
+
+/** Input shape for `crm.opportunity.contacts`. */
+export type CrmOpportunityContactsInput = {
+  opportunity: string;
+};
+
+/** Return shape for `crm.opportunity.contacts`. (no @Returns declared) */
+export type CrmOpportunityContactsReturn = unknown;
+
+/** Input shape for `crm.opportunity.create`. */
+export type CrmOpportunityCreateInput = {
+  account?: string;
+  contact?: string;
+  currency?: string;
+  idempotencyKey?: string;
+  owner?: string;
+  stage?: string;
+  title: string;
+  value?: string;
+};
+
+/** Return shape for `crm.opportunity.create`. (no @Returns declared) */
+export type CrmOpportunityCreateReturn = unknown;
+
+/** Input shape for `crm.opportunity.link-contact`. */
+export type CrmOpportunityLinkContactInput = {
+  account?: string;
+  contact: string;
+  opportunity: string;
+  primary?: boolean;
+  role?: string;
+};
+
+/** Return shape for `crm.opportunity.link-contact`. (no @Returns declared) */
+export type CrmOpportunityLinkContactReturn = unknown;
+
+/** Input shape for `crm.opportunity.move`. */
+export type CrmOpportunityMoveInput = {
+  lostReason?: string;
+  opportunity: string;
+  stage: string;
+};
+
+/** Return shape for `crm.opportunity.move`. (no @Returns declared) */
+export type CrmOpportunityMoveReturn = unknown;
+
+/** Input shape for `crm.opportunity.show`. */
+export type CrmOpportunityShowInput = {
+  opportunity: string;
+};
+
+/** Return shape for `crm.opportunity.show`. (no @Returns declared) */
+export type CrmOpportunityShowReturn = unknown;
+
+/** Input shape for `crm.task.create`. */
+export type CrmTaskCreateInput = {
+  account?: string;
+  contact?: string;
+  due?: string;
+  idempotencyKey?: string;
+  opportunity?: string;
+  owner?: string;
+  priority?: string;
+  title: string;
+};
+
+/** Return shape for `crm.task.create`. (no @Returns declared) */
+export type CrmTaskCreateReturn = unknown;
+
+/** Input shape for `crm.task.done`. */
+export type CrmTaskDoneInput = {
+  task: string;
+};
+
+/** Return shape for `crm.task.done`. (no @Returns declared) */
+export type CrmTaskDoneReturn = unknown;
+
+/** Input shape for `crm.task.show`. */
+export type CrmTaskShowInput = {
+  task: string;
+};
+
+/** Return shape for `crm.task.show`. (no @Returns declared) */
+export type CrmTaskShowReturn = unknown;
+
 /** Input shape for `cron.add`. */
 export type CronAddInput = {
   account?: string;
@@ -719,6 +1252,8 @@ export type CronEnableReturn = unknown;
 
 /** Input shape for `cron.list`. */
 export type CronListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -888,6 +1423,7 @@ export type DevinSessionsInsightsReturn = unknown;
 /** Input shape for `devin.sessions.list`. */
 export type DevinSessionsListInput = {
   limit?: string;
+  offset?: string;
   remote?: boolean;
   status?: string;
   tag?: string;
@@ -1044,6 +1580,8 @@ export type HooksEnableReturn = unknown;
 
 /** Input shape for `hooks.list`. */
 export type HooksListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -1153,6 +1691,7 @@ export type InsightsListInput = {
   importance?: string;
   kind?: string;
   limit?: string;
+  offset?: string;
   profile?: string;
   query?: string;
   rich?: boolean;
@@ -1185,6 +1724,7 @@ export type InsightsShowReturn = unknown;
 export type InstancesCreateInput = {
   agent?: string;
   channel?: string;
+  contactIntakeMode?: string;
   dmPolicy?: string;
   groupPolicy?: string;
   name: string;
@@ -1242,6 +1782,8 @@ export type InstancesGetReturn = unknown;
 
 /** Input shape for `instances.list`. */
 export type InstancesListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -1260,7 +1802,9 @@ export type InstancesPendingApproveReturn = unknown;
 
 /** Input shape for `instances.pending.list`. */
 export type InstancesPendingListInput = {
+  limit?: string;
   name: string;
+  offset?: string;
 };
 
 /** Return shape for `instances.pending.list`. (no @Returns declared) */
@@ -1309,7 +1853,9 @@ export type InstancesRoutesDeletedReturn = unknown;
 
 /** Input shape for `instances.routes.list`. */
 export type InstancesRoutesListInput = {
+  limit?: string;
   name: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -1410,6 +1956,8 @@ export type MediaSendReturn = unknown;
 /** Input shape for `observers.list`. */
 export type ObserversListInput = {
   agent?: string;
+  limit?: string;
+  offset?: string;
   session?: string;
 };
 
@@ -1427,7 +1975,10 @@ export type ObserversProfilesInitInput = {
 export type ObserversProfilesInitReturn = unknown;
 
 /** Input shape for `observers.profiles.list`. */
-export type ObserversProfilesListInput = Record<string, never>;
+export type ObserversProfilesListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `observers.profiles.list`. (no @Returns declared) */
 export type ObserversProfilesListReturn = unknown;
@@ -1490,7 +2041,10 @@ export type ObserversRulesExplainInput = {
 export type ObserversRulesExplainReturn = unknown;
 
 /** Input shape for `observers.rules.list`. */
-export type ObserversRulesListInput = Record<string, never>;
+export type ObserversRulesListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `observers.rules.list`. (no @Returns declared) */
 export type ObserversRulesListReturn = unknown;
@@ -1593,7 +2147,9 @@ export type PermissionsInitReturn = unknown;
 
 /** Input shape for `permissions.list`. */
 export type PermissionsListInput = {
+  limit?: string;
   object?: string;
+  offset?: string;
   relation?: string;
   source?: string;
   subject?: string;
@@ -1677,6 +2233,8 @@ export type ProjectsLinkReturn = unknown;
 
 /** Input shape for `projects.list`. */
 export type ProjectsListInput = {
+  limit?: string;
+  offset?: string;
   status?: string;
   tag?: string;
 };
@@ -1722,6 +2280,8 @@ export type ProjectsResourcesImportReturn = unknown;
 
 /** Input shape for `projects.resources.list`. */
 export type ProjectsResourcesListInput = {
+  limit?: string;
+  offset?: string;
   project: string;
   type?: string;
 };
@@ -1871,6 +2431,8 @@ export type ProxCallsProfilesConfigureReturn = unknown;
 
 /** Input shape for `prox.calls.profiles.list`. */
 export type ProxCallsProfilesListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -1954,6 +2516,8 @@ export type ProxCallsToolsCreateReturn = unknown;
 
 /** Input shape for `prox.calls.tools.list`. */
 export type ProxCallsToolsListInput = {
+  limit?: string;
+  offset?: string;
   profile?: string;
   tag?: string;
 };
@@ -2042,6 +2606,8 @@ export type ProxCallsVoiceAgentsCreateReturn = unknown;
 
 /** Input shape for `prox.calls.voice-agents.list`. */
 export type ProxCallsVoiceAgentsListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -2096,7 +2662,9 @@ export type RoutesExplainReturn = unknown;
 
 /** Input shape for `routes.list`. */
 export type RoutesListInput = {
+  limit?: string;
   name?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -2342,7 +2910,9 @@ export type SessionsKeepReturn = unknown;
 export type SessionsListInput = {
   agent?: string;
   ephemeral?: boolean;
+  limit?: string;
   live?: boolean;
+  offset?: string;
   tag?: string;
 };
 
@@ -2475,6 +3045,11 @@ export type SessionsSendInput = {
   interactive?: boolean;
   nameOrKey: string;
   prompt?: string;
+  thread?: string;
+  threadOwner?: string;
+  threadScope?: string;
+  threadSummary?: string;
+  threadTitle?: string;
   to?: string;
   wait?: boolean;
 };
@@ -2566,6 +3141,8 @@ export type SettingsGetReturn = unknown;
 /** Input shape for `settings.list`. */
 export type SettingsListInput = {
   legacy?: boolean;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `settings.list`. (no @Returns declared) */
@@ -2598,6 +3175,8 @@ export type SkillGatesEnableReturn = unknown;
 
 /** Input shape for `skill-gates.list`. */
 export type SkillGatesListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -2663,6 +3242,8 @@ export type SkillsInstallReturn = unknown;
 export type SkillsListInput = {
   codex?: boolean;
   installed?: boolean;
+  limit?: string;
+  offset?: string;
   source?: string;
   tag?: string;
 };
@@ -2699,6 +3280,8 @@ export type SpecsGetReturn = unknown;
 export type SpecsListInput = {
   domain?: string;
   kind?: string;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `specs.list`. (no @Returns declared) */
@@ -2738,7 +3321,10 @@ export type StickersAddInput = {
 export type StickersAddReturn = unknown;
 
 /** Input shape for `stickers.list`. */
-export type StickersListInput = Record<string, never>;
+export type StickersListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `stickers.list`. (no @Returns declared) */
 export type StickersListReturn = unknown;
@@ -2770,6 +3356,57 @@ export type StickersShowInput = {
 
 /** Return shape for `stickers.show`. (no @Returns declared) */
 export type StickersShowReturn = unknown;
+
+/** Input shape for `tag-rules.evaluate`. */
+export type TagRulesEvaluateInput = {
+  apply?: boolean;
+  file?: string;
+  ruleId: string;
+  target?: string;
+};
+
+/** Return shape for `tag-rules.evaluate`. (no @Returns declared) */
+export type TagRulesEvaluateReturn = unknown;
+
+/** Input shape for `tag-rules.explain`. */
+export type TagRulesExplainInput = {
+  target?: string;
+};
+
+/** Return shape for `tag-rules.explain`. (no @Returns declared) */
+export type TagRulesExplainReturn = unknown;
+
+/** Input shape for `tag-rules.list`. */
+export type TagRulesListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `tag-rules.list`. (no @Returns declared) */
+export type TagRulesListReturn = unknown;
+
+/** Input shape for `tag-rules.show`. */
+export type TagRulesShowInput = {
+  id: string;
+};
+
+/** Return shape for `tag-rules.show`. (no @Returns declared) */
+export type TagRulesShowReturn = unknown;
+
+/** Input shape for `tag-rules.tick`. */
+export type TagRulesTickInput = {
+  apply?: boolean;
+  limit?: string;
+};
+
+/** Return shape for `tag-rules.tick`. (no @Returns declared) */
+export type TagRulesTickReturn = unknown;
+
+/** Input shape for `tag-rules.validate`. */
+export type TagRulesValidateInput = Record<string, never>;
+
+/** Return shape for `tag-rules.validate`. (no @Returns declared) */
+export type TagRulesValidateReturn = unknown;
 
 /** Input shape for `tags.attach`. */
 export type TagsAttachInput = {
@@ -2983,6 +3620,8 @@ export type TasksAutomationsEnableReturn = unknown;
 
 /** Input shape for `tasks.automations.list`. */
 export type TasksAutomationsListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -3061,6 +3700,8 @@ export type TasksDepsAddReturn = unknown;
 
 /** Input shape for `tasks.deps.ls`. */
 export type TasksDepsLsInput = {
+  limit?: string;
+  offset?: string;
   taskId: string;
 };
 
@@ -3149,7 +3790,10 @@ export type TasksProfilesInitInput = {
 export type TasksProfilesInitReturn = unknown;
 
 /** Input shape for `tasks.profiles.list`. */
-export type TasksProfilesListInput = Record<string, never>;
+export type TasksProfilesListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `tasks.profiles.list`. (no @Returns declared) */
 export type TasksProfilesListReturn = unknown;
@@ -3213,8 +3857,113 @@ export type TasksUnarchiveInput = {
 /** Return shape for `tasks.unarchive`. (no @Returns declared) */
 export type TasksUnarchiveReturn = unknown;
 
+/** Input shape for `threads.brief`. */
+export type ThreadsBriefInput = {
+  scope?: string;
+  thread: string;
+};
+
+/** Return shape for `threads.brief`. (no @Returns declared) */
+export type ThreadsBriefReturn = unknown;
+
+/** Input shape for `threads.close`. */
+export type ThreadsCloseInput = {
+  reason?: string;
+  scope?: string;
+  thread: string;
+};
+
+/** Return shape for `threads.close`. (no @Returns declared) */
+export type ThreadsCloseReturn = unknown;
+
+/** Input shape for `threads.comment`. */
+export type ThreadsCommentInput = {
+  body: string;
+  scope?: string;
+  thread: string;
+  visibility?: string;
+};
+
+/** Return shape for `threads.comment`. (no @Returns declared) */
+export type ThreadsCommentReturn = unknown;
+
+/** Input shape for `threads.create`. */
+export type ThreadsCreateInput = {
+  defaultAgent?: string;
+  owner?: string;
+  scope?: string;
+  slug: string;
+  status?: string;
+  summary?: string;
+  title?: string;
+};
+
+/** Return shape for `threads.create`. (no @Returns declared) */
+export type ThreadsCreateReturn = unknown;
+
+/** Input shape for `threads.entries`. */
+export type ThreadsEntriesInput = {
+  limit?: string;
+  offset?: string;
+  scope?: string;
+  thread: string;
+};
+
+/** Return shape for `threads.entries`. (no @Returns declared) */
+export type ThreadsEntriesReturn = unknown;
+
+/** Input shape for `threads.link`. */
+export type ThreadsLinkInput = {
+  label?: string;
+  role?: string;
+  scope?: string;
+  target: string;
+  thread: string;
+  visibility?: string;
+};
+
+/** Return shape for `threads.link`. (no @Returns declared) */
+export type ThreadsLinkReturn = unknown;
+
+/** Input shape for `threads.list`. */
+export type ThreadsListInput = {
+  limit?: string;
+  offset?: string;
+  owner?: string;
+  scope?: string;
+  search?: string;
+  status?: string;
+};
+
+/** Return shape for `threads.list`. (no @Returns declared) */
+export type ThreadsListReturn = unknown;
+
+/** Input shape for `threads.note`. */
+export type ThreadsNoteInput = {
+  body: string;
+  scope?: string;
+  thread: string;
+  visibility?: string;
+};
+
+/** Return shape for `threads.note`. (no @Returns declared) */
+export type ThreadsNoteReturn = unknown;
+
+/** Input shape for `threads.show`. */
+export type ThreadsShowInput = {
+  entries?: string;
+  scope?: string;
+  thread: string;
+};
+
+/** Return shape for `threads.show`. (no @Returns declared) */
+export type ThreadsShowReturn = unknown;
+
 /** Input shape for `tools.list`. */
-export type ToolsListInput = Record<string, never>;
+export type ToolsListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `tools.list`. (no @Returns declared) */
 export type ToolsListReturn = unknown;
@@ -3290,6 +4039,8 @@ export type TriggersEnableReturn = unknown;
 
 /** Input shape for `triggers.list`. */
 export type TriggersListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -3451,6 +4202,8 @@ export type WhatsappGroupLeaveReturn = unknown;
 /** Input shape for `whatsapp.group.list`. */
 export type WhatsappGroupListInput = {
   account?: string;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `whatsapp.group.list`. (no @Returns declared) */
@@ -3524,7 +4277,10 @@ export type WorkflowsRunsCancelInput = {
 export type WorkflowsRunsCancelReturn = unknown;
 
 /** Input shape for `workflows.runs.list`. */
-export type WorkflowsRunsListInput = Record<string, never>;
+export type WorkflowsRunsListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `workflows.runs.list`. (no @Returns declared) */
 export type WorkflowsRunsListReturn = unknown;
@@ -3600,7 +4356,10 @@ export type WorkflowsSpecsCreateInput = {
 export type WorkflowsSpecsCreateReturn = unknown;
 
 /** Input shape for `workflows.specs.list`. */
-export type WorkflowsSpecsListInput = Record<string, never>;
+export type WorkflowsSpecsListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `workflows.specs.list`. (no @Returns declared) */
 export type WorkflowsSpecsListReturn = unknown;

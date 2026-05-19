@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   getSessionAdapterDebugSnapshot,
   listSessionAdapters,
@@ -50,14 +51,33 @@ export class AdapterCommands {
     @Option({ flags: "--session <sessionKey>", description: "Filter by session key" }) sessionKey?: string,
     @Option({ flags: "--status <status>", description: "Filter by adapter status" }) status?: SessionAdapterStatus,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching adapters to skip (default: 0)" }) offset?: string,
   ) {
     const adapters = listSessionAdapters({ sessionKey, status });
+    const page = paginateCliItems(adapters, { limit, offset });
+    const pageAdapters = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "adapters", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageAdapters.length,
+      total: page.total,
+      options: ["--session", sessionKey, "--status", status],
+    });
     const payload = {
-      count: adapters.length,
-      adapters: adapters.map((adapter) => this.serializeAdapter(adapter)),
+      count: page.total,
+      total: page.total,
+      pagination,
+      items: pageAdapters.map((adapter) => this.serializeAdapter(adapter)),
+      adapters: pageAdapters.map((adapter) => this.serializeAdapter(adapter)),
     };
 
     this.printPayload(payload, asJson, () => this.printAdapterList(payload.adapters));
+    if (!asJson && pagination.nextCommand) {
+      console.log("\nNext page:");
+      console.log(`  ${pagination.nextCommand}`);
+    }
     return payload;
   }
 

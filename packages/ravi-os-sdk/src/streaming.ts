@@ -42,6 +42,30 @@ export interface AuditStreamOptions {
   signal?: AbortSignal;
 }
 
+export interface ChatStreamOptions {
+  signal?: AbortSignal;
+}
+
+export interface InstanceStreamOptions {
+  signal?: AbortSignal;
+}
+
+export interface ChatStreamPayload {
+  type: "chat.event";
+  chatId: string;
+  topic: string;
+  data: unknown;
+  timestamp: string;
+}
+
+export interface InstanceStreamPayload {
+  type: "instance.event";
+  instanceId: string;
+  topic: string;
+  data: unknown;
+  timestamp: string;
+}
+
 export interface GatewayTopicEvent {
   type: string;
   topic: string;
@@ -104,6 +128,21 @@ export class RaviStreamClient {
 
   audit(options: AuditStreamOptions = {}): AsyncIterable<RaviSseEvent<GatewayTopicEvent>> {
     return this.stream<GatewayTopicEvent>("audit", new URLSearchParams(), options.signal);
+  }
+
+  chat(chatId: string, options: ChatStreamOptions = {}): AsyncIterable<RaviSseEvent<ChatStreamPayload>> {
+    return this.stream<ChatStreamPayload>(`chats/${encodeURIComponent(chatId)}`, new URLSearchParams(), options.signal);
+  }
+
+  instance(
+    instanceId: string,
+    options: InstanceStreamOptions = {},
+  ): AsyncIterable<RaviSseEvent<InstanceStreamPayload>> {
+    return this.stream<InstanceStreamPayload>(
+      `instances/${encodeURIComponent(instanceId)}`,
+      new URLSearchParams(),
+      options.signal,
+    );
   }
 
   private async *stream<TData>(

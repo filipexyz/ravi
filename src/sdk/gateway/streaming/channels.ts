@@ -29,6 +29,30 @@ export const defaultStreamChannels: StreamChannel[] = [
     subscribe: subscribeSession,
   },
   {
+    name: "chats",
+    match(segments) {
+      if (segments.length !== 2 || segments[0] !== "chats" || !segments[1]) return null;
+      const chatId = segments[1];
+      return {
+        channelPath: `chats/${chatId}`,
+        scope: { permission: "view", objectType: "chat", objectId: chatId },
+      };
+    },
+    subscribe: subscribeChat,
+  },
+  {
+    name: "instances",
+    match(segments) {
+      if (segments.length !== 2 || segments[0] !== "instances" || !segments[1]) return null;
+      const instanceId = segments[1];
+      return {
+        channelPath: `instances/${instanceId}`,
+        scope: { permission: "view", objectType: "instance", objectId: instanceId },
+      };
+    },
+    subscribe: subscribeInstance,
+  },
+  {
     name: "audit",
     match: exact("audit", { permission: "view", objectType: "system", objectId: "audit" }),
     subscribe: subscribeAudit,
@@ -169,6 +193,102 @@ async function* subscribeAudit(ctx: StreamRequestContext): AsyncIterable<StreamE
       },
     };
   }
+}
+
+export const CHAT_TOPIC_PATTERNS = [
+  "message.received.>",
+  "reaction.received.>",
+  "presence.typing",
+  "chat.unread-updated",
+] as const;
+
+export const INSTANCE_TOPIC_PATTERNS = ["instance.>"] as const;
+
+async function* subscribeChat(ctx: StreamRequestContext, match: StreamChannelMatch): AsyncIterable<StreamEvent> {
+  const chatId = match.scope.objectId;
+  const source = subscribeAbortable(ctx.signal, ...CHAT_TOPIC_PATTERNS);
+  yield* projectChatEvents(chatId, source);
+}
+
+async function* subscribeInstance(ctx: StreamRequestContext, match: StreamChannelMatch): AsyncIterable<StreamEvent> {
+  const instanceId = match.scope.objectId;
+  const source = subscribeAbortable(ctx.signal, ...INSTANCE_TOPIC_PATTERNS);
+  yield* projectInstanceEvents(instanceId, source);
+}
+
+export async function* projectChatEvents(
+  chatId: string,
+  source: AsyncIterable<{ topic: string; data: Record<string, unknown> }>,
+): AsyncIterable<StreamEvent> {
+  for await (const item of source) {
+    if (extractChatId(item.data) !== chatId) continue;
+    yield {
+      event: classifyChatEvent(item.topic),
+      data: {
+        type: "chat.event",
+        chatId,
+        topic: item.topic,
+        data: item.data,
+        timestamp: new Date().toISOString(),
+      },
+    };
+  }
+}
+
+export async function* projectInstanceEvents(
+  instanceId: string,
+  source: AsyncIterable<{ topic: string; data: Record<string, unknown> }>,
+): AsyncIterable<StreamEvent> {
+  for await (const item of source) {
+    if (extractInstanceId(item.topic, item.data) !== instanceId) continue;
+    yield {
+      event: "instance",
+      data: {
+        type: "instance.event",
+        instanceId,
+        topic: item.topic,
+        data: item.data,
+        timestamp: new Date().toISOString(),
+      },
+    };
+  }
+}
+
+export function classifyChatEvent(topic: string): string {
+  if (topic.startsWith("message.")) return "message";
+  if (topic.startsWith("reaction.")) return "reaction";
+  if (topic === "presence.typing") return "presence";
+  if (topic === "chat.unread-updated") return "unread";
+  return "message";
+}
+
+export function extractChatId(data: Record<string, unknown>): string | undefined {
+  const fromPayload = readString(asObject(data.payload)?.chatId);
+  if (fromPayload) return fromPayload;
+  return readString(data.chatId);
+}
+
+export function extractInstanceId(topic: string, data: Record<string, unknown>): string | undefined {
+  const payload = asObject(data.payload);
+  const metadata = asObject(data.metadata);
+  const fromPayload = readString(payload?.instanceId);
+  if (fromPayload) return fromPayload;
+  const fromMetadata = readString(metadata?.instanceId);
+  if (fromMetadata) return fromMetadata;
+  const fromData = readString(data.instanceId);
+  if (fromData) return fromData;
+  // Subject format: {eventType}.{action}.{channelType}.{instanceId}
+  const parts = topic.split(".");
+  if (parts.length >= 4) return parts.slice(3).join(".");
+  return undefined;
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 async function* subscribeAbortable(

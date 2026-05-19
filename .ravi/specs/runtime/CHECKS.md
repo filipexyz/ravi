@@ -24,6 +24,10 @@
 - Non-interrupted terminal turns clear yielded pending ids.
 - Unsafe tool abort defers until tool completion.
 - After-task barriers remain blocked while an active task binding exists.
+- A pending start waiting for runtime pool capacity is tracked separately from an actual cold start.
+- Subsequent prompts for a pending-start session are stashed with a pending-start reason, not `cold_start_inflight`.
+- Runtime pool backpressure trace events use the canonical session key when the session exists.
+- Background/task starts respect reserved interactive capacity; interactive starts may use that reserved capacity.
 
 ## Gaps To Close Before Adding Another Provider
 

@@ -24,6 +24,22 @@ da sessão observada.
 
 Rules escolhem **quando** observar. Profiles escolhem **como** formatar.
 
+## Inspeção Cruzada
+
+Observers vivem em cima do resto do CRM. Antes de criar ou debugar, inspecione o ecossistema todo:
+
+```bash
+ravi observers rules list --json                 # quais regras observam o quê
+ravi observers list --json                       # bindings ativos
+ravi tag-rules list --json                       # quem produz as tags que observers consomem
+ravi contacts list --json                        # base sob observação
+ravi chats lists list --json                     # filas de leitura (se observers usam reading lists)
+```
+
+⚠️ **Observer rule sem source matching** = dorme pra sempre. Use `ravi observers rules explain --session <session>` pra ver porque uma rule específica não disparou.
+
+⚠️ **Observer rule por tag de contato** depende de `session_participants` ter o contato linkado. Confirme via `ravi observers rules explain` que `source.contactIds` está preenchido.
+
 ## Comandos
 
 ```bash
@@ -101,6 +117,18 @@ ravi tasks dispatch <task-id> --agent <worker-agent>
 O worker faz o trabalho e deixa sinais claros. O observer recebe Markdown do
 profile `tasks` e decide se chama `ravi tasks report|block|done|fail`.
 
+## Tag-Driven Observers em Contatos
+
+Rules com `--scope tag --tag-target contact --tag <slug>` agora veem tags ligadas a contatos vinculados à sessão fonte. A resolução acontece via `session_participants` (owner_type=`contact`).
+
+Casos típicos:
+
+- Instância configurada com `defaultContactTags` aplica tag em contatos novos. Rule observer com a mesma tag dispara automaticamente.
+- Para mudar de observer, mude a tag do contato (`ravi contacts tag/untag`). Novas bindings serão criadas na próxima avaliação.
+- DM-per-peer é o cenário ideal: 1 contato por sessão. Em sessões com vários contatos (group/main), todas as tags presentes são consideradas.
+
+Detalhes operacionais e exemplos completos estão na skill `ravi-system:contacts` no playbook *Tag → Observer por Contato*.
+
 ## Invariantes
 
 - Não crie rules por padrão em sistemas novos.
@@ -108,3 +136,4 @@ profile `tasks` e decide se chama `ravi tasks report|block|done|fail`.
 - Não use dumps JSON como formato primário para o observer.
 - Não use modo `observe` com permissões mutáveis.
 - Não reinicie daemon para validar profile; use `profiles preview|validate`.
+- Não confie em remoção automática de bindings quando a tag de contato muda. Faça housekeeping manual quando preciso (`ravi observers ...`).

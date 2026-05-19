@@ -1,4 +1,5 @@
 import { getDb } from "../router/router-db.js";
+import { executeWrite } from "../db/write-retry.js";
 import type { SpecRecord } from "./types.js";
 
 interface SpecIndexRow {
@@ -105,29 +106,33 @@ export function replaceSpecsIndex(rootPath: string, specs: SpecRecord[]): void {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  db.transaction(() => {
-    db.prepare("DELETE FROM specs_index WHERE root_path = ?").run(rootPath);
-    for (const spec of specs) {
-      insert.run(
-        spec.rootPath,
-        spec.id,
-        spec.path,
-        spec.kind,
-        spec.domain,
-        spec.capability ?? null,
-        spec.feature ?? null,
-        spec.title,
-        JSON.stringify(spec.capabilities),
-        JSON.stringify(spec.tags),
-        JSON.stringify(spec.appliesTo),
-        JSON.stringify(spec.owners),
-        spec.status,
-        spec.normative ? 1 : 0,
-        spec.mtime,
-        now,
-      );
-    }
-  })();
+  executeWrite(
+    db,
+    () => {
+      db.prepare("DELETE FROM specs_index WHERE root_path = ?").run(rootPath);
+      for (const spec of specs) {
+        insert.run(
+          spec.rootPath,
+          spec.id,
+          spec.path,
+          spec.kind,
+          spec.domain,
+          spec.capability ?? null,
+          spec.feature ?? null,
+          spec.title,
+          JSON.stringify(spec.capabilities),
+          JSON.stringify(spec.tags),
+          JSON.stringify(spec.appliesTo),
+          JSON.stringify(spec.owners),
+          spec.status,
+          spec.normative ? 1 : 0,
+          spec.mtime,
+          now,
+        );
+      }
+    },
+    { label: "specs:reindex" },
+  );
 }
 
 export function listIndexedSpecs(rootPath: string): SpecRecord[] {

@@ -3,7 +3,7 @@
 // Drift is detected by `ravi sdk client check` (CI).
 
 import type { Transport } from "./transport/types.js";
-import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsShowReturn, ArtifactsUpdateReturn, AudioGenerateReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsGroupTagReturn, ContactsGroupUntagReturn, ContactsIdentityAddReturn, ContactsIdentityRemoveReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsPendingReturn, ContactsRemoveReturn, ContactsSetReturn, ContactsTagReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MediaSendReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PermissionsCheckReturn, PermissionsClearReturn, PermissionsGrantReturn, PermissionsInitReturn, PermissionsListReturn, PermissionsRevokeReturn, PermissionsSyncReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, ServiceStartReturn, ServiceTuiReturn, ServiceWaReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsDeleteReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetModelReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsTraceReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsInstallReturn, SkillsListReturn, SkillsShowReturn, SkillsSyncReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, VideoAnalyzeReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSettingsReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn } from "./types.js";
+import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsPublishReturn, ArtifactsReleaseActivateReturn, ArtifactsRestoreReturn, ArtifactsShowReturn, ArtifactsSnapshotReturn, ArtifactsUpdateReturn, ArtifactsVersionReturn, ArtifactsVersionsReturn, AudioGenerateReturn, ChatsListReturn, ChatsListsAddReturn, ChatsListsCreateReturn, ChatsListsDeltaReturn, ChatsListsListReturn, ChatsListsMarkReadReturn, ChatsListsMembersReturn, ChatsListsRemoveReturn, ChatsReadReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ContactsActivityReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBackfillReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsMessagesReturn, ContactsMetadataListReturn, ContactsMetadataRemoveReturn, ContactsMetadataSetReturn, ContactsNoteReturn, ContactsPendingReturn, ContactsProfileReturn, ContactsRemoveReturn, ContactsSessionsReturn, ContactsSetReturn, ContactsTagReturn, ContactsTimelineReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CrmAccountCreateReturn, CrmAccountLinkContactReturn, CrmAccountReturn, CrmAccountShowReturn, CrmBoardReturn, CrmContactReturn, CrmContactSetReturn, CrmContactShowReturn, CrmContactsReturn, CrmFactConfirmReturn, CrmFactListReturn, CrmFactProposeReturn, CrmFactRejectReturn, CrmNextReturn, CrmOpportunityContactsReturn, CrmOpportunityCreateReturn, CrmOpportunityLinkContactReturn, CrmOpportunityMoveReturn, CrmOpportunityReturn, CrmOpportunityShowReturn, CrmTaskCreateReturn, CrmTaskDoneReturn, CrmTaskShowReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MediaSendReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PermissionsCheckReturn, PermissionsClearReturn, PermissionsGrantReturn, PermissionsInitReturn, PermissionsListReturn, PermissionsRevokeReturn, PermissionsSyncReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, ServiceStartReturn, ServiceTuiReturn, ServiceWaReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsDeleteReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetModelReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsTraceReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsInstallReturn, SkillsListReturn, SkillsShowReturn, SkillsSyncReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, TagRulesEvaluateReturn, TagRulesExplainReturn, TagRulesListReturn, TagRulesShowReturn, TagRulesTickReturn, TagRulesValidateReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ThreadsBriefReturn, ThreadsCloseReturn, ThreadsCommentReturn, ThreadsCreateReturn, ThreadsEntriesReturn, ThreadsLinkReturn, ThreadsListReturn, ThreadsNoteReturn, ThreadsShowReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, VideoAnalyzeReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSettingsReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn } from "./types.js";
 
 /**
  * `RaviClient` exposes every registry command as a typed method.
@@ -19,6 +19,8 @@ export class RaviClient {
   readonly adapters = {
     /** List session adapters with health and bind state */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       session?: string;
       status?: string;
     }): Promise<AdaptersListReturn> => {
@@ -78,6 +80,8 @@ export class RaviClient {
     },
     /** List all agents */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<AgentsListReturn> => {
       return this.transport.call({
@@ -169,12 +173,16 @@ export class RaviClient {
       });
     },
     /** Create a generic Ravi artifact record */
-    create: async (kind: string, options?: {
+    create: async (options?: {
+      assetBase?: string;
+      basePath?: string;
       command?: string;
       costUsd?: string;
       durationMs?: string;
+      entrypoint?: string;
       input?: string;
       inputTokens?: string;
+      kind?: string;
       lineage?: string;
       message?: string;
       metadata?: string;
@@ -197,7 +205,7 @@ export class RaviClient {
       return this.transport.call({
         groupSegments: ["artifacts"],
         command: "create",
-        body: { kind, ...(options ?? {}) },
+        body: { ...(options ?? {}) },
       });
     },
     /** Append an artifact lifecycle event */
@@ -228,6 +236,7 @@ export class RaviClient {
       kind?: string;
       lifecycle?: string;
       limit?: string;
+      offset?: string;
       rich?: boolean;
       session?: string;
       tag?: string;
@@ -239,12 +248,79 @@ export class RaviClient {
         body: { ...(options ?? {}) },
       });
     },
+    /** Publish a local artifact package through a Console-compatible endpoint */
+    publish: async (target: string, options?: {
+      artifactVersion?: string;
+      assetBase?: string;
+      basePath?: string;
+      console?: string;
+      description?: string;
+      entrypoint?: string;
+      idempotencyKey?: string;
+      name?: string;
+      noActivate?: boolean;
+      project?: string;
+      reason?: string;
+      replaceRelease?: boolean;
+      route?: string;
+      site?: string;
+      slug?: string;
+      uploadSession?: string;
+      visibility?: string;
+    }): Promise<ArtifactsPublishReturn> => {
+      return this.transport.call({
+        groupSegments: ["artifacts"],
+        command: "publish",
+        body: { target, ...(options ?? {}) },
+      });
+    },
+    release: {
+      /** Activate an existing Pages release for a local artifact */
+      activate: async (id: string, options?: {
+        console?: string;
+        release?: string;
+        site?: string;
+        version?: string;
+      }): Promise<ArtifactsReleaseActivateReturn> => {
+        return this.transport.call({
+          groupSegments: ["artifacts","release"],
+          command: "activate",
+          body: { id, ...(options ?? {}) },
+        });
+      }
+    },
+    /** Restore current artifact content from an immutable version */
+    restore: async (id: string, options?: {
+      message?: string;
+      version?: string;
+    }): Promise<ArtifactsRestoreReturn> => {
+      return this.transport.call({
+        groupSegments: ["artifacts"],
+        command: "restore",
+        body: { id, ...(options ?? {}) },
+      });
+    },
     /** Show artifact details, links and events */
     show: async (id: string): Promise<ArtifactsShowReturn> => {
       return this.transport.call({
         groupSegments: ["artifacts"],
         command: "show",
         body: { id },
+      });
+    },
+    /** Create an immutable version snapshot for an artifact */
+    snapshot: async (id: string, options?: {
+      label?: string;
+      manifest?: string;
+      message?: string;
+      metadata?: string;
+      source?: string;
+      status?: string;
+    }): Promise<ArtifactsSnapshotReturn> => {
+      return this.transport.call({
+        groupSegments: ["artifacts"],
+        command: "snapshot",
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Edit artifact metadata and high-level fields */
@@ -279,6 +355,24 @@ export class RaviClient {
         command: "update",
         body: { id, ...(options ?? {}) },
       });
+    },
+    /** Show one immutable artifact version */
+    version: async (id: string, options?: {
+      version?: string;
+    }): Promise<ArtifactsVersionReturn> => {
+      return this.transport.call({
+        groupSegments: ["artifacts"],
+        command: "version",
+        body: { id, ...(options ?? {}) },
+      });
+    },
+    /** List immutable versions for an artifact */
+    versions: async (id: string): Promise<ArtifactsVersionsReturn> => {
+      return this.transport.call({
+        groupSegments: ["artifacts"],
+        command: "versions",
+        body: { id },
+      });
     }
   };
 
@@ -302,10 +396,150 @@ export class RaviClient {
     }
   };
 
+  readonly chats = {
+    /** List recent canonical chats */
+    list: async (options?: {
+      agent?: string;
+      channel?: string;
+      contact?: string;
+      includeRaw?: boolean;
+      instance?: string;
+      limit?: string;
+      offset?: string;
+      query?: string;
+      type?: string;
+    }): Promise<ChatsListReturn> => {
+      return this.transport.call({
+        groupSegments: ["chats"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    lists: {
+      /** Add a chat to a reading list */
+      add: async (list: string, chat: string, options?: {
+        channel?: string;
+        includeRaw?: boolean;
+        instance?: string;
+        owner?: string;
+        priority?: string;
+        reason?: string;
+      }): Promise<ChatsListsAddReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "add",
+          body: { list, chat, ...(options ?? {}) },
+        });
+      },
+      /** Create or restore a chat reading list */
+      create: async (name: string, options?: {
+        description?: string;
+        mode?: string;
+        owner?: string;
+        visibility?: string;
+      }): Promise<ChatsListsCreateReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "create",
+          body: { name, ...(options ?? {}) },
+        });
+      },
+      /** Read what changed in a chat since this list reader cursor */
+      delta: async (list: string, chat: string, options?: {
+        channel?: string;
+        includeRaw?: boolean;
+        instance?: string;
+        limit?: string;
+        markRead?: boolean;
+        owner?: string;
+        reader?: string;
+      }): Promise<ChatsListsDeltaReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "delta",
+          body: { list, chat, ...(options ?? {}) },
+        });
+      },
+      /** List chat reading lists */
+      list: async (options?: {
+        includeArchived?: boolean;
+        limit?: string;
+        offset?: string;
+        owner?: string;
+      }): Promise<ChatsListsListReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "list",
+          body: { ...(options ?? {}) },
+        });
+      },
+      /** Explicitly advance one reading-list cursor */
+      markRead: async (list: string, chat: string, options?: {
+        channel?: string;
+        includeRaw?: boolean;
+        instance?: string;
+        message?: string;
+        owner?: string;
+        reader?: string;
+        reason?: string;
+      }): Promise<ChatsListsMarkReadReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "mark-read",
+          body: { list, chat, ...(options ?? {}) },
+        });
+      },
+      /** List chats in a reading list with unread counts */
+      members: async (list: string, options?: {
+        includeRaw?: boolean;
+        limit?: string;
+        offset?: string;
+        owner?: string;
+        reader?: string;
+      }): Promise<ChatsListsMembersReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "members",
+          body: { list, ...(options ?? {}) },
+        });
+      },
+      /** Remove a chat from a reading list without deleting cursor history */
+      remove: async (list: string, chat: string, options?: {
+        channel?: string;
+        instance?: string;
+        owner?: string;
+      }): Promise<ChatsListsRemoveReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "remove",
+          body: { list, chat, ...(options ?? {}) },
+        });
+      }
+    },
+    /** Read messages from one chat */
+    read: async (chat: string, options?: {
+      channel?: string;
+      includeRaw?: boolean;
+      instance?: string;
+      limit?: string;
+      offset?: string;
+      order?: string;
+      type?: string;
+    }): Promise<ChatsReadReturn> => {
+      return this.transport.call({
+        groupSegments: ["chats"],
+        command: "read",
+        body: { chat, ...(options ?? {}) },
+      });
+    }
+  };
+
   readonly commands = {
     /** List Ravi commands */
     list: async (options?: {
       agent?: string;
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<CommandsListReturn> => {
       return this.transport.call({
@@ -347,6 +581,18 @@ export class RaviClient {
   };
 
   readonly contacts = {
+    /** Show session activity attributed to a contact */
+    activity: async (contact: string, options?: {
+      limit?: string;
+      offset?: string;
+      raw?: boolean;
+    }): Promise<ContactsActivityReturn> => {
+      return this.transport.call({
+        groupSegments: ["contacts"],
+        command: "activity",
+        body: { contact, ...(options ?? {}) },
+      });
+    },
     /** Add/allow a contact */
     add: async (identity: string, name?: string, options?: {
       agent?: string;
@@ -374,6 +620,23 @@ export class RaviClient {
         groupSegments: ["contacts"],
         command: "approve",
         body: { contact, mode, ...(options ?? {}) },
+      });
+    },
+    /** Backfill canonical contacts from captured chats */
+    backfill: async (options?: {
+      apply?: boolean;
+      channel?: string;
+      createList?: string;
+      dryRun?: boolean;
+      instance?: string;
+      limit?: string;
+      listOwner?: string;
+      mode?: string;
+    }): Promise<ContactsBackfillReturn> => {
+      return this.transport.call({
+        groupSegments: ["contacts"],
+        command: "backfill",
+        body: { ...(options ?? {}) },
       });
     },
     /** Block a contact */
@@ -418,38 +681,6 @@ export class RaviClient {
         body: { contact },
       });
     },
-    /** Set a contact's tag in a specific group */
-    groupTag: async (contact: string, group: string, tag: string): Promise<ContactsGroupTagReturn> => {
-      return this.transport.call({
-        groupSegments: ["contacts"],
-        command: "group-tag",
-        body: { contact, group, tag },
-      });
-    },
-    /** Remove a contact's tag from a specific group */
-    groupUntag: async (contact: string, group: string): Promise<ContactsGroupUntagReturn> => {
-      return this.transport.call({
-        groupSegments: ["contacts"],
-        command: "group-untag",
-        body: { contact, group },
-      });
-    },
-    /** Add an identity to a contact (legacy alias for link) */
-    identityAdd: async (contact: string, platform: string, value: string): Promise<ContactsIdentityAddReturn> => {
-      return this.transport.call({
-        groupSegments: ["contacts"],
-        command: "identity-add",
-        body: { contact, platform, value },
-      });
-    },
-    /** Remove an identity (legacy alias for unlink) */
-    identityRemove: async (platform: string, value: string): Promise<ContactsIdentityRemoveReturn> => {
-      return this.transport.call({
-        groupSegments: ["contacts"],
-        command: "identity-remove",
-        body: { platform, value },
-      });
-    },
     /** Show contact details with all identities */
     info: async (contact: string): Promise<ContactsInfoReturn> => {
       return this.transport.call({
@@ -473,6 +704,8 @@ export class RaviClient {
     },
     /** List all contacts */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       status?: string;
     }): Promise<ContactsListReturn> => {
       return this.transport.call({
@@ -489,6 +722,64 @@ export class RaviClient {
         body: { source, target },
       });
     },
+    /** Show messages attributed to a contact */
+    messages: async (contact: string, options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<ContactsMessagesReturn> => {
+      return this.transport.call({
+        groupSegments: ["contacts"],
+        command: "messages",
+        body: { contact, ...(options ?? {}) },
+      });
+    },
+    metadata: {
+      /** List current scoped metadata for a contact */
+      list: async (contact: string, options?: {
+        limit?: string;
+        offset?: string;
+        scope?: string;
+      }): Promise<ContactsMetadataListReturn> => {
+        return this.transport.call({
+          groupSegments: ["contacts","metadata"],
+          command: "list",
+          body: { contact, ...(options ?? {}) },
+        });
+      },
+      /** Remove scoped metadata from a contact */
+      remove: async (contact: string, key: string, options?: {
+        scope?: string;
+        source?: string;
+      }): Promise<ContactsMetadataRemoveReturn> => {
+        return this.transport.call({
+          groupSegments: ["contacts","metadata"],
+          command: "remove",
+          body: { contact, key, ...(options ?? {}) },
+        });
+      },
+      /** Set scoped metadata for a contact */
+      set: async (contact: string, key: string, value: string, options?: {
+        scope?: string;
+        source?: string;
+      }): Promise<ContactsMetadataSetReturn> => {
+        return this.transport.call({
+          groupSegments: ["contacts","metadata"],
+          command: "set",
+          body: { contact, key, value, ...(options ?? {}) },
+        });
+      }
+    },
+    /** Append a note to a contact timeline */
+    note: async (contact: string, text: string, options?: {
+      scope?: string;
+      source?: string;
+    }): Promise<ContactsNoteReturn> => {
+      return this.transport.call({
+        groupSegments: ["contacts"],
+        command: "note",
+        body: { contact, text, ...(options ?? {}) },
+      });
+    },
     /** List pending contacts */
     pending: async (options?: {
       account?: string;
@@ -499,12 +790,34 @@ export class RaviClient {
         body: { ...(options ?? {}) },
       });
     },
+    /** Show a contact profile card */
+    profile: async (contact: string, options?: {
+      includeCrm?: boolean;
+      limit?: string;
+    }): Promise<ContactsProfileReturn> => {
+      return this.transport.call({
+        groupSegments: ["contacts"],
+        command: "profile",
+        body: { contact, ...(options ?? {}) },
+      });
+    },
     /** Remove a contact */
     remove: async (contact: string): Promise<ContactsRemoveReturn> => {
       return this.transport.call({
         groupSegments: ["contacts"],
         command: "remove",
         body: { contact },
+      });
+    },
+    /** Show session summaries attributed to a contact */
+    sessions: async (contact: string, options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<ContactsSessionsReturn> => {
+      return this.transport.call({
+        groupSegments: ["contacts"],
+        command: "sessions",
+        body: { contact, ...(options ?? {}) },
       });
     },
     /** Set contact property */
@@ -521,6 +834,19 @@ export class RaviClient {
         groupSegments: ["contacts"],
         command: "tag",
         body: { contact, tag },
+      });
+    },
+    /** Show contact timeline events */
+    timeline: async (contact: string, options?: {
+      event?: string;
+      limit?: string;
+      offset?: string;
+      scope?: string;
+    }): Promise<ContactsTimelineReturn> => {
+      return this.transport.call({
+        groupSegments: ["contacts"],
+        command: "timeline",
+        body: { contact, ...(options ?? {}) },
       });
     },
     /** Unlink a platform identity from its contact */
@@ -605,11 +931,14 @@ export class RaviClient {
         });
       },
       /** List entries in the local credentials store */
-      list: async (): Promise<ContextCredentialsListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<ContextCredentialsListReturn> => {
         return this.transport.call({
           groupSegments: ["context","credentials"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Remove a stored context-key from the credentials store */
@@ -662,6 +991,8 @@ export class RaviClient {
       agent?: string;
       all?: boolean;
       kind?: string;
+      limit?: string;
+      offset?: string;
       session?: string;
     }): Promise<ContextListReturn> => {
       return this.transport.call({
@@ -752,6 +1083,264 @@ export class RaviClient {
     }
   };
 
+  readonly crm = {
+    account: {
+      /** Create a CRM account */
+      create: async (name: string, options?: {
+        contact?: string;
+        domain?: string;
+        idempotencyKey?: string;
+        owner?: string;
+      }): Promise<CrmAccountCreateReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","account"],
+          command: "create",
+          body: { name, ...(options ?? {}) },
+        });
+      },
+      /** Link a contact to an account */
+      linkContact: async (account: string, contact: string, options?: {
+        primary?: boolean;
+        role?: string;
+      }): Promise<CrmAccountLinkContactReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","account"],
+          command: "link-contact",
+          body: { account, contact, ...(options ?? {}) },
+        });
+      },
+      /** Show CRM account */
+      show: async (account: string): Promise<CrmAccountShowReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","account"],
+          command: "show",
+          body: { account },
+        });
+      }
+    },
+    /** Show CRM account */
+    accountCommand: async (account: string): Promise<CrmAccountReturn> => {
+      return this.transport.call({
+        groupSegments: ["crm"],
+        command: "account",
+        body: { account },
+      });
+    },
+    /** Show open opportunity board */
+    board: async (): Promise<CrmBoardReturn> => {
+      return this.transport.call({
+        groupSegments: ["crm"],
+        command: "board",
+        body: {},
+      });
+    },
+    contact: {
+      /** Set one CRM contact profile field */
+      set: async (contact: string, field: string, value: string, options?: {
+        source?: string;
+      }): Promise<CrmContactSetReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","contact"],
+          command: "set",
+          body: { contact, field, value, ...(options ?? {}) },
+        });
+      },
+      /** Show CRM profile for one contact */
+      show: async (contact: string): Promise<CrmContactShowReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","contact"],
+          command: "show",
+          body: { contact },
+        });
+      }
+    },
+    /** Show CRM profile for one contact */
+    contactCommand: async (contact: string): Promise<CrmContactReturn> => {
+      return this.transport.call({
+        groupSegments: ["crm"],
+        command: "contact",
+        body: { contact },
+      });
+    },
+    /** List CRM contact cards */
+    contacts: async (options?: {
+      limit?: string;
+      offset?: string;
+      owner?: string;
+      status?: string;
+    }): Promise<CrmContactsReturn> => {
+      return this.transport.call({
+        groupSegments: ["crm"],
+        command: "contacts",
+        body: { ...(options ?? {}) },
+      });
+    },
+    fact: {
+      /** Confirm a CRM fact */
+      confirm: async (fact: string): Promise<CrmFactConfirmReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","fact"],
+          command: "confirm",
+          body: { fact },
+        });
+      },
+      /** List CRM facts */
+      list: async (options?: {
+        account?: string;
+        contact?: string;
+        entity?: string;
+        entityType?: string;
+        key?: string;
+        limit?: string;
+        offset?: string;
+        opportunity?: string;
+        status?: string;
+      }): Promise<CrmFactListReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","fact"],
+          command: "list",
+          body: { ...(options ?? {}) },
+        });
+      },
+      /** Propose or confirm a CRM fact */
+      propose: async (entityType: string, entity: string, key: string, value: string, options?: {
+        account?: string;
+        confidence?: string;
+        contact?: string;
+        idempotencyKey?: string;
+        opportunity?: string;
+        status?: string;
+      }): Promise<CrmFactProposeReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","fact"],
+          command: "propose",
+          body: { entityType, entity, key, value, ...(options ?? {}) },
+        });
+      },
+      /** Reject a CRM fact */
+      reject: async (fact: string): Promise<CrmFactRejectReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","fact"],
+          command: "reject",
+          body: { fact },
+        });
+      }
+    },
+    /** List open CRM next actions */
+    next: async (options?: {
+      account?: string;
+      contact?: string;
+      limit?: string;
+      offset?: string;
+      opportunity?: string;
+      owner?: string;
+    }): Promise<CrmNextReturn> => {
+      return this.transport.call({
+        groupSegments: ["crm"],
+        command: "next",
+        body: { ...(options ?? {}) },
+      });
+    },
+    opportunity: {
+      /** List contacts linked to an opportunity */
+      contacts: async (opportunity: string): Promise<CrmOpportunityContactsReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","opportunity"],
+          command: "contacts",
+          body: { opportunity },
+        });
+      },
+      /** Create a CRM opportunity */
+      create: async (title: string, options?: {
+        account?: string;
+        contact?: string;
+        currency?: string;
+        idempotencyKey?: string;
+        owner?: string;
+        stage?: string;
+        value?: string;
+      }): Promise<CrmOpportunityCreateReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","opportunity"],
+          command: "create",
+          body: { title, ...(options ?? {}) },
+        });
+      },
+      /** Link a contact to an opportunity */
+      linkContact: async (opportunity: string, contact: string, options?: {
+        account?: string;
+        primary?: boolean;
+        role?: string;
+      }): Promise<CrmOpportunityLinkContactReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","opportunity"],
+          command: "link-contact",
+          body: { opportunity, contact, ...(options ?? {}) },
+        });
+      },
+      /** Move an opportunity to another stage */
+      move: async (opportunity: string, stage: string, options?: {
+        lostReason?: string;
+      }): Promise<CrmOpportunityMoveReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","opportunity"],
+          command: "move",
+          body: { opportunity, stage, ...(options ?? {}) },
+        });
+      },
+      /** Show CRM opportunity */
+      show: async (opportunity: string): Promise<CrmOpportunityShowReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","opportunity"],
+          command: "show",
+          body: { opportunity },
+        });
+      }
+    },
+    /** Show CRM opportunity */
+    opportunityCommand: async (opportunity: string): Promise<CrmOpportunityReturn> => {
+      return this.transport.call({
+        groupSegments: ["crm"],
+        command: "opportunity",
+        body: { opportunity },
+      });
+    },
+    task: {
+      /** Create a CRM relationship task */
+      create: async (title: string, options?: {
+        account?: string;
+        contact?: string;
+        due?: string;
+        idempotencyKey?: string;
+        opportunity?: string;
+        owner?: string;
+        priority?: string;
+      }): Promise<CrmTaskCreateReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","task"],
+          command: "create",
+          body: { title, ...(options ?? {}) },
+        });
+      },
+      /** Complete a CRM task */
+      done: async (task: string): Promise<CrmTaskDoneReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","task"],
+          command: "done",
+          body: { task },
+        });
+      },
+      /** Show CRM task */
+      show: async (task: string): Promise<CrmTaskShowReturn> => {
+        return this.transport.call({
+          groupSegments: ["crm","task"],
+          command: "show",
+          body: { task },
+        });
+      }
+    }
+  };
+
   readonly cron = {
     /** Add a new scheduled job */
     add: async (name: string, options?: {
@@ -790,6 +1379,8 @@ export class RaviClient {
     },
     /** List all scheduled jobs */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<CronListReturn> => {
       return this.transport.call({
@@ -992,6 +1583,7 @@ export class RaviClient {
       /** List local or remote Devin sessions */
       list: async (options?: {
         limit?: string;
+        offset?: string;
         remote?: boolean;
         status?: string;
         tag?: string;
@@ -1165,6 +1757,8 @@ export class RaviClient {
     },
     /** List configured hooks */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<HooksListReturn> => {
       return this.transport.call({
@@ -1287,6 +1881,7 @@ export class RaviClient {
       importance?: string;
       kind?: string;
       limit?: string;
+      offset?: string;
       profile?: string;
       query?: string;
       rich?: boolean;
@@ -1325,6 +1920,7 @@ export class RaviClient {
     create: async (name: string, options?: {
       agent?: string;
       channel?: string;
+      contactIntakeMode?: string;
       dmPolicy?: string;
       groupPolicy?: string;
     }): Promise<InstancesCreateReturn> => {
@@ -1384,6 +1980,8 @@ export class RaviClient {
     },
     /** List all instances */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<InstancesListReturn> => {
       return this.transport.call({
@@ -1404,11 +2002,14 @@ export class RaviClient {
         });
       },
       /** List pending contacts and chats for an instance */
-      list: async (name: string): Promise<InstancesPendingListReturn> => {
+      list: async (name: string, options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<InstancesPendingListReturn> => {
         return this.transport.call({
           groupSegments: ["instances","pending"],
           command: "list",
-          body: { name },
+          body: { name, ...(options ?? {}) },
         });
       },
       /** Reject and remove a pending contact or chat */
@@ -1454,6 +2055,8 @@ export class RaviClient {
       },
       /** List routes for an instance */
       list: async (name: string, options?: {
+        limit?: string;
+        offset?: string;
         tag?: string;
       }): Promise<InstancesRoutesListReturn> => {
         return this.transport.call({
@@ -1560,6 +2163,8 @@ export class RaviClient {
     /** List session observer bindings */
     list: async (options?: {
       agent?: string;
+      limit?: string;
+      offset?: string;
       session?: string;
     }): Promise<ObserversListReturn> => {
       return this.transport.call({
@@ -1581,11 +2186,14 @@ export class RaviClient {
         });
       },
       /** List observer profiles */
-      list: async (): Promise<ObserversProfilesListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<ObserversProfilesListReturn> => {
         return this.transport.call({
           groupSegments: ["observers","profiles"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Render an observer profile preview */
@@ -1649,11 +2257,14 @@ export class RaviClient {
         });
       },
       /** List observer rules */
-      list: async (): Promise<ObserversRulesListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<ObserversRulesListReturn> => {
         return this.transport.call({
           groupSegments: ["observers","rules"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Delete an observer rule */
@@ -1757,7 +2368,9 @@ export class RaviClient {
     },
     /** List relations */
     list: async (options?: {
+      limit?: string;
       object?: string;
+      offset?: string;
       relation?: string;
       source?: string;
       subject?: string;
@@ -1851,6 +2464,8 @@ export class RaviClient {
     },
     /** List projects */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       status?: string;
       tag?: string;
     }): Promise<ProjectsListReturn> => {
@@ -1902,6 +2517,8 @@ export class RaviClient {
       },
       /** List resource links for a project */
       list: async (project: string, options?: {
+        limit?: string;
+        offset?: string;
         type?: string;
       }): Promise<ProjectsResourcesListReturn> => {
         return this.transport.call({
@@ -2062,6 +2679,8 @@ export class RaviClient {
         },
         /** List available call profiles */
         list: async (options?: {
+          limit?: string;
+          offset?: string;
           tag?: string;
         }): Promise<ProxCallsProfilesListReturn> => {
           return this.transport.call({
@@ -2155,6 +2774,8 @@ export class RaviClient {
         },
         /** List call tools */
         list: async (options?: {
+          limit?: string;
+          offset?: string;
           profile?: string;
           tag?: string;
         }): Promise<ProxCallsToolsListReturn> => {
@@ -2250,6 +2871,8 @@ export class RaviClient {
         },
         /** List voice agents */
         list: async (options?: {
+          limit?: string;
+          offset?: string;
           tag?: string;
         }): Promise<ProxCallsVoiceAgentsListReturn> => {
           return this.transport.call({
@@ -2313,6 +2936,8 @@ export class RaviClient {
     },
     /** List routes across all instances or for one instance */
     list: async (name?: string, options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<RoutesListReturn> => {
       return this.transport.call({
@@ -2605,7 +3230,9 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       ephemeral?: boolean;
+      limit?: string;
       live?: boolean;
+      offset?: string;
       tag?: string;
     }): Promise<SessionsListReturn> => {
       return this.transport.call({
@@ -2744,6 +3371,11 @@ export class RaviClient {
       barrier?: string;
       channel?: string;
       interactive?: boolean;
+      thread?: string;
+      threadOwner?: string;
+      threadScope?: string;
+      threadSummary?: string;
+      threadTitle?: string;
       to?: string;
       wait?: boolean;
     }): Promise<SessionsSendReturn> => {
@@ -2837,6 +3469,8 @@ export class RaviClient {
     /** List live settings (legacy account.* hidden by default) */
     list: async (options?: {
       legacy?: boolean;
+      limit?: string;
+      offset?: string;
     }): Promise<SettingsListReturn> => {
       return this.transport.call({
         groupSegments: ["settings"],
@@ -2873,6 +3507,8 @@ export class RaviClient {
     },
     /** List skill gate rules */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<SkillGatesListReturn> => {
       return this.transport.call({
@@ -2944,6 +3580,8 @@ export class RaviClient {
     list: async (options?: {
       codex?: boolean;
       installed?: boolean;
+      limit?: string;
+      offset?: string;
       source?: string;
       tag?: string;
     }): Promise<SkillsListReturn> => {
@@ -2989,6 +3627,8 @@ export class RaviClient {
     list: async (options?: {
       domain?: string;
       kind?: string;
+      limit?: string;
+      offset?: string;
     }): Promise<SpecsListReturn> => {
       return this.transport.call({
         groupSegments: ["specs"],
@@ -3036,11 +3676,14 @@ export class RaviClient {
       });
     },
     /** List stickers in the typed catalog */
-    list: async (): Promise<StickersListReturn> => {
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<StickersListReturn> => {
       return this.transport.call({
         groupSegments: ["stickers"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Remove a sticker catalog entry */
@@ -3070,6 +3713,69 @@ export class RaviClient {
         groupSegments: ["stickers"],
         command: "show",
         body: { id },
+      });
+    }
+  };
+
+  readonly tagRules = {
+    /** Evaluate a rule against a target asset */
+    evaluate: async (ruleId: string, options?: {
+      apply?: boolean;
+      file?: string;
+      target?: string;
+    }): Promise<TagRulesEvaluateReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "evaluate",
+        body: { ruleId, ...(options ?? {}) },
+      });
+    },
+    /** Explain which rules currently match a target asset (dry-run) */
+    explain: async (options?: {
+      target?: string;
+    }): Promise<TagRulesExplainReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "explain",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** List loaded tag rules from .ravi/tag-rules */
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<TagRulesListReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Show a single rule definition */
+    show: async (id: string): Promise<TagRulesShowReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "show",
+        body: { id },
+      });
+    },
+    /** Run all rules against all contacts (use for cron/periodic schedules) */
+    tick: async (options?: {
+      apply?: boolean;
+      limit?: string;
+    }): Promise<TagRulesTickReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "tick",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Validate all rule files without applying */
+    validate: async (): Promise<TagRulesValidateReturn> => {
+      return this.transport.call({
+        groupSegments: ["tag-rules"],
+        command: "validate",
+        body: {},
       });
     }
   };
@@ -3298,6 +4004,8 @@ export class RaviClient {
       },
       /** List configured task automations */
       list: async (options?: {
+        limit?: string;
+        offset?: string;
         tag?: string;
       }): Promise<TasksAutomationsListReturn> => {
         return this.transport.call({
@@ -3379,11 +4087,14 @@ export class RaviClient {
         });
       },
       /** List gating dependencies and dependents for a task */
-      ls: async (taskId: string): Promise<TasksDepsLsReturn> => {
+      ls: async (taskId: string, options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<TasksDepsLsReturn> => {
         return this.transport.call({
           groupSegments: ["tasks","deps"],
           command: "ls",
-          body: { taskId },
+          body: { taskId, ...(options ?? {}) },
         });
       },
       /** Remove one gating dependency from a task */
@@ -3475,11 +4186,14 @@ export class RaviClient {
         });
       },
       /** List resolved task profiles from all catalog sources */
-      list: async (): Promise<TasksProfilesListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<TasksProfilesListReturn> => {
         return this.transport.call({
           groupSegments: ["tasks","profiles"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Render a profile preview with the resolved template context */
@@ -3547,13 +4261,128 @@ export class RaviClient {
     }
   };
 
+  readonly threads = {
+    /** Render the bounded thread brief used for handoff */
+    brief: async (thread: string, options?: {
+      scope?: string;
+    }): Promise<ThreadsBriefReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "brief",
+        body: { thread, ...(options ?? {}) },
+      });
+    },
+    /** Close a thread */
+    close: async (thread: string, options?: {
+      reason?: string;
+      scope?: string;
+    }): Promise<ThreadsCloseReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "close",
+        body: { thread, ...(options ?? {}) },
+      });
+    },
+    /** Append a comment to a thread */
+    comment: async (thread: string, body: string, options?: {
+      scope?: string;
+      visibility?: string;
+    }): Promise<ThreadsCommentReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "comment",
+        body: { thread, body, ...(options ?? {}) },
+      });
+    },
+    /** Create a Ravi-owned thread */
+    create: async (slug: string, options?: {
+      defaultAgent?: string;
+      owner?: string;
+      scope?: string;
+      status?: string;
+      summary?: string;
+      title?: string;
+    }): Promise<ThreadsCreateReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "create",
+        body: { slug, ...(options ?? {}) },
+      });
+    },
+    /** List thread entries */
+    entries: async (thread: string, options?: {
+      limit?: string;
+      offset?: string;
+      scope?: string;
+    }): Promise<ThreadsEntriesReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "entries",
+        body: { thread, ...(options ?? {}) },
+      });
+    },
+    /** Link a thread to another Ravi object */
+    link: async (thread: string, target: string, options?: {
+      label?: string;
+      role?: string;
+      scope?: string;
+      visibility?: string;
+    }): Promise<ThreadsLinkReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "link",
+        body: { thread, target, ...(options ?? {}) },
+      });
+    },
+    /** List Ravi threads */
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+      owner?: string;
+      scope?: string;
+      search?: string;
+      status?: string;
+    }): Promise<ThreadsListReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Append a note to a thread */
+    note: async (thread: string, body: string, options?: {
+      scope?: string;
+      visibility?: string;
+    }): Promise<ThreadsNoteReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "note",
+        body: { thread, body, ...(options ?? {}) },
+      });
+    },
+    /** Show one thread with links and recent entries */
+    show: async (thread: string, options?: {
+      entries?: string;
+      scope?: string;
+    }): Promise<ThreadsShowReturn> => {
+      return this.transport.call({
+        groupSegments: ["threads"],
+        command: "show",
+        body: { thread, ...(options ?? {}) },
+      });
+    }
+  };
+
   readonly tools = {
     /** List all available CLI tools */
-    list: async (): Promise<ToolsListReturn> => {
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<ToolsListReturn> => {
       return this.transport.call({
         groupSegments: ["tools"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Export tools as JSON manifest */
@@ -3638,6 +4467,8 @@ export class RaviClient {
     },
     /** List all event triggers */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<TriggersListReturn> => {
       return this.transport.call({
@@ -3814,6 +4645,8 @@ export class RaviClient {
       /** List all groups the bot participates in */
       list: async (options?: {
         account?: string;
+        limit?: string;
+        offset?: string;
       }): Promise<WhatsappGroupListReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -3893,11 +4726,14 @@ export class RaviClient {
         });
       },
       /** List workflow runs */
-      list: async (): Promise<WorkflowsRunsListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<WorkflowsRunsListReturn> => {
         return this.transport.call({
           groupSegments: ["workflows","runs"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Release a manual node transition or gate */
@@ -3971,11 +4807,14 @@ export class RaviClient {
         });
       },
       /** List workflow specs */
-      list: async (): Promise<WorkflowsSpecsListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<WorkflowsSpecsListReturn> => {
         return this.transport.call({
           groupSegments: ["workflows","specs"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Show one workflow spec */

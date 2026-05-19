@@ -12,7 +12,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
-import type { RuntimeHostStreamingSession, RuntimeMessageTarget } from "./host-session.js";
+import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
 import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
@@ -60,12 +60,15 @@ const capabilities: RuntimeCapabilities = {
 const source: RuntimeMessageTarget = {
   channel: "whatsapp",
   accountId: "main",
+  instanceId: "instance-1",
   chatId: "5511999999999",
   canonicalChatId: "chat_1",
   actorType: "contact",
   contactId: "contact_1",
+  platformIdentityId: "pi_contact_1",
   rawSenderId: "5511999999999@s.whatsapp.net",
   normalizedSenderId: "5511999999999",
+  identityConfidence: 1,
   identityProvenance: { source: "test" },
   sourceMessageId: "wamid-1",
 };
@@ -305,6 +308,16 @@ describe("runtime session trace instrumentation", () => {
       defaultRuntimeProviderId: "claude",
     });
 
+    expect(runtimeRequest.env).toMatchObject({
+      RAVI_INSTANCE_ID: "instance-1",
+      RAVI_CANONICAL_CHAT_ID: "chat_1",
+      RAVI_ACTOR_TYPE: "contact",
+      RAVI_CONTACT_ID: "contact_1",
+      RAVI_PLATFORM_IDENTITY_ID: "pi_contact_1",
+      RAVI_RAW_SENDER_ID: "5511999999999@s.whatsapp.net",
+      RAVI_NORMALIZED_SENDER_ID: "5511999999999",
+    });
+
     const yielded = await runtimeRequest.prompt.next();
     expect(yielded.value?.message.content).toBe("hello trace");
     streaming.done = true;
@@ -318,8 +331,10 @@ describe("runtime session trace instrumentation", () => {
       canonicalChatId: "chat_1",
       actorType: "contact",
       contactId: "contact_1",
+      platformIdentityId: "pi_contact_1",
       rawSenderId: "5511999999999@s.whatsapp.net",
       normalizedSenderId: "5511999999999",
+      identityConfidence: 1,
       identityProvenance: { source: "test" },
     });
     expect(adapterRequest?.payloadJson).toMatchObject({
@@ -458,6 +473,63 @@ describe("runtime session trace instrumentation", () => {
     expect(persisted.skills).toEqual([expect.objectContaining({ id: "trace-skill", state: "stale" })]);
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual([]);
     expect(emitted.some((event) => event.data.type === "skill.visibility.reset")).toBe(true);
+  });
+
+  it("clears compaction when the provider leaves compacting status", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "status",
+          status: "compacting",
+        },
+        {
+          type: "status",
+          status: "thinking",
+        },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    const statusEvents = listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "runtime.status");
+    const compactingValues = statusEvents.map((event) => {
+      const payload = event.payloadJson;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+      return payload.compacting;
+    });
+    expect(compactingValues).toEqual([true, false]);
+    expect(streaming.compacting).toBe(false);
+    expect(streaming.turnActive).toBe(false);
+  });
+
+  it("clears compaction at terminal boundaries even without an idle status", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "status",
+          status: "compacting",
+        },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    expect(streaming.compacting).toBe(false);
+    expect(streaming.turnActive).toBe(false);
   });
 
   it("marks a skill loaded when a ravi skills show command completes", async () => {
@@ -671,5 +743,55 @@ describe("runtime session trace instrumentation", () => {
       rawEvent: { type: "error", message: "provider down" },
     });
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
+  });
+
+  it("stashes and restarts after a recoverable interrupt failure", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "new message while busy",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      interrupted: true,
+      pendingMessages: [queued],
+    });
+    seedAdapterTrace(streaming, "turn-recoverable-interrupt");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "recoverable interrupt",
+          recoverable: true,
+          rawEvent: {
+            type: "result",
+            subtype: "error_during_execution",
+            errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use"],
+          },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "new message while busy",
+    ]);
+    expect(stashedMessages.get(SESSION_NAME)?.[0]?.launchPrompt?.source).toEqual(source);
+    expect(restartRequests).toEqual([
+      {
+        sessionName: SESSION_NAME,
+        reason: "recoverable_interrupt_failure",
+      },
+    ]);
+    expect(streaming.done).toBe(true);
   });
 });

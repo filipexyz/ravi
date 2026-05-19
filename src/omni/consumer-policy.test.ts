@@ -63,6 +63,7 @@ function makeInstance(partial: Partial<InstanceConfig> = {}): InstanceConfig {
     channel: "whatsapp",
     dmPolicy: "open",
     groupPolicy: "open",
+    contactIntakeMode: "off",
     createdAt: Date.now(),
     updatedAt: Date.now(),
     ...partial,

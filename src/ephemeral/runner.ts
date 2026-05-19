@@ -10,7 +10,7 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
-import { dbCleanupMessageMeta, dbCleanupExpiredSessions } from "../router/router-db.js";
+import { dbCleanupMessageMeta, dbCleanupExpiredSessions, dbPruneStaleRows } from "../router/router-db.js";
 import { rollupDailyMetrics } from "../metrics/rollup.js";
 
 const log = logger.child("ephemeral");
@@ -24,12 +24,17 @@ const WARN_AHEAD_MS = 10 * 60_000; // 10 minutes
 /** How often to run the daily-metrics rollup (ms) */
 const ROLLUP_INTERVAL_MS = 60 * 60_000; // 1 hour
 
+/** How often to run the full TTL prune (ms). Daily; rollup has run many times by then. */
+const PRUNE_INTERVAL_MS = 24 * 60 * 60_000;
+
 /** Track which sessions we already warned */
 const warned = new Set<string>();
 
 let intervalTimer: ReturnType<typeof setInterval> | null = null;
 let rollupTimer: ReturnType<typeof setInterval> | null = null;
+let pruneTimer: ReturnType<typeof setInterval> | null = null;
 let lastRollupAt = 0;
+let lastPruneAt = 0;
 let running = false;
 
 /**
@@ -111,6 +116,41 @@ function rollupTick(): void {
   }
 }
 
+/**
+ * Run TTL prune on stale rows. Safe to run regularly because:
+ * - rollup runs hourly (well before any data hits its TTL), so daily_metrics
+ *   already preserves aggregates
+ * - each delete runs in its own short transaction (no long write lock)
+ * - WAL checkpoint drains the WAL after pruning so the file actually shrinks
+ */
+function pruneTick(): void {
+  const now = Date.now();
+  if (now - lastPruneAt < PRUNE_INTERVAL_MS / 2) return;
+  lastPruneAt = now;
+  try {
+    const result = dbPruneStaleRows({ walCheckpoint: true });
+    const total =
+      result.messageMetadata +
+      result.sessionEvents +
+      result.sessionTraceBlobs +
+      result.auditLog +
+      result.costEvents +
+      result.expiredSessions;
+    if (total > 0) {
+      log.info("TTL prune", {
+        sessionEvents: result.sessionEvents,
+        sessionTraceBlobs: result.sessionTraceBlobs,
+        messageMetadata: result.messageMetadata,
+        auditLog: result.auditLog,
+        costEvents: result.costEvents,
+        expiredSessions: result.expiredSessions,
+      });
+    }
+  } catch (err) {
+    log.error("TTL prune failed", err);
+  }
+}
+
 export async function startEphemeralRunner(): Promise<void> {
   if (running) return;
   running = true;
@@ -122,14 +162,18 @@ export async function startEphemeralRunner(): Promise<void> {
   // Kick off an initial rollup so a freshly-restarted daemon backfills any
   // missing days from the last shutdown without waiting an hour.
   rollupTick();
+  // Run prune on startup so a long-stopped daemon catches up on stale rows.
+  pruneTick();
 
   // Then run periodically
   intervalTimer = setInterval(tick, CHECK_INTERVAL_MS);
   rollupTimer = setInterval(rollupTick, ROLLUP_INTERVAL_MS);
+  pruneTimer = setInterval(pruneTick, PRUNE_INTERVAL_MS);
 
   log.info("Ephemeral runner started", {
     checkIntervalMs: CHECK_INTERVAL_MS,
     rollupIntervalMs: ROLLUP_INTERVAL_MS,
+    pruneIntervalMs: PRUNE_INTERVAL_MS,
   });
 }
 
@@ -144,6 +188,10 @@ export async function stopEphemeralRunner(): Promise<void> {
   if (rollupTimer) {
     clearInterval(rollupTimer);
     rollupTimer = null;
+  }
+  if (pruneTimer) {
+    clearInterval(pruneTimer);
+    pruneTimer = null;
   }
 
   warned.clear();

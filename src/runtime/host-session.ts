@@ -1,6 +1,6 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
-import type { MessageActorMetadata, RaviCommandPromptMetadata } from "./message-types.js";
+import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
 import type {
   RuntimeEventMetadata,
   RuntimeEffort,
@@ -25,6 +25,8 @@ export interface RuntimeUserMessage extends RuntimePromptMessage {
   deliveryBarrier?: DeliveryBarrier;
   taskBarrierTaskId?: string;
   commands?: RaviCommandPromptMetadata[];
+  /** Original launch envelope used to recreate session metadata after an interrupt restart. */
+  launchPrompt?: RuntimeLaunchPrompt;
   pendingId?: string;
   queuedAt?: number;
 }
@@ -101,6 +103,8 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
+  /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
+  idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}
@@ -134,6 +138,10 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
   }
   session.done = true;
   session.starting = false;
+  if (session.idleGapRecoveryTimer) {
+    clearTimeout(session.idleGapRecoveryTimer);
+    session.idleGapRecoveryTimer = undefined;
+  }
 
   session.queryHandle.interrupt().catch(() => {});
 

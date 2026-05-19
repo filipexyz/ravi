@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { readFileSync, rmSync } from "node:fs";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   WorkflowSpecDefinitionSchema,
   archiveWorkflowNodeRun,
@@ -130,19 +131,37 @@ export class WorkflowSpecCommands {
   }
 
   @Command({ name: "list", description: "List workflow specs" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching workflow specs to skip (default: 0)" })
+    offset?: string,
+  ) {
     const specs = listWorkflowSpecs();
+    const page = paginateCliItems(specs, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "workflows", "specs", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+    });
+    const payload = { total: page.total, pagination, items: page.items, specs: page.items };
     if (asJson) {
-      console.log(JSON.stringify(specs, null, 2));
-    } else if (specs.length === 0) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else if (page.items.length === 0) {
       console.log("No workflow specs found.");
     } else {
       console.log("");
-      for (const spec of specs) {
+      for (const spec of page.items) {
         console.log(`${spec.id} :: ${spec.title} :: ${spec.nodes.length} nodes :: ${spec.edges.length} edges`);
       }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
     }
-    return specs;
+    return payload;
   }
 
   @Command({ name: "show", description: "Show one workflow spec" })
@@ -210,19 +229,37 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "list", description: "List workflow runs" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching workflow runs to skip (default: 0)" })
+    offset?: string,
+  ) {
     const runs = listWorkflowRuns();
+    const page = paginateCliItems(runs, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "workflows", "runs", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+    });
+    const payload = { total: page.total, pagination, items: page.items, runs: page.items };
     if (asJson) {
-      console.log(JSON.stringify(runs, null, 2));
-    } else if (runs.length === 0) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else if (page.items.length === 0) {
       console.log("No workflow runs found.");
     } else {
       console.log("");
-      for (const run of runs) {
+      for (const run of page.items) {
         console.log(`${run.id} :: ${run.status} :: ${run.workflowSpecId} :: ${run.title}`);
       }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
     }
-    return runs;
+    return payload;
   }
 
   @Command({ name: "show", description: "Show one workflow run with node state" })

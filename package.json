@@ -1,6 +1,6 @@
 {
   "name": "ravi.bot",
-  "version": "3.260506.1",
+  "version": "3.260519.2",
   "description": "Personal multi-agent runtime for Ravi",
   "type": "module",
   "main": "dist/bundle/index.js",
@@ -13,6 +13,7 @@
   "files": [
     "bin/ravi",
     "dist/bundle/",
+    "dist/tui/",
     "README.md"
   ],
   "repository": {
@@ -32,7 +33,9 @@
     "gen:commands": "bun scripts/gen-commands.ts",
     "gen:plugins": "bun scripts/gen-plugins.ts",
     "prebuild": "bun run gen:commands",
-    "build": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --keep-names --sourcemap=linked --external ink --external react --external '@anthropic-ai/*' --external openai --external '@google/*' --external nats --external '@elevenlabs/*' && bun run gen:plugins",
+    "build": "bun run build:cli && bun run build:tui && bun run gen:plugins",
+    "build:cli": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --keep-names --sourcemap=linked --external ink --external react --external '@anthropic-ai/*' --external openai --external '@google/*' --external nats --external '@elevenlabs/*'",
+    "build:tui": "bun build src/tui/index.tsx --outdir dist/tui --target bun --keep-names --sourcemap=linked --external '@opentui/core' --external '@opentui/react' --external react --external nats",
     "prepack": "bun run build",
     "start": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
@@ -43,7 +46,7 @@
     "typecheck": "bun tsc --noEmit",
     "lint": "bunx biome check src/",
     "lint:fix": "bunx biome check --write src/",
-    "test": "bun test src/bash/ src/hooks/ src/router/ src/heartbeat/ src/permissions/ src/triggers/ src/omni/ src/plugins/ src/adapters/ src/approval/ src/tui/hooks/runtime-feed.test.ts src/tui/hooks/runtime-display.test.ts src/gateway-typing.test.ts && bun test src/tasks/ src/projects/ src/workflow-substrate/ src/whatsapp-overlay/ && bun run test:cli-commands && bun test src/bot.runtime-guards.test.ts && bun test src/remote-spawn-nats.test.ts && bun test src/runtime/index.test.ts src/runtime/model-catalog.test.ts && bun test src/runtime/context-registry.test.ts && bun test src/cli/context.test.ts src/cli/logging.test.ts && bun test src/utils/logger.test.ts && bun test src/transcripts.test.ts && bun run test:sdk",
+    "test": "bun test src/bash/ src/hooks/ src/router/ src/heartbeat/ src/permissions/ src/triggers/ src/omni/ src/plugins/ src/adapters/ src/approval/ src/tui/hooks/runtime-feed.test.ts src/tui/hooks/runtime-display.test.ts src/gateway-typing.test.ts && bun test src/tasks/ src/projects/ src/workflow-substrate/ src/whatsapp-overlay/ && bun run test:cli-commands && bun test src/bot.runtime-guards.test.ts && bun test src/remote-spawn-nats.test.ts && bun test src/runtime/index.test.ts src/runtime/model-catalog.test.ts && bun test src/runtime/context-registry.test.ts && bun test src/cli/context.test.ts src/cli/logging.test.ts src/cli/tui-launcher.test.ts && bun test src/utils/logger.test.ts && bun test src/transcripts.test.ts && bun run test:sdk",
     "test:sdk": "bun test src/sdk/client-codegen/ ./tests/integration/sdk-roundtrip.test.ts ./packages/ravi-os-sdk/src/__tests__/types.test-d.ts ./packages/ravi-os-sdk/src/__tests__/streaming.test.ts && bun run sdk:check",
     "test:cli-commands": "for f in src/cli/commands/*.test.ts; do bun test \"$f\" || exit 1; done",
     "test:live": "RAVI_LIVE_TESTS=1 bun test src/runtime/*.live.test.ts && RAVI_LIVE_TESTS=1 bun test src/bot.live.test.ts",

@@ -12,10 +12,12 @@ import { z } from "zod";
 import { join } from "node:path";
 import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone } from "../utils/phone.js";
+import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
+import { executeWrite } from "../db/write-retry.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
 
 const log = logger.child("router:db");
@@ -69,6 +71,7 @@ export const RouteInputSchema = z.object({
 
 export const GroupPolicySchema = z.enum(["open", "allowlist", "closed"]);
 export const DmPolicySchema = z.enum(["open", "pairing", "closed"]);
+export const ContactIntakeModeSchema = z.enum(["off", "discovered", "pending"]);
 export const ContextSourceSchema = z.object({
   channel: z.string().min(1),
   accountId: z.string().min(1),
@@ -104,9 +107,11 @@ export const InstanceInputSchema = z.object({
   agent: z.string().optional(),
   dmPolicy: DmPolicySchema.default("open"),
   groupPolicy: GroupPolicySchema.default("open"),
+  contactIntakeMode: ContactIntakeModeSchema.default("off"),
   dmScope: DmScopeSchema.optional(),
   enabled: z.boolean().default(true),
   defaults: z.record(z.string(), z.unknown()).optional(),
+  defaultContactTags: z.array(z.string()).optional(),
 });
 
 // ============================================================================
@@ -169,9 +174,11 @@ interface InstanceRow {
   agent: string | null;
   dm_policy: string;
   group_policy: string;
+  contact_intake_mode: string | null;
   dm_scope: string | null;
   enabled: number | null;
   defaults: string | null;
+  default_contact_tags: string | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -228,6 +235,76 @@ interface ChatParticipantRow {
   updated_at: number;
 }
 
+interface ChatMessageRow {
+  id: string;
+  chat_id: string;
+  channel: string;
+  instance_id: string;
+  provider_message_id: string;
+  raw_chat_id: string;
+  raw_sender_id: string | null;
+  normalized_sender_id: string | null;
+  actor_type: string;
+  contact_id: string | null;
+  agent_id: string | null;
+  platform_identity_id: string | null;
+  message_type: string | null;
+  content_json: string | null;
+  raw_provenance_json: string | null;
+  provider_timestamp: number | null;
+  ingested_at: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface ChatMessageWithSortKeyRow extends ChatMessageRow {
+  message_sort_key: string;
+}
+
+interface ChatReadingListRow {
+  id: string;
+  name: string;
+  description: string | null;
+  owner_type: string;
+  owner_id: string;
+  visibility: string;
+  mode: string;
+  selector_json: string | null;
+  metadata_json: string | null;
+  created_at: number;
+  updated_at: number;
+  archived_at: number | null;
+}
+
+interface ChatReadingListMemberRow {
+  id: string;
+  list_id: string;
+  chat_id: string;
+  source: string;
+  reason: string | null;
+  priority: number;
+  metadata_json: string | null;
+  added_at: number;
+  removed_at: number | null;
+}
+
+interface ChatReadingCursorRow {
+  id: string;
+  list_id: string;
+  chat_id: string;
+  reader_type: string;
+  reader_id: string;
+  last_read_message_id: string | null;
+  last_read_message_sort_key: string | null;
+  last_read_event_id: string | null;
+  last_read_event_sort_key: string | null;
+  last_read_at: number | null;
+  read_reason: string | null;
+  metadata_json: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 interface SessionChatBindingRow {
   session_key: string;
   chat_id: string;
@@ -260,9 +337,11 @@ export interface InstanceConfig {
   agent?: string;
   dmPolicy: "open" | "pairing" | "closed";
   groupPolicy: "open" | "allowlist" | "closed";
+  contactIntakeMode: z.infer<typeof ContactIntakeModeSchema>;
   dmScope?: DmScope;
   enabled?: boolean;
   defaults?: Record<string, unknown>;
+  defaultContactTags?: string[];
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -425,6 +504,138 @@ export interface ChatParticipantRecord {
   metadata?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface ChatMessageRecord {
+  id: string;
+  chatId: string;
+  channel: string;
+  instanceId: string;
+  providerMessageId: string;
+  rawChatId: string;
+  rawSenderId?: string;
+  normalizedSenderId?: string;
+  actorType: "contact" | "agent" | "system" | "unknown" | string;
+  contactId?: string;
+  agentId?: string;
+  platformIdentityId?: string;
+  messageType?: string;
+  content?: Record<string, unknown>;
+  rawProvenance?: Record<string, unknown>;
+  providerTimestamp?: number;
+  ingestedAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ChatMessageWithSortKey extends ChatMessageRecord {
+  sortKey: string;
+}
+
+export interface ChatListItem {
+  chat: ChatRecord;
+  messageCount: number;
+  participantCount: number;
+  lastMessage: ChatMessageWithSortKey | null;
+}
+
+export interface UpsertChatMessageInput {
+  chatId: string;
+  channel: string;
+  instanceId?: string | null;
+  providerMessageId?: string | null;
+  rawChatId: string;
+  rawSenderId?: string | null;
+  normalizedSenderId?: string | null;
+  actorType?: "contact" | "agent" | "system" | "unknown" | string | null;
+  contactId?: string | null;
+  agentId?: string | null;
+  platformIdentityId?: string | null;
+  messageType?: string | null;
+  content?: Record<string, unknown> | null;
+  rawProvenance?: Record<string, unknown> | null;
+  providerTimestamp?: number | null;
+  ingestedAt?: number;
+}
+
+export interface UpsertChatMessageResult {
+  message: ChatMessageRecord;
+  created: boolean;
+}
+
+export type ChatReadingListOwnerType = "user" | "agent" | "team" | "system" | "workflow" | string;
+export type ChatReadingListVisibility = "private" | "team" | "system" | string;
+export type ChatReadingListMode = "static" | "dynamic" | "hybrid" | string;
+export type ChatReadingListMemberSource = "manual" | "selector" | "observer" | "crm" | "migration" | string;
+export type ChatReadingCursorReaderType = "user" | "agent" | "team" | "system" | "workflow" | string;
+
+export interface ChatReadingListRecord {
+  id: string;
+  name: string;
+  description?: string;
+  ownerType: ChatReadingListOwnerType;
+  ownerId: string;
+  visibility: ChatReadingListVisibility;
+  mode: ChatReadingListMode;
+  selector?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt?: number;
+}
+
+export interface ChatReadingListMemberRecord {
+  id: string;
+  listId: string;
+  chatId: string;
+  source: ChatReadingListMemberSource;
+  reason?: string;
+  priority: number;
+  metadata?: Record<string, unknown>;
+  addedAt: number;
+  removedAt?: number;
+}
+
+export interface ChatReadingCursorRecord {
+  id: string;
+  listId: string;
+  chatId: string;
+  readerType: ChatReadingCursorReaderType;
+  readerId: string;
+  lastReadMessageId?: string;
+  lastReadMessageSortKey?: string;
+  lastReadEventId?: string;
+  lastReadEventSortKey?: string;
+  lastReadAt?: number;
+  readReason?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ChatReadingListMemberItem {
+  member: ChatReadingListMemberRecord;
+  chat: ChatRecord;
+  messageCount: number;
+  unreadMessageCount: number;
+  lastMessage: ChatMessageWithSortKey | null;
+  cursor: ChatReadingCursorRecord | null;
+}
+
+export interface ChatReadingDelta {
+  list: ChatReadingListRecord;
+  chat: ChatRecord;
+  reader: { type: ChatReadingCursorReaderType; id: string };
+  previousCursor: ChatReadingCursorRecord | null;
+  nextCursor: ChatReadingCursorRecord | null;
+  messages: ChatMessageWithSortKey[];
+  events: unknown[];
+  newMessageCount: number;
+  editedMessageCount: number;
+  deletedMessageCount: number;
+  participantChanges: unknown[];
+  firstUnreadMessage: ChatMessageWithSortKey | null;
+  lastUnreadMessage: ChatMessageWithSortKey | null;
 }
 
 export interface UpsertChatParticipantInput {
@@ -778,6 +989,113 @@ function getDb(): Database {
       ON chat_participants(chat_id, normalized_platform_user_id)
       WHERE platform_identity_id IS NULL AND contact_id IS NULL AND agent_id IS NULL AND normalized_platform_user_id IS NOT NULL;
 
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL,
+      instance_id TEXT NOT NULL DEFAULT '',
+      provider_message_id TEXT NOT NULL,
+      raw_chat_id TEXT NOT NULL,
+      raw_sender_id TEXT,
+      normalized_sender_id TEXT,
+      actor_type TEXT NOT NULL DEFAULT 'unknown',
+      contact_id TEXT,
+      agent_id TEXT,
+      platform_identity_id TEXT,
+      message_type TEXT,
+      content_json TEXT,
+      raw_provenance_json TEXT,
+      provider_timestamp INTEGER,
+      ingested_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(channel, instance_id, chat_id, provider_message_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_time
+      ON chat_messages(chat_id, provider_timestamp, ingested_at, id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_contact_time
+      ON chat_messages(contact_id, provider_timestamp, ingested_at)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_platform_identity
+      ON chat_messages(platform_identity_id, provider_timestamp)
+      WHERE platform_identity_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS chat_reading_lists (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      owner_type TEXT NOT NULL DEFAULT 'system',
+      owner_id TEXT NOT NULL DEFAULT 'ravi',
+      visibility TEXT NOT NULL DEFAULT 'system',
+      mode TEXT NOT NULL DEFAULT 'static',
+      selector_json TEXT,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      archived_at INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_reading_lists_owner_name
+      ON chat_reading_lists(owner_type, owner_id, name)
+      WHERE archived_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_reading_lists_name
+      ON chat_reading_lists(name)
+      WHERE archived_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS chat_reading_list_members (
+      id TEXT PRIMARY KEY,
+      list_id TEXT NOT NULL REFERENCES chat_reading_lists(id) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      source TEXT NOT NULL DEFAULT 'manual',
+      reason TEXT,
+      priority INTEGER NOT NULL DEFAULT 0,
+      metadata_json TEXT,
+      added_at INTEGER NOT NULL,
+      removed_at INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_reading_list_members_active
+      ON chat_reading_list_members(list_id, chat_id)
+      WHERE removed_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_reading_list_members_chat
+      ON chat_reading_list_members(chat_id)
+      WHERE removed_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS chat_reading_cursors (
+      id TEXT PRIMARY KEY,
+      list_id TEXT NOT NULL REFERENCES chat_reading_lists(id) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      reader_type TEXT NOT NULL,
+      reader_id TEXT NOT NULL,
+      last_read_message_id TEXT,
+      last_read_message_sort_key TEXT,
+      last_read_event_id TEXT,
+      last_read_event_sort_key TEXT,
+      last_read_at INTEGER,
+      read_reason TEXT,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(list_id, chat_id, reader_type, reader_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_reading_cursors_reader
+      ON chat_reading_cursors(reader_type, reader_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS chat_reading_cursor_events (
+      id TEXT PRIMARY KEY,
+      list_id TEXT NOT NULL REFERENCES chat_reading_lists(id) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      reader_type TEXT NOT NULL,
+      reader_id TEXT NOT NULL,
+      previous_message_id TEXT,
+      previous_message_sort_key TEXT,
+      next_message_id TEXT,
+      next_message_sort_key TEXT,
+      reason TEXT,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_reading_cursor_events_scope
+      ON chat_reading_cursor_events(list_id, chat_id, reader_type, reader_id, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS session_chat_bindings (
       session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
       chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -815,6 +1133,118 @@ function getDb(): Database {
       WHERE platform_identity_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_session_participants_session
       ON session_participants(session_key);
+
+    CREATE TABLE IF NOT EXISTS threads (
+      id TEXT PRIMARY KEY,
+      slug TEXT,
+      title TEXT NOT NULL,
+      summary TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      owner_type TEXT NOT NULL DEFAULT 'system',
+      owner_id TEXT,
+      scope_type TEXT NOT NULL DEFAULT 'global',
+      scope_id TEXT,
+      default_agent_id TEXT,
+      default_chat_id TEXT,
+      default_contact_id TEXT,
+      current_assignee_type TEXT,
+      current_assignee_id TEXT,
+      closed_reason TEXT,
+      closed_at INTEGER,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      last_entry_at INTEGER,
+      last_handoff_at INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_scope_slug
+      ON threads(scope_type, COALESCE(scope_id, ''), slug)
+      WHERE slug IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_threads_status_updated
+      ON threads(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_threads_owner
+      ON threads(owner_type, owner_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_threads_scope
+      ON threads(scope_type, scope_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS thread_entries (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      body TEXT NOT NULL,
+      summary TEXT,
+      actor_type TEXT NOT NULL DEFAULT 'unknown',
+      actor_id TEXT,
+      actor_name TEXT,
+      actor_agent_id TEXT,
+      actor_session_key TEXT,
+      actor_session_name TEXT,
+      source_type TEXT NOT NULL DEFAULT 'manual',
+      source_id TEXT,
+      source_message_id TEXT,
+      source_session_key TEXT,
+      source_chat_id TEXT,
+      visibility TEXT NOT NULL DEFAULT 'default',
+      importance TEXT,
+      pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0,1)),
+      source_policy TEXT,
+      resolved_at INTEGER,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_thread_entries_thread_time
+      ON thread_entries(thread_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_thread_entries_kind
+      ON thread_entries(thread_id, kind, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS thread_links (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'context',
+      label TEXT,
+      visibility TEXT NOT NULL DEFAULT 'default',
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(thread_id, target_type, target_id, role)
+    );
+    CREATE INDEX IF NOT EXISTS idx_thread_links_thread
+      ON thread_links(thread_id, role, target_type, target_id);
+    CREATE INDEX IF NOT EXISTS idx_thread_links_target
+      ON thread_links(target_type, target_id, role);
+
+    CREATE TABLE IF NOT EXISTS thread_handoffs (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+      source_session_key TEXT,
+      source_session_name TEXT,
+      target_session_key TEXT NOT NULL,
+      target_session_name TEXT,
+      target_agent_id TEXT,
+      handoff_kind TEXT NOT NULL DEFAULT 'session_send',
+      source_entry_id TEXT REFERENCES thread_entries(id) ON DELETE SET NULL,
+      brief_text TEXT NOT NULL,
+      brief_json TEXT,
+      included_entry_ids_json TEXT NOT NULL DEFAULT '[]',
+      included_link_ids_json TEXT NOT NULL DEFAULT '[]',
+      snapshot_hash TEXT,
+      snapshot_version TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      created_thread INTEGER NOT NULL DEFAULT 0 CHECK(created_thread IN (0,1)),
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      delivered_at INTEGER,
+      failed_at INTEGER,
+      failure_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_thread_handoffs_thread_time
+      ON thread_handoffs(thread_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_thread_handoffs_target
+      ON thread_handoffs(target_session_key, created_at DESC);
 
     CREATE INDEX IF NOT EXISTS idx_routes_priority ON routes(priority DESC);
     CREATE INDEX IF NOT EXISTS idx_routes_agent ON routes(agent_id);
@@ -861,6 +1291,8 @@ function getDb(): Database {
     );
     -- TTL pruning hot path (DELETE FROM message_metadata WHERE created_at < ?)
     CREATE INDEX IF NOT EXISTS idx_message_metadata_created ON message_metadata(created_at);
+    CREATE INDEX IF NOT EXISTS idx_message_metadata_contact_time
+      ON message_metadata(contact_id, created_at);
 
     -- Cost tracking: granular per-turn cost events
     CREATE TABLE IF NOT EXISTS cost_events (
@@ -963,6 +1395,8 @@ function getDb(): Database {
       ON session_events(event_type, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_chat_time
       ON session_events(source_chat_id, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_session_events_contact_time
+      ON session_events(contact_id, timestamp);
 
     -- Omni group metadata cache: local snapshot used by prompt context.
     CREATE TABLE IF NOT EXISTS omni_group_metadata (
@@ -1048,9 +1482,11 @@ function getDb(): Database {
       agent        TEXT REFERENCES agents(id) ON DELETE SET NULL,
       dm_policy    TEXT NOT NULL DEFAULT 'open' CHECK(dm_policy IN ('open','pairing','closed')),
       group_policy TEXT NOT NULL DEFAULT 'open' CHECK(group_policy IN ('open','allowlist','closed')),
+      contact_intake_mode TEXT NOT NULL DEFAULT 'off' CHECK(contact_intake_mode IN ('off','discovered','pending')),
       dm_scope     TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
       enabled      INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
       defaults     TEXT,
+      default_contact_tags TEXT,
       created_at   INTEGER NOT NULL,
       updated_at   INTEGER NOT NULL
     );
@@ -1247,8 +1683,11 @@ function getDb(): Database {
     }
 
     const insertInstance = db.prepare(`
-      INSERT OR IGNORE INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO instances (
+        name, instance_id, channel, agent, dm_policy, group_policy, contact_intake_mode,
+        enabled, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 'off', ?, ?, ?)
     `);
     const now = Date.now();
     for (const inst of Object.values(instanceData)) {
@@ -1478,19 +1917,16 @@ function getDb(): Database {
     db.exec("ALTER TABLE routes ADD COLUMN deleted_at INTEGER");
     log.info("Added deleted_at column to routes table");
   }
-  const instanceColumnsNow = db.prepare("PRAGMA table_info(instances)").all() as Array<{ name: string }>;
-  if (!instanceColumnsNow.some((c) => c.name === "deleted_at")) {
-    db.exec("ALTER TABLE instances ADD COLUMN deleted_at INTEGER");
-    log.info("Added deleted_at column to instances table");
-  }
-  if (!instanceColumnsNow.some((c) => c.name === "enabled")) {
-    db.exec("ALTER TABLE instances ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1");
-    log.info("Added enabled column to instances table");
-  }
-  if (!instanceColumnsNow.some((c) => c.name === "defaults")) {
-    db.exec("ALTER TABLE instances ADD COLUMN defaults TEXT");
-    log.info("Added defaults column to instances table");
-  }
+  ensureColumn(db, "instances", "deleted_at", "INTEGER");
+  ensureColumn(db, "instances", "enabled", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn(
+    db,
+    "instances",
+    "contact_intake_mode",
+    "TEXT NOT NULL DEFAULT 'off' CHECK(contact_intake_mode IN ('off','discovered','pending'))",
+  );
+  ensureColumn(db, "instances", "defaults", "TEXT");
+  ensureColumn(db, "instances", "default_contact_tags", "TEXT");
 
   const contextColumns = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
   if (contextColumns.length > 0 && !contextColumns.some((c) => c.name === "context_id")) {
@@ -1638,6 +2074,10 @@ function semanticId(prefix: string, parts: Array<string | null | undefined>): st
     .digest("hex")
     .slice(0, 24);
   return `${prefix}_${hash}`;
+}
+
+function uniqueId(prefix: string): string {
+  return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 }
 
 function tableHasColumn(database: Database, table: string, column: string): boolean {
@@ -1796,6 +2236,93 @@ function rowToChatParticipant(row: ChatParticipantRow): ChatParticipantRecord {
     source: row.source,
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
+    metadata: parseJsonRecord(row.metadata_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToChatMessage(row: ChatMessageRow): ChatMessageRecord {
+  return {
+    id: row.id,
+    chatId: row.chat_id,
+    channel: row.channel,
+    instanceId: row.instance_id,
+    providerMessageId: row.provider_message_id,
+    rawChatId: row.raw_chat_id,
+    rawSenderId: row.raw_sender_id ?? undefined,
+    normalizedSenderId: row.normalized_sender_id ?? undefined,
+    actorType: row.actor_type,
+    contactId: row.contact_id ?? undefined,
+    agentId: row.agent_id ?? undefined,
+    platformIdentityId: row.platform_identity_id ?? undefined,
+    messageType: row.message_type ?? undefined,
+    content: parseJsonRecord(row.content_json),
+    rawProvenance: parseJsonRecord(row.raw_provenance_json),
+    providerTimestamp: row.provider_timestamp ?? undefined,
+    ingestedAt: row.ingested_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function chatMessageSortKey(row: Pick<ChatMessageRow, "id" | "provider_timestamp" | "ingested_at">): string {
+  const primary = String(row.provider_timestamp ?? row.ingested_at).padStart(13, "0");
+  const ingested = String(row.ingested_at).padStart(13, "0");
+  return `${primary}:${ingested}:${row.id}`;
+}
+
+function rowToChatMessageWithSortKey(row: ChatMessageWithSortKeyRow): ChatMessageWithSortKey {
+  return {
+    ...rowToChatMessage(row),
+    sortKey: row.message_sort_key || chatMessageSortKey(row),
+  };
+}
+
+function rowToChatReadingList(row: ChatReadingListRow): ChatReadingListRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? undefined,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    visibility: row.visibility,
+    mode: row.mode,
+    selector: parseJsonRecord(row.selector_json),
+    metadata: parseJsonRecord(row.metadata_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at ?? undefined,
+  };
+}
+
+function rowToChatReadingListMember(row: ChatReadingListMemberRow): ChatReadingListMemberRecord {
+  return {
+    id: row.id,
+    listId: row.list_id,
+    chatId: row.chat_id,
+    source: row.source,
+    reason: row.reason ?? undefined,
+    priority: row.priority,
+    metadata: parseJsonRecord(row.metadata_json),
+    addedAt: row.added_at,
+    removedAt: row.removed_at ?? undefined,
+  };
+}
+
+function rowToChatReadingCursor(row: ChatReadingCursorRow): ChatReadingCursorRecord {
+  return {
+    id: row.id,
+    listId: row.list_id,
+    chatId: row.chat_id,
+    readerType: row.reader_type,
+    readerId: row.reader_id,
+    lastReadMessageId: row.last_read_message_id ?? undefined,
+    lastReadMessageSortKey: row.last_read_message_sort_key ?? undefined,
+    lastReadEventId: row.last_read_event_id ?? undefined,
+    lastReadEventSortKey: row.last_read_event_sort_key ?? undefined,
+    lastReadAt: row.last_read_at ?? undefined,
+    readReason: row.read_reason ?? undefined,
     metadata: parseJsonRecord(row.metadata_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -2063,6 +2590,83 @@ function upsertChatParticipant(database: Database, input: UpsertChatParticipantI
   return rowToChatParticipant(row);
 }
 
+function upsertChatMessage(database: Database, input: UpsertChatMessageInput): UpsertChatMessageResult {
+  const channel = normalizeChannelId(input.channel);
+  const instanceId = input.instanceId?.trim() ?? "";
+  const providerMessageId =
+    input.providerMessageId?.trim() ||
+    semanticId("provider_message", [
+      channel,
+      instanceId,
+      input.chatId,
+      input.rawChatId,
+      input.rawSenderId ?? null,
+      String(input.providerTimestamp ?? input.ingestedAt ?? Date.now()),
+    ]);
+  const existing = database
+    .prepare(
+      `
+      SELECT id FROM chat_messages
+      WHERE channel = ? AND instance_id = ? AND chat_id = ? AND provider_message_id = ?
+    `,
+    )
+    .get(channel, instanceId, input.chatId, providerMessageId) as { id: string } | undefined;
+  const now = input.ingestedAt ?? Date.now();
+  const id = existing?.id ?? semanticId("cm", [channel, instanceId, input.chatId, providerMessageId]);
+
+  database
+    .prepare(
+      `
+      INSERT INTO chat_messages (
+        id, chat_id, channel, instance_id, provider_message_id, raw_chat_id,
+        raw_sender_id, normalized_sender_id, actor_type, contact_id, agent_id, platform_identity_id,
+        message_type, content_json, raw_provenance_json, provider_timestamp,
+        ingested_at, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(channel, instance_id, chat_id, provider_message_id) DO UPDATE SET
+        raw_sender_id = COALESCE(excluded.raw_sender_id, chat_messages.raw_sender_id),
+        normalized_sender_id = COALESCE(excluded.normalized_sender_id, chat_messages.normalized_sender_id),
+        actor_type = CASE
+          WHEN excluded.actor_type != 'unknown' THEN excluded.actor_type
+          ELSE chat_messages.actor_type
+        END,
+        contact_id = COALESCE(excluded.contact_id, chat_messages.contact_id),
+        agent_id = COALESCE(excluded.agent_id, chat_messages.agent_id),
+        platform_identity_id = COALESCE(excluded.platform_identity_id, chat_messages.platform_identity_id),
+        message_type = COALESCE(excluded.message_type, chat_messages.message_type),
+        content_json = COALESCE(excluded.content_json, chat_messages.content_json),
+        raw_provenance_json = COALESCE(excluded.raw_provenance_json, chat_messages.raw_provenance_json),
+        provider_timestamp = COALESCE(excluded.provider_timestamp, chat_messages.provider_timestamp),
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(
+      id,
+      input.chatId,
+      channel,
+      instanceId,
+      providerMessageId,
+      input.rawChatId,
+      input.rawSenderId ?? null,
+      input.normalizedSenderId ?? null,
+      input.actorType ?? "unknown",
+      input.contactId ?? null,
+      input.agentId ?? null,
+      input.platformIdentityId ?? null,
+      input.messageType ?? null,
+      cleanJsonRecord(input.content),
+      cleanJsonRecord(input.rawProvenance),
+      input.providerTimestamp ?? null,
+      now,
+      now,
+      now,
+    );
+
+  const row = database.prepare("SELECT * FROM chat_messages WHERE id = ?").get(id) as ChatMessageRow;
+  return { message: rowToChatMessage(row), created: !existing };
+}
+
 function bindSessionToChat(
   database: Database,
   input: {
@@ -2231,165 +2835,167 @@ function upsertSessionParticipant(database: Database, input: UpsertSessionPartic
 
 function backfillChatModel(database: Database): void {
   const now = Date.now();
-  const txn = database.transaction(() => {
-    const groupRows = database.prepare("SELECT * FROM omni_group_metadata").all() as Array<{
-      account_id: string;
-      instance_id: string;
-      chat_id: string;
-      chat_uuid: string | null;
-      external_id: string | null;
-      channel: string | null;
-      name: string | null;
-      avatar_url: string | null;
-      participant_count: number | null;
-      participants_json: string | null;
-      platform_metadata_json: string | null;
-      fetched_at: number;
-    }>;
+  executeWrite(
+    database,
+    (database) => {
+      const groupRows = database.prepare("SELECT * FROM omni_group_metadata").all() as Array<{
+        account_id: string;
+        instance_id: string;
+        chat_id: string;
+        chat_uuid: string | null;
+        external_id: string | null;
+        channel: string | null;
+        name: string | null;
+        avatar_url: string | null;
+        participant_count: number | null;
+        participants_json: string | null;
+        platform_metadata_json: string | null;
+        fetched_at: number;
+      }>;
 
-    for (const row of groupRows) {
-      const chat = upsertChat(database, {
-        channel: row.channel ?? "whatsapp",
-        instanceId: row.instance_id,
-        platformChatId: row.chat_id,
-        chatType: "group",
-        title: row.name,
-        avatarUrl: row.avatar_url,
-        metadata: {
-          accountId: row.account_id,
-          chatUuid: row.chat_uuid,
-          externalId: row.external_id,
-          participantCount: row.participant_count,
-        },
-        rawProvenance: {
-          sourceTable: "omni_group_metadata",
-          accountId: row.account_id,
+      for (const row of groupRows) {
+        const chat = upsertChat(database, {
+          channel: row.channel ?? "whatsapp",
           instanceId: row.instance_id,
-          chatId: row.chat_id,
-          chatUuid: row.chat_uuid,
-          externalId: row.external_id,
-          platformMetadata: parseJsonRecord(row.platform_metadata_json),
-        },
-        seenAt: row.fetched_at || now,
-      });
-
-      const participants = parseParticipantsJson(row.participants_json);
-      for (const participant of participants) {
-        upsertChatParticipant(database, {
-          chatId: chat.id,
-          rawPlatformUserId: participant.platformUserId,
-          normalizedPlatformUserId: normalizePhone(participant.platformUserId) || participant.platformUserId,
-          role: normalizeParticipantRole(participant.role),
-          status: "active",
-          source: "omni",
+          platformChatId: row.chat_id,
+          chatType: "group",
+          title: row.name,
+          avatarUrl: row.avatar_url,
           metadata: {
-            omniParticipantId: participant.id ?? null,
-            displayName: participant.displayName ?? null,
+            accountId: row.account_id,
+            chatUuid: row.chat_uuid,
+            externalId: row.external_id,
+            participantCount: row.participant_count,
+          },
+          rawProvenance: {
+            sourceTable: "omni_group_metadata",
+            accountId: row.account_id,
+            instanceId: row.instance_id,
+            chatId: row.chat_id,
+            chatUuid: row.chat_uuid,
+            externalId: row.external_id,
+            platformMetadata: parseJsonRecord(row.platform_metadata_json),
           },
           seenAt: row.fetched_at || now,
         });
-      }
-    }
 
-    const sessionRows = database
-      .prepare(
-        `
+        const participants = parseParticipantsJson(row.participants_json);
+        for (const participant of participants) {
+          upsertChatParticipant(database, {
+            chatId: chat.id,
+            rawPlatformUserId: participant.platformUserId,
+            normalizedPlatformUserId: normalizePhone(participant.platformUserId) || participant.platformUserId,
+            role: normalizeParticipantRole(participant.role),
+            status: "active",
+            source: "omni",
+            metadata: {
+              omniParticipantId: participant.id ?? null,
+              displayName: participant.displayName ?? null,
+            },
+            seenAt: row.fetched_at || now,
+          });
+        }
+      }
+
+      const sessionRows = database
+        .prepare(
+          `
         SELECT session_key, agent_id, channel, account_id, group_id, last_channel, last_account_id,
                last_to, last_thread_id, chat_type, display_name, subject, updated_at, created_at
         FROM sessions
         WHERE COALESCE(last_to, group_id) IS NOT NULL
       `,
-      )
-      .all() as Array<{
-      session_key: string;
-      agent_id: string;
-      channel: string | null;
-      account_id: string | null;
-      group_id: string | null;
-      last_channel: string | null;
-      last_account_id: string | null;
-      last_to: string | null;
-      last_thread_id: string | null;
-      chat_type: string | null;
-      display_name: string | null;
-      subject: string | null;
-      updated_at: number;
-      created_at: number;
-    }>;
+        )
+        .all() as Array<{
+        session_key: string;
+        agent_id: string;
+        channel: string | null;
+        account_id: string | null;
+        group_id: string | null;
+        last_channel: string | null;
+        last_account_id: string | null;
+        last_to: string | null;
+        last_thread_id: string | null;
+        chat_type: string | null;
+        display_name: string | null;
+        subject: string | null;
+        updated_at: number;
+        created_at: number;
+      }>;
 
-    for (const row of sessionRows) {
-      const rawChatId = row.last_to ?? row.group_id;
-      if (!rawChatId) continue;
-      const chat = upsertChat(database, {
-        channel: row.last_channel ?? row.channel ?? "unknown",
-        instanceId: row.last_account_id ?? row.account_id ?? "",
-        platformChatId: rawChatId,
-        chatType: inferChatType(rawChatId, row.chat_type as ChatType | null),
-        title: row.display_name ?? row.subject,
-        rawProvenance: {
-          sourceTable: "sessions",
+      for (const row of sessionRows) {
+        const rawChatId = row.last_to ?? row.group_id;
+        if (!rawChatId) continue;
+        const chat = upsertChat(database, {
+          channel: row.last_channel ?? row.channel ?? "unknown",
+          instanceId: row.last_account_id ?? row.account_id ?? "",
+          platformChatId: rawChatId,
+          chatType: inferChatType(rawChatId, row.chat_type as ChatType | null),
+          title: row.display_name ?? row.subject,
+          rawProvenance: {
+            sourceTable: "sessions",
+            sessionKey: row.session_key,
+            groupId: row.group_id,
+            lastTo: row.last_to,
+            lastThreadId: row.last_thread_id,
+          },
+          seenAt: row.updated_at || row.created_at || now,
+        });
+        bindSessionToChat(database, {
           sessionKey: row.session_key,
-          groupId: row.group_id,
-          lastTo: row.last_to,
-          lastThreadId: row.last_thread_id,
-        },
-        seenAt: row.updated_at || row.created_at || now,
-      });
-      bindSessionToChat(database, {
-        sessionKey: row.session_key,
-        chatId: chat.id,
-        agentId: row.agent_id,
-        bindingReason: "legacy_session_backfill",
-        seenAt: row.updated_at || now,
-      });
-    }
+          chatId: chat.id,
+          agentId: row.agent_id,
+          bindingReason: "legacy_session_backfill",
+          seenAt: row.updated_at || now,
+        });
+      }
 
-    const eventRows = database
-      .prepare(
-        `
+      const eventRows = database
+        .prepare(
+          `
         SELECT DISTINCT source_channel, source_account_id, source_chat_id, source_thread_id
         FROM session_events
         WHERE source_chat_id IS NOT NULL
       `,
-      )
-      .all() as Array<{
-      source_channel: string | null;
-      source_account_id: string | null;
-      source_chat_id: string;
-      source_thread_id: string | null;
-    }>;
+        )
+        .all() as Array<{
+        source_channel: string | null;
+        source_account_id: string | null;
+        source_chat_id: string;
+        source_thread_id: string | null;
+      }>;
 
-    for (const row of eventRows) {
-      upsertChat(database, {
-        channel: row.source_channel ?? "unknown",
-        instanceId: row.source_account_id ?? "",
-        platformChatId: row.source_thread_id ? `${row.source_chat_id}#${row.source_thread_id}` : row.source_chat_id,
-        chatType: row.source_thread_id ? "thread" : inferChatType(row.source_chat_id),
-        rawProvenance: {
-          sourceTable: "session_events",
-          sourceChatId: row.source_chat_id,
-          sourceThreadId: row.source_thread_id,
-        },
-        seenAt: now,
-      });
-    }
+      for (const row of eventRows) {
+        upsertChat(database, {
+          channel: row.source_channel ?? "unknown",
+          instanceId: row.source_account_id ?? "",
+          platformChatId: row.source_thread_id ? `${row.source_chat_id}#${row.source_thread_id}` : row.source_chat_id,
+          chatType: row.source_thread_id ? "thread" : inferChatType(row.source_chat_id),
+          rawProvenance: {
+            sourceTable: "session_events",
+            sourceChatId: row.source_chat_id,
+            sourceThreadId: row.source_thread_id,
+          },
+          seenAt: now,
+        });
+      }
 
-    const messageRows = database
-      .prepare("SELECT DISTINCT chat_id FROM message_metadata WHERE chat_id IS NOT NULL")
-      .all() as Array<{ chat_id: string }>;
-    for (const row of messageRows) {
-      upsertChat(database, {
-        channel: "unknown",
-        instanceId: "",
-        platformChatId: row.chat_id,
-        chatType: inferChatType(row.chat_id),
-        rawProvenance: { sourceTable: "message_metadata", chatId: row.chat_id },
-        seenAt: now,
-      });
-    }
-  });
-
-  txn();
+      const messageRows = database
+        .prepare("SELECT DISTINCT chat_id FROM message_metadata WHERE chat_id IS NOT NULL")
+        .all() as Array<{ chat_id: string }>;
+      for (const row of messageRows) {
+        upsertChat(database, {
+          channel: "unknown",
+          instanceId: "",
+          platformChatId: row.chat_id,
+          chatType: inferChatType(row.chat_id),
+          rawProvenance: { sourceTable: "message_metadata", chatId: row.chat_id },
+          seenAt: now,
+        });
+      }
+    },
+    { label: "router:backfillChatModel" },
+  );
 }
 
 function backfillChatModelOnce(database: Database): void {
@@ -2709,17 +3315,22 @@ function getStatements(): PreparedStatements {
     `),
     // Instances
     upsertInstance: database.prepare(`
-      INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, enabled, defaults, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO instances (
+        name, instance_id, channel, agent, dm_policy, group_policy, contact_intake_mode,
+        dm_scope, enabled, defaults, default_contact_tags, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
         instance_id  = excluded.instance_id,
         channel      = excluded.channel,
         agent        = excluded.agent,
         dm_policy    = excluded.dm_policy,
         group_policy = excluded.group_policy,
+        contact_intake_mode = excluded.contact_intake_mode,
         dm_scope     = excluded.dm_scope,
         enabled      = excluded.enabled,
         defaults     = excluded.defaults,
+        default_contact_tags = excluded.default_contact_tags,
         updated_at   = excluded.updated_at
     `),
     getInstanceByName: database.prepare("SELECT * FROM instances WHERE name = ? AND deleted_at IS NULL"),
@@ -2733,9 +3344,11 @@ function getStatements(): PreparedStatements {
         agent        = ?,
         dm_policy    = ?,
         group_policy = ?,
+        contact_intake_mode = ?,
         dm_scope     = ?,
         enabled      = ?,
         defaults     = ?,
+        default_contact_tags = ?,
         updated_at   = ?
       WHERE name = ?
     `),
@@ -2879,11 +3492,13 @@ function rowToRoute(row: RouteRow): RouteConfig & { id: number } {
 }
 
 function rowToInstance(row: InstanceRow): InstanceConfig {
+  const contactIntakeMode = ContactIntakeModeSchema.safeParse(row.contact_intake_mode ?? "off");
   const result: InstanceConfig = {
     name: row.name,
     channel: row.channel,
     dmPolicy: (row.dm_policy ?? "open") as InstanceConfig["dmPolicy"],
     groupPolicy: (row.group_policy ?? "open") as InstanceConfig["groupPolicy"],
+    contactIntakeMode: contactIntakeMode.success ? contactIntakeMode.data : "off",
     enabled: row.enabled !== 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -2899,6 +3514,19 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
       result.defaults = JSON.parse(row.defaults);
     } catch {
       // Ignore invalid JSON so a bad defaults blob does not break instance listing.
+    }
+  }
+  if (row.default_contact_tags) {
+    try {
+      const parsed = JSON.parse(row.default_contact_tags);
+      if (Array.isArray(parsed)) {
+        result.defaultContactTags = parsed
+          .filter((value): value is string => typeof value === "string")
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0);
+      }
+    } catch {
+      // Ignore invalid tag payload to avoid breaking instance listing.
     }
   }
   if (row.deleted_at) result.deletedAt = row.deleted_at;
@@ -2973,8 +3601,709 @@ export function dbFindChat(input: {
   return row ? rowToChat(row) : null;
 }
 
+function chatRefCandidates(ref: string): string[] {
+  const raw = ref.trim();
+  const normalized = normalizePhone(raw);
+  return [...new Set([raw, raw.toLowerCase(), normalized].filter(Boolean))];
+}
+
+export function dbFindChatByRef(input: {
+  ref: string;
+  channel?: string | null;
+  instanceId?: string | null;
+  chatType?: ChatType | null;
+}): ChatRecord | null {
+  const candidates = chatRefCandidates(input.ref);
+  if (candidates.length === 0) return null;
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (input.channel?.trim()) {
+    where.push("channel = ?");
+    params.push(normalizeChannelId(input.channel));
+  }
+  if (input.instanceId?.trim()) {
+    where.push("instance_id = ?");
+    params.push(input.instanceId.trim());
+  }
+  if (input.chatType?.trim()) {
+    where.push("chat_type = ?");
+    params.push(input.chatType.trim());
+  }
+  const placeholders = candidates.map(() => "?").join(", ");
+  where.push(
+    `(id IN (${placeholders}) OR platform_chat_id IN (${placeholders}) OR normalized_chat_id IN (${placeholders}))`,
+  );
+  params.push(...candidates, ...candidates, ...candidates);
+  const row = getDb()
+    .prepare(
+      `
+      SELECT * FROM chats
+      WHERE ${where.join(" AND ")}
+      ORDER BY last_seen_at DESC, updated_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(...params) as ChatRow | undefined;
+  return row ? rowToChat(row) : null;
+}
+
+export function dbListChats(
+  input: {
+    channel?: string | null;
+    instanceId?: string | null;
+    chatType?: ChatType | null;
+    contactId?: string | null;
+    agentId?: string | null;
+    query?: string | null;
+    limit?: number | string | null;
+    offset?: number | string | null;
+  } = {},
+): ListPage<ChatListItem> {
+  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 25, maxLimit: 500, minLimit: 1 });
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (input.channel?.trim()) {
+    where.push("c.channel = ?");
+    params.push(normalizeChannelId(input.channel));
+  }
+  if (input.instanceId?.trim()) {
+    where.push("c.instance_id = ?");
+    params.push(input.instanceId.trim());
+  }
+  if (input.chatType?.trim()) {
+    where.push("c.chat_type = ?");
+    params.push(input.chatType.trim());
+  }
+  if (input.contactId?.trim()) {
+    where.push(
+      `(EXISTS (SELECT 1 FROM chat_participants cp WHERE cp.chat_id = c.id AND cp.contact_id = ?)
+        OR EXISTS (SELECT 1 FROM chat_messages cm WHERE cm.chat_id = c.id AND cm.contact_id = ?))`,
+    );
+    params.push(input.contactId.trim(), input.contactId.trim());
+  }
+  if (input.agentId?.trim()) {
+    where.push(
+      `(EXISTS (SELECT 1 FROM chat_participants cp WHERE cp.chat_id = c.id AND cp.agent_id = ?)
+        OR EXISTS (SELECT 1 FROM chat_messages cm WHERE cm.chat_id = c.id AND cm.agent_id = ?))`,
+    );
+    params.push(input.agentId.trim(), input.agentId.trim());
+  }
+  if (input.query?.trim()) {
+    const like = `%${input.query.trim()}%`;
+    where.push(
+      `(c.id LIKE ? OR c.title LIKE ? OR c.platform_chat_id LIKE ? OR c.normalized_chat_id LIKE ?
+        OR EXISTS (SELECT 1 FROM chat_messages cm WHERE cm.chat_id = c.id AND cm.content_json LIKE ?))`,
+    );
+    params.push(like, like, like, like, like);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const database = getDb();
+  const count = database.prepare(`SELECT COUNT(*) AS total FROM chats c ${whereSql}`).get(...params) as
+    | { total: number }
+    | undefined;
+  const rows = database
+    .prepare(
+      `
+      SELECT
+        c.*,
+        (SELECT COUNT(*) FROM chat_messages m WHERE m.chat_id = c.id) AS message_count,
+        (SELECT COUNT(*) FROM chat_participants p WHERE p.chat_id = c.id) AS participant_count,
+        (
+          SELECT m.id FROM chat_messages m
+          WHERE m.chat_id = c.id
+          ORDER BY COALESCE(m.provider_timestamp, m.ingested_at) DESC, m.ingested_at DESC, m.id DESC
+          LIMIT 1
+        ) AS last_message_id
+      FROM chats c
+      ${whereSql}
+      ORDER BY c.last_seen_at DESC, c.updated_at DESC, c.id ASC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as Array<
+    ChatRow & { message_count: number; participant_count: number; last_message_id: string | null }
+  >;
+  return {
+    total: count?.total ?? 0,
+    limit,
+    offset,
+    items: rows.map((row) => ({
+      chat: rowToChat(row),
+      messageCount: row.message_count,
+      participantCount: row.participant_count,
+      lastMessage: row.last_message_id ? dbGetChatMessageWithSortKey(row.last_message_id) : null,
+    })),
+  };
+}
+
 export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): ChatParticipantRecord {
   return upsertChatParticipant(getDb(), input);
+}
+
+export function dbUpsertChatMessage(input: UpsertChatMessageInput): UpsertChatMessageResult {
+  return upsertChatMessage(getDb(), input);
+}
+
+export function dbGetChatMessage(id: string): ChatMessageRecord | null {
+  const row = getDb().prepare("SELECT * FROM chat_messages WHERE id = ?").get(id) as ChatMessageRow | undefined;
+  return row ? rowToChatMessage(row) : null;
+}
+
+export function dbGetChatMessageWithSortKey(id: string): ChatMessageWithSortKey | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id) AS message_sort_key
+      FROM chat_messages m
+      WHERE m.id = ?
+    `,
+    )
+    .get(id) as ChatMessageWithSortKeyRow | undefined;
+  return row ? rowToChatMessageWithSortKey(row) : null;
+}
+
+export function dbFindChatMessage(input: {
+  channel: string;
+  instanceId?: string | null;
+  chatId: string;
+  providerMessageId: string;
+}): ChatMessageRecord | null {
+  const channel = normalizeChannelId(input.channel);
+  const instanceId = input.instanceId?.trim() ?? "";
+  const row = getDb()
+    .prepare(
+      `
+      SELECT * FROM chat_messages
+      WHERE channel = ? AND instance_id = ? AND chat_id = ? AND provider_message_id = ?
+    `,
+    )
+    .get(channel, instanceId, input.chatId, input.providerMessageId) as ChatMessageRow | undefined;
+  return row ? rowToChatMessage(row) : null;
+}
+
+export function dbListChatMessagesPage(input: {
+  chatId: string;
+  limit?: number | string | null;
+  offset?: number | string | null;
+  order?: "asc" | "desc";
+}): ListPage<ChatMessageWithSortKey> {
+  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const order = input.order === "desc" ? "DESC" : "ASC";
+  const database = getDb();
+  const count = database.prepare("SELECT COUNT(*) AS total FROM chat_messages WHERE chat_id = ?").get(input.chatId) as
+    | { total: number }
+    | undefined;
+  const rows = database
+    .prepare(
+      `
+      SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id) AS message_sort_key
+      FROM chat_messages m
+      WHERE m.chat_id = ?
+      ORDER BY message_sort_key ${order}
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(input.chatId, limit, offset) as ChatMessageWithSortKeyRow[];
+  return {
+    total: count?.total ?? 0,
+    limit,
+    offset,
+    items: rows.map(rowToChatMessageWithSortKey),
+  };
+}
+
+export function dbListChatMessages(chatId: string, limit = 50): ChatMessageRecord[] {
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT * FROM chat_messages
+      WHERE chat_id = ?
+      ORDER BY COALESCE(provider_timestamp, ingested_at), ingested_at, id
+      LIMIT ?
+    `,
+    )
+    .all(chatId, limit) as ChatMessageRow[];
+  return rows.map(rowToChatMessage);
+}
+
+function normalizeReadingListOwner(input: { ownerType?: string | null; ownerId?: string | null }): {
+  ownerType: string;
+  ownerId: string;
+} {
+  return {
+    ownerType: input.ownerType?.trim() || "system",
+    ownerId: input.ownerId?.trim() || "ravi",
+  };
+}
+
+function normalizeReadingCursorReader(input: { readerType?: string | null; readerId?: string | null }): {
+  readerType: string;
+  readerId: string;
+} {
+  return {
+    readerType: input.readerType?.trim() || "agent",
+    readerId: input.readerId?.trim() || "ravi",
+  };
+}
+
+export function dbCreateChatReadingList(input: {
+  name: string;
+  description?: string | null;
+  ownerType?: string | null;
+  ownerId?: string | null;
+  visibility?: string | null;
+  mode?: string | null;
+  selector?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+}): ChatReadingListRecord {
+  const name = input.name.trim();
+  if (!name) throw new Error("Reading list name is required");
+  const { ownerType, ownerId } = normalizeReadingListOwner(input);
+  const id = semanticId("crl", [ownerType, ownerId, name]);
+  const now = Date.now();
+  getDb()
+    .prepare(
+      `
+      INSERT INTO chat_reading_lists (
+        id, name, description, owner_type, owner_id, visibility, mode,
+        selector_json, metadata_json, created_at, updated_at, archived_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        description = COALESCE(excluded.description, chat_reading_lists.description),
+        visibility = excluded.visibility,
+        mode = excluded.mode,
+        selector_json = COALESCE(excluded.selector_json, chat_reading_lists.selector_json),
+        metadata_json = COALESCE(excluded.metadata_json, chat_reading_lists.metadata_json),
+        updated_at = excluded.updated_at,
+        archived_at = NULL
+    `,
+    )
+    .run(
+      id,
+      name,
+      input.description ?? null,
+      ownerType,
+      ownerId,
+      input.visibility?.trim() || "system",
+      input.mode?.trim() || "static",
+      cleanJsonRecord(input.selector),
+      cleanJsonRecord(input.metadata),
+      now,
+      now,
+    );
+  const row = getDb().prepare("SELECT * FROM chat_reading_lists WHERE id = ?").get(id) as ChatReadingListRow;
+  return rowToChatReadingList(row);
+}
+
+export function dbListChatReadingLists(
+  input: {
+    ownerType?: string | null;
+    ownerId?: string | null;
+    includeArchived?: boolean;
+    limit?: number | string | null;
+    offset?: number | string | null;
+  } = {},
+): ListPage<ChatReadingListRecord> {
+  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (input.ownerType?.trim()) {
+    where.push("owner_type = ?");
+    params.push(input.ownerType.trim());
+  }
+  if (input.ownerId?.trim()) {
+    where.push("owner_id = ?");
+    params.push(input.ownerId.trim());
+  }
+  if (!input.includeArchived) where.push("archived_at IS NULL");
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const database = getDb();
+  const count = database.prepare(`SELECT COUNT(*) AS total FROM chat_reading_lists ${whereSql}`).get(...params) as
+    | { total: number }
+    | undefined;
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM chat_reading_lists
+      ${whereSql}
+      ORDER BY updated_at DESC, name ASC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as ChatReadingListRow[];
+  return { total: count?.total ?? 0, limit, offset, items: rows.map(rowToChatReadingList) };
+}
+
+export function dbFindChatReadingList(input: {
+  ref: string;
+  ownerType?: string | null;
+  ownerId?: string | null;
+}): ChatReadingListRecord | null {
+  const ref = input.ref.trim();
+  if (!ref) return null;
+  const ownerType = input.ownerType?.trim();
+  const ownerId = input.ownerId?.trim();
+  const database = getDb();
+  const exact = database.prepare("SELECT * FROM chat_reading_lists WHERE id = ? AND archived_at IS NULL").get(ref) as
+    | ChatReadingListRow
+    | undefined;
+  if (exact) {
+    if (ownerType && exact.owner_type !== ownerType) return null;
+    if (ownerId && exact.owner_id !== ownerId) return null;
+    return rowToChatReadingList(exact);
+  }
+  const where: string[] = ["archived_at IS NULL", "name = ?"];
+  const params: Array<string | number> = [ref];
+  if (ownerType) {
+    where.push("owner_type = ?");
+    params.push(ownerType);
+  }
+  if (ownerId) {
+    where.push("owner_id = ?");
+    params.push(ownerId);
+  }
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM chat_reading_lists
+      WHERE ${where.join(" AND ")}
+      ORDER BY updated_at DESC, name ASC
+      LIMIT 2
+    `,
+    )
+    .all(...params) as ChatReadingListRow[];
+  if (rows.length > 1) {
+    throw new Error(`Reading list name is ambiguous: ${ref}. Pass --owner <type:id> or use the list id.`);
+  }
+  return rows[0] ? rowToChatReadingList(rows[0]) : null;
+}
+
+export function dbAddChatToReadingList(input: {
+  listId: string;
+  chatId: string;
+  source?: ChatReadingListMemberSource | null;
+  reason?: string | null;
+  priority?: number | string | null;
+  metadata?: Record<string, unknown> | null;
+}): ChatReadingListMemberRecord {
+  const database = getDb();
+  const existing = database
+    .prepare("SELECT * FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL")
+    .get(input.listId, input.chatId) as ChatReadingListMemberRow | undefined;
+  if (existing) return rowToChatReadingListMember(existing);
+  const now = Date.now();
+  const id = uniqueId("crlm");
+  const priority = Number(input.priority ?? 0);
+  database
+    .prepare(
+      `
+      INSERT INTO chat_reading_list_members (
+        id, list_id, chat_id, source, reason, priority, metadata_json, added_at, removed_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    `,
+    )
+    .run(
+      id,
+      input.listId,
+      input.chatId,
+      input.source?.trim() || "manual",
+      input.reason ?? null,
+      Number.isFinite(priority) ? priority : 0,
+      cleanJsonRecord(input.metadata),
+      now,
+    );
+  const row = database
+    .prepare("SELECT * FROM chat_reading_list_members WHERE id = ?")
+    .get(id) as ChatReadingListMemberRow;
+  return rowToChatReadingListMember(row);
+}
+
+export function dbRemoveChatFromReadingList(input: { listId: string; chatId: string }): boolean {
+  const result = getDb()
+    .prepare(
+      "UPDATE chat_reading_list_members SET removed_at = ? WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL",
+    )
+    .run(Date.now(), input.listId, input.chatId);
+  return result.changes > 0;
+}
+
+function getActiveChatReadingListMember(listId: string, chatId: string): ChatReadingListMemberRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL")
+    .get(listId, chatId) as ChatReadingListMemberRow | undefined;
+  return row ? rowToChatReadingListMember(row) : null;
+}
+
+function requireActiveChatReadingListMember(listId: string, chatId: string): ChatReadingListMemberRecord {
+  const member = getActiveChatReadingListMember(listId, chatId);
+  if (!member) {
+    throw new Error(`Chat ${chatId} is not an active member of reading list ${listId}`);
+  }
+  return member;
+}
+
+export function dbGetChatReadingCursor(input: {
+  listId: string;
+  chatId: string;
+  readerType?: string | null;
+  readerId?: string | null;
+}): ChatReadingCursorRecord | null {
+  const { readerType, readerId } = normalizeReadingCursorReader(input);
+  const row = getDb()
+    .prepare(
+      `
+      SELECT * FROM chat_reading_cursors
+      WHERE list_id = ? AND chat_id = ? AND reader_type = ? AND reader_id = ?
+    `,
+    )
+    .get(input.listId, input.chatId, readerType, readerId) as ChatReadingCursorRow | undefined;
+  return row ? rowToChatReadingCursor(row) : null;
+}
+
+function listChatMessagesAfterCursor(input: {
+  chatId: string;
+  afterSortKey?: string | null;
+  limit?: number | string | null;
+}): ChatMessageWithSortKey[] {
+  const { limit } = normalizeLimitOffsetPage(
+    { limit: input.limit, offset: 0 },
+    { defaultLimit: 50, maxLimit: 500, minLimit: 1 },
+  );
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT * FROM (
+        SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id) AS message_sort_key
+        FROM chat_messages m
+        WHERE m.chat_id = ?
+      )
+      WHERE ? IS NULL OR message_sort_key > ?
+      ORDER BY message_sort_key ASC
+      LIMIT ?
+    `,
+    )
+    .all(input.chatId, input.afterSortKey ?? null, input.afterSortKey ?? null, limit) as ChatMessageWithSortKeyRow[];
+  return rows.map(rowToChatMessageWithSortKey);
+}
+
+function countChatMessagesAfterCursor(chatId: string, afterSortKey?: string | null): number {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT COUNT(*) AS total FROM (
+        SELECT printf('%013d:%013d:%s', COALESCE(provider_timestamp, ingested_at), ingested_at, id) AS message_sort_key
+        FROM chat_messages
+        WHERE chat_id = ?
+      )
+      WHERE ? IS NULL OR message_sort_key > ?
+    `,
+    )
+    .get(chatId, afterSortKey ?? null, afterSortKey ?? null) as { total: number } | undefined;
+  return row?.total ?? 0;
+}
+
+function latestChatMessage(chatId: string): ChatMessageWithSortKey | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id) AS message_sort_key
+      FROM chat_messages m
+      WHERE m.chat_id = ?
+      ORDER BY message_sort_key DESC
+      LIMIT 1
+    `,
+    )
+    .get(chatId) as ChatMessageWithSortKeyRow | undefined;
+  return row ? rowToChatMessageWithSortKey(row) : null;
+}
+
+export function dbListChatReadingListMembers(input: {
+  listId: string;
+  readerType?: string | null;
+  readerId?: string | null;
+  limit?: number | string | null;
+  offset?: number | string | null;
+}): ListPage<ChatReadingListMemberItem> {
+  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const { readerType, readerId } = normalizeReadingCursorReader(input);
+  const database = getDb();
+  const count = database
+    .prepare("SELECT COUNT(*) AS total FROM chat_reading_list_members WHERE list_id = ? AND removed_at IS NULL")
+    .get(input.listId) as { total: number } | undefined;
+  const rows = database
+    .prepare(
+      `
+      SELECT m.* FROM chat_reading_list_members m
+      JOIN chats c ON c.id = m.chat_id
+      WHERE m.list_id = ? AND m.removed_at IS NULL
+      ORDER BY m.priority DESC, c.last_seen_at DESC, m.added_at DESC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(input.listId, limit, offset) as ChatReadingListMemberRow[];
+  const items = rows.flatMap((memberRow): ChatReadingListMemberItem[] => {
+    const chat = dbGetChat(memberRow.chat_id);
+    if (!chat) return [];
+    const cursor = dbGetChatReadingCursor({ listId: input.listId, chatId: chat.id, readerType, readerId });
+    const messageCount = database
+      .prepare("SELECT COUNT(*) AS total FROM chat_messages WHERE chat_id = ?")
+      .get(chat.id) as { total: number } | undefined;
+    return [
+      {
+        member: rowToChatReadingListMember(memberRow),
+        chat,
+        messageCount: messageCount?.total ?? 0,
+        unreadMessageCount: countChatMessagesAfterCursor(chat.id, cursor?.lastReadMessageSortKey),
+        lastMessage: latestChatMessage(chat.id),
+        cursor,
+      },
+    ];
+  });
+  return { total: count?.total ?? 0, limit, offset, items };
+}
+
+export function dbGetChatReadingDelta(input: {
+  listId: string;
+  chatId: string;
+  readerType?: string | null;
+  readerId?: string | null;
+  limit?: number | string | null;
+}): ChatReadingDelta | null {
+  const list = dbFindChatReadingList({ ref: input.listId });
+  const chat = dbGetChat(input.chatId);
+  if (!list || !chat) return null;
+  requireActiveChatReadingListMember(list.id, chat.id);
+  const { readerType, readerId } = normalizeReadingCursorReader(input);
+  const previousCursor = dbGetChatReadingCursor({ listId: list.id, chatId: chat.id, readerType, readerId });
+  const messages = listChatMessagesAfterCursor({
+    chatId: chat.id,
+    afterSortKey: previousCursor?.lastReadMessageSortKey,
+    limit: input.limit,
+  });
+  const lastUnreadMessage = messages.at(-1) ?? null;
+  const now = Date.now();
+  const nextCursor: ChatReadingCursorRecord | null = lastUnreadMessage
+    ? {
+        id: semanticId("crc", [list.id, chat.id, readerType, readerId]),
+        listId: list.id,
+        chatId: chat.id,
+        readerType,
+        readerId,
+        lastReadMessageId: lastUnreadMessage.id,
+        lastReadMessageSortKey: lastUnreadMessage.sortKey,
+        lastReadAt: now,
+        readReason: "delta_preview",
+        createdAt: previousCursor?.createdAt ?? now,
+        updatedAt: now,
+      }
+    : previousCursor;
+  return {
+    list,
+    chat,
+    reader: { type: readerType, id: readerId },
+    previousCursor,
+    nextCursor,
+    messages,
+    events: [],
+    newMessageCount: countChatMessagesAfterCursor(chat.id, previousCursor?.lastReadMessageSortKey),
+    editedMessageCount: 0,
+    deletedMessageCount: 0,
+    participantChanges: [],
+    firstUnreadMessage: messages[0] ?? null,
+    lastUnreadMessage,
+  };
+}
+
+export function dbMarkChatReadingCursor(input: {
+  listId: string;
+  chatId: string;
+  readerType?: string | null;
+  readerId?: string | null;
+  messageId?: string | null;
+  reason?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): ChatReadingCursorRecord {
+  const list = dbFindChatReadingList({ ref: input.listId });
+  const chat = dbGetChat(input.chatId);
+  if (!list) throw new Error(`Reading list not found: ${input.listId}`);
+  if (!chat) throw new Error(`Chat not found: ${input.chatId}`);
+  requireActiveChatReadingListMember(list.id, chat.id);
+  const { readerType, readerId } = normalizeReadingCursorReader(input);
+  const previous = dbGetChatReadingCursor({ listId: list.id, chatId: chat.id, readerType, readerId });
+  const requestedMessageId = input.messageId?.trim();
+  const message = requestedMessageId ? dbGetChatMessageWithSortKey(requestedMessageId) : latestChatMessage(chat.id);
+  if (requestedMessageId && !message) {
+    throw new Error(`Message not found: ${requestedMessageId}`);
+  }
+  if (message && message.chatId !== chat.id) {
+    throw new Error(`Message ${message.id} does not belong to chat ${chat.id}`);
+  }
+  const now = Date.now();
+  const id = semanticId("crc", [list.id, chat.id, readerType, readerId]);
+  getDb()
+    .prepare(
+      `
+      INSERT INTO chat_reading_cursors (
+        id, list_id, chat_id, reader_type, reader_id,
+        last_read_message_id, last_read_message_sort_key,
+        last_read_event_id, last_read_event_sort_key,
+        last_read_at, read_reason, metadata_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)
+      ON CONFLICT(list_id, chat_id, reader_type, reader_id) DO UPDATE SET
+        last_read_message_id = excluded.last_read_message_id,
+        last_read_message_sort_key = excluded.last_read_message_sort_key,
+        last_read_at = excluded.last_read_at,
+        read_reason = excluded.read_reason,
+        metadata_json = COALESCE(excluded.metadata_json, chat_reading_cursors.metadata_json),
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(
+      id,
+      list.id,
+      chat.id,
+      readerType,
+      readerId,
+      message?.id ?? null,
+      message?.sortKey ?? null,
+      now,
+      input.reason?.trim() || "manual",
+      cleanJsonRecord(input.metadata),
+      now,
+      now,
+    );
+  getDb()
+    .prepare(
+      `
+      INSERT INTO chat_reading_cursor_events (
+        id, list_id, chat_id, reader_type, reader_id,
+        previous_message_id, previous_message_sort_key,
+        next_message_id, next_message_sort_key,
+        reason, metadata_json, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    )
+    .run(
+      uniqueId("crce"),
+      list.id,
+      chat.id,
+      readerType,
+      readerId,
+      previous?.lastReadMessageId ?? null,
+      previous?.lastReadMessageSortKey ?? null,
+      message?.id ?? null,
+      message?.sortKey ?? null,
+      input.reason?.trim() || "manual",
+      cleanJsonRecord(input.metadata),
+      now,
+    );
+  const row = getDb().prepare("SELECT * FROM chat_reading_cursors WHERE id = ?").get(id) as ChatReadingCursorRow;
+  return rowToChatReadingCursor(row);
 }
 
 export function dbListChatParticipants(chatId: string): ChatParticipantRecord[] {
@@ -3548,6 +4877,9 @@ export function dbUpsertInstance(input: z.input<typeof InstanceInputSchema>): In
   }
   const s = getStatements();
   const now = Date.now();
+  const normalizedTags = validated.defaultContactTags
+    ? Array.from(new Set(validated.defaultContactTags.map((tag) => tag.trim()).filter((tag) => tag.length > 0)))
+    : null;
   s.upsertInstance.run(
     validated.name,
     validated.instanceId ?? null,
@@ -3555,9 +4887,11 @@ export function dbUpsertInstance(input: z.input<typeof InstanceInputSchema>): In
     validated.agent ?? null,
     validated.dmPolicy,
     validated.groupPolicy,
+    validated.contactIntakeMode,
     validated.dmScope ?? null,
     validated.enabled ? 1 : 0,
     validated.defaults ? JSON.stringify(validated.defaults) : null,
+    normalizedTags && normalizedTags.length > 0 ? JSON.stringify(normalizedTags) : null,
     now,
     now,
   );
@@ -3585,8 +4919,9 @@ export function dbListInstances(): InstanceConfig[] {
 
 export function dbUpdateInstance(
   name: string,
-  updates: Partial<Omit<InstanceConfig, "name" | "createdAt" | "updatedAt" | "defaults">> & {
+  updates: Partial<Omit<InstanceConfig, "name" | "createdAt" | "updatedAt" | "defaults" | "defaultContactTags">> & {
     defaults?: Record<string, unknown> | null;
+    defaultContactTags?: string[] | null;
   },
 ): InstanceConfig {
   const s = getStatements();
@@ -3598,16 +4933,32 @@ export function dbUpdateInstance(
   if (updates.dmScope) DmScopeSchema.parse(updates.dmScope);
   if (updates.dmPolicy) DmPolicySchema.parse(updates.dmPolicy);
   if (updates.groupPolicy) GroupPolicySchema.parse(updates.groupPolicy);
+  if (updates.contactIntakeMode) ContactIntakeModeSchema.parse(updates.contactIntakeMode);
   const now = Date.now();
+  let nextDefaultContactTags: string | null;
+  if (updates.defaultContactTags !== undefined) {
+    if (updates.defaultContactTags === null) {
+      nextDefaultContactTags = null;
+    } else {
+      const normalized = Array.from(
+        new Set(updates.defaultContactTags.map((tag) => tag.trim()).filter((tag) => tag.length > 0)),
+      );
+      nextDefaultContactTags = normalized.length > 0 ? JSON.stringify(normalized) : null;
+    }
+  } else {
+    nextDefaultContactTags = row.default_contact_tags ?? null;
+  }
   s.updateInstance.run(
     updates.instanceId !== undefined ? (updates.instanceId ?? null) : row.instance_id,
     updates.channel ?? row.channel,
     updates.agent !== undefined ? (updates.agent ?? null) : row.agent,
     updates.dmPolicy ?? row.dm_policy,
     updates.groupPolicy ?? row.group_policy,
+    updates.contactIntakeMode ?? row.contact_intake_mode ?? "off",
     updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
     updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : (row.enabled ?? 1),
     updates.defaults !== undefined ? (updates.defaults ? JSON.stringify(updates.defaults) : null) : row.defaults,
+    nextDefaultContactTags,
     now,
     name,
   );
@@ -3840,33 +5191,35 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
   const cascadeFlagKey = "revokedViaCascade";
   const cascadeRootKey = "cascadeRootContextId";
 
-  db.transaction(() => {
-    for (const target of targets) {
-      // Skip if already revoked at the same or earlier timestamp (idempotency).
-      if (target.revokedAt && target.revokedAt <= revokedAt) {
-        // Still update metadata if a reason or cascade flag should be set.
-      }
-      const metadata: Record<string, unknown> = { ...(target.metadata ?? {}) };
-      if (reasonNote) {
-        metadata[reasonKey] = reasonNote;
-      }
-      if (target.contextId !== root.contextId) {
-        metadata[cascadeFlagKey] = true;
-        metadata[cascadeRootKey] = root.contextId;
-        const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
-        if (!chain.includes(root.contextId)) {
-          chain.push(root.contextId);
+  executeWrite(
+    db,
+    (database) => {
+      for (const target of targets) {
+        // Skip if already revoked at the same or earlier timestamp (idempotency).
+        if (target.revokedAt && target.revokedAt <= revokedAt) {
+          // Still update metadata if a reason or cascade flag should be set.
         }
-        metadata[cascadeKey] = chain;
-      }
+        const metadata: Record<string, unknown> = { ...(target.metadata ?? {}) };
+        if (reasonNote) {
+          metadata[reasonKey] = reasonNote;
+        }
+        if (target.contextId !== root.contextId) {
+          metadata[cascadeFlagKey] = true;
+          metadata[cascadeRootKey] = root.contextId;
+          const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
+          if (!chain.includes(root.contextId)) {
+            chain.push(root.contextId);
+          }
+          metadata[cascadeKey] = chain;
+        }
 
-      db.prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`).run(
-        revokedAt,
-        JSON.stringify(metadata),
-        target.contextId,
-      );
-    }
-  })();
+        database
+          .prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`)
+          .run(revokedAt, JSON.stringify(metadata), target.contextId);
+      }
+    },
+    { label: "router:revokeContextCascade" },
+  );
 
   const finalRoot = dbGetContext(contextId)!;
   const cascaded: ContextRecord[] = [];
@@ -4108,6 +5461,48 @@ export interface MessageMetadata {
   createdAt: number;
 }
 
+interface MessageMetadataRow {
+  message_id: string;
+  chat_id: string;
+  canonical_chat_id: string | null;
+  actor_type: string | null;
+  contact_id: string | null;
+  agent_id: string | null;
+  platform_identity_id: string | null;
+  raw_sender_id: string | null;
+  normalized_sender_id: string | null;
+  identity_confidence: number | null;
+  identity_provenance_json: string | null;
+  transcription: string | null;
+  media_path: string | null;
+  media_type: string | null;
+  created_at: number;
+}
+
+export interface MessageMetadataPage extends ListPage<MessageMetadata> {
+  contactId: string;
+}
+
+function rowToMessageMetadata(row: MessageMetadataRow): MessageMetadata {
+  return {
+    messageId: row.message_id,
+    chatId: row.chat_id,
+    canonicalChatId: row.canonical_chat_id ?? undefined,
+    actorType: row.actor_type ?? undefined,
+    contactId: row.contact_id ?? undefined,
+    agentId: row.agent_id ?? undefined,
+    platformIdentityId: row.platform_identity_id ?? undefined,
+    rawSenderId: row.raw_sender_id ?? undefined,
+    normalizedSenderId: row.normalized_sender_id ?? undefined,
+    identityConfidence: row.identity_confidence ?? undefined,
+    identityProvenance: parseJsonRecord(row.identity_provenance_json),
+    transcription: row.transcription ?? undefined,
+    mediaPath: row.media_path ?? undefined,
+    mediaType: row.media_type ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
 /**
  * Store message metadata (transcription/media path).
  * Upserts — safe to call multiple times for the same message.
@@ -4155,85 +5550,43 @@ export function dbSaveMessageMeta(
  */
 export function dbGetMessageMeta(messageId: string): MessageMetadata | null {
   const s = getStatements();
-  const row = s.getMessageMeta.get(messageId) as {
-    message_id: string;
-    chat_id: string;
-    canonical_chat_id: string | null;
-    actor_type: string | null;
-    contact_id: string | null;
-    agent_id: string | null;
-    platform_identity_id: string | null;
-    raw_sender_id: string | null;
-    normalized_sender_id: string | null;
-    identity_confidence: number | null;
-    identity_provenance_json: string | null;
-    transcription: string | null;
-    media_path: string | null;
-    media_type: string | null;
-    created_at: number;
-  } | null;
-  if (!row) return null;
-  return {
-    messageId: row.message_id,
-    chatId: row.chat_id,
-    canonicalChatId: row.canonical_chat_id ?? undefined,
-    actorType: row.actor_type ?? undefined,
-    contactId: row.contact_id ?? undefined,
-    agentId: row.agent_id ?? undefined,
-    platformIdentityId: row.platform_identity_id ?? undefined,
-    rawSenderId: row.raw_sender_id ?? undefined,
-    normalizedSenderId: row.normalized_sender_id ?? undefined,
-    identityConfidence: row.identity_confidence ?? undefined,
-    identityProvenance: parseJsonRecord(row.identity_provenance_json),
-    transcription: row.transcription ?? undefined,
-    mediaPath: row.media_path ?? undefined,
-    mediaType: row.media_type ?? undefined,
-    createdAt: row.created_at,
-  };
+  const row = s.getMessageMeta.get(messageId) as MessageMetadataRow | null;
+  return row ? rowToMessageMetadata(row) : null;
 }
 
 export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMetadata[] {
   const s = getStatements();
-  const rows = s.listMessageMetaByChatId.all(chatId, limit) as Array<{
-    message_id: string;
-    chat_id: string;
-    canonical_chat_id: string | null;
-    actor_type: string | null;
-    contact_id: string | null;
-    agent_id: string | null;
-    platform_identity_id: string | null;
-    raw_sender_id: string | null;
-    normalized_sender_id: string | null;
-    identity_confidence: number | null;
-    identity_provenance_json: string | null;
-    transcription: string | null;
-    media_path: string | null;
-    media_type: string | null;
-    created_at: number;
-  }>;
+  const rows = s.listMessageMetaByChatId.all(chatId, limit) as MessageMetadataRow[];
+  return rows.reverse().map(rowToMessageMetadata);
+}
 
-  return rows.reverse().map((row) => ({
-    messageId: row.message_id,
-    chatId: row.chat_id,
-    canonicalChatId: row.canonical_chat_id ?? undefined,
-    actorType: row.actor_type ?? undefined,
-    contactId: row.contact_id ?? undefined,
-    agentId: row.agent_id ?? undefined,
-    platformIdentityId: row.platform_identity_id ?? undefined,
-    rawSenderId: row.raw_sender_id ?? undefined,
-    normalizedSenderId: row.normalized_sender_id ?? undefined,
-    identityConfidence: row.identity_confidence ?? undefined,
-    identityProvenance: parseJsonRecord(row.identity_provenance_json),
-    transcription: row.transcription ?? undefined,
-    mediaPath: row.media_path ?? undefined,
-    mediaType: row.media_type ?? undefined,
-    createdAt: row.created_at,
-  }));
+export function dbListMessageMetaByContactId(
+  contactId: string,
+  options: { limit?: number | string | null; offset?: number | string | null } = {},
+): MessageMetadataPage {
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const db = getDb();
+  const total =
+    (
+      db.prepare("SELECT COUNT(*) AS total FROM message_metadata WHERE contact_id = ?").get(contactId) as
+        | { total: number }
+        | undefined
+    )?.total ?? 0;
+  const rows = db
+    .prepare("SELECT * FROM message_metadata WHERE contact_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+    .all(contactId, limit, offset) as MessageMetadataRow[];
+  return {
+    contactId,
+    total,
+    limit,
+    offset,
+    items: rows.map(rowToMessageMetadata),
+  };
 }
 
 const MESSAGE_META_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const SESSION_EVENTS_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const SESSION_TRACE_BLOBS_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const SESSION_EVENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — daily rollup preserves aggregate metrics
+const SESSION_TRACE_BLOBS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — keep blob TTL aligned with events
 const AUDIT_LOG_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const COST_EVENTS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 

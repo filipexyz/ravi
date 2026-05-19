@@ -3,10 +3,10 @@
 // Drift is detected by `ravi sdk client check` (CI).
 
 /** Semver published by `@ravi-os/sdk`. Hand-set in the package.json. */
-export const SDK_VERSION = "0.1.0";
+export const SDK_VERSION = "0.2.1";
 
 /** SHA-256 fingerprint of the registry projection at codegen time. */
-export const REGISTRY_HASH = "sha256:edf553181c2e6bc35ff087d08956517eb171900c71fe7d65448e82ca77aec38e";
+export const REGISTRY_HASH = "sha256:7b4e32b3cc40b554c4425c747932c2c0d4356fca88ee96cecc0531c069e6285e";
 
 /** Git SHA of the source tree at codegen time. `"unknown"` outside git. */
-export const GIT_SHA = "b013f4c2b566";
+export const GIT_SHA = "1af3d3496e9f";

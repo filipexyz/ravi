@@ -60,6 +60,6 @@ The safe version of big-bang is:
 
 - write explicit migration
 - keep old CLI aliases
-- keep compatibility lookups
-- add regression tests around routing, inbound, LID mapping, merge, and policy
-- never delete legacy data until the new model is validated
+- keep contact service reads canonical
+- add regression tests around routing, inbound, WhatsApp identity mapping, merge, and policy
+- import old data explicitly instead of keeping runtime reads to old stores

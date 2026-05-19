@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { parseDurationMs } from "../../cron/schedule.js";
 
@@ -208,45 +209,51 @@ export class SettingsCommands {
     @Option({ flags: "--legacy", description: "Show legacy account.* settings shadowed by instances" })
     showLegacy = false,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching settings to skip (default: 0)" }) offset?: string,
   ) {
-    const settings = dbListSettings();
-    const payload = buildSettingsListPayload(showLegacy);
+    const basePayload = buildSettingsListPayload(showLegacy);
+    const settingItems = [
+      ...basePayload.knownSettings.map((setting) => ({ ...setting, section: "known" })),
+      ...basePayload.customSettings.map((setting) => ({ ...setting, section: "custom" })),
+      ...(showLegacy ? basePayload.legacySettings.settings.map((setting) => ({ ...setting, section: "legacy" })) : []),
+    ];
+    const page = paginateCliItems(settingItems, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "settings", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: [showLegacy ? "--legacy" : null],
+    });
+    const payload = {
+      ...basePayload,
+      total: page.total,
+      pagination,
+      items: page.items,
+    };
 
     if (asJson) {
       printJson(payload);
     } else {
-      console.log("\nSettings:\n");
-
-      // Show known settings with their current values
-      for (const [key, meta] of Object.entries(KNOWN_SETTINGS)) {
-        const value = settings[key] ?? "(not set)";
-        console.log(`  ${key}: ${value}`);
-        console.log(`    ${meta.description}\n`);
+      console.log(
+        `\nSettings (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+      );
+      for (const item of page.items) {
+        const meta = KNOWN_SETTINGS[item.key];
+        console.log(`  ${item.key}: ${item.value ?? "(not set)"}`);
+        if (meta) console.log(`    ${meta.description}`);
+        console.log(`    section: ${item.section}\n`);
       }
-
-      // Hide legacy account.* keys by default so they do not compete with instances.
-      const customKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS[k]);
-      const legacyKeys = customKeys.filter((k) => isLegacyAccountSetting(k));
-      const unknownKeys = customKeys.filter((k) => !isLegacyAccountSetting(k));
-
-      if (showLegacy && legacyKeys.length > 0) {
-        console.log("  Legacy settings shadowed by instances:");
-        for (const key of legacyKeys) {
-          console.log(`    ${key}: ${settings[key]}`);
-        }
-        console.log();
-      } else if (legacyKeys.length > 0) {
+      if (basePayload.legacySettings.hidden && basePayload.legacySettings.total > 0) {
         console.log(
-          `  Legacy account.* settings hidden by default: ${legacyKeys.length} key(s) shadowed by instances. Use --legacy to inspect them.\n`,
+          `  Legacy account.* settings hidden by default: ${basePayload.legacySettings.total} key(s) shadowed by instances. Use --legacy to inspect them.\n`,
         );
       }
-
-      if (unknownKeys.length > 0) {
-        console.log("  Custom settings:");
-        for (const key of unknownKeys) {
-          console.log(`    ${key}: ${settings[key]}`);
-        }
-        console.log();
+      if (pagination.nextCommand) {
+        console.log("Next page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
     return payload;

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { configStore } from "./config-store.js";
+import { createContact, getContact, upsertAgentPlatformIdentity } from "./contacts.js";
 import { Gateway, SILENT_TOKEN } from "./gateway.js";
 import {
   dbBindSessionToChat,
@@ -155,6 +156,15 @@ describe("Gateway session trace instrumentation", () => {
 
   it("enriches gateway traces from canonical chat binding and message actor metadata", async () => {
     const { sessionKey, sessionName } = seedSession();
+    const agentIdentity = upsertAgentPlatformIdentity({
+      agentId: "main",
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      platformUserId: "5511000000000@s.whatsapp.net",
+      confidence: 1,
+      linkedBy: "test",
+      linkReason: "gateway_trace_test",
+    });
     const chat = dbUpsertChat({
       channel: "whatsapp",
       instanceId: "11111111-1111-1111-1111-111111111111",
@@ -187,12 +197,97 @@ describe("Gateway session trace instrumentation", () => {
       expect(event.actorType).toBe("agent");
       expect(event.actorAgentId).toBe("main");
       expect(event.contactId).toBeNull();
+      expect(event.platformIdentityId).toBe(agentIdentity.id);
+      expect(event.rawSenderId).toBe("5511000000000@s.whatsapp.net");
+      expect(event.normalizedSenderId).toBe("5511000000000");
     }
     expect(dbGetMessageMeta("outbound-1")).toMatchObject({
       canonicalChatId: chat.id,
       actorType: "agent",
       agentId: "main",
+      platformIdentityId: agentIdentity.id,
     });
+  });
+
+  it("updates outbound interaction projection only for resolved DM contact targets", async () => {
+    const { sessionKey, sessionName } = seedSession();
+    const contact = createContact({
+      phone: "5511999999999",
+      name: "Luis",
+      status: "allowed",
+      source: "manual",
+    });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      platformChatId: "5511999999999@s.whatsapp.net",
+      chatType: "dm",
+    });
+    dbBindSessionToChat({
+      sessionKey,
+      chatId: chat.id,
+      agentId: "main",
+      bindingReason: "test_dm_outbound_projection",
+    });
+    const gateway = makeGateway(mock(async () => ({ messageId: "outbound-dm-1" })));
+
+    await handleResponse(
+      gateway,
+      sessionName,
+      makeResponse({
+        target: {
+          ...makeResponse().target!,
+          canonicalChatId: chat.id,
+          contactId: contact.id,
+        },
+      }),
+    );
+
+    const updated = getContact(contact.id);
+    expect(updated?.last_outbound_at).toBeTruthy();
+    expect(updated?.interaction_count).toBe(1);
+  });
+
+  it("does not update outbound contact projection for group chat replies", async () => {
+    const { sessionKey, sessionName } = seedSession();
+    const contact = createContact({
+      phone: "5511888888888",
+      name: "Group Sender",
+      status: "allowed",
+      source: "manual",
+    });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      platformChatId: "120363000000000000@g.us",
+      chatType: "group",
+    });
+    dbBindSessionToChat({
+      sessionKey,
+      chatId: chat.id,
+      agentId: "main",
+      bindingReason: "test_group_outbound_projection",
+    });
+    const gateway = makeGateway(mock(async () => ({ messageId: "outbound-group-1" })));
+
+    await handleResponse(
+      gateway,
+      sessionName,
+      makeResponse({
+        target: {
+          channel: "whatsapp-baileys",
+          accountId: "main",
+          chatId: "120363000000000000@g.us",
+          canonicalChatId: chat.id,
+          contactId: contact.id,
+          sourceMessageId: "inbound-group-1",
+        },
+      }),
+    );
+
+    const updated = getContact(contact.id);
+    expect(updated?.last_outbound_at).toBeNull();
+    expect(updated?.interaction_count).toBe(0);
   });
 
   it("renews active presence one second after a delivered non-final response", async () => {

@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { extractTools, generateManifest, manifestToJSON } from "../tools-export.js";
 import {
   getAllCommandClasses,
@@ -20,16 +21,31 @@ import {
 })
 export class ToolsCommands {
   @Command({ name: "list", description: "List all available CLI tools" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching tools to skip (default: 0)" }) offset?: string,
+  ) {
     const groups = getCliToolsByGroup();
     const sdkTools = createSdkTools(getAllCommandClasses());
+    const page = paginateCliItems(sdkTools, { limit, offset });
+    const pageTools = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "tools", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageTools.length,
+      total: page.total,
+    });
     const payload = {
-      total: sdkTools.length,
+      total: page.total,
+      pagination,
       groups: Object.keys(groups).map((group) => ({
         name: group,
-        tools: sdkTools.filter((tool) => groups[group]?.includes(tool.name)),
+        tools: pageTools.filter((tool) => groups[group]?.includes(tool.name)),
       })),
-      tools: sdkTools,
+      items: pageTools,
+      tools: pageTools,
     };
 
     if (asJson) {
@@ -41,9 +57,8 @@ export class ToolsCommands {
 
       for (const group of Object.keys(groups)) {
         console.log(`\n${group.toUpperCase()}:`);
-        const groupTools = createSdkTools(getAllCommandClasses(), {
-          filter: new RegExp(`^${group}_`),
-        });
+        const groupTools = pageTools.filter((tool) => groups[group]?.includes(tool.name));
+        if (groupTools.length === 0) continue;
 
         for (const tool of groupTools) {
           console.log(`  ${tool.name}`);
@@ -65,8 +80,13 @@ export class ToolsCommands {
       }
 
       console.log("─".repeat(50));
-      const total = Object.values(groups).flat().length;
-      console.log(`\nTotal: ${total} tools`);
+      console.log(
+        `\nTotal: ${page.total} tools (${pageTools.length} returned, limit ${page.limit}, offset ${page.offset})`,
+      );
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
       console.log("\nUsage:");
       console.log("  ravi tools show <name>   # Show tool details");
       console.log("  ravi tools manifest      # Export as JSON manifest");

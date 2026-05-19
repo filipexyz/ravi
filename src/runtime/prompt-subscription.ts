@@ -128,6 +128,7 @@ export class RuntimePromptSubscription {
                 taskBarrierTaskId: prompt.taskBarrierTaskId,
                 commands: prompt.commands,
                 observation: prompt._observation,
+                thread: prompt._thread,
                 _agentId: prompt._agentId,
                 timestamp: new Date().toISOString(),
               })

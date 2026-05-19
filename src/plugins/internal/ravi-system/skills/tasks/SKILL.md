@@ -163,6 +163,27 @@ ravi tasks profiles init <profile-id> --preset <doc-first|brainstorm|runtime-onl
 
 `--preset` serve para scaffold. O runtime real é declarativo.
 
+## Inputs do Profile
+
+Profiles podem declarar `inputs` estruturados no `profile.json`. Esses valores são
+o contrato de briefing do profile e são passados no create com `--input key=value`:
+
+```bash
+ravi tasks create "Título" --profile <id> \
+  --instructions "Resumo livre para o worker" \
+  --input goal_statement="Outcome final" \
+  --input acceptance_criteria="Como validar done"
+```
+
+Regras importantes:
+
+- `--instructions` é texto livre da task; ele não popula `inputs`.
+- `--input` pode ser repetido e fica pinado em `profile_input_json` da task.
+- Templates acessam inputs com `{{input.key}}`.
+- Inputs `required: true` bloqueiam `create|preview|dispatch` quando vazios.
+- Inputs opcionais declarados existem como string vazia quando não enviados, então `{{input.optional_key}}` é seguro.
+- Placeholder `{{input.algum_key}}` só deve apontar para um input declarado ou explicitamente passado; placeholders desconhecidos continuam falhando cedo.
+
 ## Templates do Profile
 
 Profiles controlam as surfaces humanas da task via `templates`.
