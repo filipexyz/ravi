@@ -22,6 +22,12 @@ function repoRoot(): string {
   return join(dirname(import.meta.path), "..");
 }
 
+function resolvePackagePath(root: string): string {
+  const override = process.env.RAVI_PACKAGE_PATH?.trim();
+  if (!override) return join(root, "package.json");
+  return override.startsWith("/") ? override : join(root, override);
+}
+
 function todayUtc(): string {
   const now = new Date();
   const yy = String(now.getUTCFullYear()).slice(-2);
@@ -31,8 +37,7 @@ function todayUtc(): string {
 }
 
 function readCurrentPackage(root: string): PackageJson {
-  const packagePath = join(root, "package.json");
-  return JSON.parse(readFileSync(packagePath, "utf8")) as PackageJson;
+  return JSON.parse(readFileSync(resolvePackagePath(root), "utf8")) as PackageJson;
 }
 
 function resolvePrefix(pkg: PackageJson): string {
@@ -67,8 +72,7 @@ function resolveBuildNumber(prefix: string, datePrefix: string): number {
   return countTagsForToday(prefix, datePrefix) + 1;
 }
 
-async function updatePackageVersion(root: string, version: string): Promise<void> {
-  const packagePath = join(root, "package.json");
+async function updatePackageVersion(packagePath: string, version: string): Promise<void> {
   if (!existsSync(packagePath)) throw new Error(`package.json not found: ${packagePath}`);
 
   const pkg = JSON.parse(await readFile(packagePath, "utf8")) as PackageJson;
@@ -78,15 +82,16 @@ async function updatePackageVersion(root: string, version: string): Promise<void
 
 async function main(): Promise<void> {
   const root = repoRoot();
+  const packagePath = resolvePackagePath(root);
   const pkg = readCurrentPackage(root);
   const prefix = resolvePrefix(pkg);
   const datePrefix = todayUtc();
   const buildNumber = resolveBuildNumber(prefix, datePrefix);
   const version = process.env.RAVI_VERSION?.trim() || `${prefix}.${datePrefix}.${buildNumber}`;
 
-  await updatePackageVersion(root, version);
+  await updatePackageVersion(packagePath, version);
   console.log(`Ravi version: ${version}`);
-  console.log("Updated package.json");
+  console.log(`Updated ${packagePath}`);
 }
 
 main().catch((error) => {

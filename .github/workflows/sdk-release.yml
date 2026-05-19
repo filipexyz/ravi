@@ -1,0 +1,144 @@
+name: SDK Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to release the SDK from"
+        required: true
+        type: choice
+        options: [main, dev]
+        default: main
+      prefix:
+        description: "Version major prefix (defaults to current package.json major)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sdk-release-${{ github.event.inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Version And Publish SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SDK_PACKAGE_PATH: packages/ravi-os-sdk/package.json
+      SDK_DIR: packages/ravi-os-sdk
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Resolve prefix
+        id: prefix
+        run: |
+          PREFIX="${{ github.event.inputs.prefix }}"
+          if [ -z "$PREFIX" ]; then
+            PREFIX=$(jq -r '.version | split(".") | .[0]' "$SDK_PACKAGE_PATH")
+          fi
+          if ! echo "$PREFIX" | grep -Eq '^[0-9]+$'; then
+            echo "Resolved prefix '$PREFIX' is not numeric" >&2
+            exit 1
+          fi
+          echo "prefix=${PREFIX}" >> "$GITHUB_OUTPUT"
+          echo "Resolved prefix: ${PREFIX}"
+
+      - name: Derive version
+        id: version
+        env:
+          PREFIX: ${{ steps.prefix.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          PACKAGE=$(jq -r '.name' "$SDK_PACKAGE_PATH")
+          TODAY=$(date -u +%y%m%d)
+          PATTERN="${PREFIX}.${TODAY}."
+
+          VERSIONS_JSON=$(npm view "$PACKAGE" versions --json 2>/dev/null || echo '[]')
+          if [ -z "$VERSIONS_JSON" ]; then
+            VERSIONS_JSON='[]'
+          fi
+          EXISTING=$(echo "$VERSIONS_JSON" | jq --arg p "$PATTERN" '
+            if type == "string"
+            then (if startswith($p) then 1 else 0 end)
+            else [.[] | select(startswith($p))] | length
+            end
+          ')
+          BUILD_NUMBER=$((EXISTING + 1))
+          VERSION="${PREFIX}.${TODAY}.${BUILD_NUMBER}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Derived SDK version: ${VERSION} (existing today: ${EXISTING})"
+
+      - name: Sync SDK version
+        env:
+          RAVI_PACKAGE_PATH: ${{ env.SDK_PACKAGE_PATH }}
+          RAVI_VERSION_PREFIX: ${{ steps.prefix.outputs.prefix }}
+          RAVI_BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          RAVI_VERSION: ${{ steps.version.outputs.version }}
+        run: bun run version
+
+      - name: Regenerate SDK client (live registry → typed client)
+        run: bun run sdk:generate
+
+      - name: Commit SDK version bump
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="${{ github.event.inputs.branch }}"
+
+          git add "$SDK_PACKAGE_PATH" packages/ravi-os-sdk/src
+          if git diff --cached --quiet; then
+            echo "No version changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore(sdk-version): bump to ${VERSION} [skip ci]"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+
+      - name: Build SDK
+        working-directory: ${{ env.SDK_DIR }}
+        run: bun run build
+
+      - name: Publish to npm
+        working-directory: ${{ env.SDK_DIR }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "NPM_TOKEN not set; cannot publish SDK" >&2
+            exit 1
+          fi
+
+          PACKAGE=$(jq -r '.name' package.json)
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+
+          if npm view "${PACKAGE}@${VERSION}" version >/dev/null 2>&1; then
+            echo "Version ${VERSION} already exists; moving dist-tag latest"
+            npm dist-tag add "${PACKAGE}@${VERSION}" latest
+          else
+            bun publish --access public --tag latest
+          fi
