@@ -43,6 +43,55 @@ CRM estrito começa depois disso. Observers leem listas de leitura e escrevem fa
 | `blocked` | Bloqueado, mensagens ignoradas |
 | `discovered` | Descoberto mas não aprovado |
 
+## Inspeção Operacional
+
+Quando precisar diagnosticar o estado do CRM, NUNCA olhe um plano isolado. Sempre rode esta sequência em paralelo para ter a foto completa:
+
+```bash
+# Plano 1: identidade/policy
+ravi contacts list --limit 5 --json
+ravi contacts pending --json
+
+# Plano 2: ledger bruto de conversas (independente de contato canônico)
+ravi chats list --limit 5 --json
+ravi chats lists list --json
+
+# Plano 3: configuração de captura por canal
+ravi instances list --json
+
+# Plano 4: classificação automática
+ravi tag-rules list --json
+
+# Plano 5: ação automatizada
+ravi observers rules list --json
+```
+
+⚠️ **Por que cobrir ledger e contatos juntos**: é possível ter centenas de chats no `ravi.db` ledger e poucos contatos canônicos em `chat.db`. Essa divergência indica que intake estava `off`, ou que dados antigos precisam de backfill, ou que os senders eram grupos (não viram contato). Sem comparar os dois planos, o diagnóstico fica incompleto.
+
+⚠️ **Reading lists zeradas + chats ativos** = pipeline desligado. Sempre reporte os dois números.
+
+Apresente o resultado consolidado nesta estrutura:
+
+```
+📋 Identidade
+   🔹 X contatos canônicos (Y allowed / Z discovered / W pending / K blocked)
+   🔹 N pendentes de aprovação
+
+📋 Conversas no ledger
+   🔹 C chats (D DMs / G grupos)
+   🔹 M mensagens trocadas
+
+📋 Configuração por instância
+   🔹 Lista de instâncias com intake mode + default tags
+
+📋 Automação
+   🔹 R tag rules carregadas
+   🔹 O observer rules ativas
+   🔹 L reading lists (com membros / vazias)
+```
+
+Se houver divergência entre planos (ex: 300 chats, 5 contatos), explicite ANTES de sugerir próximo passo.
+
 ## Comandos Disponíveis
 
 ### Listar contatos

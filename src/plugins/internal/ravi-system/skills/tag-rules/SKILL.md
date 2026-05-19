@@ -42,6 +42,22 @@ ravi tag-rules tick [--apply] [--limit <n>]
 
 `evaluate` e `tick` são dry-run por default. Use `--apply` quando confirmar.
 
+## Inspeção Cruzada
+
+Tag-rules é UM dos 5 planos do CRM. Quando inspecionar, sempre combine com os outros pra ter contexto:
+
+```bash
+ravi tag-rules list --json                      # regras carregadas
+ravi instances list --json                      # default tags por instância
+ravi contacts list --json                       # base de contatos onde as regras vão rodar
+ravi chats list --limit 5 --json                # conversas onde os sinais aparecem
+ravi observers rules list --json                # quem consome as tags produzidas
+```
+
+⚠️ **Regras sem contatos** = inerte. Antes de criar regra, confirme que há intake ativo e contatos sendo criados.
+
+⚠️ **Regras sem observer consumindo a tag de saída** = pipeline incompleto. A regra muda a tag, mas ninguém age. Sempre verifique se existe observer rule consumindo cada tag que sua rule produz.
+
 ## Conditions Vocabulary
 
 ### scope: contact

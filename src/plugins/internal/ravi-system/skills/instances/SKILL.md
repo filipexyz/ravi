@@ -14,6 +14,23 @@ description: |
 
 Instâncias são a entidade central de configuração do Ravi. Cada instância representa uma conta conectada (WhatsApp, Matrix, etc) com seu próprio agent, policies e rotas.
 
+## Inspeção Cruzada
+
+Instância isolada não conta a história toda. Ao diagnosticar o estado, combine instância com o que ela produz:
+
+```bash
+ravi instances list --json                    # canais conectados, intake mode, default tags
+ravi instances show <name> --json             # detalhes + rotas + omni status
+ravi contacts list --json                     # quantos contatos cada instância gerou
+ravi chats list --json                        # quantos chats por instância
+```
+
+⚠️ **Instância sem `contactIntakeMode=discovered|pending`** = mensagens chegam mas não viram contato canônico. Cheque sempre.
+
+⚠️ **Instância conectada mas sem agent** = mensagens caem na fila default ou em pending. Pode ser intencional (catch-all manual) ou esquecimento.
+
+⚠️ **`defaultContactTags` vazia** + intake ligado = contatos criam sem etiqueta inicial. Sem etiqueta inicial, regras de classificação não têm gatilho.
+
 ## Comandos Principais
 
 ### Listar instâncias
