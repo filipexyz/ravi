@@ -1,6 +1,9 @@
 import "reflect-metadata";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 import { CliOnly, Command, Group, Option } from "../decorators.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { LinkStepUpRequiredError } from "../../link/client.js";
 import { execCapability, listConnectors } from "../../link/connectors.js";
 
 @Group({
@@ -48,10 +51,11 @@ export class GmailCommands {
         inReplyTo,
       };
 
-      const exec = await execCapability({
+      const exec = await execWithStepUp({
         connectorId,
         capability: "gmail.message.send",
         parameters,
+        asJson,
       });
 
       if (asJson) {
@@ -65,6 +69,88 @@ export class GmailCommands {
       return exec;
     });
   }
+}
+
+async function execWithStepUp(input: {
+  connectorId: string;
+  capability: string;
+  parameters: unknown;
+  asJson: boolean | undefined;
+}) {
+  try {
+    return await execCapability({
+      connectorId: input.connectorId,
+      capability: input.capability,
+      parameters: input.parameters,
+    });
+  } catch (error) {
+    if (!(error instanceof LinkStepUpRequiredError)) throw error;
+    if (input.asJson) {
+      console.log(
+        JSON.stringify(
+          {
+            status: "stepup_required",
+            challengeId: error.details.challengeId,
+            verificationUrl: error.details.verificationUrl,
+            expiresAt: error.details.expiresAt,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.log("Step-up authentication required for this destructive action.");
+      console.log(`Open: ${error.details.verificationUrl}`);
+      console.log(`(expires at ${error.details.expiresAt})`);
+    }
+    try {
+      await openExternal(error.details.verificationUrl);
+    } catch {
+      // Best-effort browser open
+    }
+    const token = await promptStepUpToken(input.asJson);
+    if (!token) throw new Error("Step-up cancelled.");
+    return execCapability({
+      connectorId: input.connectorId,
+      capability: input.capability,
+      parameters: input.parameters,
+      stepUpToken: token,
+    });
+  }
+}
+
+async function promptStepUpToken(asJson: boolean | undefined): Promise<string | null> {
+  if (asJson || !process.stdin.isTTY) {
+    // Non-interactive path: read a single line from stdin.
+    const chunks: string[] = [];
+    return new Promise((resolve) => {
+      process.stdin.setEncoding("utf8");
+      process.stdin.on("data", (chunk: string | Buffer) =>
+        chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8")),
+      );
+      process.stdin.on("end", () => resolve(chunks.join("").trim() || null));
+    });
+  }
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question("Paste the step-up code from the browser and press enter: ");
+    return answer.trim() || null;
+  } finally {
+    rl.close();
+  }
+}
+
+function openExternal(url: string): Promise<void> {
+  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: "ignore", detached: true });
+    child.on("error", reject);
+    child.on("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
 }
 
 async function resolveDefaultGoogleConnector(): Promise<string> {

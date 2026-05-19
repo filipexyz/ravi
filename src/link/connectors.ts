@@ -138,12 +138,18 @@ export async function revokeConnector(id: string, deps: ConnectorHelperDeps = {}
 }
 
 export async function execCapability(
-  options: { connectorId: string; capability: string; parameters: unknown },
+  options: { connectorId: string; capability: string; parameters: unknown; stepUpToken?: string },
   deps: ConnectorHelperDeps = {},
 ): Promise<ExecResult> {
   const ctx = await authenticate(deps);
-  return ctx.link.request<ExecResult>("POST", `/cli/exec/${encodeURIComponent(options.connectorId)}`, ctx.accessToken, {
-    capability: options.capability,
-    parameters: options.parameters,
-  });
+  return ctx.link.request<ExecResult>(
+    "POST",
+    `/cli/exec/${encodeURIComponent(options.connectorId)}`,
+    ctx.accessToken,
+    {
+      capability: options.capability,
+      parameters: options.parameters,
+    },
+    options.stepUpToken ? { headers: { "X-Ravi-Step-Up": options.stepUpToken } } : {},
+  );
 }

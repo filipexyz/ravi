@@ -15,6 +15,13 @@ import { fetchWithTimeout } from "../utils/paths.js";
 
 export const DEFAULT_LINK_URL = "https://link.ravi.so";
 
+export class LinkStepUpRequiredError extends Error {
+  constructor(public readonly details: { challengeId: string; verificationUrl: string; expiresAt: string }) {
+    super("Step-up authentication required");
+    this.name = "LinkStepUpRequiredError";
+  }
+}
+
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export interface LinkApiClientOptions {
@@ -36,13 +43,20 @@ export class LinkApiClient {
       });
   }
 
-  async request<T>(method: string, path: string, accessToken: string, body?: unknown): Promise<T> {
+  async request<T>(
+    method: string,
+    path: string,
+    accessToken: string,
+    body?: unknown,
+    options: { headers?: Record<string, string> } = {},
+  ): Promise<T> {
     const init: RequestInit = {
       method,
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${accessToken}`,
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(options.headers ?? {}),
       },
     };
     if (body !== undefined) init.body = JSON.stringify(body);
@@ -57,6 +71,12 @@ export class LinkApiClient {
     }
 
     const payload = await readBody(response);
+    if (response.status === 409 && stringField(payload, "error") === "connector_stepup_required") {
+      const challengeId = stringField(payload, "challengeId") ?? "";
+      const verificationUrl = stringField(payload, "verificationUrl") ?? "";
+      const expiresAt = stringField(payload, "expiresAt") ?? new Date().toISOString();
+      throw new LinkStepUpRequiredError({ challengeId, verificationUrl, expiresAt });
+    }
     if (!response.ok) {
       throw mapLinkError(response.status, payload);
     }
