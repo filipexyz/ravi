@@ -163,7 +163,12 @@ export function matchRoute(
 
 /**
  * Resolve a phone number to an agent, session key, and session name.
- * Calls matchRoute() for pure routing, then creates/resolves the session (DB side effect).
+ *
+ * Convenience wrapper that pairs `matchRoute` (pure) with
+ * `commitMatchedRoute` (DB writes). Callers that need to gate session
+ * creation — e.g. inbound policy enforcement — should call the two
+ * primitives directly so policy checks run before the session row exists.
+ * See `src/omni/consumer.ts` for that pattern.
  */
 export function resolveRoute(
   config: RouterConfig,
@@ -179,8 +184,33 @@ export function resolveRoute(
 ): ResolvedRoute | null {
   const match = matchRoute(config, params);
   if (!match) return null;
+  return commitMatchedRoute(match, params);
+}
 
-  const { agentId, agent, dmScope, sessionKey, route } = match;
+/**
+ * Commit a previously matched route to the DB: ensures the session row
+ * exists (idempotent) and assigns or reuses a canonical sessionName.
+ *
+ * Separated from `matchRoute` so callers can run policy / contact-scope
+ * checks against the routing decision before any DB write happens. This
+ * is what prevents orphan session rows when policy rejects an inbound
+ * message — the unified-model spec requires policy enforcement to run
+ * before route/session resolution.
+ *
+ * The `params` shape is a subset of `resolveRoute`'s; only the fields
+ * needed for naming (peerKind, peerId, threadId) are read.
+ */
+export function commitMatchedRoute(
+  matched: MatchedRoute,
+  params: {
+    phone: string;
+    isGroup?: boolean;
+    groupId?: string;
+    threadId?: string;
+    peerKind?: string;
+  },
+): ResolvedRoute {
+  const { agentId, agent, dmScope, sessionKey, route } = matched;
   const { isGroup, groupId, phone } = params;
 
   // If route forces a session name that already exists, route directly to it
@@ -227,7 +257,7 @@ export function resolveRoute(
     updateSessionName(sessionKey, sessionName);
   }
 
-  log.debug("Resolved route", {
+  log.debug("Committed matched route", {
     phone,
     agentId,
     dmScope,

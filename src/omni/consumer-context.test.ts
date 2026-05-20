@@ -7,6 +7,7 @@ import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
 import type { MessageMetadata } from "../router/router-db.js";
 
 const actualRouterDbModule = await import("../router/router-db.js");
+const actualRouterIndexModule = await import("../router/index.js");
 const actualRouterSessionsModule = await import("../router/sessions.js");
 const actualChatDbModule = await import("../db.js");
 const actualDbSaveMessageMeta = actualRouterDbModule.dbSaveMessageMeta;
@@ -71,9 +72,16 @@ mock.module("../slash/index.js", () => ({
   handleSlashCommand: mock(async () => false),
 }));
 
+// Note: we intentionally do NOT override `matchRoute` here. Overriding a
+// re-exported symbol in `../router/index.js` leaks into direct imports
+// from `../router/resolver.js` (a bun quirk where the live binding is
+// mutated in place), which would break `resolver.test.ts`. Instead we
+// fix the config so the real `matchRoute` returns a valid match, and
+// only override `commitMatchedRoute` to inject the test's routeResult.
 mock.module("../router/index.js", () => ({
+  ...actualRouterIndexModule,
   expandHome: (cwd: string) => cwd,
-  resolveRoute: () => routeResult,
+  commitMatchedRoute: () => routeResult,
 }));
 
 mock.module("../config-store.js", () => ({
@@ -91,10 +99,23 @@ mock.module("../config-store.js", () => ({
         },
       },
       routes: [],
-      agents: {},
+      agents: {
+        main: {
+          id: "main",
+          cwd: agentCwd,
+          dmScope: "main",
+          mode: "active",
+        },
+      },
       defaultAgent: "main",
       defaultDmScope: "main",
-      accountAgents: {},
+      // When routeResult is null, the test wants to exercise the "no route"
+      // fallback in the consumer. We mirror that by leaving accountAgents
+      // empty so the real matchRoute hits its "no route for account, skip"
+      // branch. When routeResult is set, accountAgents maps main→main so
+      // matchRoute returns a valid match; commitMatchedRoute is then mocked
+      // to inject the test's routeResult for downstream assertions.
+      accountAgents: routeResult ? { main: "main" } : {},
       ignoredOmniInstanceIds: [],
     }),
   },
@@ -184,6 +205,7 @@ mock.module("../router/router-db.js", () => ({
 
 mock.module("../session-trace/channel-trace.js", () => ({
   recordChannelMessageReceivedTrace: mock(() => ({})),
+  recordRouteRejectedTrace: mock(() => ({})),
   recordRouteResolvedTrace: mock(() => ({})),
 }));
 
