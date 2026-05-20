@@ -236,17 +236,29 @@ class InboxRunner {
         subscriptionCursor !== null && subscriptionCursor > (row.lastSequence ?? 0)
           ? { lastSequence: subscriptionCursor }
           : {};
+
+      if (!payload.changed) {
+        // Caught up: it's safe to mark generation locally because there
+        // is nothing pending to deliver.
+        markSubscriptionPolled(row.id, {
+          generation,
+          success: true,
+          status: "active",
+          ...cursorUpdate,
+        });
+        this.currentBackoffMs = 0;
+        return;
+      }
+
+      // Server reported pending items. Save cursor progress now, but defer
+      // the generation bump until the poll+publish+ack cycle has succeeded.
+      // Otherwise a silent failure here would leave the daemon with
+      // last_generation matching server, locking pulse into 304 forever.
       markSubscriptionPolled(row.id, {
-        generation,
         success: true,
         status: "active",
         ...cursorUpdate,
       });
-
-      if (!payload.changed) {
-        this.currentBackoffMs = 0;
-        return;
-      }
 
       const poll = await this.withAutoRefresh(client, credentials, (token) =>
         pollInboxItems(client, token, {
@@ -358,7 +370,7 @@ class InboxRunner {
     const natsPayloadJson = JSON.stringify(natsPayload);
 
     // 1. Persist locally before publish so a crash leaves a durable replay row.
-    const { row: localItem } = upsertDeliveredItem({
+    const { row: localItem, created } = upsertDeliveredItem({
       consoleUrl: input.consoleUrl,
       organizationId: input.organizationId,
       subscriptionId: input.remoteSubscriptionId,
@@ -372,6 +384,19 @@ class InboxRunner {
       natsPayloadJson,
       deliveredAt: null,
     });
+
+    // Guard against re-publish when Console retries delivery of an item we
+    // already published locally (e.g. ack landed but server cycled the
+    // lease, or the daemon restarted between publish and ack). The
+    // durable mirror remembers `delivered_at`; if it's set, we already
+    // emitted to NATS and should only re-ack server-side.
+    if (!created && localItem.deliveredAt) {
+      log.debug("Skipping duplicate NATS publish for already-delivered inbox item", {
+        itemId: input.item.itemId,
+        sequence: input.item.sequence,
+      });
+      return { delivered: true };
+    }
 
     // 2. Publish to NATS.
     try {
