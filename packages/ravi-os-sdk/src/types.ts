@@ -1115,10 +1115,14 @@ export type CrmFactRejectReturn = unknown;
 export type CrmNextInput = {
   account?: string;
   contact?: string;
+  dueAfter?: string;
+  dueBefore?: string;
+  dueToday?: boolean;
   limit?: string;
   offset?: string;
   opportunity?: string;
   owner?: string;
+  taskType?: string;
 };
 
 /** Return shape for `crm.next`. (no @Returns declared) */
@@ -1185,15 +1189,30 @@ export type CrmOpportunityShowInput = {
 /** Return shape for `crm.opportunity.show`. (no @Returns declared) */
 export type CrmOpportunityShowReturn = unknown;
 
+/** Input shape for `crm.task.cancel`. */
+export type CrmTaskCancelInput = {
+  reason?: string;
+  task: string;
+};
+
+/** Return shape for `crm.task.cancel`. (no @Returns declared) */
+export type CrmTaskCancelReturn = unknown;
+
 /** Input shape for `crm.task.create`. */
 export type CrmTaskCreateInput = {
   account?: string;
+  body?: string;
+  confidence?: string;
   contact?: string;
   due?: string;
+  evidence?: string;
   idempotencyKey?: string;
+  metadata?: string;
   opportunity?: string;
   owner?: string;
   priority?: string;
+  source?: string;
+  taskType?: string;
   title: string;
 };
 
@@ -1208,6 +1227,24 @@ export type CrmTaskDoneInput = {
 /** Return shape for `crm.task.done`. (no @Returns declared) */
 export type CrmTaskDoneReturn = unknown;
 
+/** Input shape for `crm.task.list`. */
+export type CrmTaskListInput = {
+  account?: string;
+  contact?: string;
+  dueAfter?: string;
+  dueBefore?: string;
+  dueToday?: boolean;
+  limit?: string;
+  offset?: string;
+  opportunity?: string;
+  owner?: string;
+  status?: string;
+  taskType?: string;
+};
+
+/** Return shape for `crm.task.list`. (no @Returns declared) */
+export type CrmTaskListReturn = unknown;
+
 /** Input shape for `crm.task.show`. */
 export type CrmTaskShowInput = {
   task: string;
@@ -1215,6 +1252,16 @@ export type CrmTaskShowInput = {
 
 /** Return shape for `crm.task.show`. (no @Returns declared) */
 export type CrmTaskShowReturn = unknown;
+
+/** Input shape for `crm.task.snooze`. */
+export type CrmTaskSnoozeInput = {
+  reason?: string;
+  task: string;
+  until?: string;
+};
+
+/** Return shape for `crm.task.snooze`. (no @Returns declared) */
+export type CrmTaskSnoozeReturn = unknown;
 
 /** Input shape for `cron.add`. */
 export type CronAddInput = {
@@ -1661,6 +1708,48 @@ export type ImageGenerateInput = {
 
 /** Return shape for `image.generate`. (no @Returns declared) */
 export type ImageGenerateReturn = unknown;
+
+/** Input shape for `inbox.disable`. */
+export type InboxDisableInput = Record<string, never>;
+
+/** Return shape for `inbox.disable`. (no @Returns declared) */
+export type InboxDisableReturn = unknown;
+
+/** Input shape for `inbox.enable`. */
+export type InboxEnableInput = Record<string, never>;
+
+/** Return shape for `inbox.enable`. (no @Returns declared) */
+export type InboxEnableReturn = unknown;
+
+/** Input shape for `inbox.items`. */
+export type InboxItemsInput = {
+  limit?: string;
+};
+
+/** Return shape for `inbox.items`. (no @Returns declared) */
+export type InboxItemsReturn = unknown;
+
+/** Input shape for `inbox.poll`. */
+export type InboxPollInput = {
+  once?: boolean;
+};
+
+/** Return shape for `inbox.poll`. (no @Returns declared) */
+export type InboxPollReturn = unknown;
+
+/** Input shape for `inbox.replay`. */
+export type InboxReplayInput = {
+  ref: string;
+};
+
+/** Return shape for `inbox.replay`. (no @Returns declared) */
+export type InboxReplayReturn = unknown;
+
+/** Input shape for `inbox.status`. */
+export type InboxStatusInput = Record<string, never>;
+
+/** Return shape for `inbox.status`. (no @Returns declared) */
+export type InboxStatusReturn = unknown;
 
 /** Input shape for `insights.create`. */
 export type InsightsCreateInput = {

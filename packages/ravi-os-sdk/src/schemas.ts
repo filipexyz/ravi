@@ -2664,6 +2664,18 @@ export const CrmNextInputSchema = {
       "description": "Filter by contact",
       "type": "string"
     },
+    "dueAfter": {
+      "description": "Only actions with due_at >= <ts>",
+      "type": "string"
+    },
+    "dueBefore": {
+      "description": "Only actions with due_at < <ts>",
+      "type": "string"
+    },
+    "dueToday": {
+      "description": "Only actions whose due_at is today",
+      "type": "boolean"
+    },
     "limit": {
       "description": "Page size (default: 25, max: 500)",
       "type": "string"
@@ -2678,6 +2690,10 @@ export const CrmNextInputSchema = {
     },
     "owner": {
       "description": "Filter by owner, e.g. agent:main",
+      "type": "string"
+    },
+    "taskType": {
+      "description": "Filter by task_type (e.g. commitment, follow_up, call)",
       "type": "string"
     }
   },
@@ -2828,12 +2844,39 @@ export const CrmOpportunityShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.task.cancel`. */
+export const CrmTaskCancelInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "description": "Reason for cancellation (stored in event payload)",
+      "type": "string"
+    },
+    "task": {
+      "description": "CRM task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.task.create`. */
 export const CrmTaskCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "account": {
       "description": "CRM account ID",
+      "type": "string"
+    },
+    "body": {
+      "description": "Task body / longer description",
+      "type": "string"
+    },
+    "confidence": {
+      "description": "Confidence in the task (0.0–1.0)",
       "type": "string"
     },
     "contact": {
@@ -2844,8 +2887,16 @@ export const CrmTaskCreateInputSchema = {
       "description": "Due date/time",
       "type": "string"
     },
+    "evidence": {
+      "description": "Evidence JSON array attached to the task event",
+      "type": "string"
+    },
     "idempotencyKey": {
       "description": "Deduplicate repeated task creation",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Metadata JSON object stored on the task",
       "type": "string"
     },
     "opportunity": {
@@ -2858,6 +2909,14 @@ export const CrmTaskCreateInputSchema = {
     },
     "priority": {
       "description": "low|normal|high|urgent",
+      "type": "string"
+    },
+    "source": {
+      "description": "Source label (default: cli)",
+      "type": "string"
+    },
+    "taskType": {
+      "description": "Task type (e.g. follow_up, commitment, call)",
       "type": "string"
     },
     "title": {
@@ -2886,12 +2945,87 @@ export const CrmTaskDoneInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.task.list`. */
+export const CrmTaskListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Filter by account",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Filter by contact",
+      "type": "string"
+    },
+    "dueAfter": {
+      "description": "Only tasks with due_at >= <ts>",
+      "type": "string"
+    },
+    "dueBefore": {
+      "description": "Only tasks with due_at < <ts>",
+      "type": "string"
+    },
+    "dueToday": {
+      "description": "Only tasks whose due_at is today",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 25, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching tasks to skip (default: 0)",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "Filter by opportunity",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner, e.g. agent:main",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by status (open, scheduled, done, canceled, snoozed)",
+      "type": "string"
+    },
+    "taskType": {
+      "description": "Filter by task_type",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.task.show`. */
 export const CrmTaskShowInputSchema = {
   "additionalProperties": false,
   "properties": {
     "task": {
       "description": "CRM task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.task.snooze`. */
+export const CrmTaskSnoozeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "description": "Reason for snoozing",
+      "type": "string"
+    },
+    "task": {
+      "description": "CRM task ID",
+      "type": "string"
+    },
+    "until": {
+      "description": "New due_at / snoozed_until (ISO timestamp)",
       "type": "string"
     }
   },
@@ -3939,6 +4073,66 @@ export const ImageGenerateInputSchema = {
   "required": [
     "prompt"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.disable`. */
+export const InboxDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.enable`. */
+export const InboxEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.items`. */
+export const InboxItemsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum items to return (default: 25, max: 500)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.poll`. */
+export const InboxPollInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "once": {
+      "description": "Run one cycle and exit (default)",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.replay`. */
+export const InboxReplayInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "ref": {
+      "description": "Local row id (number) or remote item id (uuid)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.status`. */
+export const InboxStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
