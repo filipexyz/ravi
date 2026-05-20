@@ -30,7 +30,6 @@ export * from "./group.js";
 export * from "./heartbeat.js";
 export * from "./hooks.js";
 export * from "./image.js";
-export * from "./inbox.js";
 export * from "./insights.js";
 export * from "./instances.js";
 export * from "./mail.js";
