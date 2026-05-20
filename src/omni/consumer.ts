@@ -20,7 +20,15 @@ const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
 const CONSUMER_RETRY_DELAY_MS = 2_000;
 const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
 const unregisteredCooldowns = new Map<string, number>();
-import { commitMatchedRoute, expandHome, matchRoute } from "../router/index.js";
+import {
+  attachChatToSession,
+  commitMatchedRoute,
+  expandHome,
+  findSessionByAttachedChat,
+  getSession,
+  listSessionSubscriptions,
+  matchRoute,
+} from "../router/index.js";
 import { configStore } from "../config-store.js";
 import {
   getContact,
@@ -848,7 +856,7 @@ export class OmniConsumer {
     // committed after every policy/scope gate passes so rejected inbounds
     // don't leave orphan sessions behind (spec contacts/identity-graph/
     // unified-model: identity → policy → route resolution → persist).
-    const matched = matchRoute(routerConfig, {
+    let matched = matchRoute(routerConfig, {
       phone: routePhone,
       channel: sessionChannel,
       accountId: effectiveAccountId,
@@ -882,6 +890,41 @@ export class OmniConsumer {
         });
       }
       return;
+    }
+
+    // sessions/attach: if the canonical chat is already subscribed to a
+    // session, route the inbound there instead of to the route-derived
+    // session. The subscription is an explicit operator decision and
+    // overrides the default route resolution.
+    // See .ravi/specs/sessions/attach/SPEC.md
+    const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
+    if (existingSubscription && existingSubscription.sessionKey !== matched.sessionKey) {
+      const ownerSession = getSession(existingSubscription.sessionKey);
+      const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
+      if (ownerSession && ownerAgent) {
+        log.info("Inbound rerouted by session subscription", {
+          chatId: canonicalChat.id,
+          fromSessionKey: matched.sessionKey,
+          toSessionKey: existingSubscription.sessionKey,
+        });
+        matched = {
+          agentId: ownerSession.agentId,
+          agent: ownerAgent,
+          sessionKey: existingSubscription.sessionKey,
+          dmScope: matched.dmScope,
+          // The original route stays so policy lookups can still consult
+          // its `policy` override. The subscription doesn't expose a
+          // route — instance-level policy is the next fallback.
+          route: matched.route,
+        };
+      } else {
+        log.warn("Subscription points to a missing session or agent — falling back to route resolution", {
+          chatId: canonicalChat.id,
+          subscriptionSessionKey: existingSubscription.sessionKey,
+          hasSession: !!ownerSession,
+          hasAgent: !!ownerAgent,
+        });
+      }
     }
 
     const traceSource: NormalizedSessionTraceSource = {
@@ -1104,6 +1147,34 @@ export class OmniConsumer {
       bindingReason: "inbound_route",
       seenAt: msgTs,
     });
+
+    // sessions/attach: keep the subscriptions index in sync with the
+    // legacy 1:1 binding. First-time chats become `primary`; subsequent
+    // chats routed into an existing session become `input`. Idempotent
+    // on re-routing the same chat.
+    // See .ravi/specs/sessions/attach/SPEC.md
+    try {
+      const existingPrimaries = listSessionSubscriptions(resolved.sessionKey).filter((s) => s.role === "primary");
+      const role = existingPrimaries.length === 0 ? "primary" : "input";
+      attachChatToSession({
+        sessionKey: resolved.sessionKey,
+        chatId: canonicalChat.id,
+        role,
+        attachedByType: "system",
+        attachedReason: "inbound-route",
+      });
+    } catch (error) {
+      // Conflict means the chat is currently attached to another session;
+      // the override block above already detected and reused that owner
+      // (so we shouldn't reach this path with a conflicting chat). Log
+      // defensively and let the inbound continue — the legacy
+      // `session_chat_bindings` row is still authoritative for now.
+      log.warn("Failed to record session_chat_subscription", {
+        chatId: canonicalChat.id,
+        sessionKey: resolved.sessionKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     dbUpsertSessionParticipant({
       sessionKey: resolved.sessionKey,
       ownerType: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "contact" : "unknown",

@@ -31,6 +31,16 @@ import {
   setSessionEphemeral,
   extendSession,
   makeSessionPermanent,
+  attachChatToSession,
+  detachChatFromSession,
+  listSessionSubscriptions,
+  setSessionFocus,
+  clearSessionFocus,
+  getSessionFocus,
+  setSessionUnattachedFocusPolicy,
+  SessionAttachConflictError,
+  SessionDetachLastPrimaryError,
+  SessionFocusUnattachedError,
 } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
@@ -38,10 +48,13 @@ import { loadConfig } from "../../utils/config.js";
 import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
+  dbFindChatByRef,
+  dbGetChat,
   dbGetMessageMeta,
   dbListContexts,
   dbListMessageMetaByChatId,
   type ContextRecord,
+  type UnattachedFocusPolicy,
 } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
@@ -3636,6 +3649,283 @@ export class SessionCommands {
 
     ask();
   }
+
+  // ==========================================================================
+  // sessions/attach — subscriptions & focus
+  // See .ravi/specs/sessions/attach/SPEC.md
+  // ==========================================================================
+
+  @Command({
+    name: "attach",
+    description: "Attach a chat to a session so its inbound dispatches into the session",
+  })
+  attach(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
+    @Option({ flags: "--reason <text>", description: "Why the chat is being attached (audit)" }) reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    if (!chatRef?.trim()) {
+      fail("--chat is required");
+      return;
+    }
+    const chat = resolveAttachChat(chatRef);
+    if (!chat) {
+      fail(`Chat not found: ${chatRef}`);
+      return;
+    }
+    try {
+      const result = attachChatToSession({
+        sessionKey: session.sessionKey,
+        chatId: chat.id,
+        role: "input",
+        attachedByType: "user",
+        attachedReason: reason?.trim() || "cli-attach",
+      });
+      if (asJson) {
+        printJson({
+          attached: result.created,
+          subscription: result.subscription,
+          session: { name: session.name, sessionKey: session.sessionKey },
+          chat: { id: chat.id, title: chat.title, channel: chat.channel, instanceId: chat.instanceId },
+        });
+        return;
+      }
+      const verb = result.created ? "Attached" : "Already attached";
+      console.log(
+        `${verb} chat ${chat.id} (${chat.title ?? "no title"}) to session ${session.name ?? session.sessionKey}`,
+      );
+    } catch (err) {
+      if (err instanceof SessionAttachConflictError) {
+        if (asJson) {
+          printJson({ error: err.code, message: err.message, currentOwner: err.currentSessionKey, chatId: err.chatId });
+          return;
+        }
+        fail(err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  @Command({ name: "detach", description: "Detach a chat from a session" })
+  detach(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    if (!chatRef?.trim()) {
+      fail("--chat is required");
+      return;
+    }
+    const chat = resolveAttachChat(chatRef);
+    if (!chat) {
+      fail(`Chat not found: ${chatRef}`);
+      return;
+    }
+    try {
+      const result = detachChatFromSession(session.sessionKey, chat.id);
+      if (asJson) {
+        printJson({ detached: result.detached, sessionKey: session.sessionKey, chatId: chat.id });
+        return;
+      }
+      if (result.detached) {
+        console.log(`Detached chat ${chat.id} from session ${session.name ?? session.sessionKey}`);
+      } else {
+        console.log(`Chat ${chat.id} is not currently attached to ${session.name ?? session.sessionKey}`);
+      }
+    } catch (err) {
+      if (err instanceof SessionDetachLastPrimaryError) {
+        if (asJson) {
+          printJson({ error: err.code, message: err.message });
+          return;
+        }
+        fail(err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  @Command({ name: "subscriptions", description: "List chats attached to a session" })
+  subscriptions(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    const subs = listSessionSubscriptions(session.sessionKey);
+    if (asJson) {
+      const enriched = subs.map((s) => {
+        const chat = dbGetChat(s.chatId);
+        return {
+          ...s,
+          chat: chat ? { id: chat.id, title: chat.title, channel: chat.channel, instanceId: chat.instanceId } : null,
+        };
+      });
+      printJson({ sessionKey: session.sessionKey, sessionName: session.name, subscriptions: enriched });
+      return;
+    }
+    if (subs.length === 0) {
+      console.log(`No subscriptions for session ${session.name ?? session.sessionKey}`);
+      return;
+    }
+    console.log(`Subscriptions for ${session.name ?? session.sessionKey}:`);
+    for (const sub of subs) {
+      const chat = dbGetChat(sub.chatId);
+      const title = chat?.title ?? "(no title)";
+      const channel = chat?.channel ?? "?";
+      console.log(`  [${sub.role}] ${sub.chatId} — ${title} (${channel})`);
+    }
+  }
+
+  @Command({ name: "focus", description: "Set, clear, or show the output focus chat for a session" })
+  focus(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--chat <id>", description: "Chat to focus output on" }) chatRef?: string,
+    @Option({ flags: "--clear", description: "Clear focus (return to default behaviour)" }) clear?: boolean,
+    @Option({ flags: "--show", description: "Show the current focus" }) show?: boolean,
+    @Option({ flags: "--reason <text>", description: "Why focus is being set (audit)" }) reason?: string,
+    @Option({ flags: "--expires <duration>", description: "TTL like '30m', '2h', '1d'" }) expires?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    if (show) {
+      const focus = getSessionFocus(session.sessionKey);
+      if (asJson) {
+        printJson({ sessionKey: session.sessionKey, sessionName: session.name, focus });
+        return;
+      }
+      if (!focus) {
+        console.log(`No focus set on ${session.name ?? session.sessionKey} (default: respond to inbound source)`);
+        return;
+      }
+      const chat = dbGetChat(focus.chatId);
+      const expiry = focus.expiresAt ? new Date(focus.expiresAt).toISOString() : "never";
+      console.log(`Focus: ${focus.chatId} (${chat?.title ?? "no title"}) — expires=${expiry}`);
+      return;
+    }
+
+    if (clear) {
+      const removed = clearSessionFocus(session.sessionKey);
+      if (asJson) {
+        printJson({ cleared: removed, sessionKey: session.sessionKey });
+        return;
+      }
+      console.log(removed ? "Focus cleared." : "No focus was set.");
+      return;
+    }
+
+    if (!chatRef?.trim()) {
+      fail("focus requires --chat <id>, --clear, or --show");
+      return;
+    }
+    const chat = resolveAttachChat(chatRef);
+    if (!chat) {
+      fail(`Chat not found: ${chatRef}`);
+      return;
+    }
+
+    const expiresAt = expires ? parseExpiryDuration(expires) : undefined;
+    if (expires && expiresAt === undefined) {
+      fail(`Invalid --expires value: ${expires} (expected like '30m', '2h', '1d')`);
+      return;
+    }
+    try {
+      const focus = setSessionFocus({
+        sessionKey: session.sessionKey,
+        chatId: chat.id,
+        setByType: "user",
+        setReason: reason?.trim() || "cli-focus",
+        expiresAt: expiresAt ?? null,
+      });
+      if (asJson) {
+        printJson({ sessionKey: session.sessionKey, focus });
+        return;
+      }
+      const ttl = focus.expiresAt ? ` (expires ${new Date(focus.expiresAt).toISOString()})` : " (sticky)";
+      console.log(`Focus set on ${session.name ?? session.sessionKey} → ${focus.chatId}${ttl}`);
+    } catch (err) {
+      if (err instanceof SessionFocusUnattachedError) {
+        if (asJson) {
+          printJson({ error: err.code, message: err.message });
+          return;
+        }
+        fail(err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  @Command({
+    name: "set-unattached-focus-policy",
+    description: "Configure how `focus` behaves when the target chat is not attached",
+  })
+  setUnattachedFocusPolicy(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("policy", { description: "fail-closed | auto-follow" }) policy: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    if (policy !== "fail-closed" && policy !== "auto-follow") {
+      fail(`Invalid policy: ${policy} (expected fail-closed or auto-follow)`);
+      return;
+    }
+    setSessionUnattachedFocusPolicy(session.sessionKey, policy as UnattachedFocusPolicy);
+    if (asJson) {
+      printJson({ sessionKey: session.sessionKey, unattachedFocusPolicy: policy });
+      return;
+    }
+    console.log(`Set unattached-focus-policy on ${session.name ?? session.sessionKey} → ${policy}`);
+  }
+}
+
+function resolveAttachChat(ref: string): ReturnType<typeof dbGetChat> {
+  const direct = dbGetChat(ref);
+  if (direct) return direct;
+  return dbFindChatByRef({ ref });
+}
+
+function parseExpiryDuration(value: string): number | undefined {
+  const match = /^(\d+)\s*([smhd])$/i.exec(value.trim());
+  if (!match) return undefined;
+  const n = Number.parseInt(match[1], 10);
+  const unit = match[2].toLowerCase();
+  const ms =
+    unit === "s"
+      ? n * 1000
+      : unit === "m"
+        ? n * 60_000
+        : unit === "h"
+          ? n * 3_600_000
+          : unit === "d"
+            ? n * 86_400_000
+            : 0;
+  if (!ms) return undefined;
+  return Date.now() + ms;
 }
 
 export interface NormalizedTranscriptMessage {

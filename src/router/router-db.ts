@@ -688,6 +688,56 @@ export interface UpsertSessionParticipantInput {
   seenAt?: number;
 }
 
+// ----- sessions/attach -----
+// see .ravi/specs/sessions/attach/SPEC.md
+export type SubscriptionRole = "primary" | "input" | "mirror";
+export type AttachedByType = "user" | "agent" | "system";
+export type UnattachedFocusPolicy = "fail-closed" | "auto-follow";
+
+export interface SessionChatSubscriptionRecord {
+  id: number;
+  sessionKey: string;
+  chatId: string;
+  role: SubscriptionRole;
+  attachedByType: AttachedByType;
+  attachedById?: string;
+  attachedReason?: string;
+  contextSnapshotAtAttach?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+  detachedAt?: number;
+}
+
+export interface CreateSessionChatSubscriptionInput {
+  sessionKey: string;
+  chatId: string;
+  role?: SubscriptionRole;
+  attachedByType?: AttachedByType;
+  attachedById?: string | null;
+  attachedReason?: string | null;
+  contextSnapshotAtAttach?: Record<string, unknown> | null;
+}
+
+export interface SessionFocusRecord {
+  sessionKey: string;
+  chatId: string;
+  setByType: AttachedByType;
+  setById?: string;
+  setReason?: string;
+  expiresAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SetSessionFocusInput {
+  sessionKey: string;
+  chatId: string;
+  setByType?: AttachedByType;
+  setById?: string | null;
+  setReason?: string | null;
+  expiresAt?: number | null;
+}
+
 export interface ListContextsOptions {
   agentId?: string;
   sessionKey?: string;
@@ -1110,6 +1160,42 @@ function getDb(): Database {
       ON session_chat_bindings(session_key);
     CREATE INDEX IF NOT EXISTS idx_session_chat_bindings_chat
       ON session_chat_bindings(chat_id);
+
+    CREATE TABLE IF NOT EXISTS session_chat_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'input' CHECK(role IN ('primary', 'input', 'mirror')),
+      attached_by_type TEXT NOT NULL DEFAULT 'system' CHECK(attached_by_type IN ('user', 'agent', 'system')),
+      attached_by_id TEXT,
+      attached_reason TEXT,
+      context_snapshot_at_attach_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      detached_at INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_pair
+      ON session_chat_subscriptions(session_key, chat_id)
+      WHERE detached_at IS NULL;
+    DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat;
+    CREATE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat
+      ON session_chat_subscriptions(chat_id)
+      WHERE detached_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_session_chat_subscriptions_session
+      ON session_chat_subscriptions(session_key, detached_at);
+
+    CREATE TABLE IF NOT EXISTS session_focus (
+      session_key TEXT PRIMARY KEY REFERENCES sessions(session_key) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      set_by_type TEXT NOT NULL DEFAULT 'system' CHECK(set_by_type IN ('user', 'agent', 'system')),
+      set_by_id TEXT,
+      set_reason TEXT,
+      expires_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_focus_chat ON session_focus(chat_id);
+    CREATE INDEX IF NOT EXISTS idx_session_focus_expires ON session_focus(expires_at) WHERE expires_at IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS session_participants (
       id TEXT PRIMARY KEY,
@@ -2133,6 +2219,43 @@ function ensureIdentityChatMigrations(database: Database): void {
     "CREATE INDEX IF NOT EXISTS idx_message_metadata_canonical_chat ON message_metadata(canonical_chat_id)",
   );
   database.exec("CREATE INDEX IF NOT EXISTS idx_session_events_canonical_chat ON session_events(canonical_chat_id)");
+
+  // sessions/attach: per-session output policy for focus on unattached chats.
+  // See .ravi/specs/sessions/attach/SPEC.md
+  ensureColumn(database, "sessions", "unattached_focus_policy", "TEXT NOT NULL DEFAULT 'fail-closed'");
+
+  // sessions/attach: backfill `session_chat_subscriptions` from legacy
+  // 1:1 `session_chat_bindings` so existing sessions appear as having a
+  // primary subscription on their bound chat. Idempotent: the unique
+  // partial index on active (session_key, chat_id) prevents duplicates.
+  backfillSessionChatSubscriptionsFromBindings(database);
+}
+
+function backfillSessionChatSubscriptionsFromBindings(database: Database): void {
+  const now = Date.now();
+  const result = database
+    .prepare(
+      `
+      INSERT INTO session_chat_subscriptions (
+        session_key, chat_id, role, attached_by_type, attached_by_id,
+        attached_reason, context_snapshot_at_attach_json, created_at, updated_at, detached_at
+      )
+      SELECT
+        b.session_key, b.chat_id, 'primary', 'system', NULL,
+        'backfill-from-session-chat-bindings', NULL, ?, ?, NULL
+      FROM session_chat_bindings b
+      WHERE NOT EXISTS (
+        SELECT 1 FROM session_chat_subscriptions s
+        WHERE s.session_key = b.session_key
+          AND s.chat_id = b.chat_id
+          AND s.detached_at IS NULL
+      )
+    `,
+    )
+    .run(now, now);
+  if (result.changes > 0) {
+    log.info("Backfilled session_chat_subscriptions from session_chat_bindings", { rows: result.changes });
+  }
 }
 
 function cleanJsonRecord(value: Record<string, unknown> | null | undefined): string | null {
@@ -4355,6 +4478,263 @@ export function dbListSessionParticipants(sessionKey: string): SessionParticipan
 
 export function dbBackfillChatModel(): void {
   backfillChatModel(getDb());
+}
+
+// ============================================================================
+// sessions/attach — subscriptions & focus
+// See .ravi/specs/sessions/attach/SPEC.md
+// ============================================================================
+
+interface SessionChatSubscriptionRow {
+  id: number;
+  session_key: string;
+  chat_id: string;
+  role: string;
+  attached_by_type: string;
+  attached_by_id: string | null;
+  attached_reason: string | null;
+  context_snapshot_at_attach_json: string | null;
+  created_at: number;
+  updated_at: number;
+  detached_at: number | null;
+}
+
+interface SessionFocusRow {
+  session_key: string;
+  chat_id: string;
+  set_by_type: string;
+  set_by_id: string | null;
+  set_reason: string | null;
+  expires_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+function rowToSessionChatSubscription(row: SessionChatSubscriptionRow): SessionChatSubscriptionRecord {
+  return {
+    id: row.id,
+    sessionKey: row.session_key,
+    chatId: row.chat_id,
+    role: row.role as SubscriptionRole,
+    attachedByType: row.attached_by_type as AttachedByType,
+    attachedById: row.attached_by_id ?? undefined,
+    attachedReason: row.attached_reason ?? undefined,
+    contextSnapshotAtAttach: parseJsonRecord(row.context_snapshot_at_attach_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    detachedAt: row.detached_at ?? undefined,
+  };
+}
+
+function rowToSessionFocus(row: SessionFocusRow): SessionFocusRecord {
+  return {
+    sessionKey: row.session_key,
+    chatId: row.chat_id,
+    setByType: row.set_by_type as AttachedByType,
+    setById: row.set_by_id ?? undefined,
+    setReason: row.set_reason ?? undefined,
+    expiresAt: row.expires_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Create or reactivate a session→chat subscription. Idempotent: re-attaching
+ * the same `(session_key, chat_id)` when an active row exists returns it
+ * untouched. The unique partial index on active `chat_id` enforces the
+ * cross-session rule (a chat can only be attached to one session at a time).
+ */
+export function dbCreateSessionChatSubscription(
+  input: CreateSessionChatSubscriptionInput,
+): SessionChatSubscriptionRecord {
+  const db = getDb();
+  const now = Date.now();
+  const existingActive = db
+    .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
+    .get(input.sessionKey, input.chatId) as SessionChatSubscriptionRow | undefined;
+  if (existingActive) {
+    return rowToSessionChatSubscription(existingActive);
+  }
+  // Reactivate any prior detached row for the same (session, chat) instead
+  // of accumulating soft-deleted history forever — keeps the audit minimal
+  // while still allowing detach/reattach cycles.
+  const reactivated = db
+    .prepare(
+      `
+      UPDATE session_chat_subscriptions
+      SET detached_at = NULL,
+          role = ?,
+          attached_by_type = ?,
+          attached_by_id = ?,
+          attached_reason = ?,
+          context_snapshot_at_attach_json = ?,
+          updated_at = ?
+      WHERE session_key = ? AND chat_id = ? AND detached_at IS NOT NULL
+      `,
+    )
+    .run(
+      input.role ?? "input",
+      input.attachedByType ?? "system",
+      input.attachedById ?? null,
+      input.attachedReason ?? null,
+      cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
+      now,
+      input.sessionKey,
+      input.chatId,
+    );
+  if (reactivated.changes > 0) {
+    const row = db
+      .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
+      .get(input.sessionKey, input.chatId) as SessionChatSubscriptionRow;
+    return rowToSessionChatSubscription(row);
+  }
+  const insert = db
+    .prepare(
+      `
+      INSERT INTO session_chat_subscriptions (
+        session_key, chat_id, role, attached_by_type, attached_by_id,
+        attached_reason, context_snapshot_at_attach_json, created_at, updated_at, detached_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `,
+    )
+    .run(
+      input.sessionKey,
+      input.chatId,
+      input.role ?? "input",
+      input.attachedByType ?? "system",
+      input.attachedById ?? null,
+      input.attachedReason ?? null,
+      cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
+      now,
+      now,
+    );
+  const row = db
+    .prepare("SELECT * FROM session_chat_subscriptions WHERE id = ?")
+    .get(insert.lastInsertRowid) as SessionChatSubscriptionRow;
+  return rowToSessionChatSubscription(row);
+}
+
+/**
+ * Active subscriptions (not detached) for a session.
+ */
+export function dbListSessionChatSubscriptions(sessionKey: string): SessionChatSubscriptionRecord[] {
+  const rows = getDb()
+    .prepare(
+      "SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND detached_at IS NULL ORDER BY role, created_at",
+    )
+    .all(sessionKey) as SessionChatSubscriptionRow[];
+  return rows.map(rowToSessionChatSubscription);
+}
+
+/**
+ * Look up the (single) active subscription that owns a chat, across all
+ * sessions. Used by the consumer to detect "this chat is already attached
+ * elsewhere" and route inbound dispatch into the owning session.
+ */
+export function dbFindActiveSubscriptionByChat(chatId: string): SessionChatSubscriptionRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM session_chat_subscriptions WHERE chat_id = ? AND detached_at IS NULL")
+    .get(chatId) as SessionChatSubscriptionRow | undefined;
+  return row ? rowToSessionChatSubscription(row) : null;
+}
+
+/**
+ * Soft-delete a subscription. Idempotent: detaching an already-detached
+ * subscription is a no-op. Returns true when the row was actually flipped.
+ */
+export function dbDetachSessionChatSubscription(sessionKey: string, chatId: string): boolean {
+  const now = Date.now();
+  const result = getDb()
+    .prepare(
+      "UPDATE session_chat_subscriptions SET detached_at = ?, updated_at = ? WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL",
+    )
+    .run(now, now, sessionKey, chatId);
+  return result.changes > 0;
+}
+
+/**
+ * Get the current focus row, applying expiry semantics: an expired row is
+ * treated as absent (returns null) and is lazily cleaned up.
+ */
+export function dbGetSessionFocus(sessionKey: string): SessionFocusRecord | null {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM session_focus WHERE session_key = ?").get(sessionKey) as
+    | SessionFocusRow
+    | undefined;
+  if (!row) return null;
+  if (row.expires_at != null && row.expires_at <= Date.now()) {
+    db.prepare("DELETE FROM session_focus WHERE session_key = ?").run(sessionKey);
+    return null;
+  }
+  return rowToSessionFocus(row);
+}
+
+/**
+ * Set or replace the focus row. Caller is responsible for ensuring the
+ * target chat is subscribed (or applying `unattached_focus_policy`).
+ */
+export function dbSetSessionFocus(input: SetSessionFocusInput): SessionFocusRecord {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(
+    `
+      INSERT INTO session_focus (
+        session_key, chat_id, set_by_type, set_by_id, set_reason, expires_at, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_key) DO UPDATE SET
+        chat_id = excluded.chat_id,
+        set_by_type = excluded.set_by_type,
+        set_by_id = excluded.set_by_id,
+        set_reason = excluded.set_reason,
+        expires_at = excluded.expires_at,
+        updated_at = excluded.updated_at
+    `,
+  ).run(
+    input.sessionKey,
+    input.chatId,
+    input.setByType ?? "system",
+    input.setById ?? null,
+    input.setReason ?? null,
+    input.expiresAt ?? null,
+    now,
+    now,
+  );
+  const row = db.prepare("SELECT * FROM session_focus WHERE session_key = ?").get(input.sessionKey) as SessionFocusRow;
+  return rowToSessionFocus(row);
+}
+
+/**
+ * Clear the focus row. Idempotent. Returns true when a row was removed.
+ */
+export function dbClearSessionFocus(sessionKey: string): boolean {
+  const result = getDb().prepare("DELETE FROM session_focus WHERE session_key = ?").run(sessionKey);
+  return result.changes > 0;
+}
+
+/**
+ * Read the session's `unattached_focus_policy`. Defaults to `fail-closed`
+ * if the session row is missing the column value (shouldn't happen — the
+ * migration sets a NOT NULL DEFAULT — but stay defensive).
+ */
+export function dbGetUnattachedFocusPolicy(sessionKey: string): UnattachedFocusPolicy {
+  const row = getDb().prepare("SELECT unattached_focus_policy FROM sessions WHERE session_key = ?").get(sessionKey) as
+    | { unattached_focus_policy: string | null }
+    | undefined;
+  const value = row?.unattached_focus_policy;
+  return value === "auto-follow" ? "auto-follow" : "fail-closed";
+}
+
+/**
+ * Write the per-session `unattached_focus_policy`. No-op when the session
+ * doesn't exist; caller MUST validate.
+ */
+export function dbSetUnattachedFocusPolicy(sessionKey: string, policy: UnattachedFocusPolicy): void {
+  getDb()
+    .prepare("UPDATE sessions SET unattached_focus_policy = ?, updated_at = ? WHERE session_key = ?")
+    .run(policy, Date.now(), sessionKey);
 }
 
 // ============================================================================

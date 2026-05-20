@@ -154,4 +154,17 @@ export {
   makeSessionPermanent,
   getExpiringSessions,
   getExpiredSessions,
+  // sessions/attach
+  attachChatToSession,
+  detachChatFromSession,
+  listSessionSubscriptions,
+  findSessionByAttachedChat,
+  setSessionFocus,
+  clearSessionFocus,
+  getSessionFocus,
+  getSessionUnattachedFocusPolicy,
+  setSessionUnattachedFocusPolicy,
+  SessionAttachConflictError,
+  SessionDetachLastPrimaryError,
+  SessionFocusUnattachedError,
 } from "./sessions.js";
