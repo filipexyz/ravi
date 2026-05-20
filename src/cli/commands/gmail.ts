@@ -18,6 +18,8 @@ export class GmailCommands {
     @Option({ flags: "--q <query>", description: "Gmail search query (same as the web search bar)" }) query?: string,
     @Option({ flags: "--label <id>", description: "Filter by label id (repeat for multiple)" }) label?: string,
     @Option({ flags: "--max <n>", description: "Max messages to return (1-100, default 25)" }) maxOpt?: string,
+    @Option({ flags: "--cursor <token>", description: "Page token for the next page (Gmail nextPageToken)" })
+    cursor?: string,
     @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -34,7 +36,7 @@ export class GmailCommands {
       const exec = await execCapability({
         connectorId,
         capability: "gmail.message.list",
-        parameters: { q: query, labelIds, maxResults: max },
+        parameters: { q: query, labelIds, maxResults: max, pageToken: cursor },
       });
       const result = (exec.result ?? {}) as {
         messages?: Array<{ id: string; threadId: string }>;
