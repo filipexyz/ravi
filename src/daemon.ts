@@ -22,6 +22,7 @@ import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js"
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
+import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
@@ -119,6 +120,7 @@ async function shutdown(signal: string) {
     }
 
     // Stop runners and release leadership so another daemon can take over
+    await stopInboxRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
@@ -279,6 +281,9 @@ export async function startDaemon() {
 
   await startEphemeralRunner();
   log.info("Ephemeral runner started");
+
+  await startInboxRunner();
+  log.info("Inbox runner started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
