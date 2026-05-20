@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
-import { CliOnly, Command, Group, Option } from "../decorators.js";
+import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import { LinkStepUpRequiredError } from "../../link/client.js";
 import { execCapability, listConnectors } from "../../link/connectors.js";
@@ -12,6 +12,104 @@ import { execCapability, listConnectors } from "../../link/connectors.js";
   scope: "open",
 })
 export class GmailCommands {
+  @Command({ name: "list", description: "List messages in the connected Gmail mailbox" })
+  @CliOnly()
+  async list(
+    @Option({ flags: "--q <query>", description: "Gmail search query (same as the web search bar)" }) query?: string,
+    @Option({ flags: "--label <id>", description: "Filter by label id (repeat for multiple)" }) label?: string,
+    @Option({ flags: "--max <n>", description: "Max messages to return (1-100, default 25)" }) maxOpt?: string,
+    @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
+    connector?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runGmailCommand(asJson, async () => {
+      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
+      const max = Math.min(Math.max(Number.parseInt(maxOpt ?? "25", 10) || 25, 1), 100);
+      const labelIds = label
+        ? label
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
+      const exec = await execCapability({
+        connectorId,
+        capability: "gmail.message.list",
+        parameters: { q: query, labelIds, maxResults: max },
+      });
+      const result = (exec.result ?? {}) as {
+        messages?: Array<{ id: string; threadId: string }>;
+        nextPageToken?: string;
+        resultSizeEstimate?: number;
+      };
+      if (asJson) {
+        console.log(JSON.stringify(exec, null, 2));
+      } else {
+        const messages = result.messages ?? [];
+        if (messages.length === 0) {
+          console.log("No messages match the query.");
+        } else {
+          console.log(`Messages (${messages.length}):`);
+          for (const message of messages) {
+            console.log(`- ${message.id} (thread ${message.threadId})`);
+          }
+        }
+        if (result.nextPageToken) console.log(`Next page: ${result.nextPageToken}`);
+      }
+      return exec;
+    });
+  }
+
+  @Command({ name: "read", description: "Read a single Gmail message" })
+  @CliOnly()
+  async read(
+    @Arg("id", { description: "Gmail message id (from `ravi gmail list`)" }) id: string,
+    @Option({ flags: "--format <format>", description: "full | metadata | raw (default full)" }) format?: string,
+    @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
+    connector?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runGmailCommand(asJson, async () => {
+      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
+      const exec = await execCapability({
+        connectorId,
+        capability: "gmail.message.read",
+        parameters: { id, format: (format ?? "full") as "full" | "metadata" | "raw" },
+      });
+      if (asJson) {
+        console.log(JSON.stringify(exec, null, 2));
+      } else {
+        const message = (exec.result ?? {}) as {
+          id: string;
+          threadId: string;
+          snippet?: string;
+          internalDate?: string;
+          headers?: Record<string, string | undefined>;
+          body?: { text?: string; html?: string };
+        };
+        const headers = message.headers ?? {};
+        console.log(`From:    ${headers.from ?? "(unknown)"}`);
+        if (headers.to) console.log(`To:      ${headers.to}`);
+        if (headers.cc) console.log(`Cc:      ${headers.cc}`);
+        if (headers.subject) console.log(`Subject: ${headers.subject}`);
+        if (headers.date) console.log(`Date:    ${headers.date}`);
+        if (message.snippet) {
+          console.log(`Snippet: ${message.snippet}`);
+        }
+        const text = message.body?.text ?? "";
+        const html = message.body?.html ?? "";
+        if (text) {
+          console.log("");
+          console.log(text);
+        } else if (html) {
+          console.log("");
+          console.log("(HTML body — pass --json for raw)");
+          console.log(html.slice(0, 500));
+        }
+      }
+      return exec;
+    });
+  }
+
   @Command({ name: "send", description: "Send an email through Gmail" })
   @CliOnly()
   async send(
