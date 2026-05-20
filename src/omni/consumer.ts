@@ -48,6 +48,7 @@ import {
   recordRouteRejectedTrace,
   recordRouteResolvedTrace,
   type NormalizedSessionTraceSource,
+  type RouteRejectionReason,
 } from "../session-trace/channel-trace.js";
 import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
@@ -901,12 +902,42 @@ export class OmniConsumer {
       identityProvenance: effectiveActorMetadata.identityProvenance ?? null,
     };
 
+    // Fail-soft trace recorder shared by every trace on this path. Trace
+    // writes must never crash the inbound handler, so each call is guarded
+    // with a single warn-on-failure pattern instead of repeating try/catch
+    // at every site.
+    const safeTrace = <T>(description: string, fn: () => T): T | null => {
+      try {
+        return fn();
+      } catch (error) {
+        log.warn(description, { sessionKey: matched.sessionKey, messageId: payload.externalId, error });
+        return null;
+      }
+    };
+
+    // `route.rejected` emitter for the policy / scope rejection sites
+    // below. `sessionName` is null because the session row hasn't been
+    // committed yet — that's the orphan-prevention contract.
+    const rejectRoute = (reason: RouteRejectionReason, payloadJson: Record<string, unknown>) => {
+      safeTrace("Failed to record route.rejected trace", () =>
+        recordRouteRejectedTrace({
+          sessionKey: matched.sessionKey,
+          sessionName: null,
+          agentId: matched.agent.id,
+          timestamp: msgTs,
+          source: traceSource,
+          reason,
+          payloadJson,
+        }),
+      );
+    };
+
     // Factual "we received this message" trace fires before any rejection
     // gate. `sessionName` may be unknown until `commitMatchedRoute` runs,
     // so the trace is keyed by the matched `sessionKey` only — that's
     // enough for `sessions trace` lookups and for follow-up traces
     // (`route.resolved` / `route.rejected`) to be correlated.
-    try {
+    safeTrace("Failed to record channel.message.received trace", () =>
       recordChannelMessageReceivedTrace({
         sessionKey: matched.sessionKey,
         sessionName: null,
@@ -932,14 +963,8 @@ export class OmniConsumer {
           routePhone,
         },
         preview: payload.content?.text ?? null,
-      });
-    } catch (error) {
-      log.warn("Failed to record channel.message.received trace", {
-        sessionKey: matched.sessionKey,
-        messageId: payload.externalId,
-        error,
-      });
-    }
+      }),
+    );
 
     // -- Policy resolution helper --
     // Lookup order: route.policy → instance config → default
@@ -967,23 +992,7 @@ export class OmniConsumer {
       const groupPolicy = resolvePolicy("groupPolicy", matched.route?.policy, "open");
       if (groupPolicy === "closed") {
         log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
-        try {
-          recordRouteRejectedTrace({
-            sessionKey: matched.sessionKey,
-            sessionName: null,
-            agentId: matched.agent.id,
-            timestamp: msgTs,
-            source: traceSource,
-            reason: "group_closed",
-            payloadJson: { groupPolicy, chatJid, accountId: effectiveAccountId },
-          });
-        } catch (error) {
-          log.warn("Failed to record route.rejected trace", {
-            sessionKey: matched.sessionKey,
-            reason: "group_closed",
-            error,
-          });
-        }
+        rejectRoute("group_closed", { groupPolicy, chatJid, accountId: effectiveAccountId });
         return;
       }
       if (groupPolicy === "allowlist") {
@@ -1010,28 +1019,12 @@ export class OmniConsumer {
               isGroup: true,
             });
           }
-          try {
-            recordRouteRejectedTrace({
-              sessionKey: matched.sessionKey,
-              sessionName: null,
-              agentId: matched.agent.id,
-              timestamp: msgTs,
-              source: traceSource,
-              reason: "group_allowlist_pending",
-              payloadJson: {
-                groupPolicy,
-                chatJid,
-                accountId: effectiveAccountId,
-                contactStatus: contact?.status ?? null,
-              },
-            });
-          } catch (error) {
-            log.warn("Failed to record route.rejected trace", {
-              sessionKey: matched.sessionKey,
-              reason: "group_allowlist_pending",
-              error,
-            });
-          }
+          rejectRoute("group_allowlist_pending", {
+            groupPolicy,
+            chatJid,
+            accountId: effectiveAccountId,
+            contactStatus: contact?.status ?? null,
+          });
           return;
         }
       }
@@ -1043,23 +1036,7 @@ export class OmniConsumer {
       const dmPolicy = resolvePolicy("dmPolicy", matched.route?.policy, "open");
       if (dmPolicy === "closed") {
         log.info("DM rejected by policy (closed)", { senderPhone, accountId: effectiveAccountId });
-        try {
-          recordRouteRejectedTrace({
-            sessionKey: matched.sessionKey,
-            sessionName: null,
-            agentId: matched.agent.id,
-            timestamp: msgTs,
-            source: traceSource,
-            reason: "dm_closed",
-            payloadJson: { dmPolicy, senderPhone, accountId: effectiveAccountId },
-          });
-        } catch (error) {
-          log.warn("Failed to record route.rejected trace", {
-            sessionKey: matched.sessionKey,
-            reason: "dm_closed",
-            error,
-          });
-        }
+        rejectRoute("dm_closed", { dmPolicy, senderPhone, accountId: effectiveAccountId });
         return;
       }
       if (dmPolicy === "pairing") {
@@ -1085,28 +1062,12 @@ export class OmniConsumer {
               isGroup: false,
             });
           }
-          try {
-            recordRouteRejectedTrace({
-              sessionKey: matched.sessionKey,
-              sessionName: null,
-              agentId: matched.agent.id,
-              timestamp: msgTs,
-              source: traceSource,
-              reason: "dm_pairing_pending",
-              payloadJson: {
-                dmPolicy,
-                senderPhone,
-                accountId: effectiveAccountId,
-                contactStatus: contact?.status ?? null,
-              },
-            });
-          } catch (error) {
-            log.warn("Failed to record route.rejected trace", {
-              sessionKey: matched.sessionKey,
-              reason: "dm_pairing_pending",
-              error,
-            });
-          }
+          rejectRoute("dm_pairing_pending", {
+            dmPolicy,
+            senderPhone,
+            accountId: effectiveAccountId,
+            contactStatus: contact?.status ?? null,
+          });
           return;
         }
       }
@@ -1114,37 +1075,19 @@ export class OmniConsumer {
     }
 
     // -- Per-agent contact scoping --
-    const matchedAgentMode = matched.agent.mode ?? "active";
-    if (matchedAgentMode !== "sentinel") {
+    const agentMode = matched.agent.mode ?? "active";
+    if (agentMode !== "sentinel") {
       const checkId = isGroup ? chatJid : senderPhone;
       if (!isContactAllowedForAgent(checkId, matched.agent.id)) {
         log.info("Contact not allowed for agent", { checkId, agentId: matched.agent.id });
-        try {
-          recordRouteRejectedTrace({
-            sessionKey: matched.sessionKey,
-            sessionName: null,
-            agentId: matched.agent.id,
-            timestamp: msgTs,
-            source: traceSource,
-            reason: "agent_contact_scope_denied",
-            payloadJson: { checkId, agentId: matched.agent.id, isGroup },
-          });
-        } catch (error) {
-          log.warn("Failed to record route.rejected trace", {
-            sessionKey: matched.sessionKey,
-            reason: "agent_contact_scope_denied",
-            error,
-          });
-        }
+        rejectRoute("agent_contact_scope_denied", { checkId, agentId: matched.agent.id, isGroup });
         return;
       }
     }
 
-    // All policy / scope gates passed — commit the matched route so the
-    // session row exists, bind it to the canonical chat, register the
-    // participant, and emit the `route.resolved` trace. Up to this point
-    // no rows have been written for this inbound — that's how we avoid
-    // orphan sessions when policy rejects.
+    // All policy / scope gates passed — commit the route, bind the
+    // session to the canonical chat, register the participant, and emit
+    // `route.resolved`.
     const resolved = commitMatchedRoute(matched, {
       phone: routePhone,
       isGroup,
@@ -1178,7 +1121,7 @@ export class OmniConsumer {
       seenAt: msgTs,
     });
 
-    try {
+    safeTrace("Failed to record route.resolved trace", () =>
       recordRouteResolvedTrace({
         sessionKey: resolved.sessionKey,
         sessionName: resolved.sessionName,
@@ -1203,17 +1146,10 @@ export class OmniConsumer {
           groupId: sessionGroupId ?? null,
           threadId: threadId ?? null,
         },
-      });
-    } catch (error) {
-      log.warn("Failed to record route.resolved trace", {
-        sessionName: resolved.sessionName,
-        messageId: payload.externalId,
-        error,
-      });
-    }
+      }),
+    );
 
     const { sessionName, agent } = resolved;
-    const agentMode = agent.mode ?? "active";
     this.recordInboundContactInteraction(effectiveActorMetadata);
 
     // Resolve sender display name: pushName (from rawPayload) → contacts DB → phone
