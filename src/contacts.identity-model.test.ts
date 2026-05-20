@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   addContactTag,
   backfillInboundContacts,
+  cancelCrmTask,
   closeContacts,
   completeCrmTask,
   createCrmAccount,
@@ -29,6 +30,7 @@ import {
   listCrmFacts,
   listCrmNextActions,
   listCrmOpportunityContacts,
+  listCrmTasks,
   listContactEvents,
   listContactMetadata,
   linkContactIdentity,
@@ -39,6 +41,7 @@ import {
   removeContactMetadata,
   resolvePlatformIdentity,
   setContactMetadata,
+  snoozeCrmTask,
   unlinkContactIdentity,
   updateCrmContactProfile,
   upsertAgentPlatformIdentity,
@@ -349,6 +352,79 @@ describe("contacts identity graph schema", () => {
         "crm.task.created",
         "crm.task.completed",
       ]),
+    );
+  });
+
+  it("supports the commitment + cancel/snooze/list pipeline on crm_tasks", () => {
+    upsertContact("5511999910401", "Commitment Lead", "allowed", "manual");
+    const contact = getContact("5511999910401");
+    expect(contact).not.toBeNull();
+
+    expect(() =>
+      createCrmTask({
+        title: "Compra prometida sem data",
+        contactRef: contact!.id,
+        taskType: "commitment",
+        source: "test",
+      }),
+    ).toThrow(/commitment.*requires.*due/i);
+
+    const commitment = createCrmTask({
+      title: "Compra prometida — kraft 60g",
+      contactRef: contact!.id,
+      taskType: "commitment",
+      dueAt: "2026-05-22T12:00:00Z",
+      priority: "high",
+      confidence: 0.9,
+      evidence: [{ message_id: "cm_test_1", quote: "vou comprar sexta", extracted_date_iso: "2026-05-22" }],
+      metadata: { commitment_kind: "purchase" },
+      idempotencyKey: "commitment:test:2026-05-22:kraft",
+      source: "test",
+    });
+    expect(commitment.taskType).toBe("commitment");
+    expect(commitment.dueAt).toBe("2026-05-22T12:00:00Z");
+    expect(commitment.confidence).toBe(0.9);
+    expect((commitment.metadata as { commitment_kind?: string }).commitment_kind).toBe("purchase");
+
+    const repeated = createCrmTask({
+      title: "Compra prometida — kraft 60g (repeat)",
+      contactRef: contact!.id,
+      taskType: "commitment",
+      dueAt: "2026-05-22T12:00:00Z",
+      idempotencyKey: "commitment:test:2026-05-22:kraft",
+      source: "test",
+    });
+    expect(repeated.id).toBe(commitment.id);
+
+    const dueTodayList = listCrmTasks({ taskType: "commitment" });
+    expect(dueTodayList.items.map((task) => task.id)).toContain(commitment.id);
+
+    const snoozed = snoozeCrmTask({
+      taskId: commitment.id,
+      snoozedUntil: "2026-05-29T12:00:00Z",
+      evidence: { reason: "cliente pediu pra adiar uma semana" },
+      source: "test",
+    });
+    expect(snoozed.status).toBe("snoozed");
+    expect(snoozed.dueAt).toBe("2026-05-29T12:00:00Z");
+    expect(snoozed.snoozedUntil).toBe("2026-05-29T12:00:00Z");
+    expect((snoozed.metadata as { history?: Array<{ fromDueAt: string }> }).history?.[0]?.fromDueAt).toBe(
+      "2026-05-22T12:00:00Z",
+    );
+
+    const canceled = cancelCrmTask({ taskId: commitment.id, reason: "cliente desistiu", source: "test" });
+    expect(canceled.status).toBe("canceled");
+    expect(canceled.canceledAt).not.toBeNull();
+
+    expect(listCrmNextActions({ taskType: "commitment" }).items.map((row) => row.taskId)).not.toContain(commitment.id);
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const events = db
+      .prepare(`SELECT event_type FROM crm_events WHERE entity_id = ? ORDER BY created_at, id`)
+      .all(commitment.id) as Array<{ event_type: string }>;
+    db.close();
+    expect(events.map((event) => event.event_type)).toEqual(
+      expect.arrayContaining(["crm.task.created", "crm.task.snoozed", "crm.task.canceled"]),
     );
   });
 

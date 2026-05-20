@@ -251,7 +251,19 @@ describe("CRM commands", () => {
 
   it("lists CRM next actions as a paginated JSON surface", () => {
     const payload = captureJson(() => {
-      new ACrmCommands().next("agent:dev", undefined, undefined, undefined, "10", "0", true);
+      new ACrmCommands().next(
+        "agent:dev",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "10",
+        "0",
+        true,
+      );
     });
 
     expect(payload.total).toBe(1);
@@ -387,6 +399,12 @@ describe("CRM commands", () => {
         "2026-05-09T10:00:00Z",
         "urgent",
         "agent:dev",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         true,
       );
     });
@@ -399,7 +417,19 @@ describe("CRM commands", () => {
 
   it("fails CRM CLI commands on invalid input or missing CRM records", () => {
     expect(() => {
-      new ACrmCommands().next("agent", undefined, undefined, undefined, undefined, undefined, true);
+      new ACrmCommands().next(
+        "agent",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
     }).toThrow(/--owner must use <type:id>/);
 
     crmContactProfile = null;

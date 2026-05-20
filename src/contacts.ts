@@ -1789,6 +1789,31 @@ export interface CompleteCrmTaskInput extends CrmMutationOptions {
   taskId: string;
 }
 
+export interface CancelCrmTaskInput extends CrmMutationOptions {
+  taskId: string;
+  reason?: string | null;
+}
+
+export interface SnoozeCrmTaskInput extends CrmMutationOptions {
+  taskId: string;
+  snoozedUntil: string;
+}
+
+export interface ListCrmTasksOptions {
+  limit?: number | string | null;
+  offset?: number | string | null;
+  contactRef?: string | null;
+  accountId?: string | null;
+  opportunityId?: string | null;
+  ownerType?: CrmOwnerType | string | null;
+  ownerId?: string | null;
+  taskType?: string | null;
+  status?: CrmTaskStatus | string | null;
+  dueBefore?: string | null;
+  dueAfter?: string | null;
+  dueToday?: boolean | null;
+}
+
 export interface CrmNextAction {
   taskId: string;
   title: string;
@@ -1814,6 +1839,10 @@ export interface ListCrmNextActionsOptions {
   opportunityId?: string | null;
   ownerType?: CrmOwnerType | string | null;
   ownerId?: string | null;
+  taskType?: string | null;
+  dueBefore?: string | null;
+  dueAfter?: string | null;
+  dueToday?: boolean | null;
 }
 
 export interface CrmContactCard {
@@ -4914,6 +4943,11 @@ export function createCrmTask(input: CreateCrmTaskInput): CrmTask {
       if (row) return rowToCrmTask(row);
     }
   }
+  const normalizedTaskType = normalizeOptionalText(input.taskType) ?? "follow_up";
+  const normalizedDueAt = normalizeOptionalText(input.dueAt);
+  if (normalizedTaskType === "commitment" && !normalizedDueAt) {
+    throw new Error("CRM task with task_type='commitment' requires --due (due_at) to be set");
+  }
   const taskId = `crm_task_${generateId()}`;
   let task: CrmTask | null = null;
   executeWrite(
@@ -4940,10 +4974,10 @@ export function createCrmTask(input: CreateCrmTaskInput): CrmTask {
           normalizeOptionalText(input.sessionKey),
           title,
           normalizeOptionalText(input.body),
-          normalizeOptionalText(input.taskType) ?? "follow_up",
+          normalizedTaskType,
           normalizeCrmEnum<CrmTaskStatus>(input.status, CRM_TASK_STATUSES, "open"),
           normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
-          normalizeOptionalText(input.dueAt),
+          normalizedDueAt,
           normalizeOptionalText(input.snoozedUntil),
           owner.ownerType,
           owner.ownerId,
@@ -4982,6 +5016,181 @@ export function createCrmTask(input: CreateCrmTaskInput): CrmTask {
   );
   if (!task) throw new Error(`CRM task not created: ${taskId}`);
   return task;
+}
+
+export function cancelCrmTask(input: CancelCrmTaskInput): CrmTask {
+  const database = ensureDb();
+  const previous = requireCrmTask(database, input.taskId);
+  let task: CrmTask | null = rowToCrmTask(previous);
+  if (previous.status === "canceled") return task;
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
+        UPDATE crm_tasks
+        SET status = 'canceled', canceled_at = datetime('now'), updated_at = datetime('now')
+        WHERE id = ?
+      `,
+        )
+        .run(previous.id);
+      const row = requireCrmTask(database, previous.id);
+      task = rowToCrmTask(row);
+      if (row.contact_id) refreshCrmContactNextAction(database, row.contact_id);
+      insertCrmEvent(database, {
+        eventType: "crm.task.canceled",
+        entityType: "task",
+        entityId: previous.id,
+        contactId: previous.contact_id,
+        accountId: previous.account_id,
+        opportunityId: previous.opportunity_id,
+        taskId: previous.id,
+        source: crmMutationSource(input),
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: input.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: { ...task, cancelReason: normalizeOptionalText(input.reason) },
+        previousPayload: rowToCrmTask(previous),
+      });
+    },
+    { label: "contacts:cancelCrmTask" },
+  );
+  if (!task) throw new Error(`CRM task not canceled: ${input.taskId}`);
+  return task;
+}
+
+export function snoozeCrmTask(input: SnoozeCrmTaskInput): CrmTask {
+  const database = ensureDb();
+  const previous = requireCrmTask(database, input.taskId);
+  let task: CrmTask | null = rowToCrmTask(previous);
+  const snoozedUntil = normalizeRequiredText(input.snoozedUntil, "CRM task snoozedUntil");
+  if (previous.status === "done" || previous.status === "canceled") {
+    throw new Error(`Cannot snooze a CRM task in status '${previous.status}'`);
+  }
+  executeWrite(
+    database,
+    () => {
+      const previousMetadata = parseJsonObject(previous.metadata_json) ?? {};
+      const historyEntry = {
+        snoozedAt: new Date().toISOString(),
+        fromDueAt: previous.due_at,
+        toSnoozedUntil: snoozedUntil,
+        reason: normalizeOptionalText(input.evidence ? (input.evidence as { reason?: string }).reason : null) ?? null,
+      };
+      const history = Array.isArray((previousMetadata as { history?: unknown[] }).history)
+        ? ((previousMetadata as { history: unknown[] }).history as unknown[])
+        : [];
+      const nextMetadata = {
+        ...previousMetadata,
+        history: [...history, historyEntry],
+      };
+      database
+        .prepare(
+          `
+        UPDATE crm_tasks
+        SET status = 'snoozed',
+            snoozed_until = ?,
+            due_at = ?,
+            metadata_json = ?,
+            updated_at = datetime('now')
+        WHERE id = ?
+      `,
+        )
+        .run(snoozedUntil, snoozedUntil, JSON.stringify(nextMetadata), previous.id);
+      const row = requireCrmTask(database, previous.id);
+      task = rowToCrmTask(row);
+      if (row.contact_id) refreshCrmContactNextAction(database, row.contact_id);
+      insertCrmEvent(database, {
+        eventType: "crm.task.snoozed",
+        entityType: "task",
+        entityId: previous.id,
+        contactId: previous.contact_id,
+        accountId: previous.account_id,
+        opportunityId: previous.opportunity_id,
+        taskId: previous.id,
+        source: crmMutationSource(input),
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: input.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: task,
+        previousPayload: rowToCrmTask(previous),
+      });
+    },
+    { label: "contacts:snoozeCrmTask" },
+  );
+  if (!task) throw new Error(`CRM task not snoozed: ${input.taskId}`);
+  return task;
+}
+
+export function listCrmTasks(options: ListCrmTasksOptions = {}): ListPage<CrmTask> {
+  const database = ensureDb();
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (options.contactRef?.trim()) {
+    where.push("contact_id = ?");
+    params.push(resolveRequiredCanonicalContactId(database, options.contactRef));
+  }
+  if (options.accountId?.trim()) {
+    where.push("account_id = ?");
+    params.push(options.accountId.trim());
+  }
+  if (options.opportunityId?.trim()) {
+    where.push("opportunity_id = ?");
+    params.push(options.opportunityId.trim());
+  }
+  if (options.ownerType || options.ownerId) {
+    const owner = normalizeOptionalCrmOwner({ ownerType: options.ownerType, ownerId: options.ownerId });
+    where.push("owner_type = ?", "owner_id = ?");
+    params.push(owner.ownerType!, owner.ownerId!);
+  }
+  if (options.taskType?.trim()) {
+    where.push("task_type = ?");
+    params.push(options.taskType.trim());
+  }
+  if (options.status?.trim()) {
+    where.push("status = ?");
+    params.push(options.status.trim());
+  }
+  if (options.dueToday) {
+    where.push("date(due_at) = date('now')");
+  }
+  if (options.dueBefore?.trim()) {
+    where.push("due_at < ?");
+    params.push(options.dueBefore.trim());
+  }
+  if (options.dueAfter?.trim()) {
+    where.push("due_at >= ?");
+    params.push(options.dueAfter.trim());
+  }
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 25, maxLimit: 500 });
+  const total = countRows({ db: database, table: "crm_tasks", where, params });
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM crm_tasks
+      ${buildSqlWhereClause(where)}
+      ORDER BY
+        CASE priority
+          WHEN 'urgent' THEN 0
+          WHEN 'high' THEN 1
+          WHEN 'normal' THEN 2
+          ELSE 3
+        END,
+        due_at IS NULL,
+        due_at ASC,
+        id ASC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as CrmTaskRow[];
+  return { total, limit, offset, items: rows.map(rowToCrmTask) };
 }
 
 export function completeCrmTask(input: CompleteCrmTaskInput): CrmTask {
@@ -5054,6 +5263,21 @@ export function listCrmNextActions(options: ListCrmNextActionsOptions = {}): Lis
     const owner = normalizeOptionalCrmOwner({ ownerType: options.ownerType, ownerId: options.ownerId });
     where.push("owner_type = ?", "owner_id = ?");
     params.push(owner.ownerType!, owner.ownerId!);
+  }
+  if (options.taskType?.trim()) {
+    where.push("task_type = ?");
+    params.push(options.taskType.trim());
+  }
+  if (options.dueToday) {
+    where.push("date(due_at) = date('now')");
+  }
+  if (options.dueBefore?.trim()) {
+    where.push("due_at < ?");
+    params.push(options.dueBefore.trim());
+  }
+  if (options.dueAfter?.trim()) {
+    where.push("due_at >= ?");
+    params.push(options.dueAfter.trim());
   }
   const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 25, maxLimit: 500 });
   const total = countRows({ db: database, table: "crm_next_actions", where, params });

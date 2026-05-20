@@ -597,12 +597,78 @@ Common `task_type` values:
 - `review`
 - `wait`
 - `check_in`
+- `commitment`
 
 Rules:
 
 - Completing a task MUST write `crm.task.completed`.
 - If a task creates a runtime Ravi task, `ravi_task_id` links to that runtime task.
 - A task SHOULD have at least one target: contact, account, opportunity, chat, or session.
+
+## Scheduled Commitments and Daily Digest
+
+A **commitment** is a `crm_tasks` row created in response to a customer stating an intent with a date — for example, "vou comprar sexta-feira", "te aviso semana que vem", "passa na segunda pra confirmar". The agent that is reading the conversation captures the contact, the implied date, and the surrounding evidence, then writes a single durable task row. A daily cron reads these rows to notify operators when commitments come due.
+
+The commitment + digest pattern MUST NOT degrade into one cron per commitment. The architecture is exactly **one sweep cron + N persisted task rows**. This is the canonical CRM pattern for time-anchored customer promises; doing otherwise scales linearly with customer count and creates orphan cron entries that survive task changes.
+
+### Commitment Task Shape
+
+A commitment MUST be persisted as a `crm_tasks` row with:
+
+- `task_type = 'commitment'`
+- `status = 'scheduled'` (open and awaiting due date)
+- `due_at` = the absolute timestamp the customer mentioned, normalized to operator timezone
+- `contact_id` = the contact who made the promise
+- `chat_id`, `session_key`, and `message_id` (in `evidence_json`) tracing the source utterance
+- `title` = short summary, e.g. "Compra prometida — kraft 60g"
+- `body` = the verbatim quote plus normalized interpretation
+- `confidence` = confidence (0.0–1.0) in the extraction
+- `evidence_json` = list of `{ message_id, quote, extracted_phrase, extracted_date_iso }`
+- `source` = identifier of the creator (e.g. `agent:<id>` or `user:<id>`)
+- `created_by_type` and `created_by_id` according to whichever side wrote the row
+- `idempotency_key` = hash of `(contact_id, normalized_due_at, phrase_fingerprint)` so repeated extractions of the same commitment do not create duplicates
+- `metadata_json.commitment_kind` = optional finer label (`purchase | follow_up_request | callback | revisit`)
+
+Vague follow-ups without a concrete date MUST NOT become commitments. If the customer says "te aviso quando puder" with no date, persist a `follow_up` task with `due_at = null` and `status = waiting` instead.
+
+### Cancellation and Reschedule
+
+When a new conversation invalidates an existing commitment, the writer MUST update the existing row rather than creating a new one:
+
+- **Cancel** ("mudei de ideia", "não vou mais comprar") → `status = 'canceled'`, write `crm.task.canceled` with the canceling message in `evidence_json`.
+- **Reschedule** ("vou só na semana que vem") → update `due_at`, push the old `due_at` into `metadata_json.history`, write `crm.task.snoozed` or `crm.task.rescheduled`.
+- **Confirm** ("já fiz a compra", "fechei agora") → `status = 'done'`, `completed_at = now()`, optionally link to a `crm_opportunities.won` row.
+
+Lookups for existing commitments MUST use the `idempotency_key` plus a same-contact filter so the writer can find the row deterministically.
+
+### Daily Digest
+
+Notification is centralized in a single sweep, not in per-task crons. The implementation MUST:
+
+- Run on a small number of cron entries (typically one morning + one afternoon, or a single daily cron); cron frequency MAY be adjusted by operator preference but MUST NOT be one cron per task.
+- Query the `crm_next_actions` view filtered by `task_type = 'commitment'` and `due_at` within the digest window (e.g. `[now, now + 24h]`).
+- Group results by owner (operator) so each operator receives a single consolidated digest, not one notification per task.
+- Deliver via the operator's configured channel(s): WhatsApp DM, inbox session, Pages dashboard link, or any combination.
+- Mark digested tasks with a `metadata_json.last_digested_at = now()` so the next sweep does not double-notify within the same window. The digest MUST NOT mutate `status`.
+
+The digest is a **read-only consumer** of `crm_tasks`. It MUST NOT mark tasks `done` or `canceled` — those state changes are the operator's responsibility (or, in automated flows, the same writer that created the row).
+
+### Operator Resolution
+
+When an operator addresses a commitment, the existing CRM lifecycle applies:
+
+- `ravi crm task done <id>` closes the commitment, writes `crm.task.completed`.
+- `ravi crm task cancel <id>` cancels it.
+- `ravi crm task snooze <id> --until <ts>` reschedules.
+- If the commitment converted into a sale, the operator SHOULD link it to a `crm_opportunities` row marked `won`, ensuring the value flows through the opportunity board.
+
+### Invariants
+
+- Commitments MUST be persistent rows in `crm_tasks`. They MUST NOT be implemented as standalone cron jobs.
+- One commitment per `(contact_id, normalized_due_at, phrase_fingerprint)` — the `idempotency_key` enforces this.
+- The digest sweep MUST be idempotent inside a window: re-running the same digest within the window MUST NOT duplicate notifications.
+- A canceled commitment MUST NOT reappear in `crm_next_actions` (the view filters by `status IN ('open', 'scheduled', 'waiting', 'snoozed')`).
+- All commitment mutations MUST emit `crm_events` so the timeline reconstructs the negotiation arc (created → snoozed → completed/canceled).
 
 ### `crm_activities`
 

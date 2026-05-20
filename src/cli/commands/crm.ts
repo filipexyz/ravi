@@ -3,6 +3,7 @@ import { Arg, Command, Group, Option, Scope } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import {
+  cancelCrmTask,
   completeCrmTask,
   confirmCrmFact,
   createCrmAccount,
@@ -19,9 +20,11 @@ import {
   listCrmNextActions,
   listCrmOpportunityBoard,
   listCrmOpportunityContacts,
+  listCrmTasks,
   moveCrmOpportunityStage,
   proposeCrmFact,
   rejectCrmFact,
+  snoozeCrmTask,
   updateCrmContactProfile,
   type CrmOwnerType,
 } from "../../contacts.js";
@@ -149,6 +152,11 @@ export class ACrmCommands {
     @Option({ flags: "--contact <contact>", description: "Filter by contact" }) contact?: string,
     @Option({ flags: "--account <account>", description: "Filter by account" }) account?: string,
     @Option({ flags: "--opportunity <opportunity>", description: "Filter by opportunity" }) opportunity?: string,
+    @Option({ flags: "--task-type <type>", description: "Filter by task_type (e.g. commitment, follow_up, call)" })
+    taskType?: string,
+    @Option({ flags: "--due-today", description: "Only actions whose due_at is today" }) dueToday?: boolean,
+    @Option({ flags: "--due-before <ts>", description: "Only actions with due_at < <ts>" }) dueBefore?: string,
+    @Option({ flags: "--due-after <ts>", description: "Only actions with due_at >= <ts>" }) dueAfter?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 25, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching actions to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -159,6 +167,10 @@ export class ACrmCommands {
       contactRef: contact,
       accountId: account,
       opportunityId: opportunity,
+      taskType,
+      dueToday: Boolean(dueToday),
+      dueBefore,
+      dueAfter,
       limit,
       offset,
     });
@@ -168,7 +180,23 @@ export class ACrmCommands {
       offset: page.offset,
       returned: page.items.length,
       total: page.total,
-      options: ["--owner", owner, "--contact", contact, "--account", account, "--opportunity", opportunity],
+      options: [
+        "--owner",
+        owner,
+        "--contact",
+        contact,
+        "--account",
+        account,
+        "--opportunity",
+        opportunity,
+        "--task-type",
+        taskType,
+        ...(dueToday ? ["--due-today"] : []),
+        "--due-before",
+        dueBefore,
+        "--due-after",
+        dueAfter,
+      ],
     });
     const payload = { total: page.total, pagination, items: page.items, actions: page.items };
     if (asJson) {
@@ -740,10 +768,22 @@ export class CrmTaskCommands {
     @Option({ flags: "--due <date>", description: "Due date/time" }) dueAt?: string,
     @Option({ flags: "--priority <priority>", description: "low|normal|high|urgent" }) priority?: string,
     @Option({ flags: "--owner <type:id>", description: "Owner, e.g. agent:main" }) owner?: string,
+    @Option({ flags: "--task-type <type>", description: "Task type (e.g. follow_up, commitment, call)" })
+    taskType?: string,
+    @Option({ flags: "--body <text>", description: "Task body / longer description" }) body?: string,
+    @Option({ flags: "--source <source>", description: "Source label (default: cli)" }) source?: string,
+    @Option({ flags: "--confidence <n>", description: "Confidence in the task (0.0–1.0)" }) confidence?: string,
+    @Option({ flags: "--evidence <json>", description: "Evidence JSON array attached to the task event" })
+    evidenceJson?: string,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object stored on the task" })
+    metadataJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated task creation" })
     idempotencyKey?: string,
   ) {
+    const evidence = parseOptionalJson(evidenceJson, "--evidence");
+    const metadata = parseOptionalJsonObject(metadataJson, "--metadata");
+    const confidenceValue = confidence !== undefined ? parseFloatOrFail(confidence, "--confidence") : undefined;
     const task = createCrmTask({
       title,
       contactRef,
@@ -751,10 +791,15 @@ export class CrmTaskCommands {
       opportunityId,
       dueAt,
       priority,
+      taskType,
+      body,
       ...parseOwner(owner),
       idempotencyKey,
-      source: "cli",
+      source: source ?? "cli",
       actorType: "user",
+      confidence: confidenceValue,
+      evidence,
+      metadata,
     });
     const payload = { status: "created" as const, task, changedCount: 1 };
     if (asJson) {
@@ -780,4 +825,147 @@ export class CrmTaskCommands {
     }
     return payload;
   }
+
+  @Scope("writeContacts")
+  @Command({ name: "cancel", description: "Cancel a CRM task" })
+  cancel(
+    @Arg("task", { description: "CRM task ID" }) taskId: string,
+    @Option({ flags: "--reason <text>", description: "Reason for cancellation (stored in event payload)" })
+    reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const task = cancelCrmTask({ taskId, reason, source: "cli", actorType: "user" });
+    const payload = { status: "canceled" as const, task, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM task canceled: ${task.id}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "snooze", description: "Snooze a CRM task to a new due_at" })
+  snooze(
+    @Arg("task", { description: "CRM task ID" }) taskId: string,
+    @Option({ flags: "--until <ts>", description: "New due_at / snoozed_until (ISO timestamp)" }) until?: string,
+    @Option({ flags: "--reason <text>", description: "Reason for snoozing" }) reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!until) fail("--until <ts> is required");
+    const task = snoozeCrmTask({
+      taskId,
+      snoozedUntil: until,
+      source: "cli",
+      actorType: "user",
+      evidence: reason ? { reason } : undefined,
+    });
+    const payload = { status: "snoozed" as const, task, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM task snoozed until ${until}: ${task.id}`);
+    }
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({ name: "list", description: "List CRM tasks (all statuses)" })
+  list(
+    @Option({ flags: "--owner <type:id>", description: "Filter by owner, e.g. agent:main" }) owner?: string,
+    @Option({ flags: "--contact <contact>", description: "Filter by contact" }) contact?: string,
+    @Option({ flags: "--account <account>", description: "Filter by account" }) account?: string,
+    @Option({ flags: "--opportunity <opportunity>", description: "Filter by opportunity" }) opportunity?: string,
+    @Option({ flags: "--task-type <type>", description: "Filter by task_type" }) taskType?: string,
+    @Option({ flags: "--status <status>", description: "Filter by status (open, scheduled, done, canceled, snoozed)" })
+    status?: string,
+    @Option({ flags: "--due-today", description: "Only tasks whose due_at is today" }) dueToday?: boolean,
+    @Option({ flags: "--due-before <ts>", description: "Only tasks with due_at < <ts>" }) dueBefore?: string,
+    @Option({ flags: "--due-after <ts>", description: "Only tasks with due_at >= <ts>" }) dueAfter?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 25, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching tasks to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const ownerFilter = parseOwner(owner);
+    const page = listCrmTasks({
+      ...ownerFilter,
+      contactRef: contact,
+      accountId: account,
+      opportunityId: opportunity,
+      taskType,
+      status,
+      dueToday: Boolean(dueToday),
+      dueBefore,
+      dueAfter,
+      limit,
+      offset,
+    });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "task", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: [
+        "--owner",
+        owner,
+        "--contact",
+        contact,
+        "--account",
+        account,
+        "--opportunity",
+        opportunity,
+        "--task-type",
+        taskType,
+        "--status",
+        status,
+        ...(dueToday ? ["--due-today"] : []),
+        "--due-before",
+        dueBefore,
+        "--due-after",
+        dueAfter,
+      ],
+    });
+    const payload = { total: page.total, pagination, items: page.items, tasks: page.items };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (page.items.length === 0) {
+      console.log("No CRM tasks match the filter.");
+      return payload;
+    }
+    console.log(`\nCRM tasks (${page.items.length} returned of ${page.total}):\n`);
+    for (const task of page.items) {
+      console.log(
+        `  ${task.id}  [${task.status}]  ${task.taskType.padEnd(12)}  due=${task.dueAt ?? "-"}  ${task.title}`,
+      );
+    }
+    if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
+    return payload;
+  }
+}
+
+function parseOptionalJson(value: string | undefined, label: string): unknown {
+  if (value === undefined) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    fail(`${label} must be valid JSON: ${(error as Error).message}`);
+  }
+}
+
+function parseOptionalJsonObject(value: string | undefined, label: string): Record<string, unknown> | undefined {
+  const parsed = parseOptionalJson(value, label);
+  if (parsed === undefined) return undefined;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    fail(`${label} must be a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function parseFloatOrFail(value: string, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) fail(`${label} must be a number`);
+  return parsed;
 }
