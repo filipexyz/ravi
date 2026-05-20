@@ -30,6 +30,7 @@ export {
   findRoute,
   matchRoute,
   resolveRoute,
+  commitMatchedRoute,
   expandHome,
   getAgentCwd,
 } from "./resolver.js";

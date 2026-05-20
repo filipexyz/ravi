@@ -20,7 +20,7 @@ const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
 const CONSUMER_RETRY_DELAY_MS = 2_000;
 const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
 const unregisteredCooldowns = new Map<string, number>();
-import { expandHome, resolveRoute } from "../router/index.js";
+import { commitMatchedRoute, expandHome, matchRoute } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import {
   getContact,
@@ -45,6 +45,7 @@ import {
 import { resetSession } from "../router/sessions.js";
 import {
   recordChannelMessageReceivedTrace,
+  recordRouteRejectedTrace,
   recordRouteResolvedTrace,
   type NormalizedSessionTraceSource,
 } from "../session-trace/channel-trace.js";
@@ -842,8 +843,11 @@ export class OmniConsumer {
       return;
     }
 
-    // Resolve route to get session key
-    const resolved = resolveRoute(routerConfig, {
+    // Match route (pure) — no DB writes yet. The session row is only
+    // committed after every policy/scope gate passes so rejected inbounds
+    // don't leave orphan sessions behind (spec contacts/identity-graph/
+    // unified-model: identity → policy → route resolution → persist).
+    const matched = matchRoute(routerConfig, {
       phone: routePhone,
       channel: sessionChannel,
       accountId: effectiveAccountId,
@@ -853,7 +857,7 @@ export class OmniConsumer {
       peerKind,
     });
 
-    if (!resolved) {
+    if (!matched) {
       const isNew = saveAccountPending(effectiveAccountId, routePhone, {
         chatId: chatJid,
         isGroup,
@@ -896,6 +900,258 @@ export class OmniConsumer {
       identityConfidence: effectiveActorMetadata.identityConfidence ?? null,
       identityProvenance: effectiveActorMetadata.identityProvenance ?? null,
     };
+
+    // Factual "we received this message" trace fires before any rejection
+    // gate. `sessionName` may be unknown until `commitMatchedRoute` runs,
+    // so the trace is keyed by the matched `sessionKey` only — that's
+    // enough for `sessions trace` lookups and for follow-up traces
+    // (`route.resolved` / `route.rejected`) to be correlated.
+    try {
+      recordChannelMessageReceivedTrace({
+        sessionKey: matched.sessionKey,
+        sessionName: null,
+        agentId: matched.agent.id,
+        timestamp: msgTs,
+        source: traceSource,
+        payloadJson: {
+          eventId: event.id,
+          subject,
+          omniType: event.type,
+          instanceId,
+          channelType,
+          contentType: payload.content?.type ?? null,
+          isGroup,
+          senderId: senderPhone,
+          resolvedSenderPhone,
+          canonicalChatId: canonicalChat.id,
+          actorType: effectiveActorType,
+          contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+          actorAgentId: effectiveActorAgentId ?? null,
+          platformIdentityId: effectivePlatformIdentityId ?? null,
+          chatName: rawPayloadString(rawPayload, "chatName") ?? null,
+          routePhone,
+        },
+        preview: payload.content?.text ?? null,
+      });
+    } catch (error) {
+      log.warn("Failed to record channel.message.received trace", {
+        sessionKey: matched.sessionKey,
+        messageId: payload.externalId,
+        error,
+      });
+    }
+
+    // -- Policy resolution helper --
+    // Lookup order: route.policy → instance config → default
+    const resolvePolicy = (
+      policyName: "groupPolicy" | "dmPolicy",
+      routePolicy: string | undefined,
+      defaultValue: string,
+    ): string => {
+      // 1. Explicit override on the matched route
+      if (routePolicy) return routePolicy;
+      // 2. Instance config (from instances table via RouterConfig)
+      const instance = routerConfig.instances?.[effectiveAccountId];
+      if (instance) {
+        const val = policyName === "groupPolicy" ? instance.groupPolicy : instance.dmPolicy;
+        if (val) return val;
+      }
+      return defaultValue;
+    };
+
+    // -- Group policy enforcement --
+    // Skip policy check if the group has an explicit route (not wildcard) —
+    // having a specific route is an implicit approval.
+    const hasExplicitRoute = matched.route && matched.route.pattern !== "*";
+    if (isGroup && !hasExplicitRoute) {
+      const groupPolicy = resolvePolicy("groupPolicy", matched.route?.policy, "open");
+      if (groupPolicy === "closed") {
+        log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
+        try {
+          recordRouteRejectedTrace({
+            sessionKey: matched.sessionKey,
+            sessionName: null,
+            agentId: matched.agent.id,
+            timestamp: msgTs,
+            source: traceSource,
+            reason: "group_closed",
+            payloadJson: { groupPolicy, chatJid, accountId: effectiveAccountId },
+          });
+        } catch (error) {
+          log.warn("Failed to record route.rejected trace", {
+            sessionKey: matched.sessionKey,
+            reason: "group_closed",
+            error,
+          });
+        }
+        return;
+      }
+      if (groupPolicy === "allowlist") {
+        const contact = getContact(chatJid);
+        if (!contact || contact.status !== "allowed") {
+          const isNew = saveAccountPending(effectiveAccountId, chatJid, {
+            chatId: chatJid,
+            isGroup: true,
+            name: getContactName(chatJid) ?? undefined,
+          });
+          log.info("Group not in allowlist, saved as pending", {
+            chatJid,
+            accountId: effectiveAccountId,
+            canonicalChatId: canonicalChat.id,
+            reviewKind: "chat",
+            isNew,
+          });
+          if (isNew) {
+            emitPendingReviewEvent({
+              channel: channelType,
+              accountId: effectiveAccountId,
+              senderId: senderPhone,
+              chatId: chatJid,
+              isGroup: true,
+            });
+          }
+          try {
+            recordRouteRejectedTrace({
+              sessionKey: matched.sessionKey,
+              sessionName: null,
+              agentId: matched.agent.id,
+              timestamp: msgTs,
+              source: traceSource,
+              reason: "group_allowlist_pending",
+              payloadJson: {
+                groupPolicy,
+                chatJid,
+                accountId: effectiveAccountId,
+                contactStatus: contact?.status ?? null,
+              },
+            });
+          } catch (error) {
+            log.warn("Failed to record route.rejected trace", {
+              sessionKey: matched.sessionKey,
+              reason: "group_allowlist_pending",
+              error,
+            });
+          }
+          return;
+        }
+      }
+      // "open" → falls through normally
+    }
+
+    // -- DM policy enforcement --
+    if (!isGroup) {
+      const dmPolicy = resolvePolicy("dmPolicy", matched.route?.policy, "open");
+      if (dmPolicy === "closed") {
+        log.info("DM rejected by policy (closed)", { senderPhone, accountId: effectiveAccountId });
+        try {
+          recordRouteRejectedTrace({
+            sessionKey: matched.sessionKey,
+            sessionName: null,
+            agentId: matched.agent.id,
+            timestamp: msgTs,
+            source: traceSource,
+            reason: "dm_closed",
+            payloadJson: { dmPolicy, senderPhone, accountId: effectiveAccountId },
+          });
+        } catch (error) {
+          log.warn("Failed to record route.rejected trace", {
+            sessionKey: matched.sessionKey,
+            reason: "dm_closed",
+            error,
+          });
+        }
+        return;
+      }
+      if (dmPolicy === "pairing") {
+        const contact = getContact(senderPhone);
+        if (!contact || contact.status !== "allowed") {
+          const isNew = saveAccountPending(effectiveAccountId, senderPhone, {
+            chatId: chatJid,
+            isGroup: false,
+          });
+          log.info("DM contact not approved (pairing policy), saved as pending", {
+            senderPhone,
+            accountId: effectiveAccountId,
+            canonicalChatId: canonicalChat.id,
+            reviewKind: "contact",
+            isNew,
+          });
+          if (isNew) {
+            emitPendingReviewEvent({
+              channel: channelType,
+              accountId: effectiveAccountId,
+              senderId: senderPhone,
+              chatId: chatJid,
+              isGroup: false,
+            });
+          }
+          try {
+            recordRouteRejectedTrace({
+              sessionKey: matched.sessionKey,
+              sessionName: null,
+              agentId: matched.agent.id,
+              timestamp: msgTs,
+              source: traceSource,
+              reason: "dm_pairing_pending",
+              payloadJson: {
+                dmPolicy,
+                senderPhone,
+                accountId: effectiveAccountId,
+                contactStatus: contact?.status ?? null,
+              },
+            });
+          } catch (error) {
+            log.warn("Failed to record route.rejected trace", {
+              sessionKey: matched.sessionKey,
+              reason: "dm_pairing_pending",
+              error,
+            });
+          }
+          return;
+        }
+      }
+      // "open" → falls through normally
+    }
+
+    // -- Per-agent contact scoping --
+    const matchedAgentMode = matched.agent.mode ?? "active";
+    if (matchedAgentMode !== "sentinel") {
+      const checkId = isGroup ? chatJid : senderPhone;
+      if (!isContactAllowedForAgent(checkId, matched.agent.id)) {
+        log.info("Contact not allowed for agent", { checkId, agentId: matched.agent.id });
+        try {
+          recordRouteRejectedTrace({
+            sessionKey: matched.sessionKey,
+            sessionName: null,
+            agentId: matched.agent.id,
+            timestamp: msgTs,
+            source: traceSource,
+            reason: "agent_contact_scope_denied",
+            payloadJson: { checkId, agentId: matched.agent.id, isGroup },
+          });
+        } catch (error) {
+          log.warn("Failed to record route.rejected trace", {
+            sessionKey: matched.sessionKey,
+            reason: "agent_contact_scope_denied",
+            error,
+          });
+        }
+        return;
+      }
+    }
+
+    // All policy / scope gates passed — commit the matched route so the
+    // session row exists, bind it to the canonical chat, register the
+    // participant, and emit the `route.resolved` trace. Up to this point
+    // no rows have been written for this inbound — that's how we avoid
+    // orphan sessions when policy rejects.
+    const resolved = commitMatchedRoute(matched, {
+      phone: routePhone,
+      isGroup,
+      groupId: sessionGroupId,
+      threadId,
+      peerKind,
+    });
     const routeId = (resolved.route as { id?: number } | undefined)?.id ?? null;
     dbBindSessionToChat({
       sessionKey: resolved.sessionKey,
@@ -923,32 +1179,6 @@ export class OmniConsumer {
     });
 
     try {
-      recordChannelMessageReceivedTrace({
-        sessionKey: resolved.sessionKey,
-        sessionName: resolved.sessionName,
-        agentId: resolved.agent.id,
-        timestamp: msgTs,
-        source: traceSource,
-        payloadJson: {
-          eventId: event.id,
-          subject,
-          omniType: event.type,
-          instanceId,
-          channelType,
-          contentType: payload.content?.type ?? null,
-          isGroup,
-          senderId: senderPhone,
-          resolvedSenderPhone,
-          canonicalChatId: canonicalChat.id,
-          actorType: effectiveActorType,
-          contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
-          actorAgentId: effectiveActorAgentId ?? null,
-          platformIdentityId: effectivePlatformIdentityId ?? null,
-          chatName: rawPayloadString(rawPayload, "chatName") ?? null,
-          routePhone,
-        },
-        preview: payload.content?.text ?? null,
-      });
       recordRouteResolvedTrace({
         sessionKey: resolved.sessionKey,
         sessionName: resolved.sessionName,
@@ -975,118 +1205,15 @@ export class OmniConsumer {
         },
       });
     } catch (error) {
-      log.warn("Failed to record inbound session trace", {
+      log.warn("Failed to record route.resolved trace", {
         sessionName: resolved.sessionName,
         messageId: payload.externalId,
         error,
       });
     }
 
-    // -- Policy resolution helper --
-    // Lookup order: route.policy → instance config → default
-    const resolvePolicy = (
-      policyName: "groupPolicy" | "dmPolicy",
-      routePolicy: string | undefined,
-      defaultValue: string,
-    ): string => {
-      // 1. Explicit override on the matched route
-      if (routePolicy) return routePolicy;
-      // 2. Instance config (from instances table via RouterConfig)
-      const instance = routerConfig.instances?.[effectiveAccountId];
-      if (instance) {
-        const val = policyName === "groupPolicy" ? instance.groupPolicy : instance.dmPolicy;
-        if (val) return val;
-      }
-      return defaultValue;
-    };
-
-    // -- Group policy enforcement --
-    // Skip policy check if the group has an explicit route (not wildcard) —
-    // having a specific route is an implicit approval.
-    const hasExplicitRoute = resolved.route && resolved.route.pattern !== "*";
-    if (isGroup && !hasExplicitRoute) {
-      const groupPolicy = resolvePolicy("groupPolicy", resolved.route?.policy, "open");
-      if (groupPolicy === "closed") {
-        log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
-        return;
-      }
-      if (groupPolicy === "allowlist") {
-        const contact = getContact(chatJid);
-        if (!contact || contact.status !== "allowed") {
-          const isNew = saveAccountPending(effectiveAccountId, chatJid, {
-            chatId: chatJid,
-            isGroup: true,
-            name: getContactName(chatJid) ?? undefined,
-          });
-          log.info("Group not in allowlist, saved as pending", {
-            chatJid,
-            accountId: effectiveAccountId,
-            canonicalChatId: canonicalChat.id,
-            reviewKind: "chat",
-            isNew,
-          });
-          if (isNew) {
-            emitPendingReviewEvent({
-              channel: channelType,
-              accountId: effectiveAccountId,
-              senderId: senderPhone,
-              chatId: chatJid,
-              isGroup: true,
-            });
-          }
-          return;
-        }
-      }
-      // "open" → falls through normally
-    }
-
-    // -- DM policy enforcement --
-    if (!isGroup) {
-      const dmPolicy = resolvePolicy("dmPolicy", resolved.route?.policy, "open");
-      if (dmPolicy === "closed") {
-        log.info("DM rejected by policy (closed)", { senderPhone, accountId: effectiveAccountId });
-        return;
-      }
-      if (dmPolicy === "pairing") {
-        const contact = getContact(senderPhone);
-        if (!contact || contact.status !== "allowed") {
-          const isNew = saveAccountPending(effectiveAccountId, senderPhone, {
-            chatId: chatJid,
-            isGroup: false,
-          });
-          log.info("DM contact not approved (pairing policy), saved as pending", {
-            senderPhone,
-            accountId: effectiveAccountId,
-            canonicalChatId: canonicalChat.id,
-            reviewKind: "contact",
-            isNew,
-          });
-          if (isNew) {
-            emitPendingReviewEvent({
-              channel: channelType,
-              accountId: effectiveAccountId,
-              senderId: senderPhone,
-              chatId: chatJid,
-              isGroup: false,
-            });
-          }
-          return;
-        }
-      }
-      // "open" → falls through normally
-    }
-
     const { sessionName, agent } = resolved;
     const agentMode = agent.mode ?? "active";
-
-    // Per-agent contact scoping
-    if (agentMode !== "sentinel") {
-      const checkId = isGroup ? chatJid : senderPhone;
-      if (!isContactAllowedForAgent(checkId, agent.id)) {
-        log.info("Contact not allowed for agent", { checkId, agentId: agent.id });
-        return;
-      }
-    }
     this.recordInboundContactInteraction(effectiveActorMetadata);
 
     // Resolve sender display name: pushName (from rawPayload) → contacts DB → phone
