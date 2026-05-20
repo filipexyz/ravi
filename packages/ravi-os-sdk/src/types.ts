@@ -1709,48 +1709,6 @@ export type ImageGenerateInput = {
 /** Return shape for `image.generate`. (no @Returns declared) */
 export type ImageGenerateReturn = unknown;
 
-/** Input shape for `inbox.disable`. */
-export type InboxDisableInput = Record<string, never>;
-
-/** Return shape for `inbox.disable`. (no @Returns declared) */
-export type InboxDisableReturn = unknown;
-
-/** Input shape for `inbox.enable`. */
-export type InboxEnableInput = Record<string, never>;
-
-/** Return shape for `inbox.enable`. (no @Returns declared) */
-export type InboxEnableReturn = unknown;
-
-/** Input shape for `inbox.items`. */
-export type InboxItemsInput = {
-  limit?: string;
-};
-
-/** Return shape for `inbox.items`. (no @Returns declared) */
-export type InboxItemsReturn = unknown;
-
-/** Input shape for `inbox.poll`. */
-export type InboxPollInput = {
-  once?: boolean;
-};
-
-/** Return shape for `inbox.poll`. (no @Returns declared) */
-export type InboxPollReturn = unknown;
-
-/** Input shape for `inbox.replay`. */
-export type InboxReplayInput = {
-  ref: string;
-};
-
-/** Return shape for `inbox.replay`. (no @Returns declared) */
-export type InboxReplayReturn = unknown;
-
-/** Input shape for `inbox.status`. */
-export type InboxStatusInput = Record<string, never>;
-
-/** Return shape for `inbox.status`. (no @Returns declared) */
-export type InboxStatusReturn = unknown;
-
 /** Input shape for `insights.create`. */
 export type InsightsCreateInput = {
   agent?: string;

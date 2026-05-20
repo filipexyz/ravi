@@ -4076,66 +4076,6 @@ export const ImageGenerateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `inbox.disable`. */
-export const InboxDisableInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `inbox.enable`. */
-export const InboxEnableInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `inbox.items`. */
-export const InboxItemsInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "limit": {
-      "description": "Maximum items to return (default: 25, max: 500)",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `inbox.poll`. */
-export const InboxPollInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "once": {
-      "description": "Run one cycle and exit (default)",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `inbox.replay`. */
-export const InboxReplayInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "ref": {
-      "description": "Local row id (number) or remote item id (uuid)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "ref"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `inbox.status`. */
-export const InboxStatusInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `insights.create`. */
 export const InsightsCreateInputSchema = {
   "additionalProperties": false,
