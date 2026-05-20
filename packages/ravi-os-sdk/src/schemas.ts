@@ -6822,10 +6822,52 @@ export const SessionsAskInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.attach`. */
+export const SessionsAttachInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "description": "Canonical chat id (or platform/normalized id)",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why the chat is being attached (audit)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.delete`. */
 export const SessionsDeleteInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.detach`. */
+export const SessionsDetachInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "description": "Canonical chat id (or platform/normalized id)",
+      "type": "string"
+    },
     "nameOrKey": {
       "description": "Session name or key",
       "type": "string"
@@ -6880,6 +6922,41 @@ export const SessionsExtendInputSchema = {
     "nameOrKey": {
       "description": "Session name or key",
       "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.focus`. */
+export const SessionsFocusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "description": "Chat to focus output on",
+      "type": "string"
+    },
+    "clear": {
+      "description": "Clear focus (return to default behaviour)",
+      "type": "boolean"
+    },
+    "expires": {
+      "description": "TTL like '30m', '2h', '1d'",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why focus is being set (audit)",
+      "type": "string"
+    },
+    "show": {
+      "description": "Show the current focus",
+      "type": "boolean"
     }
   },
   "required": [
@@ -7449,6 +7526,41 @@ export const SessionsSetTtlInputSchema = {
   },
   "required": [
     "duration",
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.set-unattached-focus-policy`. */
+export const SessionsSetUnattachedFocusPolicyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    },
+    "policy": {
+      "description": "fail-closed | auto-follow",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey",
+    "policy"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.subscriptions`. */
+export const SessionsSubscriptionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
     "nameOrKey"
   ],
   "type": "object"
