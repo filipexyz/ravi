@@ -1,0 +1,104 @@
+{
+  "id": "architect-discover",
+  "version": "1",
+  "label": "Architect: Discover",
+  "description": "Inspect Ravi state across the 5 operational planes and capture the user's intent in a structured discovery artifact. Stage 1 of an architect run.",
+  "sessionNameTemplate": "architect-<task-id>-discover",
+  "runtimeDefaults": {
+    "effort": "medium"
+  },
+  "workspaceBootstrap": {
+    "mode": "task_dir",
+    "ensureTaskDir": true
+  },
+  "sync": {
+    "artifactFirst": true,
+    "taskDocument": {
+      "mode": "optional"
+    }
+  },
+  "rendererHints": {
+    "label": "architect discovery",
+    "showTaskDoc": false,
+    "showWorkspace": true
+  },
+  "defaultTags": [
+    "task.profile.architect-discover",
+    "architect.stage.discover",
+    "onboarding"
+  ],
+  "inputs": [
+    {
+      "key": "goal_trail",
+      "label": "Goal trail",
+      "description": "One of: sales | support | personal | curation | custom",
+      "required": true
+    },
+    {
+      "key": "user_statement",
+      "label": "User statement",
+      "description": "Free-text statement from the user describing what they want Ravi to do.",
+      "required": true
+    },
+    {
+      "key": "surfaces",
+      "label": "Surfaces in use",
+      "description": "Comma-separated channels (whatsapp, telegram, discord, matrix, email, etc).",
+      "required": true
+    },
+    {
+      "key": "operator_level",
+      "label": "Operator-in-the-loop level",
+      "description": "One of: auto | review | manual. Defaults to review.",
+      "defaultValue": "review"
+    },
+    {
+      "key": "run_id",
+      "label": "Architect run id",
+      "description": "Stable id for the architect run this discovery belongs to.",
+      "required": true
+    }
+  ],
+  "completion": {
+    "summaryRequired": true,
+    "summaryLabel": "Discovery summary",
+    "notes": "Summarize the user's intent in their own words plus the consolidated 5-plane state snapshot."
+  },
+  "progress": {
+    "requireMessage": true,
+    "notes": "Report after the state snapshot is collected and before drafting the discovery artifact."
+  },
+  "artifacts": [
+    {
+      "kind": "architect-discovery",
+      "label": "Discovery summary",
+      "pathTemplate": "{{task.taskDir}}/discovery.md",
+      "primary": true
+    },
+    {
+      "kind": "architect-discovery-state",
+      "label": "Discovery state snapshot",
+      "pathTemplate": "{{task.taskDir}}/discovery.json"
+    }
+  ],
+  "state": [
+    {
+      "path": "architect.runId",
+      "valueTemplate": "{{input.run_id}}"
+    },
+    {
+      "path": "architect.goal",
+      "valueTemplate": "{{input.goal_trail}}",
+      "transform": "slug"
+    }
+  ],
+  "templates": {
+    "create": "## Architect Discover — {{input.goal_trail}}\n\nUser said: {{input.user_statement}}\n\nRun id: {{input.run_id}}\n\nInspect the 5 planes and write the discovery artifact. Do not propose primitives at this stage.",
+    "dispatch": "[System] Execute: You are now Stage 1 (Discover) of architect run {{input.run_id}}. Inspect Ravi state via the 5-plane sequence documented in skill `ravi-system:contacts-manager`, then capture the user's intent. Output: {{artifacts.primary.path}} + {{task.taskDir}}/discovery.json.",
+    "resume": "[System] The daemon restarted. Continue architect discovery task {{task.id}} from where you stopped. Run id: {{input.run_id}}.",
+    "dispatchSummary": "Discover stage started for architect run {{input.run_id}} ({{input.goal_trail}}).",
+    "reportDoneMessage": "{{report.text}}",
+    "reportBlockedMessage": "{{report.text}}",
+    "reportFailedMessage": "{{report.text}}"
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "id": "architect-plan",
+  "version": "1",
+  "label": "Architect: Plan",
+  "description": "Translate a discovery artifact + chosen recipe into an ordered, deterministic plan. Stage 2-3 of an architect run.",
+  "sessionNameTemplate": "architect-<task-id>-plan",
+  "runtimeDefaults": {
+    "effort": "medium"
+  },
+  "workspaceBootstrap": {
+    "mode": "task_dir",
+    "ensureTaskDir": true
+  },
+  "sync": {
+    "artifactFirst": true,
+    "taskDocument": {
+      "mode": "optional"
+    }
+  },
+  "rendererHints": {
+    "label": "architect plan",
+    "showTaskDoc": false,
+    "showWorkspace": true
+  },
+  "defaultTags": [
+    "task.profile.architect-plan",
+    "architect.stage.plan",
+    "onboarding"
+  ],
+  "inputs": [
+    {
+      "key": "run_id",
+      "label": "Architect run id",
+      "required": true
+    },
+    {
+      "key": "discovery_artifact",
+      "label": "Discovery artifact path",
+      "description": "Path to the discovery.md / discovery.json produced by Stage 1.",
+      "required": true
+    },
+    {
+      "key": "recipe_id",
+      "label": "Recipe id (with optional @version)",
+      "description": "Recipe selected by the operator. Architect rejects recipes that don't match surfaces or operator level.",
+      "required": true
+    },
+    {
+      "key": "recipe_inputs",
+      "label": "Recipe inputs",
+      "description": "JSON object with the input slots required by the recipe.",
+      "required": true
+    },
+    {
+      "key": "diff_mode",
+      "label": "Diff mode",
+      "description": "create-only | upsert | reconcile. Defaults to upsert.",
+      "defaultValue": "upsert"
+    }
+  ],
+  "completion": {
+    "summaryRequired": true,
+    "summaryLabel": "Plan summary",
+    "notes": "Summarize the recipe chosen, the operation count, irreversible operations flagged, and any conflicts that need operator review."
+  },
+  "progress": {
+    "requireMessage": true,
+    "notes": "Report after mapping is resolved and again after plan is materialized."
+  },
+  "artifacts": [
+    {
+      "kind": "architect-plan",
+      "label": "Architect plan (human-readable)",
+      "pathTemplate": "{{task.taskDir}}/plan.md",
+      "primary": true
+    },
+    {
+      "kind": "architect-plan-machine",
+      "label": "Architect plan (machine-readable)",
+      "pathTemplate": "{{task.taskDir}}/plan.json"
+    },
+    {
+      "kind": "architect-mapping",
+      "label": "Mapping summary",
+      "pathTemplate": "{{task.taskDir}}/mapping.md"
+    }
+  ],
+  "state": [
+    {
+      "path": "architect.runId",
+      "valueTemplate": "{{input.run_id}}"
+    },
+    {
+      "path": "architect.recipeId",
+      "valueTemplate": "{{input.recipe_id}}"
+    }
+  ],
+  "templates": {
+    "create": "## Architect Plan — {{input.recipe_id}}\n\nRun id: {{input.run_id}}\n\nDiscovery: {{input.discovery_artifact}}\n\nResolve the recipe with the provided inputs, produce mapping + plan artifacts. Plan must be deterministic and content-addressable.",
+    "dispatch": "[System] Execute: You are Stage 2-3 of architect run {{input.run_id}}. Resolve recipe `{{input.recipe_id}}` against the discovery at {{input.discovery_artifact}} with the inputs in {{input.recipe_inputs}}. Output: {{artifacts.primary.path}} + plan.json + mapping.md.",
+    "resume": "[System] The daemon restarted. Continue architect plan task {{task.id}} from where you stopped. Run id: {{input.run_id}}.",
+    "dispatchSummary": "Plan stage started for architect run {{input.run_id}} using recipe {{input.recipe_id}}.",
+    "reportDoneMessage": "{{report.text}}",
+    "reportBlockedMessage": "{{report.text}}",
+    "reportFailedMessage": "{{report.text}}"
+  }
+}
