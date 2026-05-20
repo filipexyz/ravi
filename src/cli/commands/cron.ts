@@ -267,8 +267,15 @@ export class CronCommands {
     const ctx = getContext();
     const resolvedAgent = agent ?? ctx?.agentId;
 
-    // Resolve account: explicit flag > auto-detect from agent's account mapping
-    const resolvedAccount = account ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
+    // Resolve account in this order:
+    //   1. explicit --account flag
+    //   2. account the caller was actually talking through (ctx.source.accountId)
+    //   3. instance explicitly mapped to the agent
+    // The third step no longer falls back to "first enabled instance" — that
+    // silently picked the wrong account in multi-account setups and broke
+    // outbound delivery from scheduled jobs.
+    const resolvedAccount =
+      account ?? ctx?.source?.accountId ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
 
     // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123)
     const replySession = ctx?.sessionKey;

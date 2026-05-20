@@ -248,11 +248,21 @@ export class TriggersCommands {
     const ctx = getContext();
     const resolvedAgent = agent ?? ctx?.agentId;
 
-    // Resolve account: explicit flag > auto-detect from agent's account mapping
-    const resolvedAccount = account ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
+    // Resolve account in this order:
+    //   1. explicit --account flag
+    //   2. account the caller was actually talking through (ctx.source.accountId)
+    //   3. instance explicitly mapped to the agent
+    // We deliberately avoid the "first enabled instance" fallback inside
+    // getAccountForAgent: it picks the wrong account in multi-account setups
+    // and causes outbound deliveries to fail with "chat not found".
+    const resolvedAccount =
+      account ?? ctx?.source?.accountId ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
 
-    // Capture reply session from caller context for source routing
-    const replySession = ctx?.sessionKey;
+    // Capture reply session from caller context for source routing.
+    // Prefer the friendly session name when available so `triggers show`
+    // surfaces something legible; resolveSession accepts both name and
+    // session_key, so resolution at fire time is identical either way.
+    const replySession = ctx?.sessionName ?? ctx?.sessionKey;
 
     // Freeze the creator's outbound source as a fallback for when the live
     // session can no longer resolve a deliverable target (lastChannel empty,

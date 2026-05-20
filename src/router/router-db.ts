@@ -5295,15 +5295,17 @@ export function getFirstAccountName(): string | undefined {
 }
 
 /**
- * Get the instance name mapped to a specific agent.
- * Falls back to first instance name if no mapping found.
+ * Get the instance name explicitly mapped to a specific agent.
+ *
+ * Returns `undefined` when no enabled instance is mapped to the agent.
+ * Previously this fell back to "first enabled instance", which silently
+ * picked an unrelated account in multi-account setups and caused outbound
+ * deliveries to fail with "chat not found". Callers that genuinely want a
+ * best-effort guess must opt in explicitly.
  */
 export function getAccountForAgent(agentId: string): string | undefined {
   const instances = dbListInstances();
-  return (
-    instances.find((instance) => instance.enabled !== false && instance.agent === agentId)?.name ??
-    instances.find((instance) => instance.enabled !== false)?.name
-  );
+  return instances.find((instance) => instance.enabled !== false && instance.agent === agentId)?.name;
 }
 
 /**
