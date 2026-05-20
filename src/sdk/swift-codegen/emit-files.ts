@@ -20,6 +20,8 @@ import {
   returnTypeName,
 } from "./naming.js";
 import { jsonSchemaToSwift, type JsonSchema } from "./json-schema-to-swift.js";
+import { defaultStreamChannels } from "../gateway/streaming/channels.js";
+import { emitStreamingSwift } from "./streaming-codegen.js";
 
 const HEADER = [
   "// GENERATED FILE - DO NOT EDIT.",
@@ -42,6 +44,7 @@ export interface EmittedSwiftSdk {
   types: string;
   schemas: string;
   version: string;
+  streaming: string;
 }
 
 export function emitAllSwift(registry: RegistrySnapshot, options: EmitSwiftOptions): EmittedSwiftSdk {
@@ -53,6 +56,7 @@ export function emitAllSwift(registry: RegistrySnapshot, options: EmitSwiftOptio
     types: emitSwiftTypes(sortedCommands),
     schemas: emitSwiftSchemas(sortedCommands),
     version: emitSwiftVersion(options.version),
+    streaming: emitStreamingSwift(defaultStreamChannels),
   };
 }
 

@@ -28,13 +28,14 @@ function writeFileSafe(target: string, body: string): string {
 const DEFAULT_CLIENT_OUT_DIR = "packages/ravi-os-sdk/src";
 const DEFAULT_TYPESCRIPT_SDK_VERSION = "0.2.1";
 const DEFAULT_SWIFT_SDK_VERSION = "0.1.0";
-const GENERATED_FILES = ["client.ts", "schemas.ts", "types.ts", "version.ts"] as const;
+const GENERATED_FILES = ["client.ts", "schemas.ts", "types.ts", "version.ts", "streaming.generated.ts"] as const;
 const DEFAULT_SWIFT_OUT_DIR = "packages/ravi-os-swift-sdk/Sources/RaviSDK";
 const GENERATED_SWIFT_FILES = [
   "RaviClient.generated.swift",
   "RaviTypes.generated.swift",
   "RaviSchemas.generated.swift",
   "RaviVersion.generated.swift",
+  "RaviStreaming.generated.swift",
 ] as const;
 
 type GeneratedFileName = (typeof GENERATED_FILES)[number];
@@ -58,6 +59,7 @@ function generatedSourceMap(emitted: EmittedSdk): Record<GeneratedFileName, stri
     "schemas.ts": emitted.schemas,
     "types.ts": emitted.types,
     "version.ts": emitted.version,
+    "streaming.generated.ts": emitted.streaming,
   };
 }
 
@@ -79,6 +81,7 @@ function generatedSwiftSourceMap(emitted: EmittedSwiftSdk): Record<GeneratedSwif
     "RaviTypes.generated.swift": emitted.types,
     "RaviSchemas.generated.swift": emitted.schemas,
     "RaviVersion.generated.swift": emitted.version,
+    "RaviStreaming.generated.swift": emitted.streaming,
   };
 }
 

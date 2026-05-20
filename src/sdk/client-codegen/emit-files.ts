@@ -24,6 +24,8 @@ import {
 import { jsonSchemaToTs } from "./json-schema-to-ts.js";
 import { buildInputSchema, buildReturnSchema, buildSignature, type CommandSignature } from "./registry-shape.js";
 import { stableStringify } from "./stable-json.js";
+import { defaultStreamChannels } from "../gateway/streaming/channels.js";
+import { emitStreaming } from "./streaming-codegen.js";
 
 const HEADER = [
   "// GENERATED FILE — DO NOT EDIT.",
@@ -42,6 +44,7 @@ export interface EmittedSdk {
   schemas: string;
   client: string;
   version: string;
+  streaming: string;
 }
 
 export interface EmitOptions {
@@ -57,6 +60,7 @@ export function emitAll(registry: RegistrySnapshot, options: EmitOptions): Emitt
     schemas: emitSchemas(sortedCommands),
     client: emitClient(sortedCommands),
     version: emitVersion(options.version),
+    streaming: emitStreaming(defaultStreamChannels),
   };
 }
 
@@ -384,7 +388,7 @@ export function emitVersion(input: EmitVersionInput): string {
 const GIT_SHA_LINE_RE = /^export const GIT_SHA = .*$/m;
 const GIT_SHA_MASK = 'export const GIT_SHA = "<masked-for-drift-check>";';
 
-export type GeneratedSdkFile = "client.ts" | "schemas.ts" | "types.ts" | "version.ts";
+export type GeneratedSdkFile = "client.ts" | "schemas.ts" | "types.ts" | "version.ts" | "streaming.generated.ts";
 
 export interface SdkSourceComparison {
   equal: boolean;
