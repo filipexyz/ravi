@@ -182,7 +182,7 @@ function renderCrmContactCard(profile: NonNullable<ReturnType<typeof getCrmConta
 
   const confirmedFacts = facts.filter((f) => f.status === "confirmed");
   const proposedFacts = facts.filter((f) => f.status === "proposed");
-  if (facts.length > 0) {
+  if (confirmedFacts.length > 0 || proposedFacts.length > 0) {
     console.log("");
     const summary = [
       confirmedFacts.length ? `${confirmedFacts.length} confirmed` : null,
@@ -190,7 +190,7 @@ function renderCrmContactCard(profile: NonNullable<ReturnType<typeof getCrmConta
     ]
       .filter(Boolean)
       .join(", ");
-    console.log(`Facts (${summary || facts.length})`);
+    console.log(`Facts (${summary})`);
     for (const fact of confirmedFacts) printFact(fact);
     if (proposedFacts.length > 0) {
       console.log("");
