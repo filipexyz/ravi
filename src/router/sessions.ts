@@ -925,13 +925,14 @@ export interface AttachChatToSessionResult {
  */
 export function attachChatToSession(input: AttachChatToSessionInput): AttachChatToSessionResult {
   // Idempotent path first: if this session already has an active row for
-  // this chat, return it without touching the cross-session check. This
-  // also tolerates legacy `session_chat_bindings` data where the same
-  // chat was bound to multiple sessions before the attach model existed.
+  // this chat, return it. Avoids the cross-session probe and short-circuits
+  // re-attach calls cheaply.
   const ownActive = dbListSessionChatSubscriptions(input.sessionKey).find((s) => s.chatId === input.chatId);
   if (ownActive) return { subscription: ownActive, created: false };
 
-  // Otherwise enforce the spec's single-owner rule for NEW attaches.
+  // Enforce the spec's single-owner rule with a clear error. The DB also
+  // enforces it via UNIQUE(chat_id) WHERE detached_at IS NULL, but the
+  // app-layer check provides a typed error pointing at the current owner.
   const existingOwner = dbFindActiveSubscriptionByChat(input.chatId);
   if (existingOwner) {
     throw new SessionAttachConflictError(input.chatId, existingOwner.sessionKey, input.sessionKey);

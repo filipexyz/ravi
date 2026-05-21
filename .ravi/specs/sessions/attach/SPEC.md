@@ -143,7 +143,9 @@ ravi sessions set <session> --unattached-focus-policy fail-closed|auto-follow
 
 ### Migration From Current State
 
-- `session_chat_bindings` (one-to-one today) becomes the `primary` subscription row. A backfill MUST create one `session_chat_subscriptions` row per existing binding with `role='primary'`, `attached_by_type='system'`, `attached_reason='backfill'`.
+- `session_chat_bindings` (one-to-one per `session_key` today) becomes the `primary` subscription row. The backfill MUST emit at most ONE `session_chat_subscriptions` row per `chat_id`, with `role='primary'`, `attached_by_type='system'`, `attached_reason='backfill-from-session-chat-bindings'`.
+- Legacy `session_chat_bindings` only had `PK(session_key, chat_id)` and no cross-session UNIQUE on `chat_id`, so the same chat MAY appear in multiple bindings. When the backfill encounters duplicates, it picks the most recently updated binding (tiebreak by `session_key`) and drops the rest. The dropped bindings are NOT migrated; operators can manually `ravi sessions attach` to recover if needed.
+- The migration also installs a dedupe step that soft-detaches any pre-existing duplicate active `session_chat_subscriptions` rows (keeping the most recent per chat) before installing the UNIQUE index on `chat_id`. This handles dev/test databases created by earlier non-unique iterations of this schema.
 - `sessions.last_channel` / `last_account_id` / `last_to` / `last_thread_id` remain as last-source provenance. They MUST NOT be used as the focus target. They MAY be used as the default target when `session_focus.chat_id` is NULL.
 - `route.session` (existing static redirect) remains unchanged. A route whose `session` field names an existing session continues to dispatch into that session — but now via the subscription mechanism: matching the route SHOULD ensure a subscription exists for the inbound chat, creating one if necessary (see "Compatibility With route.session").
 

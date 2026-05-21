@@ -27,7 +27,7 @@ import {
   setSessionFocus,
   setSessionUnattachedFocusPolicy,
 } from "./sessions.js";
-import { dbUpsertChat } from "./router-db.js";
+import { dbBindSessionToChat, dbRunSessionAttachMigrationForTests, dbUpsertChat, getDb } from "./router-db.js";
 
 let stateDir: string | null = null;
 
@@ -194,5 +194,77 @@ describe("sessions/attach — focus", () => {
     expect(getSessionFocus(session.sessionKey)?.chatId).toBe(focused.id);
     detachChatFromSession(session.sessionKey, focused.id);
     expect(getSessionFocus(session.sessionKey)).toBeNull();
+  });
+});
+
+describe("sessions/attach — migration (dedupe + backfill)", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-session-attach-migration-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("backfill picks at most one subscription per chat when legacy bindings overlap", () => {
+    // Two sessions share the same legacy chat binding — possible under
+    // the pre-attach 1:1 schema, which only had PK(session_key, chat_id)
+    // and no cross-session UNIQUE.
+    const older = makeSession("older");
+    const newer = makeSession("newer");
+    const shared = makeChat("shared-legacy");
+
+    dbBindSessionToChat({
+      sessionKey: older.sessionKey,
+      chatId: shared.id,
+      bindingReason: "legacy",
+      seenAt: 1_000,
+    });
+    dbBindSessionToChat({
+      sessionKey: newer.sessionKey,
+      chatId: shared.id,
+      bindingReason: "legacy",
+      seenAt: 2_000,
+    });
+
+    // Manually wipe any subscription created by the initial migration so
+    // we can re-run the backfill against the legacy bindings.
+    getDb().prepare("DELETE FROM session_chat_subscriptions WHERE chat_id = ?").run(shared.id);
+    dbRunSessionAttachMigrationForTests();
+
+    const olderSubs = listSessionSubscriptions(older.sessionKey).filter((s) => s.chatId === shared.id);
+    const newerSubs = listSessionSubscriptions(newer.sessionKey).filter((s) => s.chatId === shared.id);
+    expect(olderSubs.length + newerSubs.length).toBe(1);
+    // Most recent binding wins (newer.updated_at > older.updated_at).
+    expect(newerSubs).toHaveLength(1);
+    expect(olderSubs).toHaveLength(0);
+  });
+
+  it("dedupe detaches duplicate active subscriptions, keeping the most recent per chat", () => {
+    const sessionA = makeSession("dedupe-a");
+    const sessionB = makeSession("dedupe-b");
+    const chat = makeChat("dedupe-shared");
+
+    const db = getDb();
+    // Simulate the legacy state: a DB created by the older non-unique
+    // index allowed duplicates. Drop the UNIQUE index temporarily so we
+    // can plant two active rows, then let the migration upgrade clean it.
+    db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
+    const insert = db.prepare(
+      `INSERT INTO session_chat_subscriptions (
+        session_key, chat_id, role, attached_by_type, attached_by_id,
+        attached_reason, context_snapshot_at_attach_json, created_at, updated_at, detached_at
+      ) VALUES (?, ?, 'primary', 'system', NULL, ?, NULL, ?, ?, NULL)`,
+    );
+    insert.run(sessionA.sessionKey, chat.id, "first", 1_000, 1_000);
+    insert.run(sessionB.sessionKey, chat.id, "second", 2_000, 2_000);
+
+    dbRunSessionAttachMigrationForTests();
+
+    const aSubs = listSessionSubscriptions(sessionA.sessionKey).filter((s) => s.chatId === chat.id);
+    const bSubs = listSessionSubscriptions(sessionB.sessionKey).filter((s) => s.chatId === chat.id);
+    expect(aSubs).toHaveLength(0);
+    expect(bSubs).toHaveLength(1);
+    expect(findSessionByAttachedChat(chat.id)?.sessionKey).toBe(sessionB.sessionKey);
   });
 });

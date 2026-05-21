@@ -1177,10 +1177,6 @@ function getDb(): Database {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_pair
       ON session_chat_subscriptions(session_key, chat_id)
       WHERE detached_at IS NULL;
-    DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat;
-    CREATE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat
-      ON session_chat_subscriptions(chat_id)
-      WHERE detached_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_session_chat_subscriptions_session
       ON session_chat_subscriptions(session_key, detached_at);
 
@@ -2224,15 +2220,77 @@ function ensureIdentityChatMigrations(database: Database): void {
   // See .ravi/specs/sessions/attach/SPEC.md
   ensureColumn(database, "sessions", "unattached_focus_policy", "TEXT NOT NULL DEFAULT 'fail-closed'");
 
-  // sessions/attach: backfill `session_chat_subscriptions` from legacy
-  // 1:1 `session_chat_bindings` so existing sessions appear as having a
-  // primary subscription on their bound chat. Idempotent: the unique
-  // partial index on active (session_key, chat_id) prevents duplicates.
+  // sessions/attach: enforce the spec invariant that a chat can only be
+  // active in one session at a time. Order matters here:
+  //   1. dedupe any existing duplicates (soft-detach all but the most
+  //      recent active row per chat) so the UNIQUE index can install;
+  //   2. drop any legacy non-unique index by the same name (created by
+  //      older code on this branch);
+  //   3. install the partial UNIQUE index;
+  //   4. backfill from session_chat_bindings, picking one binding per
+  //      chat (the most recent) so legacy 1:N data does not regenerate
+  //      duplicates after cleanup.
+  dedupeSessionChatSubscriptions(database);
+  database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
+  database.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
+  );
   backfillSessionChatSubscriptionsFromBindings(database);
+}
+
+/**
+ * Test-only: re-run the dedupe + backfill migration steps on the current
+ * database. Production callers must rely on `ensureIdentityChatMigrations`
+ * running once at startup.
+ */
+export function dbRunSessionAttachMigrationForTests(): void {
+  const db = getDb();
+  dedupeSessionChatSubscriptions(db);
+  db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
+  );
+  backfillSessionChatSubscriptionsFromBindings(db);
+}
+
+function dedupeSessionChatSubscriptions(database: Database): void {
+  const now = Date.now();
+  const result = database
+    .prepare(
+      `
+      UPDATE session_chat_subscriptions
+      SET detached_at = ?, updated_at = ?
+      WHERE detached_at IS NULL
+        AND id NOT IN (
+          SELECT id FROM (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY chat_id
+                     ORDER BY updated_at DESC, id DESC
+                   ) AS rn
+            FROM session_chat_subscriptions
+            WHERE detached_at IS NULL
+          )
+          WHERE rn = 1
+        )
+    `,
+    )
+    .run(now, now);
+  if (result.changes > 0) {
+    log.warn("Detached duplicate active session_chat_subscriptions (kept most recent per chat)", {
+      rows: result.changes,
+    });
+  }
 }
 
 function backfillSessionChatSubscriptionsFromBindings(database: Database): void {
   const now = Date.now();
+  // Backfill at most ONE subscription per chat. When legacy
+  // session_chat_bindings has multiple sessions sharing the same chat
+  // (allowed by the legacy schema), pick the most recently updated row
+  // (tiebreak by session_key for determinism). This matches the spec
+  // invariant "one chat → one session" at the cost of losing the older
+  // bindings; operators can manually attach to recover if needed.
   const result = database
     .prepare(
       `
@@ -2241,15 +2299,23 @@ function backfillSessionChatSubscriptionsFromBindings(database: Database): void 
         attached_reason, context_snapshot_at_attach_json, created_at, updated_at, detached_at
       )
       SELECT
-        b.session_key, b.chat_id, 'primary', 'system', NULL,
+        ranked.session_key, ranked.chat_id, 'primary', 'system', NULL,
         'backfill-from-session-chat-bindings', NULL, ?, ?, NULL
-      FROM session_chat_bindings b
-      WHERE NOT EXISTS (
-        SELECT 1 FROM session_chat_subscriptions s
-        WHERE s.session_key = b.session_key
-          AND s.chat_id = b.chat_id
-          AND s.detached_at IS NULL
-      )
+      FROM (
+        SELECT b.session_key,
+               b.chat_id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY b.chat_id
+                 ORDER BY b.updated_at DESC, b.session_key
+               ) AS rn
+        FROM session_chat_bindings b
+      ) ranked
+      WHERE ranked.rn = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM session_chat_subscriptions s
+          WHERE s.chat_id = ranked.chat_id
+            AND s.detached_at IS NULL
+        )
     `,
     )
     .run(now, now);
