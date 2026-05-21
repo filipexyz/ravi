@@ -2923,6 +2923,16 @@ export type SessionsAskInput = {
 /** Return shape for `sessions.ask`. (no @Returns declared) */
 export type SessionsAskReturn = unknown;
 
+/** Input shape for `sessions.attach`. */
+export type SessionsAttachInput = {
+  chat?: string;
+  nameOrKey: string;
+  reason?: string;
+};
+
+/** Return shape for `sessions.attach`. (no @Returns declared) */
+export type SessionsAttachReturn = unknown;
+
 /** Input shape for `sessions.delete`. */
 export type SessionsDeleteInput = {
   nameOrKey: string;
@@ -2930,6 +2940,15 @@ export type SessionsDeleteInput = {
 
 /** Return shape for `sessions.delete`. (no @Returns declared) */
 export type SessionsDeleteReturn = unknown;
+
+/** Input shape for `sessions.detach`. */
+export type SessionsDetachInput = {
+  chat?: string;
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.detach`. (no @Returns declared) */
+export type SessionsDetachReturn = unknown;
 
 /** Input shape for `sessions.execute`. */
 export type SessionsExecuteInput = {
@@ -2951,6 +2970,19 @@ export type SessionsExtendInput = {
 
 /** Return shape for `sessions.extend`. (no @Returns declared) */
 export type SessionsExtendReturn = unknown;
+
+/** Input shape for `sessions.focus`. */
+export type SessionsFocusInput = {
+  chat?: string;
+  clear?: boolean;
+  expires?: string;
+  nameOrKey: string;
+  reason?: string;
+  show?: boolean;
+};
+
+/** Return shape for `sessions.focus`. (no @Returns declared) */
+export type SessionsFocusReturn = unknown;
 
 /** Input shape for `sessions.goal`. */
 export type SessionsGoalInput = {
@@ -3181,6 +3213,23 @@ export type SessionsSetTtlInput = {
 
 /** Return shape for `sessions.set-ttl`. (no @Returns declared) */
 export type SessionsSetTtlReturn = unknown;
+
+/** Input shape for `sessions.set-unattached-focus-policy`. */
+export type SessionsSetUnattachedFocusPolicyInput = {
+  nameOrKey: string;
+  policy: string;
+};
+
+/** Return shape for `sessions.set-unattached-focus-policy`. (no @Returns declared) */
+export type SessionsSetUnattachedFocusPolicyReturn = unknown;
+
+/** Input shape for `sessions.subscriptions`. */
+export type SessionsSubscriptionsInput = {
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.subscriptions`. (no @Returns declared) */
+export type SessionsSubscriptionsReturn = unknown;
 
 /** Input shape for `sessions.trace`. */
 export type SessionsTraceInput = {

@@ -24,6 +24,7 @@ import {
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
+import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   createObservationEvent,
@@ -591,14 +592,35 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
     const emitId = Math.random().toString(36).slice(2, 8);
+    // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`:
+    // session_focus (if set and the chat is still subscribed) wins over
+    // the inbound source. Sentinel agents observe silently → no target.
+    let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTarget>["target"] | undefined;
+    let resolvedSource: ReturnType<typeof resolveSessionOutputTarget>["source"] = "inbound-source";
+    if (streaming.agentMode !== "sentinel") {
+      const resolution = resolveSessionOutputTarget({
+        sessionKey: session.sessionKey,
+        fallback: streaming.currentSource,
+      });
+      resolvedTarget = resolution.target;
+      resolvedSource = resolution.source;
+      if (resolution.source === "focus") {
+        log.info("Emit redirected by session focus", { sessionName, focusChatId: resolution.target?.canonicalChatId });
+      }
+      if (!resolution.target) {
+        log.warn("Response target unresolved — dropping emit", { sessionName, source: resolvedSource });
+        return;
+      }
+    }
     log.info("Emitting response", {
       sessionName,
       emitId,
       textLen: text.length,
+      targetSource: resolvedSource,
     });
     await nats.emit(`ravi.session.${sessionName}.response`, {
       response: text,
-      target: streaming.agentMode === "sentinel" ? undefined : streaming.currentSource,
+      target: resolvedTarget,
       ...(metadata ? { metadata } : {}),
       _emitId: emitId,
       _instanceId: instanceId,
