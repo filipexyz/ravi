@@ -84,6 +84,47 @@ describe("sessions/attach — subscriptions", () => {
     );
   });
 
+  it("dbCreateSessionChatSubscription translates a UNIQUE(chat_id) race on INSERT into a typed conflict", async () => {
+    // Bypass the high-level `attachChatToSession` probe to hit the
+    // INSERT-side race. `dbCreateSessionChatSubscription` is the layer
+    // that catches the raw SQLite UNIQUE error and re-throws as
+    // SubscriptionChatConflictError; `attachChatToSession` re-wraps it
+    // into SessionAttachConflictError. Both layers are exercised here.
+    const { dbCreateSessionChatSubscription, SubscriptionChatConflictError } = await import("./router-db.js");
+    const owner = makeSession("race-db-owner");
+    const other = makeSession("race-db-other");
+    const chat = makeChat("race-db-shared");
+
+    dbCreateSessionChatSubscription({ sessionKey: owner.sessionKey, chatId: chat.id, role: "input" });
+
+    expect(() =>
+      dbCreateSessionChatSubscription({ sessionKey: other.sessionKey, chatId: chat.id, role: "input" }),
+    ).toThrow(SubscriptionChatConflictError);
+  });
+
+  it("dbCreateSessionChatSubscription translates a UNIQUE(chat_id) race on reactivation into a typed conflict", async () => {
+    // Scenario: session B previously attached chat C then detached. Now
+    // session A attaches chat C (creates an active row). When session B
+    // re-attaches chat C, the existence probe for (B, C) returns nothing
+    // active, so the reactivation UPDATE fires and tries to flip B's
+    // soft-detached row back to detached_at=NULL — which violates the
+    // UNIQUE index because A already owns chat C. Without the
+    // reactivation-path catch, that surfaces as a raw SQLite error.
+    const { dbCreateSessionChatSubscription, SubscriptionChatConflictError, dbDetachSessionChatSubscription } =
+      await import("./router-db.js");
+    const sessionB = makeSession("reactivate-b");
+    const sessionA = makeSession("reactivate-a");
+    const chat = makeChat("reactivate-c");
+
+    dbCreateSessionChatSubscription({ sessionKey: sessionB.sessionKey, chatId: chat.id, role: "input" });
+    dbDetachSessionChatSubscription(sessionB.sessionKey, chat.id);
+    dbCreateSessionChatSubscription({ sessionKey: sessionA.sessionKey, chatId: chat.id, role: "input" });
+
+    expect(() =>
+      dbCreateSessionChatSubscription({ sessionKey: sessionB.sessionKey, chatId: chat.id, role: "input" }),
+    ).toThrow(SubscriptionChatConflictError);
+  });
+
   it("detach soft-deletes and returns true; second detach is a no-op", () => {
     const session = makeSession("s3");
     const chat = makeChat("c3");
@@ -238,6 +279,28 @@ describe("sessions/attach — migration (dedupe + backfill)", () => {
     // Most recent binding wins (newer.updated_at > older.updated_at).
     expect(newerSubs).toHaveLength(1);
     expect(olderSubs).toHaveLength(0);
+  });
+
+  it("migration is idempotent — re-running keeps the same state and same schema", () => {
+    const session = makeSession("idem-sess");
+    const chat = makeChat("idem-chat");
+    dbBindSessionToChat({ sessionKey: session.sessionKey, chatId: chat.id, bindingReason: "legacy", seenAt: 1_000 });
+    getDb().prepare("DELETE FROM session_chat_subscriptions WHERE chat_id = ?").run(chat.id);
+
+    dbRunSessionAttachMigrationForTests();
+    const after1 = listSessionSubscriptions(session.sessionKey);
+    expect(after1).toHaveLength(1);
+
+    // Re-run; should not crash, should not duplicate, should not lose data.
+    dbRunSessionAttachMigrationForTests();
+    const after2 = listSessionSubscriptions(session.sessionKey);
+    expect(after2).toHaveLength(1);
+    expect(after2[0].id).toBe(after1[0].id);
+
+    const idx = getDb()
+      .prepare("SELECT sql FROM sqlite_master WHERE name = 'idx_session_chat_subscriptions_active_chat'")
+      .get() as { sql: string } | undefined;
+    expect(idx?.sql).toContain("CREATE UNIQUE INDEX");
   });
 
   it("dedupe detaches duplicate active subscriptions, keeping the most recent per chat", () => {

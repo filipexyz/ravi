@@ -21,6 +21,7 @@ import {
   getDb,
   getDbChanges,
   getRaviDbPath,
+  SubscriptionChatConflictError,
   type AttachedByType,
   type CreateSessionChatSubscriptionInput,
   type SessionChatSubscriptionRecord,
@@ -937,8 +938,19 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
   if (existingOwner) {
     throw new SessionAttachConflictError(input.chatId, existingOwner.sessionKey, input.sessionKey);
   }
-  const subscription = dbCreateSessionChatSubscription(input as CreateSessionChatSubscriptionInput);
-  return { subscription, created: true };
+  try {
+    const subscription = dbCreateSessionChatSubscription(input as CreateSessionChatSubscriptionInput);
+    return { subscription, created: true };
+  } catch (err) {
+    // The pre-INSERT existingOwner check is racy: another consumer turn
+    // may have inserted between the SELECT and the INSERT. Translate the
+    // DB-level conflict into the typed app-layer error so callers stay
+    // on the same error contract regardless of which path lost the race.
+    if (err instanceof SubscriptionChatConflictError) {
+      throw new SessionAttachConflictError(err.chatId, err.currentSessionKey, err.requestedSessionKey);
+    }
+    throw err;
+  }
 }
 
 /**
