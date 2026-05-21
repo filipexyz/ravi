@@ -504,6 +504,36 @@ The attach/focus path contributes microseconds; total turn latency lives in the 
 
 When debugging slow turns, look at `assistant.message` and `tool.completed` timestamps in `sessions trace`. If those are slow, it's the model. If the gap is between `prompt.published` and `runtime.start`, look at the dispatcher / queue / debounce. Attach/focus rewrites don't show up as measurable latency.
 
+## Instance Isolation
+
+A session belongs to exactly one Omni instance (encoded as the `account` segment of its `session_key`, e.g. `agent:dev:whatsapp:main:group:...` → instance `main`). The `chats` row stores the chat's instance via `instance_id`.
+
+**Invariant:** a chat MUST only be attached to (or focused into) a session whose instance matches the chat's instance. Cross-instance attach is forbidden.
+
+**Why:** the session's outbound goes via the chat's instance. If a session on instance A focuses a chat on instance B, the response is sent through instance B — which is typically a different account entirely (e.g. an "observer" instance bound to the operator's personal WhatsApp number rather than the bot's). The 2026-05-21 production loop was triggered by exactly this jump: an agent attached a chat from a personal-account instance into its main-account session, then every output sent via the personal account was re-ingested as an inbound on the main account, looping forever.
+
+**Enforcement:**
+
+- `attachChatToSession` throws `SessionAttachInstanceMismatchError` when `chat.instance ≠ session.instance`.
+- `setSessionFocus` throws the same error before applying the focus row.
+- The consumer subscription override (`findSessionByAttachedChat` in `omni/consumer.ts`) soft-checks the same invariant: if applying the override would jump instances, the override is logged and skipped, and the inbound continues via the route-derived session instead.
+
+Sessions with no `accountId` (instance-agnostic, e.g. a `main`-scoped agent with no per-account binding) are treated as compatible with any chat — the check is a no-op for them.
+
+Operators migrating chats across instances MUST detach from the original session and re-attach explicitly on a session that belongs to the target instance.
+
+## Origin Hint In Inbound Header
+
+When the inbound chat is NOT the session's primary subscription, the consumer prepends a `[origin]` line to the rendered envelope so the agent knows where the message came from and how to address that chat specifically. Three cases:
+
+| Chat relation to session | Header prefix |
+|--------------------------|---------------|
+| Primary subscription | (silent — no `[origin]` line) |
+| Input subscription (attached but not primary) | `[origin] inbound veio de <chat_id> (input subscription da sessão "<name>"). Pra responder especificamente nesse chat: \`ravi sessions focus <name> --chat <chat_id>\`. Sem focus, a resposta sai no inbound source (este chat).` |
+| Not attached (e.g. route.session redirect, thread handoff) | `[origin] inbound veio de <chat_id>, NÃO atachado a "<name>". Pra responder lá: \`ravi sessions attach <name> --chat <chat_id>\` e depois \`ravi sessions focus <name> --chat <chat_id>\`.` |
+
+This complements the System Prompt Documentation block and the Fase 4 "Inbound From An Unattached Chat" header — together they give the agent both general doc (system prompt) and per-turn context (envelope) about how to respond on the right surface.
+
 ## Acceptance Criteria
 
 When this capability is implemented, all of the following SHOULD hold:

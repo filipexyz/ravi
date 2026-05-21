@@ -167,4 +167,6 @@ export {
   SessionAttachConflictError,
   SessionDetachLastPrimaryError,
   SessionFocusUnattachedError,
+  SessionAttachInstanceMismatchError,
+  subscriptionAllowsCrossInstance,
 } from "./sessions.js";

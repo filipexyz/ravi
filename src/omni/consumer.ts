@@ -28,6 +28,7 @@ import {
   getSession,
   listSessionSubscriptions,
   matchRoute,
+  subscriptionAllowsCrossInstance,
 } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import {
@@ -896,12 +897,26 @@ export class OmniConsumer {
     // session, route the inbound there instead of to the route-derived
     // session. The subscription is an explicit operator decision and
     // overrides the default route resolution.
-    // See .ravi/specs/sessions/attach/SPEC.md
+    // See .ravi/specs/sessions/attach/SPEC.md (Instance Isolation)
     const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
     if (existingSubscription && existingSubscription.sessionKey !== matched.sessionKey) {
       const ownerSession = getSession(existingSubscription.sessionKey);
       const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
-      if (ownerSession && ownerAgent) {
+      // Instance isolation: never let the subscription override jump
+      // across Omni instances. If the override would route an inbound
+      // from instance A into a session that lives on instance B, the
+      // session's outbound would later be emitted via instance B —
+      // hitting a different WhatsApp account entirely. The 2026-05-21
+      // production loop was caused by exactly this jump. Fall back to
+      // the route-derived session when this is detected.
+      const sameInstance = subscriptionAllowsCrossInstance(canonicalChat.id, existingSubscription.sessionKey);
+      if (!sameInstance) {
+        log.warn("Subscription override would jump instances — ignoring subscription, using route resolution", {
+          chatId: canonicalChat.id,
+          subscriptionSessionKey: existingSubscription.sessionKey,
+          routeSessionKey: matched.sessionKey,
+        });
+      } else if (ownerSession && ownerAgent) {
         log.info("Inbound rerouted by session subscription", {
           chatId: canonicalChat.id,
           fromSessionKey: matched.sessionKey,
@@ -1391,6 +1406,23 @@ export class OmniConsumer {
       return;
     }
 
+    // Origin hint: when the inbound chat is NOT the session's primary
+    // subscription, prepend a line telling the agent how to address
+    // that chat specifically (via focus, or via attach+focus when the
+    // chat isn't subscribed at all — e.g. route.session redirect or
+    // thread handoff). Silent for the primary chat so normal turns stay
+    // clean. See .ravi/specs/sessions/attach/SPEC.md (Origin Hint).
+    const subs = listSessionSubscriptions(resolved.sessionKey);
+    const primarySub = subs.find((s) => s.role === "primary");
+    let originHint: string | undefined;
+    if (!primarySub || primarySub.chatId !== canonicalChat.id) {
+      const sessionRef = resolved.sessionName ?? resolved.sessionKey;
+      const isAttached = subs.some((s) => s.chatId === canonicalChat.id);
+      originHint = isAttached
+        ? `[origin] inbound veio de ${canonicalChat.id} (input subscription da sessão "${sessionRef}"). Pra responder especificamente nesse chat: \`ravi sessions focus ${sessionRef} --chat ${canonicalChat.id}\`. Sem focus, a resposta sai no inbound source (este chat).`
+        : `[origin] inbound veio de ${canonicalChat.id}, NÃO atachado a "${sessionRef}". Pra responder lá: \`ravi sessions attach ${sessionRef} --chat ${canonicalChat.id}\` e depois \`ravi sessions focus ${sessionRef} --chat ${canonicalChat.id}\`.`;
+    }
+
     const envelope = this.formatEnvelope(
       channelType,
       payload,
@@ -1405,6 +1437,7 @@ export class OmniConsumer {
       replyContext,
       replyMediaPath,
       commandExpansion.content,
+      originHint,
     );
     const editRebasePlan = editInfo
       ? buildRuntimeMessageEditRebasePlan({
@@ -2184,6 +2217,7 @@ export class OmniConsumer {
     replyContext?: { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null,
     replyMediaPath?: string,
     contentOverride?: string,
+    originHint?: string,
   ): string {
     const channelName = this.channelDisplayName(channelType);
     const dt = new Date(timestamp);
@@ -2217,14 +2251,15 @@ export class OmniConsumer {
       replyBlock = `\n[Replying to ${sender} mid:${replyContext.quotedId}]\n${quotedContent}${mediaLine}\n[/Replying]\n`;
     }
 
+    const hintPrefix = originHint ? `${originHint}\n` : "";
     if (isGroup) {
       const groupLabel = groupName || stripJid(chatJid);
       const header = `[${channelName} ${groupLabel} id:${chatJid}${threadTag}${midTag} ${ts} ${dow}] ${senderName}:`;
-      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
+      return replyBlock ? `${hintPrefix}${header}${replyBlock}${content}` : `${hintPrefix}${header} ${content}`;
     } else {
       const nameTag = senderName !== senderPhone ? ` ${senderName}` : "";
       const header = `[${channelName} +${senderPhone}${nameTag}${midTag} ${ts} ${dow}]`;
-      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
+      return replyBlock ? `${hintPrefix}${header}${replyBlock}${content}` : `${hintPrefix}${header} ${content}`;
     }
   }
 

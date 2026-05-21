@@ -22,12 +22,20 @@ import {
   getSessionUnattachedFocusPolicy,
   listSessionSubscriptions,
   SessionAttachConflictError,
+  SessionAttachInstanceMismatchError,
   SessionDetachLastPrimaryError,
   SessionFocusUnattachedError,
   setSessionFocus,
   setSessionUnattachedFocusPolicy,
+  subscriptionAllowsCrossInstance,
 } from "./sessions.js";
-import { dbBindSessionToChat, dbRunSessionAttachMigrationForTests, dbUpsertChat, getDb } from "./router-db.js";
+import {
+  dbBindSessionToChat,
+  dbRunSessionAttachMigrationForTests,
+  dbUpsertChat,
+  dbUpsertInstance,
+  getDb,
+} from "./router-db.js";
 
 let stateDir: string | null = null;
 
@@ -235,6 +243,74 @@ describe("sessions/attach — focus", () => {
     expect(getSessionFocus(session.sessionKey)?.chatId).toBe(focused.id);
     detachChatFromSession(session.sessionKey, focused.id);
     expect(getSessionFocus(session.sessionKey)).toBeNull();
+  });
+});
+
+describe("sessions/attach — instance isolation", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-session-instance-isolation-");
+    // Two instances on the same channel; chat lives on one, session on the other.
+    dbUpsertInstance({ name: "main", channel: "whatsapp" });
+    dbUpsertInstance({ name: "luis", channel: "whatsapp" });
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function chatOnInstance(suffix: string, instanceId: string) {
+    return dbUpsertChat({
+      channel: "whatsapp",
+      instanceId,
+      platformChatId: `${suffix}@g.us`,
+      chatType: "group",
+      title: `chat-${suffix}`,
+    });
+  }
+  function sessionOnInstance(suffix: string, accountId: string) {
+    // getOrCreateSession only persists `account_id` when it's in defaults at
+    // first-create. `updateSessionSource` writes `last_account_id`, which is
+    // separate. The isolation check reads `session.accountId` (= account_id),
+    // so we have to seed it via defaults.
+    return getOrCreateSession(`agent:dev:whatsapp:${accountId}:group:${suffix}`, "dev", "/tmp/dev", {
+      accountId,
+      channel: "whatsapp",
+    });
+  }
+
+  // Note: the isolation helper compares `chat.instanceId` (resolved via
+  // dbGetInstanceByInstanceId → .name, falling back to the raw id) to
+  // `session.accountId`. Tests can shortcut by using the instance name
+  // directly as the chat's instance id — the fallback path treats them
+  // as equivalent.
+
+  it("attachChatToSession throws when chat instance differs from session instance", () => {
+    const session = sessionOnInstance("iso-1", "main");
+    const fgnChat = chatOnInstance("iso-1", "luis");
+    expect(() => attachChatToSession({ sessionKey: session.sessionKey, chatId: fgnChat.id })).toThrow(
+      SessionAttachInstanceMismatchError,
+    );
+  });
+
+  it("subscriptionAllowsCrossInstance returns false for chat on a different instance", () => {
+    const session = sessionOnInstance("iso-2", "main");
+    const fgnChat = chatOnInstance("iso-2", "luis");
+    expect(subscriptionAllowsCrossInstance(fgnChat.id, session.sessionKey)).toBe(false);
+  });
+
+  it("attachChatToSession allows chat on the same instance", () => {
+    const session = sessionOnInstance("iso-3", "main");
+    const sameChat = chatOnInstance("iso-3", "main");
+    const result = attachChatToSession({ sessionKey: session.sessionKey, chatId: sameChat.id });
+    expect(result.created).toBe(true);
+  });
+
+  it("sessions with no accountId skip the instance check (backward compat)", () => {
+    // Legacy session_key shape without an account segment → accountId is null.
+    const session = getOrCreateSession("agent:dev:legacy-no-account", "dev", "/tmp/dev");
+    const anyChat = chatOnInstance("iso-4", "any-instance-uuid");
+    const result = attachChatToSession({ sessionKey: session.sessionKey, chatId: anyChat.id });
+    expect(result.created).toBe(true);
   });
 });
 

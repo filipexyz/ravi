@@ -12,6 +12,8 @@ import {
   dbCreateSessionChatSubscription,
   dbDetachSessionChatSubscription,
   dbFindActiveSubscriptionByChat,
+  dbGetChat,
+  dbGetInstanceByInstanceId,
   dbGetSessionFocus,
   dbGetUnattachedFocusPolicy,
   dbListSessionChatSubscriptions,
@@ -900,6 +902,69 @@ export class SessionFocusUnattachedError extends Error {
   }
 }
 
+export class SessionAttachInstanceMismatchError extends Error {
+  readonly code = "SESSION_ATTACH_INSTANCE_MISMATCH" as const;
+  constructor(
+    public readonly chatId: string,
+    public readonly chatInstance: string,
+    public readonly sessionInstance: string,
+  ) {
+    super(
+      `Cross-instance attach not allowed: chat ${chatId} lives on instance '${chatInstance}', session is on instance '${sessionInstance}'. Outbound via a chat's instance must use a session that also belongs to that instance (see sessions/attach spec: Instance Isolation).`,
+    );
+    this.name = "SessionAttachInstanceMismatchError";
+  }
+}
+
+/**
+ * Returns true when the chat and the session live on the same Omni
+ * instance. Cross-instance attach/focus is forbidden because the output
+ * would be sent via the chat's instance — which may be a different
+ * account entirely (e.g. an "observer" instance bound to the operator's
+ * personal WhatsApp number rather than the bot's number). The 2026-05-21
+ * production loop was caused by exactly this jump.
+ *
+ * The session_key encodes `agent:<agent>:<channel>:<account>:...` where
+ * `<account>` is the instance NAME. The chat row stores `instance_id`
+ * (UUID). We resolve the chat's UUID back to its instance name and
+ * compare. Sessions with no `accountId` (e.g. `main`-scoped agents with
+ * no per-account binding) are treated as instance-agnostic and the
+ * check is a no-op.
+ */
+function isChatOnSameInstanceAsSession(
+  chatId: string,
+  sessionKey: string,
+): { ok: true } | { ok: false; chatInstance: string; sessionInstance: string } {
+  const session = getSession(sessionKey);
+  const sessionInstance = session?.accountId;
+  if (!sessionInstance) return { ok: true };
+  const chat = dbGetChat(chatId);
+  if (!chat) return { ok: true };
+  const chatInstanceRow = dbGetInstanceByInstanceId(chat.instanceId);
+  const chatInstance = chatInstanceRow?.name ?? chat.instanceId;
+  if (chatInstance === sessionInstance) return { ok: true };
+  return { ok: false, chatInstance, sessionInstance };
+}
+
+/**
+ * Throwing wrapper for the attach/focus write paths.
+ */
+function assertChatInstanceMatchesSession(chatId: string, sessionKey: string): void {
+  const check = isChatOnSameInstanceAsSession(chatId, sessionKey);
+  if (!check.ok) {
+    throw new SessionAttachInstanceMismatchError(chatId, check.chatInstance, check.sessionInstance);
+  }
+}
+
+/**
+ * Soft check for the consumer subscription override: returns false when
+ * applying the subscription would jump instances, so the caller can fall
+ * back to the route-derived sessionKey instead of crossing the boundary.
+ */
+export function subscriptionAllowsCrossInstance(chatId: string, sessionKey: string): boolean {
+  return isChatOnSameInstanceAsSession(chatId, sessionKey).ok;
+}
+
 export interface AttachChatToSessionInput {
   sessionKey: string;
   chatId: string;
@@ -925,7 +990,14 @@ export interface AttachChatToSessionResult {
  * keys do that on insert.
  */
 export function attachChatToSession(input: AttachChatToSessionInput): AttachChatToSessionResult {
-  // Idempotent path first: if this session already has an active row for
+  // Instance isolation: a chat may only be attached to a session that
+  // belongs to the chat's own instance. Cross-instance attach was the
+  // root cause of the 2026-05-21 production loop. Checked before the
+  // idempotent path so legacy bad rows still throw on re-attach attempts
+  // (operator must detach + re-attach to the correct session).
+  assertChatInstanceMatchesSession(input.chatId, input.sessionKey);
+
+  // Idempotent path: if this session already has an active row for
   // this chat, return it. Avoids the cross-session probe and short-circuits
   // re-attach calls cheaply.
   const ownActive = dbListSessionChatSubscriptions(input.sessionKey).find((s) => s.chatId === input.chatId);
@@ -1011,6 +1083,11 @@ export interface SetFocusInput {
  * (`auto-follow` policy) or fail closed (`fail-closed`, the default).
  */
 export function setSessionFocus(input: SetFocusInput): SessionFocusRecord {
+  // Instance isolation: focus targets MUST live on the session's own
+  // instance. Same reason as attachChatToSession — output goes via the
+  // chat's instance, which may be a different account entirely.
+  assertChatInstanceMatchesSession(input.chatId, input.sessionKey);
+
   const subscription = dbListSessionChatSubscriptions(input.sessionKey).find((s) => s.chatId === input.chatId);
   if (!subscription) {
     const policy = dbGetUnattachedFocusPolicy(input.sessionKey);
