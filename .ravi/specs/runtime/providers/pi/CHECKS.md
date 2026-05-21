@@ -12,6 +12,8 @@
 - Startup sends `set_steering_mode all` unless `get_state` already reports `steeringMode=all`.
 - A `turn.steer` accepted before provider startup is buffered and flushed to Pi before the first `prompt`.
 - Active-turn `turn.steer` sends Pi RPC `steer` and does not become Ravi host prompt concatenation.
+- A `prompt` response rejected with "already processing" is retried as a plain `prompt` on the bounded busy backoff and resolves once Pi reports idle. No retry adds `streamingBehavior`.
+- Persistent "already processing" responses exhaust the busy backoff and surface a single `turn.failed`, never silently drop the prompt.
 
 ## Event Mapping Tests
 

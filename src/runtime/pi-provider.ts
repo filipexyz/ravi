@@ -25,6 +25,12 @@ import { emptySkillVisibilitySnapshot } from "./skill-visibility.js";
 const DEFAULT_PI_COMMAND = "pi";
 const DEFAULT_PI_RESPONSE_TIMEOUT_MS = 30_000;
 const PI_INTERRUPT_GRACE_MS = 1_000;
+// Backoff schedule for retrying a prompt rejected with "Agent is already processing".
+// Pi's internal isStreaming flag can lag behind the agent_end event ravi observes,
+// so a fresh prompt may briefly hit the race window. Each retry is a fresh stdin
+// command, so the cumulative wait (~3.85s) covers the worst cases observed without
+// risking the orphan/out-of-order pitfalls of streamingBehavior=followUp.
+const PI_PROMPT_BUSY_BACKOFF_MS: readonly number[] = [100, 250, 500, 1_000, 2_000];
 const DEFAULT_PI_MODEL_PROVIDER = "openai";
 
 const PI_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = [
@@ -492,12 +498,12 @@ async function* runPiTurns(
       try {
         let promptResponse: PiRpcResponse;
         try {
-          promptResponse = await sendPiPrompt(transport, prompt);
+          promptResponse = await sendPiPromptWithBusyRetry(transport, prompt, abortSignal);
         } catch (error) {
           if (!isPiTransportDisconnectedError(error) || !(await restartTransport())) {
             throw error;
           }
-          promptResponse = await sendPiPrompt(transport, prompt);
+          promptResponse = await sendPiPromptWithBusyRetry(transport, prompt, abortSignal);
         }
         if (!promptResponse.success) {
           const terminal = terminalTracker.fail({
@@ -948,6 +954,52 @@ function sendPiPrompt(transport: PiRpcTransport, prompt: string): Promise<PiRpcR
     type: "prompt",
     message: prompt,
   });
+}
+
+export function isPiBusyResponse(response: PiRpcResponse): boolean {
+  if (response.success) return false;
+  const error = typeof response.error === "string" ? response.error : "";
+  return error.includes("already processing");
+}
+
+function piPromptBackoffMs(attempt: number): number | undefined {
+  return PI_PROMPT_BUSY_BACKOFF_MS[attempt];
+}
+
+async function waitWithAbort(ms: number, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return true;
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(false);
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function sendPiPromptWithBusyRetry(
+  transport: PiRpcTransport,
+  prompt: string,
+  signal: AbortSignal,
+): Promise<PiRpcResponse> {
+  let attempt = 0;
+  let response = await sendPiPrompt(transport, prompt);
+  while (isPiBusyResponse(response)) {
+    const delayMs = piPromptBackoffMs(attempt);
+    if (delayMs === undefined) {
+      return response;
+    }
+    if (await waitWithAbort(delayMs, signal)) {
+      return response;
+    }
+    attempt += 1;
+    response = await sendPiPrompt(transport, prompt);
+  }
+  return response;
 }
 
 function isPiTransportDisconnectedError(error: unknown): boolean {

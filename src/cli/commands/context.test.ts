@@ -860,6 +860,30 @@ describe("ContextCommands", () => {
       ]);
     });
 
+    it("skips runtime skill gates for raw CLI contexts without a bound session", () => {
+      resolvedContext = {
+        ...resolvedContext!,
+        sessionKey: undefined,
+        sessionName: undefined,
+      };
+      commandSkillGateDecision = {
+        allowed: false,
+        code: "RAVI_SKILL_GATE_CONFIG_ERROR",
+        skill: "ravi-system-sessions",
+        reason:
+          "RAVI_SKILL_GATE_CONFIG_ERROR: Bash requires skill ravi-system-sessions, but no runtime session is bound to this context.",
+      };
+
+      const result = callCodexBashHook({
+        tool_input: {
+          command: "ravi sessions list",
+        },
+      });
+
+      expect(result).toEqual({});
+      expect(commandSkillGateCalls).toEqual([]);
+    });
+
     it("publishes executable deny audit events for git status", () => {
       const result = callCodexBashHook({
         tool_input: {

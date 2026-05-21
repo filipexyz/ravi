@@ -267,7 +267,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
 
       return {
         provider: "codex",
-        concurrentInputStrategy: "native_steer",
+        concurrentInputStrategy: "interrupt",
         skillVisibility,
         events: normalizeCodexEvents(
           input,

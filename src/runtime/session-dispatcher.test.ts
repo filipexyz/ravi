@@ -213,7 +213,7 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
     expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_response")).toBe(false);
   });
 
-  it("uses native steer for active Codex turns when runtime control exists", () => {
+  it("keeps Codex on the host interrupt path even when runtime control exists", () => {
     expect(
       canUseNativeRuntimeSteer(
         createStreamingSession({
@@ -221,7 +221,7 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
             provider: "codex",
             events: (async function* () {})(),
             interrupt: async () => {},
-            concurrentInputStrategy: "native_steer",
+            concurrentInputStrategy: "interrupt",
             control: async () => ({
               ok: true,
               operation: "turn.steer",
@@ -231,7 +231,7 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
         }),
         "after_tool",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("does not native steer Codex during the pre-turn queue gap", () => {
@@ -242,7 +242,7 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
             provider: "codex",
             events: (async function* () {})(),
             interrupt: async () => {},
-            concurrentInputStrategy: "native_steer",
+            concurrentInputStrategy: "interrupt",
             control: async () => ({
               ok: true,
               operation: "turn.steer",

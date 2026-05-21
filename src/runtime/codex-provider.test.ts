@@ -475,7 +475,7 @@ rl.on("line", (line) => {
     const assistantMessages = findEventsByType(events, "assistant.message").map((event) => event.text);
     const completions = findEventsByType(events, "turn.complete");
 
-    expect(session.concurrentInputStrategy).toBe("native_steer");
+    expect(session.concurrentInputStrategy).toBe("interrupt");
     expect(calls).toHaveLength(1);
     expect(calls[0]?.model).toBeUndefined();
     expect(calls[0]?.resume).toBe("thread_prev");
