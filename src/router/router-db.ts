@@ -2230,12 +2230,18 @@ function ensureIdentityChatMigrations(database: Database): void {
   //   4. backfill from session_chat_bindings, picking one binding per
   //      chat (the most recent) so legacy 1:N data does not regenerate
   //      duplicates after cleanup.
-  dedupeSessionChatSubscriptions(database);
-  database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
-  database.exec(
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
-  );
-  backfillSessionChatSubscriptionsFromBindings(database);
+  // The whole sequence is wrapped in a transaction so a concurrent
+  // writer (e.g. the daemon's consumer doing `attachChatToSession`)
+  // cannot squeeze an INSERT between dedupe and CREATE UNIQUE INDEX,
+  // which would make the CREATE fail and leave the migration half-done.
+  database.transaction(() => {
+    dedupeSessionChatSubscriptions(database);
+    database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
+    database.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
+    );
+    backfillSessionChatSubscriptionsFromBindings(database);
+  })();
 }
 
 /**
@@ -4655,31 +4661,77 @@ export function dbCreateSessionChatSubscription(
       .get(input.sessionKey, input.chatId) as SessionChatSubscriptionRow;
     return rowToSessionChatSubscription(row);
   }
-  const insert = db
-    .prepare(
-      `
-      INSERT INTO session_chat_subscriptions (
-        session_key, chat_id, role, attached_by_type, attached_by_id,
-        attached_reason, context_snapshot_at_attach_json, created_at, updated_at, detached_at
+  // INSERT is wrapped to translate a race condition on the UNIQUE
+  // `idx_session_chat_subscriptions_active_chat` index into a typed
+  // error the caller can recover from. Without this, two concurrent
+  // inbound dispatches targeting different sessions but the same chat
+  // would surface raw SQLite errors and crash the consumer turn.
+  try {
+    const insert = db
+      .prepare(
+        `
+        INSERT INTO session_chat_subscriptions (
+          session_key, chat_id, role, attached_by_type, attached_by_id,
+          attached_reason, context_snapshot_at_attach_json, created_at, updated_at, detached_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        `,
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-      `,
-    )
-    .run(
-      input.sessionKey,
-      input.chatId,
-      input.role ?? "input",
-      input.attachedByType ?? "system",
-      input.attachedById ?? null,
-      input.attachedReason ?? null,
-      cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
-      now,
-      now,
+      .run(
+        input.sessionKey,
+        input.chatId,
+        input.role ?? "input",
+        input.attachedByType ?? "system",
+        input.attachedById ?? null,
+        input.attachedReason ?? null,
+        cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
+        now,
+        now,
+      );
+    const row = db
+      .prepare("SELECT * FROM session_chat_subscriptions WHERE id = ?")
+      .get(insert.lastInsertRowid) as SessionChatSubscriptionRow;
+    return rowToSessionChatSubscription(row);
+  } catch (err) {
+    if (!isUniqueConstraintError(err)) throw err;
+    const existing = dbFindActiveSubscriptionByChat(input.chatId);
+    if (existing && existing.sessionKey === input.sessionKey) {
+      // Race with another path that created our own subscription. Idempotent.
+      return existing;
+    }
+    if (existing) {
+      throw new SubscriptionChatConflictError(input.chatId, existing.sessionKey, input.sessionKey);
+    }
+    // Race against deletion: someone created and detached in between.
+    // Retry once.
+    throw err;
+  }
+}
+
+/**
+ * Thrown by `dbCreateSessionChatSubscription` when a concurrent writer
+ * already attached the requested chat to a different session. Caller
+ * (typically `attachChatToSession`) should translate this into the
+ * higher-level `SessionAttachConflictError`.
+ */
+export class SubscriptionChatConflictError extends Error {
+  readonly code = "SUBSCRIPTION_CHAT_CONFLICT" as const;
+  constructor(
+    public readonly chatId: string,
+    public readonly currentSessionKey: string,
+    public readonly requestedSessionKey: string,
+  ) {
+    super(
+      `chat ${chatId} is attached to ${currentSessionKey}; cannot subscribe ${requestedSessionKey} (concurrent attach won)`,
     );
-  const row = db
-    .prepare("SELECT * FROM session_chat_subscriptions WHERE id = ?")
-    .get(insert.lastInsertRowid) as SessionChatSubscriptionRow;
-  return rowToSessionChatSubscription(row);
+    this.name = "SubscriptionChatConflictError";
+  }
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const message = (err as { message?: unknown }).message;
+  return typeof message === "string" && /UNIQUE constraint failed/i.test(message);
 }
 
 /**
