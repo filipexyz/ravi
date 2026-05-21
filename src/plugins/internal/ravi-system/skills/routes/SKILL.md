@@ -102,4 +102,28 @@ Definir fallback:
 ravi instances routes add main "*" main
 ```
 
+## Route vs Attach
+
+Route e attach (`sessions/attach`) operam em camadas diferentes — confundi-las leva a comportamento inesperado.
+
+| Camada | Define | Resultado |
+|--------|--------|-----------|
+| **Route** | Qual *agent* atende o chat | matchRoute escolhe agent, session_key é derivado de (agent, channel, instance, dmScope, peer). Cada combinação vira sessão própria. |
+| **Subscription** (`sessions attach`) | Qual *sessão* recebe a inbound | Override do session_key resolvido. Permite mesma sessão escutar múltiplos chats (histórico compartilhado). |
+| **Focus** (`sessions focus`) | Para qual *chat* a sessão emite output | Sobrescreve o inbound-source no output target resolution. |
+
+**Cuidado com a interação:**
+
+- Se um chat tem subscription ativa (atachado a sessão X), o consumer **ignora** o agent escolhido pela route e dispatcha pra sessão X. A route não troca o destino sozinha.
+- `routes add` faz cleanup automático de sessões conflitantes (apaga sessão paralela do agent antigo e libera o chat). Quando isso roda, a próxima inbound segue a nova route normalmente.
+- `routes add ... --session <name>` (redirect estático) força a sessão alvo e cria subscription automaticamente — funciona ao lado do attach.
+
+**Quando usar cada um:**
+
+- "Quero outro agent atendendo esse chat, com histórico próprio" → `routes add`
+- "Quero a MESMA sessão atendendo múltiplos chats" → `sessions attach`
+- "Quero responder em chat diferente do source" → `sessions focus`
+
+Ver skill `ravi-system:sessions` (seção Attach + Focus) pras receitas práticas e diagrama de fluxo.
+
 Para gerenciar contacts: use a skill `ravi-system:contacts`

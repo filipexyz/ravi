@@ -437,6 +437,73 @@ These are intentionally not specified here and SHOULD be addressed in follow-up 
 
 - **Detailed inventory of attach hooks.** The "Context Injection At Attach" section sets the contract (read-only, bounded, fail-isolated, capability-registered). The concrete shipping list (group metadata, member list, recent activity, project tasks count, artifacts count) and the registration API live in a separate feature spec.
 
+## Operational Recipes (production-validated)
+
+These compose the attach + focus primitives for the most common operational shapes encountered after Fase 1+2 went live. Use the recipe name in PRs and runbooks so operators recognise the intent.
+
+### Recipe 1 — Unify history across N chats into one session
+
+Goal: a single session attends multiple chats and keeps one continuous prompt history. Typical case: the `dev` agent already runs in `ravi - dev`; you want the same `dev` to also handle a new `ravi - dev - test` group with the same memory.
+
+```bash
+# If the new chat already spawned a parallel session, delete it first
+# (it'll be empty since it was auto-created by the routing default).
+ravi sessions delete <parallel-session>
+
+# Attach the new chat into the existing session.
+ravi sessions attach <session> --chat <chat-id> --reason "unify <reason>"
+```
+
+The next inbound on the new chat triggers the subscription override in `omni/consumer.ts` — it sees the chat already belongs to `<session>` and rewrites `matched.sessionKey` to it instead of forking. Same session, two surfaces.
+
+### Recipe 2 — Migrate a chat to a different agent (separate history)
+
+Goal: move a chat from the agent default of its instance to a specific agent, but keep histories isolated per agent. Typical case: a group was created on instance `main` (whose default is `ravi-onboarding`) and auto-spawned an onboarding session; you want `dev` to take over with its own fresh session.
+
+```bash
+ravi instances routes add <instance> group:<id> <agent> --priority 10
+```
+
+`routes add` returns `Cleaned N conflicting session(s)` when it removes the prior owner. The next inbound matches the route, lands on `<agent>`, and a fresh session is created via the normal path (with `attachChatToSession` building the primary subscription).
+
+This recipe does NOT share history. If history sharing is the goal, use Recipe 1.
+
+### Recipe 3 — Reply in a different chat than the source
+
+Goal: the agent processes inbound from chat A but emits the response in chat B. One-shot or sticky.
+
+```bash
+ravi sessions focus <session> --chat <target-chat-id> [--expires 30m]
+# Agent emits → resolveSessionOutputTarget picks focus over inbound source.
+# Clear when done:
+ravi sessions focus <session> --clear
+```
+
+Until clear/expire, every emit from `<session>` goes to `<target-chat-id>`. Inbound still comes from wherever it comes — focus only affects output target.
+
+### Anti-patterns observed in production
+
+These are real mistakes the dev agent itself made before this section existed; documenting so the next operator avoids them.
+
+- **Adding a route to "move" a chat that's already attached elsewhere.** The subscription override prevails over the new route's agent assignment. The chat keeps dispatching to the old session. Resolution: detach (or delete the prior session) before or alongside the route change.
+- **Calling `focus` for a chat that's not subscribed under the default `fail-closed` policy.** Errors with `SessionFocusUnattachedError`. Either attach first or switch the session's policy to `auto-follow`.
+- **Expecting attach alone to change which agent processes a chat.** Attach moves the *session*; agent comes from the route or instance default. To change the agent AND share history, do Recipe 2 (route) AND Recipe 1 (attach) together.
+
+## Performance Notes (measured)
+
+The attach/focus path contributes microseconds; total turn latency lives in the LLM call. Sample timings from production turns on a 56M-token session:
+
+| Source | Typical latency |
+|--------|-----------------|
+| Consumer subscription reroute (lookup + assign) | sub-millisecond |
+| `dbBindSessionToChat` + `attachChatToSession` (idempotent path) | <10ms |
+| `resolveSessionOutputTarget` (focus + chat lookup) | <5ms |
+| Gateway → Omni → WhatsApp delivery | 150ms–1s (scales with message size) |
+| LLM inference (single text response, large session prompt) | 10–35s |
+| LLM inference with tool calls (Bash + assistant) | 30–60s+ |
+
+When debugging slow turns, look at `assistant.message` and `tool.completed` timestamps in `sessions trace`. If those are slow, it's the model. If the gap is between `prompt.published` and `runtime.start`, look at the dispatcher / queue / debounce. Attach/focus rewrites don't show up as measurable latency.
+
 ## Acceptance Criteria
 
 When this capability is implemented, all of the following SHOULD hold:
