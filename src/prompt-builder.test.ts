@@ -51,6 +51,7 @@ describe("buildSystemPrompt", () => {
     expect(sections.map((section) => section.id)).toEqual([
       "identity",
       "system.commands",
+      "session.attach",
       "session.runtime",
       "session.boundary",
       "channel.output_formatting",

@@ -96,6 +96,47 @@ function systemCommandsText(): string {
 }
 
 /**
+ * Session attach/detach/focus tools text.
+ *
+ * Documents the CLI surface for sessions/attach (Fase 1+2 in production).
+ * Kept as CLI documentation rather than native tools to match the existing
+ * pattern used by sessions send/ask/answer/execute/inform.
+ *
+ * Includes the Silent vs Detach distinction so agents pick the right tool
+ * for the intent (transient quiet vs persistent disengage).
+ *
+ * See .ravi/specs/sessions/attach/SPEC.md
+ */
+function sessionAttachText(): string {
+  return `Sessões podem escutar múltiplos chats (multi-input) e emitir output num chat diferente do source (focus). Use via Bash + CLI quando o caso aparecer.
+
+**Quando usar:**
+- "Mesma sessão atende N chats com histórico compartilhado" → \`attach\`
+- "Responder em chat diferente do source" → \`focus\`
+- "Listar/inspecionar wiring" → \`subscriptions\` / \`focus --show\`
+
+**Comandos:**
+
+- \`ravi sessions attach <session> --chat <chat-id> [--reason "..."]\` — atacha chat como input. Próxima inbound desse chat cai na sessão (sem fork).
+- \`ravi sessions detach <session> --chat <chat-id>\` — remove chat da sessão. **Detach é durável** (próxima inbound não volta sozinha).
+- \`ravi sessions subscriptions <session>\` — lista chats atachados (primary/input/mirror).
+- \`ravi sessions focus <session> --chat <chat-id> [--reason "..."] [--expires 30m]\` — sticky até clear/expire. Output da sessão sai pro chat de focus em vez do source.
+- \`ravi sessions focus <session> --clear\` / \`--show\` — limpar/inspecionar focus.
+- \`ravi sessions set-unattached-focus-policy <session> fail-closed|auto-follow\` — política quando focus aponta pra chat não-atachado (default fail-closed).
+
+**${SILENT_TOKEN} vs \`detach\`** (complementares, não substitutos):
+
+- \`${SILENT_TOKEN}\` = **one-shot**, esse turn específico não fala. Próxima inbound, agent volta a responder normalmente. Use quando "li, mas não tenho nada a dizer agora".
+- \`detach_chat\` (via CLI \`sessions detach\`) = **estado durável**, agent sai do canal. Não recebe nem envia mensagens daquele chat até \`attach\` explícito. Use quando "vou trabalhar em silêncio nessa surface, volto quando tiver algo a dizer" ou pra mover atenção pra outro canal sem ruído acidental no anterior.
+
+**Anti-patterns:**
+
+- ❌ Adicionar route pra "mover" chat já atachado em outra sessão — subscription override puxa de volta. Detach (ou \`sessions delete\` da sessão antiga) primeiro.
+- ❌ Setar focus em chat não atachado com policy \`fail-closed\` — \`SessionFocusUnattachedError\`. Atacha antes, ou usa \`auto-follow\`.
+- ❌ Esperar attach trocar o agent. Attach decide sessão; agent vem da route ou default da instance.`;
+}
+
+/**
  * Build group context section for system prompt
  */
 export function buildGroupContext(ctx: ChannelContext): string {
@@ -278,6 +319,10 @@ export function buildSystemPromptSections(
 
   // System commands for all agents (sentinel needs them for cross-send execute/ask)
   add("system.commands", "System Commands", systemCommandsText(), 20);
+
+  // Sessions attach/detach/focus CLI surface. Added for all agents so the
+  // multi-input + focus primitives are discoverable. See sessions/attach spec.
+  add("session.attach", "Session Attach + Focus", sessionAttachText(), 25);
 
   // Sentinel: add explicit channel messaging instructions
   if (isSentinel) {
