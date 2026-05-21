@@ -197,6 +197,14 @@ ravi sessions focus <session> --show
 
 The CLI MUST require explicit chat targeting when ambiguous. It MUST NOT guess.
 
+Successful `ravi sessions attach` output MUST include the inverse detach command as an operator/agent hint:
+
+```text
+Detach hint: ravi sessions detach <session> --chat <canonical-chat-id>
+```
+
+For `--json`, the same command MUST be returned under `hints.detach`.
+
 ## Runtime Tool Surface
 
 The agent runtime exposes two host tools (skill-gated; see `runtime/skill-loading`):
@@ -254,8 +262,8 @@ A session MAY receive inbound dispatch via mechanisms outside the subscription m
 ```text
 [System] Origem não-atachada
 Esta mensagem veio do canal <channel> (chat <chat-id-or-slug>) que NÃO está atachado à sessão.
-Para responder lá em vez de aqui, chame attach_chat({chat_id: "<chat-id>"}) e opcionalmente focus_chat({chat_id: "<chat-id>"}).
-Sem attach, a próxima resposta vai para o destino padrão (último inbound ou foco atual).
+Para manter próximas mensagens deste chat nesta sessão: ravi sessions attach <session> --chat <chat-id>.
+Sem attach, esta turn ainda usa o destino padrão do runtime.
 ```
 
 Header rules:
@@ -529,8 +537,8 @@ When the inbound chat is NOT the session's primary subscription, the consumer pr
 | Chat relation to session | Header prefix |
 |--------------------------|---------------|
 | Primary subscription | (silent — no `[origin]` line) |
-| Input subscription (attached but not primary) | `[origin] inbound veio de <chat_id> (input subscription da sessão "<name>"). Pra responder especificamente nesse chat: \`ravi sessions focus <name> --chat <chat_id>\`. Sem focus, a resposta sai no inbound source (este chat).` |
-| Not attached (e.g. route.session redirect, thread handoff) | `[origin] inbound veio de <chat_id>, NÃO atachado a "<name>". Pra responder lá: \`ravi sessions attach <name> --chat <chat_id>\` e depois \`ravi sessions focus <name> --chat <chat_id>\`.` |
+| Input subscription (attached but not primary) | `[origin] inbound veio de <chat_id> (input subscription da sessão "<name>"). Este chat já está atachado nesta sessão; a resposta desta turn sai no inbound source (este chat).` |
+| Not attached (e.g. route.session redirect, thread handoff) | `[origin] inbound veio de <chat_id>, NÃO atachado a "<name>". Para manter próximas mensagens deste chat nesta sessão: \`ravi sessions attach <name> --chat <chat_id>\`.` |
 
 This complements the System Prompt Documentation block and the Fase 4 "Inbound From An Unattached Chat" header — together they give the agent both general doc (system prompt) and per-turn context (envelope) about how to respond on the right surface.
 

@@ -218,7 +218,7 @@ mock.module("../../tags/service.js", () => ({
 }));
 
 const { SessionCommands } = await import("./sessions.js");
-const { extractNormalizedTranscriptMessages } = await import("./sessions.js");
+const { buildSessionDetachCommand, extractNormalizedTranscriptMessages } = await import("./sessions.js");
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -416,6 +416,12 @@ describe("SessionCommands list --json", () => {
       summary: "running",
       updatedAt: 3000,
     });
+  });
+});
+
+describe("SessionCommands attach hints", () => {
+  it("builds the detach command returned by attach", () => {
+    expect(buildSessionDetachCommand("dev", "chat_123")).toBe("ravi sessions detach dev --chat chat_123");
   });
 });
 

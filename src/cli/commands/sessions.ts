@@ -133,6 +133,10 @@ function printJsonl(payload: unknown): void {
   console.log(JSON.stringify(payload));
 }
 
+export function buildSessionDetachCommand(sessionRef: string, chatId: string): string {
+  return `ravi sessions detach ${sessionRef} --chat ${chatId}`;
+}
+
 function formatTagSlugs(tags: TagBinding[]): string {
   return tags.length > 0 ? tags.map((tag) => tag.tagSlug).join(", ") : "-";
 }
@@ -3687,19 +3691,23 @@ export class SessionCommands {
         attachedByType: "user",
         attachedReason: reason?.trim() || "cli-attach",
       });
+      const sessionRef = session.name ?? session.sessionKey;
+      const detachCommand = buildSessionDetachCommand(sessionRef, chat.id);
       if (asJson) {
         printJson({
           attached: result.created,
           subscription: result.subscription,
           session: { name: session.name, sessionKey: session.sessionKey },
           chat: { id: chat.id, title: chat.title, channel: chat.channel, instanceId: chat.instanceId },
+          hints: {
+            detach: detachCommand,
+          },
         });
         return;
       }
       const verb = result.created ? "Attached" : "Already attached";
-      console.log(
-        `${verb} chat ${chat.id} (${chat.title ?? "no title"}) to session ${session.name ?? session.sessionKey}`,
-      );
+      console.log(`${verb} chat ${chat.id} (${chat.title ?? "no title"}) to session ${sessionRef}`);
+      console.log(`Detach hint: ${detachCommand}`);
     } catch (err) {
       if (err instanceof SessionAttachConflictError) {
         if (asJson) {

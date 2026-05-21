@@ -1419,8 +1419,8 @@ export class OmniConsumer {
       const sessionRef = resolved.sessionName ?? resolved.sessionKey;
       const isAttached = subs.some((s) => s.chatId === canonicalChat.id);
       originHint = isAttached
-        ? `[origin] inbound veio de ${canonicalChat.id} (input subscription da sessão "${sessionRef}"). Pra responder especificamente nesse chat: \`ravi sessions focus ${sessionRef} --chat ${canonicalChat.id}\`. Sem focus, a resposta sai no inbound source (este chat).`
-        : `[origin] inbound veio de ${canonicalChat.id}, NÃO atachado a "${sessionRef}". Pra responder lá: \`ravi sessions attach ${sessionRef} --chat ${canonicalChat.id}\` e depois \`ravi sessions focus ${sessionRef} --chat ${canonicalChat.id}\`.`;
+        ? `[origin] inbound veio de ${canonicalChat.id} (input subscription da sessão "${sessionRef}"). Este chat já está atachado nesta sessão; a resposta desta turn sai no inbound source (este chat).`
+        : `[origin] inbound veio de ${canonicalChat.id}, NÃO atachado a "${sessionRef}". Para manter próximas mensagens deste chat nesta sessão: \`ravi sessions attach ${sessionRef} --chat ${canonicalChat.id}\`.`;
     }
 
     const envelope = this.formatEnvelope(

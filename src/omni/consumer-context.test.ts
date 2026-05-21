@@ -332,6 +332,72 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
+  it("renders attached input origin hints without suggesting focus", async () => {
+    const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
+    const primaryChat = actualDbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+      title: "ravi - dev",
+    });
+    actualRouterSessionsModule.attachChatToSession({
+      sessionKey,
+      chatId: primaryChat.id,
+      role: "primary",
+      attachedByType: "system",
+      attachedReason: "test-primary",
+    });
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-attached-input",
+      type: "message.received",
+      payload: {
+        externalId: "msg-attached-input",
+        chatId: "120363424704882209@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "boa",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev - test",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    const inputChat = actualRouterDbModule.dbFindChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424704882209@g.us",
+      chatType: "group",
+    });
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain(
+      `[origin] inbound veio de ${inputChat?.id} (input subscription da sessão "dev"). Este chat já está atachado nesta sessão;`,
+    );
+    expect(prompt.prompt).not.toContain("ravi sessions focus");
+  });
+
   it("stores inbound DM messages and runs contact intake before no-route return", async () => {
     routeResult = null;
     contactIntakeMode = "pending";
