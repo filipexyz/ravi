@@ -158,6 +158,114 @@ private func splitSseField(_ line: String) -> (field: String, value: String) {
   return (field, value)
 }
 
+#if os(Android)
+private final class RaviAndroidSseSessionDelegate<T: Decodable & Sendable>: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+  private let continuation: AsyncThrowingStream<RaviSseEvent<T>, Error>.Continuation
+  private var parser: RaviSseParser<T>
+  private var lineBuffer = Data()
+  private var errorBody = Data()
+  private var errorStatusCode: Int?
+  private var isFinished = false
+
+  init(
+    dataType: T.Type,
+    continuation: AsyncThrowingStream<RaviSseEvent<T>, Error>.Continuation
+  ) {
+    self.parser = RaviSseParser<T>(dataType: dataType)
+    self.continuation = continuation
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    dataTask: URLSessionDataTask,
+    didReceive response: URLResponse,
+    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+  ) {
+    guard let http = response as? HTTPURLResponse else {
+      finish(throwing: RaviError.transport(message: "Ravi gateway returned a non-HTTP response"))
+      completionHandler(.cancel)
+      return
+    }
+    guard (200..<300).contains(http.statusCode) else {
+      errorStatusCode = http.statusCode
+      completionHandler(.allow)
+      return
+    }
+    completionHandler(.allow)
+  }
+
+  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    if errorStatusCode != nil {
+      errorBody.append(data)
+      return
+    }
+    do {
+      try feed(data)
+    } catch {
+      finish(throwing: error)
+      dataTask.cancel()
+    }
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    if isFinished {
+      return
+    }
+    if let error {
+      finish(throwing: error)
+      return
+    }
+    if let statusCode = errorStatusCode {
+      finish(throwing: buildRaviError(statusCode: statusCode, data: errorBody))
+      return
+    }
+    do {
+      if !lineBuffer.isEmpty {
+        guard let line = String(data: lineBuffer, encoding: .utf8) else {
+          throw RaviError.decoding(message: "SSE line is not valid UTF-8")
+        }
+        if let event = try parser.feedLine(line) {
+          continuation.yield(event)
+        }
+        lineBuffer.removeAll(keepingCapacity: false)
+      }
+      if let event = try parser.finish() {
+        continuation.yield(event)
+      }
+      finish()
+    } catch {
+      finish(throwing: error)
+    }
+  }
+
+  private func feed(_ data: Data) throws {
+    lineBuffer.append(data)
+    while let newlineIndex = lineBuffer.firstIndex(of: 0x0A) {
+      let lineData = lineBuffer[..<newlineIndex]
+      let removeThrough = lineBuffer.index(after: newlineIndex)
+      lineBuffer.removeSubrange(lineBuffer.startIndex..<removeThrough)
+      guard let line = String(data: Data(lineData), encoding: .utf8) else {
+        throw RaviError.decoding(message: "SSE line is not valid UTF-8")
+      }
+      if let event = try parser.feedLine(line) {
+        continuation.yield(event)
+      }
+    }
+  }
+
+  private func finish(throwing error: Error? = nil) {
+    if isFinished {
+      return
+    }
+    isFinished = true
+    if let error {
+      continuation.finish(throwing: error)
+    } else {
+      continuation.finish()
+    }
+  }
+}
+#else
 private func readData(from bytes: URLSession.AsyncBytes) async throws -> Data {
   var data = Data()
   for try await byte in bytes {
@@ -165,6 +273,7 @@ private func readData(from bytes: URLSession.AsyncBytes) async throws -> Data {
   }
   return data
 }
+#endif
 `;
 
 interface ResolvedField {
@@ -598,6 +707,22 @@ ${methods}
     as type: T.Type
   ) -> AsyncThrowingStream<RaviSseEvent<T>, Error> {
     AsyncThrowingStream { continuation in
+#if os(Android)
+      let delegate = RaviAndroidSseSessionDelegate(dataType: type, continuation: continuation)
+      do {
+        let request = try buildStreamRequest(pathSegments: pathSegments, queryItems: queryItems)
+        let configuration = URLSessionConfiguration.default
+        let androidSession = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        let dataTask = androidSession.dataTask(with: request)
+        continuation.onTermination = { _ in
+          dataTask.cancel()
+          androidSession.invalidateAndCancel()
+        }
+        dataTask.resume()
+      } catch {
+        continuation.finish(throwing: error)
+      }
+#else
       let task = Task {
         do {
           let request = try buildStreamRequest(pathSegments: pathSegments, queryItems: queryItems)
@@ -630,6 +755,7 @@ ${methods}
       continuation.onTermination = { _ in
         task.cancel()
       }
+#endif
     }
   }
 

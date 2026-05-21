@@ -43,8 +43,8 @@ Sessions own:
 
 - session identity (`session_key`, `session_name`, `agent_id`, `cwd`);
 - which chats can dispatch input into the session (attach);
-- which chat receives output by default and which is currently focused (focus);
-- last-source provenance for outbound delivery when no explicit focus is set;
+- which chat receives the session's external output (attach);
+- last-source provenance for trace/correlation;
 - session lifecycle: create, rename, reset, delete, ephemeral TTL.
 
 Sessions do NOT own:
@@ -59,8 +59,7 @@ Sessions do NOT own:
 
 - `session`: runtime container for one agent. Identified by a stable `session_key`. Has a canonical `session_name` for human reference.
 - `session_chat_binding`: pre-existing one-to-one record stating "this session belongs to chat X" (see `channels/chats`). It records the *primary* / *origin* chat.
-- `session_chat_subscription`: multi-input record stating "chat X is allowed to dispatch into session S". Introduced by `sessions/attach`. One session MAY have many.
-- `session_focus`: runtime-mutable output target indicating which chat receives the next emitted response. Introduced by `sessions/attach`. Optional; defaults to the chat of the last received inbound.
+- `session_chat_subscription`: record stating "chat X is wired to session S". Introduced by `sessions/attach`. One session MAY have many. One active subscription MAY be marked as the output attachment.
 - `session_participant`: runtime participation projection (see `contacts/identity-graph`). It is not a permission and not an attach record.
 - `session_key`: durable composite identifier (see `src/router/session-key.ts`). MUST remain stable for the session's lifetime.
 
@@ -69,10 +68,10 @@ Sessions do NOT own:
 - A session MUST always belong to exactly one agent.
 - A session MUST have a stable `session_key`. Renaming the canonical `session_name` MUST NOT rewrite `session_key`.
 - A session MAY have one or more attached chats (see `sessions/attach`). The original `session_chat_bindings` row identifies the primary chat for legacy compatibility.
-- A session MUST have at most one active focus at any time. Absence of focus means "respond on the same chat as the inbound that produced the turn".
-- Output delivery MUST resolve a concrete target chat at emit time. The session MUST NOT emit to "ambient" without a resolved chat.
-- Session reset MUST clear provider continuity state (per `runtime/session-continuity`) but MUST NOT silently drop attach subscriptions or focus configuration — those are part of routing/wiring, not provider state.
-- Deletion of a session MUST cascade to delete its subscriptions and focus rows.
+- A session MUST have at most one attached output chat. Output delivery MUST resolve to that output attachment. The inbound source chat MUST NOT be used as an implicit output fallback.
+- If a session has no output attachment, it MUST NOT emit externally.
+- Session reset MUST clear provider continuity state (per `runtime/session-continuity`) but MUST NOT silently drop attach subscriptions — those are routing/wiring, not provider state.
+- Deletion of a session MUST cascade to delete its subscriptions.
 
 ## Validation
 
@@ -82,5 +81,6 @@ Sessions do NOT own:
 
 - Confusing `session_key` identity with `session_name` (display) — leads to broken routing when a session is renamed.
 - Treating `session_chat_bindings` as "the only chat" instead of "the primary chat" — blocks multi-input attach.
-- Resolving output target from `sessions.last_to`/`last_channel`/`last_account_id` after attach lands — those fields are last-source memory, not focus.
+- Reintroducing `focus` as a separate primitive instead of using `attach` as the output attachment.
+- Falling back to inbound source for output after attach lands — causes sessions to reply in the wrong chat.
 - Letting threads, observers, or knowledge collapse into the session concept.

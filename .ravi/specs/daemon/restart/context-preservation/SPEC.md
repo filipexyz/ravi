@@ -25,12 +25,15 @@ normative: true
 
 When a session asks for a daemon restart, the post-restart notice should return to that same session automatically.
 
+This feature covers caller notification. Fan-out resume for every recently non-idle session is specified separately in `daemon/restart/active-session-resume`.
+
 ## Invariants
 
 - Parent restart commands MUST persist the caller session context when available.
 - Child restart commands MUST preserve existing caller context if they do not have their own context.
 - Restart notices MUST NOT fall back to an unrelated session while a caller context exists.
 - Slash restart MUST pass enough context for the CLI handoff to identify the caller.
+- Caller notification MUST coexist with active-session resume fan-out without duplicating the same restart event for the caller session.
 
 ## Validation
 

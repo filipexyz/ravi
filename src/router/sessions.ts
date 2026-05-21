@@ -8,18 +8,16 @@
 import type { Statement } from "bun:sqlite";
 import type { SessionEntry } from "./types.js";
 import {
-  dbClearSessionFocus,
   dbCreateSessionChatSubscription,
+  dbClearSessionOutputAttachment,
   dbDetachSessionChatSubscription,
   dbFindActiveSubscriptionByChat,
   dbGetChat,
+  dbGetSessionOutputAttachment,
   dbGetInstanceByInstanceId,
-  dbGetSessionFocus,
-  dbGetUnattachedFocusPolicy,
   dbListSessionChatSubscriptions,
   dbRenameRouteSessionName,
-  dbSetSessionFocus,
-  dbSetUnattachedFocusPolicy,
+  dbSetSessionOutputAttachment,
   getDb,
   getDbChanges,
   getRaviDbPath,
@@ -27,9 +25,6 @@ import {
   type AttachedByType,
   type CreateSessionChatSubscriptionInput,
   type SessionChatSubscriptionRecord,
-  type SessionFocusRecord,
-  type SetSessionFocusInput,
-  type UnattachedFocusPolicy,
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
@@ -858,7 +853,7 @@ export function resolveSession(nameOrKey: string): SessionEntry | null {
 }
 
 // ============================================================================
-// sessions/attach — subscriptions & focus
+// sessions/attach — subscriptions
 // See .ravi/specs/sessions/attach/SPEC.md
 // ============================================================================
 
@@ -873,32 +868,6 @@ export class SessionAttachConflictError extends Error {
       `Chat ${chatId} is already attached to session ${currentSessionKey}; cannot attach to ${requestedSessionKey}. Detach from the current owner first.`,
     );
     this.name = "SessionAttachConflictError";
-  }
-}
-
-export class SessionDetachLastPrimaryError extends Error {
-  readonly code = "SESSION_DETACH_LAST_PRIMARY" as const;
-  constructor(
-    public readonly sessionKey: string,
-    public readonly chatId: string,
-  ) {
-    super(
-      `Cannot detach chat ${chatId}: it is the only active primary subscription for session ${sessionKey}. A session must keep at least one active subscription.`,
-    );
-    this.name = "SessionDetachLastPrimaryError";
-  }
-}
-
-export class SessionFocusUnattachedError extends Error {
-  readonly code = "SESSION_FOCUS_UNATTACHED" as const;
-  constructor(
-    public readonly sessionKey: string,
-    public readonly chatId: string,
-  ) {
-    super(
-      `Chat ${chatId} is not attached to session ${sessionKey}; focus is blocked by unattached_focus_policy='fail-closed'. Attach the chat first, or change the session's policy to 'auto-follow'.`,
-    );
-    this.name = "SessionFocusUnattachedError";
   }
 }
 
@@ -918,7 +887,7 @@ export class SessionAttachInstanceMismatchError extends Error {
 
 /**
  * Returns true when the chat and the session live on the same Omni
- * instance. Cross-instance attach/focus is forbidden because the output
+ * instance. Cross-instance attach is forbidden because output
  * would be sent via the chat's instance — which may be a different
  * account entirely (e.g. an "observer" instance bound to the operator's
  * personal WhatsApp number rather than the bot's number). The 2026-05-21
@@ -947,7 +916,7 @@ function isChatOnSameInstanceAsSession(
 }
 
 /**
- * Throwing wrapper for the attach/focus write paths.
+ * Throwing wrapper for attach write paths.
  */
 function assertChatInstanceMatchesSession(chatId: string, sessionKey: string): void {
   const check = isChatOnSameInstanceAsSession(chatId, sessionKey);
@@ -973,11 +942,13 @@ export interface AttachChatToSessionInput {
   attachedById?: string | null;
   attachedReason?: string | null;
   contextSnapshotAtAttach?: Record<string, unknown> | null;
+  setOutputTarget?: boolean;
 }
 
 export interface AttachChatToSessionResult {
   subscription: SessionChatSubscriptionRecord;
   created: boolean;
+  outputAttached: boolean;
 }
 
 /**
@@ -1001,7 +972,13 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
   // this chat, return it. Avoids the cross-session probe and short-circuits
   // re-attach calls cheaply.
   const ownActive = dbListSessionChatSubscriptions(input.sessionKey).find((s) => s.chatId === input.chatId);
-  if (ownActive) return { subscription: ownActive, created: false };
+  if (ownActive) {
+    if (input.setOutputTarget ?? true) {
+      const subscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
+      return { subscription, created: false, outputAttached: true };
+    }
+    return { subscription: ownActive, created: false, outputAttached: false };
+  }
 
   // Enforce the spec's single-owner rule with a clear error. The DB also
   // enforces it via UNIQUE(chat_id) WHERE detached_at IS NULL, but the
@@ -1012,7 +989,15 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
   }
   try {
     const subscription = dbCreateSessionChatSubscription(input as CreateSessionChatSubscriptionInput);
-    return { subscription, created: true };
+    if (input.setOutputTarget ?? true) {
+      const outputSubscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
+      return { subscription: outputSubscription, created: true, outputAttached: true };
+    }
+    if (input.role === "primary" && !dbGetSessionOutputAttachment(input.sessionKey)) {
+      const outputSubscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
+      return { subscription: outputSubscription, created: true, outputAttached: true };
+    }
+    return { subscription, created: true, outputAttached: false };
   } catch (err) {
     // The pre-INSERT existingOwner check is racy: another consumer turn
     // may have inserted between the SELECT and the INSERT. Translate the
@@ -1027,30 +1012,28 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
 
 /**
  * Detach a chat from a session. Prevents removing the last active primary
- * subscription (which would orphan the session). Clears focus when the
- * detached chat is currently focused.
+ * subscription (which would orphan the session).
  */
-export function detachChatFromSession(sessionKey: string, chatId: string): { detached: boolean } {
+export function detachChatFromSession(
+  sessionKey: string,
+  chatId: string,
+): { detached: boolean; outputDetached: boolean } {
   const active = dbListSessionChatSubscriptions(sessionKey);
   const target = active.find((s) => s.chatId === chatId);
-  if (!target) return { detached: false };
+  if (!target) return { detached: false, outputDetached: false };
 
   const remainingPrimaries = active.filter((s) => s.role === "primary" && s.chatId !== chatId).length;
   if (target.role === "primary" && remainingPrimaries === 0) {
-    throw new SessionDetachLastPrimaryError(sessionKey, chatId);
+    return {
+      detached: false,
+      outputDetached: dbClearSessionOutputAttachment(sessionKey, chatId),
+    };
   }
 
-  const detached = dbDetachSessionChatSubscription(sessionKey, chatId);
-
-  // Cascade: clearing focus when its target chat is detached. Per spec,
-  // detaching the focused chat MUST clear focus before the next emit so
-  // the resolver doesn't keep pointing at a non-subscribed chat.
-  const focus = dbGetSessionFocus(sessionKey);
-  if (focus && focus.chatId === chatId) {
-    dbClearSessionFocus(sessionKey);
-  }
-
-  return { detached };
+  return {
+    detached: dbDetachSessionChatSubscription(sessionKey, chatId),
+    outputDetached: target.outputAttachedAt !== undefined,
+  };
 }
 
 /**
@@ -1066,72 +1049,4 @@ export function listSessionSubscriptions(sessionKey: string): SessionChatSubscri
  */
 export function findSessionByAttachedChat(chatId: string): SessionChatSubscriptionRecord | null {
   return dbFindActiveSubscriptionByChat(chatId);
-}
-
-export interface SetFocusInput {
-  sessionKey: string;
-  chatId: string;
-  setByType?: AttachedByType;
-  setById?: string | null;
-  setReason?: string | null;
-  expiresAt?: number | null;
-}
-
-/**
- * Set the output focus chat for a session. Enforces the unattached-focus
- * policy: if the target chat is not subscribed, either auto-attach
- * (`auto-follow` policy) or fail closed (`fail-closed`, the default).
- */
-export function setSessionFocus(input: SetFocusInput): SessionFocusRecord {
-  // Instance isolation: focus targets MUST live on the session's own
-  // instance. Same reason as attachChatToSession — output goes via the
-  // chat's instance, which may be a different account entirely.
-  assertChatInstanceMatchesSession(input.chatId, input.sessionKey);
-
-  const subscription = dbListSessionChatSubscriptions(input.sessionKey).find((s) => s.chatId === input.chatId);
-  if (!subscription) {
-    const policy = dbGetUnattachedFocusPolicy(input.sessionKey);
-    if (policy === "fail-closed") {
-      throw new SessionFocusUnattachedError(input.sessionKey, input.chatId);
-    }
-    // auto-follow: create an input subscription on the fly.
-    attachChatToSession({
-      sessionKey: input.sessionKey,
-      chatId: input.chatId,
-      role: "input",
-      attachedByType: input.setByType ?? "system",
-      attachedById: input.setById ?? null,
-      attachedReason: "auto-follow-on-focus",
-    });
-  }
-  return dbSetSessionFocus(input as SetSessionFocusInput);
-}
-
-/**
- * Clear the focus, returning to the default-target behavior (output goes
- * to the chat of the inbound that produced the turn).
- */
-export function clearSessionFocus(sessionKey: string): boolean {
-  return dbClearSessionFocus(sessionKey);
-}
-
-/**
- * Read the current focus row, applying TTL expiry.
- */
-export function getSessionFocus(sessionKey: string): SessionFocusRecord | null {
-  return dbGetSessionFocus(sessionKey);
-}
-
-/**
- * Read the per-session unattached_focus_policy.
- */
-export function getSessionUnattachedFocusPolicy(sessionKey: string): UnattachedFocusPolicy {
-  return dbGetUnattachedFocusPolicy(sessionKey);
-}
-
-/**
- * Write the per-session unattached_focus_policy.
- */
-export function setSessionUnattachedFocusPolicy(sessionKey: string, policy: UnattachedFocusPolicy): void {
-  dbSetUnattachedFocusPolicy(sessionKey, policy);
 }

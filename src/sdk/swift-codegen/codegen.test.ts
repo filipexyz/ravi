@@ -92,9 +92,9 @@ describe("swift-codegen :: emitAllSwift", () => {
   it("threads args and options into flat transport calls", () => {
     const { output } = emitMockSwiftSdk();
     expect(output.client).toContain("public func show(_ id: String) async throws -> ArtifactsShowReturn");
-    expect(output.client).toContain(`body["id"] = try RaviJSON.fromEncodable(id)`);
+    expect(output.client).toContain(`requestBody["id"] = try RaviJSON.fromEncodable(id)`);
     expect(output.client).toContain(
-      `return try await transport.call(groupSegments: ["artifacts"], command: "show", body: body, as: ArtifactsShowReturn.self)`,
+      `return try await transport.call(groupSegments: ["artifacts"], command: "show", body: requestBody, as: ArtifactsShowReturn.self)`,
     );
   });
 
@@ -102,7 +102,7 @@ describe("swift-codegen :: emitAllSwift", () => {
     const { output } = emitMockSwiftSdk();
     expect(output.types).toContain("public struct ContextCredentialsListOptions: Codable, Sendable");
     expect(output.types).toContain("public var limit: String?");
-    expect(output.types).toContain(`body["limit"] = try RaviJSON.fromEncodable(limit)`);
+    expect(output.types).toContain(`body["limit"] = try RaviJSON.fromEncodable(value)`);
     expect(output.client).toContain("public func list(_ options: ContextCredentialsListOptions = .init())");
   });
 
@@ -111,7 +111,7 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.client).toContain(
       "public func rotate(_ agentId: String, _ paths: [String], _ options: ContextCredentialsRotateOptions = .init())",
     );
-    expect(output.client).toContain(`body["paths"] = try RaviJSON.fromEncodable(paths)`);
+    expect(output.client).toContain(`requestBody["paths"] = try RaviJSON.fromEncodable(paths)`);
   });
 
   it("defaults optional positional args to nil", () => {

@@ -5,11 +5,19 @@ import {
   canUseNativeRuntimeSteer,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
+import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
 import type { RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
 import { getOrCreateSession } from "../router/sessions.js";
+import {
+  dbGetDaemonRestartPendingMessages,
+  dbListEligibleDaemonRestartSessionSnapshots,
+  dbMarkDaemonRestartResumeDelivered,
+  dbRecordDaemonRestartSessionSnapshot,
+  dbUpsertDaemonRestartEpoch,
+} from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "../session-trace/query.js";
 
@@ -369,6 +377,126 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
     dispatcher.pendingStartSessions.add("queued");
     expect(dispatcher.canAcceptRuntimePrompt("queued")).toBe(true);
+  });
+
+  it("records daemon restart snapshots for non-idle runtime sessions with pending work", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-restart-snapshot-");
+    try {
+      const now = Date.now();
+      getOrCreateSession("agent:dev:test:restart-active", "dev", stateDir, { name: "restart-active" });
+      getOrCreateSession("agent:dev:test:restart-idle", "dev", stateDir, { name: "restart-idle" });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-active", reason: "test", createdAt: now });
+
+      const dispatcher = createDispatcher(2);
+      dispatcher.streamingSessions.set(
+        "restart-active",
+        createActiveSession({
+          turnActive: true,
+          lastActivity: now - 1_000,
+          pendingMessages: [
+            createQueuedRuntimeUserMessage({
+              prompt: "queued user work",
+              deliveryBarrier: "after_response",
+            }),
+          ],
+        }),
+      );
+      dispatcher.streamingSessions.set(
+        "restart-idle",
+        createActiveSession({
+          turnActive: false,
+          lastActivity: now - 1_000,
+          pendingMessages: [],
+        }),
+      );
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-active",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(1);
+
+      const eligible = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-active",
+        now: now + 1_000,
+      });
+      expect(eligible.map((snapshot) => snapshot.sessionName)).toEqual(["restart-active"]);
+      expect(eligible[0]?.pendingMessageCount).toBe(1);
+
+      const pending = dbGetDaemonRestartPendingMessages("epoch-active", "agent:dev:test:restart-active");
+      expect((pending[0] as RuntimeUserMessage | undefined)?.message.content).toBe("queued user work");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("enforces daemon restart resume window and delivery idempotency", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-restart-eligibility-");
+    try {
+      const now = Date.now();
+      getOrCreateSession("agent:dev:test:restart-fresh", "dev", stateDir, { name: "restart-fresh" });
+      getOrCreateSession("agent:dev:test:restart-stale", "dev", stateDir, { name: "restart-stale" });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-window", reason: "test", createdAt: now });
+
+      dbRecordDaemonRestartSessionSnapshot({
+        restartEpoch: "epoch-window",
+        sessionKey: "agent:dev:test:restart-fresh",
+        sessionName: "restart-fresh",
+        agentId: "dev",
+        runtimeProvider: "codex",
+        activity: "thinking",
+        nonIdle: true,
+        lastActivityAt: now - 1_000,
+        stoppedAt: now - 1_000,
+      });
+      dbRecordDaemonRestartSessionSnapshot({
+        restartEpoch: "epoch-window",
+        sessionKey: "agent:dev:test:restart-stale",
+        sessionName: "restart-stale",
+        agentId: "dev",
+        runtimeProvider: "codex",
+        activity: "thinking",
+        nonIdle: true,
+        lastActivityAt: now - 2 * 60 * 60 * 1000,
+        stoppedAt: now - 2 * 60 * 60 * 1000,
+      });
+
+      expect(
+        dbListEligibleDaemonRestartSessionSnapshots({
+          restartEpoch: "epoch-window",
+          now,
+          windowMs: 60 * 60 * 1000,
+        }).map((snapshot) => snapshot.sessionName),
+      ).toEqual(["restart-fresh"]);
+
+      expect(
+        dbMarkDaemonRestartResumeDelivered({
+          restartEpoch: "epoch-window",
+          sessionKey: "agent:dev:test:restart-fresh",
+          sessionName: "restart-fresh",
+          deliveredAt: now,
+        }),
+      ).toBe(true);
+      expect(
+        dbMarkDaemonRestartResumeDelivered({
+          restartEpoch: "epoch-window",
+          sessionKey: "agent:dev:test:restart-fresh",
+          sessionName: "restart-fresh",
+          deliveredAt: now,
+        }),
+      ).toBe(false);
+      expect(
+        dbListEligibleDaemonRestartSessionSnapshots({
+          restartEpoch: "epoch-window",
+          now,
+          windowMs: 60 * 60 * 1000,
+        }),
+      ).toHaveLength(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 
   it("keeps pending pool starts separate from actual cold starts and traces the canonical session key", async () => {

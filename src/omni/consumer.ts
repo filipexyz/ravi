@@ -1177,6 +1177,10 @@ export class OmniConsumer {
         role,
         attachedByType: "system",
         attachedReason: "inbound-route",
+        // Inbound routing keeps the subscription index warm, but it must not
+        // steal the session's output attachment after an operator attached a
+        // different chat as the output surface.
+        setOutputTarget: role === "primary",
       });
     } catch (error) {
       // Conflict means the chat is currently attached to another session;
@@ -1407,20 +1411,23 @@ export class OmniConsumer {
     }
 
     // Origin hint: when the inbound chat is NOT the session's primary
-    // subscription, prepend a line telling the agent how to address
-    // that chat specifically (via focus, or via attach+focus when the
-    // chat isn't subscribed at all — e.g. route.session redirect or
-    // thread handoff). Silent for the primary chat so normal turns stay
-    // clean. See .ravi/specs/sessions/attach/SPEC.md (Origin Hint).
+    // subscription, prepend a line telling the agent whether the chat is
+    // already attached or should be attached for future turns. Silent for
+    // the primary chat so normal turns stay clean. See
+    // .ravi/specs/sessions/attach/SPEC.md (Origin Hint).
     const subs = listSessionSubscriptions(resolved.sessionKey);
     const primarySub = subs.find((s) => s.role === "primary");
+    const outputSub = subs.find((s) => s.outputAttachedAt !== undefined);
     let originHint: string | undefined;
-    if (!primarySub || primarySub.chatId !== canonicalChat.id) {
+    if (!primarySub || primarySub.chatId !== canonicalChat.id || outputSub?.chatId !== canonicalChat.id) {
       const sessionRef = resolved.sessionName ?? resolved.sessionKey;
       const isAttached = subs.some((s) => s.chatId === canonicalChat.id);
+      const outputPart = outputSub
+        ? `A sessão responde no chat atachado como output (${outputSub.chatId}).`
+        : "A sessão não tem chat de output atachado; resposta externa fica desligada.";
       originHint = isAttached
-        ? `[origin] inbound veio de ${canonicalChat.id} (input subscription da sessão "${sessionRef}"). Este chat já está atachado nesta sessão; a resposta desta turn sai no inbound source (este chat).`
-        : `[origin] inbound veio de ${canonicalChat.id}, NÃO atachado a "${sessionRef}". Para manter próximas mensagens deste chat nesta sessão: \`ravi sessions attach ${sessionRef} --chat ${canonicalChat.id}\`.`;
+        ? `[origin] inbound veio de ${canonicalChat.id} (subscription da sessão "${sessionRef}"). Este chat já está atachado como input. ${outputPart} Para fazer respostas saírem neste chat: \`ravi sessions attach ${sessionRef} --chat ${canonicalChat.id}\`.`
+        : `[origin] inbound veio de ${canonicalChat.id}, NÃO atachado a "${sessionRef}". ${outputPart} Para atachar esta sessão neste chat e fazer respostas saírem aqui: \`ravi sessions attach ${sessionRef} --chat ${canonicalChat.id}\`.`;
     }
 
     const envelope = this.formatEnvelope(

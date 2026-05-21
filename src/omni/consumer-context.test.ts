@@ -332,7 +332,7 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
-  it("renders attached input origin hints without suggesting focus", async () => {
+  it("renders attached input origin hints with attach-as-output guidance", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     const primaryChat = actualDbUpsertChat({
       channel: "whatsapp",
@@ -393,8 +393,9 @@ describe("OmniConsumer channel context", () => {
     expect(promptCalls).toHaveLength(1);
     const [, prompt] = promptCalls[0];
     expect(prompt.prompt).toContain(
-      `[origin] inbound veio de ${inputChat?.id} (input subscription da sessão "dev"). Este chat já está atachado nesta sessão;`,
+      `[origin] inbound veio de ${inputChat?.id} (subscription da sessão "dev"). Este chat já está atachado como input.`,
     );
+    expect(prompt.prompt).toContain("Para fazer respostas saírem neste chat");
     expect(prompt.prompt).not.toContain("ravi sessions focus");
   });
 

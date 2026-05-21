@@ -11,8 +11,8 @@ description: |
   - Enviar prompts, perguntas ou comandos entre sessões
   - Ler histórico de mensagens de uma sessão
   - Inspecionar trace SQLite de uma sessão para incidentes de runtime/canal
-  - Atachar múltiplos chats numa mesma sessão (multi-input, histórico compartilhado)
-  - Direcionar output de uma sessão pra um chat específico (focus)
+  - Atachar um chat como output target de uma sessão
+  - Atachar múltiplos chats numa mesma sessão sem fork de histórico
 ---
 
 # Sessions Manager
@@ -91,47 +91,39 @@ ravi sessions prune --inactive-for 12h --ephemeral
 
 Sem `--execute`, `prune` é sempre dry-run. Use o dry-run antes de apagar em lote.
 
-### Attach + Focus (multi-input e output target)
+### Attach (output target + multi-input)
 
-**Diferença chave vs routes:** `routes` decide qual *agent* atende um chat; `attach` decide qual *sessão* recebe a inbound. Sem attach, cada (agent, chat) vira sua própria sessão. Com attach, uma sessão pode escutar vários chats e compartilhar histórico.
+**Diferença chave vs routes:** `routes` decide qual *agent* atende um chat; `attach` decide qual chat recebe o output externo da sessão e também permite inbound desse chat no mesmo histórico. Sem attach explícito, sessões existentes usam o primary backfilled como output. Com attach, a sessão passa a responder no chat anexado, mesmo quando o inbound veio de outro chat.
 
 Ver spec `sessions/attach` pro modelo completo.
 
 ```bash
-# Listar chats que a sessão escuta
+# Listar chats atachados e qual recebe output
 ravi sessions subscriptions <session>
 
-# Atachar um chat na sessão (multi-input)
+# Atachar um chat como output target da sessão
 ravi sessions attach <session> --chat <chat-id> [--reason "..."]
 
-# Desatachar
+# Desatachar output/chat
 ravi sessions detach <session> --chat <chat-id>
-
-# Focus: direcionar output pra um chat específico (sticky até clear/expire)
-ravi sessions focus <session> --chat <chat-id> [--reason "..."] [--expires 30m]
-ravi sessions focus <session> --clear
-ravi sessions focus <session> --show
-
-# Mudar política de focus pra chat não-atachado
-ravi sessions set-unattached-focus-policy <session> fail-closed|auto-follow
 ```
 
 **Receitas operacionais (validadas em produção):**
 
-1. **Unificar histórico de N grupos numa sessão.** Caso típico: dev atende o grupo `ravi - dev` e você quer que o mesmo dev atenda `ravi - dev - test` com o mesmo histórico.
-   - Se o grupo novo já criou uma sessão paralela (`dev-2`, vazia): `sessions delete dev-2` → `sessions attach dev --chat <chat-id-do-test>`.
-   - Próxima inbound do test cai na sessão dev existente via subscription override (não fork).
+1. **Responder em outro grupo com a mesma sessão.** Caso típico: você está falando com `dev` no grupo de teste, mas quer que o resultado apareça no grupo principal.
+   - `sessions attach dev --chat <chat-id-do-grupo-principal>`
+   - Próximas respostas da sessão `dev` saem no grupo principal, mesmo se o inbound vier do grupo de teste.
+   - O comando imprime o hint de detach para desligar esse output depois.
 
-2. **Migrar grupo de um agent pra outro (sem unificar sessão).** Caso: grupo nasceu na sessão de onboarding (auto-criada pelo default agent da instance), você quer mover pro agent `dev` com sessão SEPARADA.
+2. **Unificar histórico de N grupos numa sessão.** Caso: dev atende o grupo `ravi - dev` e você quer que o mesmo dev também receba inbound de `ravi - dev - test`.
+   - Se o grupo novo já criou uma sessão paralela (`dev-2`, vazia): `sessions delete dev-2` → `sessions attach dev --chat <chat-id-do-test>`.
+   - Próxima inbound do test cai na sessão dev existente via subscription override. O output fica no último chat anexado como output.
+
+3. **Migrar grupo de um agent pra outro (sem unificar sessão).** Caso: grupo nasceu na sessão de onboarding (auto-criada pelo default agent da instance), você quer mover pro agent `dev` com sessão SEPARADA.
    - `ravi instances routes add <instance> group:<id> <novo-agent> --priority 10`
    - O `routes add` faz cleanup automático de session conflitante (chama `Cleaned N conflicting session(s)`).
    - Próxima inbound: matchRoute → novo agent → cria sessão nova pra esse (agent, grupo).
-   - Não confunda com receita 1 — essa NÃO compartilha histórico.
-
-3. **Responder uma turn em chat diferente do source (one-shot ou sticky).**
-   - `sessions focus <session> --chat <chat-alvo>` antes do agent emitir.
-   - Próximas emissões da sessão saem no chat-alvo até `--clear` ou expire.
-   - Output target resolution: `explicit per-turn > focus > inbound source > fail closed`.
+   - Não confunda com attach — essa NÃO compartilha histórico.
 
 **Como compõe na prática (sequence diagram resumido):**
 
@@ -146,17 +138,16 @@ inbound chega ─► consumer normaliza chat
               ─► dispatch turn na sessão escolhida
               ─► runtime gera resposta
               ─► resolveSessionOutputTarget:
-                 1. explicit target (per-turn) → win
-                 2. session_focus.chat_id (se subscription ainda ativa) → win
-                 3. inbound source chat → fallback
-                 4. nada → fail closed (drop response, trace)
+                 1. chat atachado como output → win
+                 2. nada → fail closed (sem envio externo)
               ─► gateway emite no target resolvido
 ```
 
 **Anti-patterns:**
 
 - ❌ Adicionar route pra "trocar destino" quando o chat já está atachado em outra sessão. A subscription override puxa o inbound de volta. Use detach/delete da sessão antiga antes, ou attach explícito na nova.
-- ❌ Setar focus pra um chat não atachado com policy `fail-closed`. Vai dar `SessionFocusUnattachedError`. Atachar antes, ou trocar policy pra `auto-follow`.
+- ❌ Tentar usar `focus` pra responder em outro chat. Focus foi removido; `attach` é o primitive que escolhe o chat de output.
+- ❌ Deixar inbound-route bookkeeping roubar output. Inbound pode criar subscription, mas não deve mudar o output target escolhido por operador.
 - ❌ Esperar que `attach` sozinho mude o agent que atende o chat. Attach decide sessão; agent vem da route ou do default da instance.
 
 **Quando route vs attach:**
@@ -164,8 +155,7 @@ inbound chega ─► consumer normaliza chat
 | Você quer | Use |
 |-----------|-----|
 | Outro agent atender o chat (histórico isolado) | `instances routes add` |
-| Mesma sessão atender N chats (histórico compartilhado) | `sessions attach` |
-| Mudar onde a sessão responde (input fica igual) | `sessions focus` |
+| Mesma sessão responder em um chat específico | `sessions attach` |
 | Forçar uma sessão específica num chat | `routes add ... --session <name>` (redirect estático) |
 
 ### Sessões Efêmeras

@@ -28,6 +28,13 @@ export interface RaviBotOptions {
   config: Config;
 }
 
+export interface RaviBotStopOptions {
+  restart?: {
+    restartEpoch: string;
+    reason: string;
+  };
+}
+
 export class RaviBot {
   private config: Config;
   private running = false;
@@ -114,11 +121,19 @@ export class RaviBot {
     }
   }
 
-  async stop(): Promise<void> {
+  async stop(options: RaviBotStopOptions = {}): Promise<void> {
     log.info("Stopping Ravi bot...");
     this.running = false;
 
     this.promptSubscription.stopHealthCheck();
+
+    if (options.restart) {
+      this.sessionDispatcher.recordDaemonRestartSnapshot({
+        restartEpoch: options.restart.restartEpoch,
+        reason: options.restart.reason,
+        stoppedAt: Date.now(),
+      });
+    }
 
     this.sessionDispatcher.shutdownAll();
 

@@ -78,6 +78,8 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
 - If workspace state is dirty before a rebase, Ravi MUST ask the user whether to keep or revert local file edits before the agent modifies files again.
 - Fork/rebase operations MUST be traceable through session trace events and final adapter requests.
 - Fork/rebase operations MUST fail closed with a visible reason if Ravi cannot build a faithful-enough fork plan.
+- Daemon restart resume events MUST preserve pending prompt atoms and queued user messages. They MUST NOT clear, reorder, or replace pending work.
+- Runtime continuity after daemon restart MUST obey `daemon/restart/active-session-resume`: only non-idle sessions with eligible activity inside the 1 hour restart resume window are automatically resumed.
 
 ## Required Data Model
 

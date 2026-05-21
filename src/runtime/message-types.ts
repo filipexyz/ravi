@@ -85,6 +85,11 @@ export interface ObservationPromptMetadata {
   eventIds: string[];
 }
 
+export interface DaemonRestartResumePromptMetadata {
+  restartEpoch: string;
+  sessionKey?: string;
+}
+
 /** Prompt message structure */
 export interface PromptMessage {
   prompt: string;
@@ -119,6 +124,8 @@ export interface PromptMessage {
    * were already persisted and stashed by the previous runtime session.
    */
   _resumeStashedMessages?: boolean;
+  /** Internal daemon restart resume envelope used for idempotent fan-out. */
+  _daemonRestartResume?: DaemonRestartResumePromptMetadata;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

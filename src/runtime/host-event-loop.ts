@@ -592,11 +592,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
     const emitId = Math.random().toString(36).slice(2, 8);
-    // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`:
-    // session_focus (if set and the chat is still subscribed) wins over
-    // the inbound source. Sentinel agents observe silently → no target.
+    // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`.
+    // Attach selects the chat that receives this session's external output.
+    // Sentinel agents observe silently → no target.
     let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTarget>["target"] | undefined;
-    let resolvedSource: ReturnType<typeof resolveSessionOutputTarget>["source"] = "inbound-source";
+    let resolvedSource: ReturnType<typeof resolveSessionOutputTarget>["source"] = "unresolved";
     if (streaming.agentMode !== "sentinel") {
       const resolution = resolveSessionOutputTarget({
         sessionKey: session.sessionKey,
@@ -604,9 +604,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
       resolvedTarget = resolution.target;
       resolvedSource = resolution.source;
-      if (resolution.source === "focus") {
-        log.info("Emit redirected by session focus", { sessionName, focusChatId: resolution.target?.canonicalChatId });
-      }
       if (!resolution.target) {
         log.warn("Response target unresolved — dropping emit", { sessionName, source: resolvedSource });
         return;

@@ -1,11 +1,9 @@
 /**
- * Tests for sessions/attach Fase 1 — subscriptions + focus + policy.
+ * Tests for sessions/attach — subscriptions + output attachment.
  *
  * Covers the DB helpers (dbCreateSessionChatSubscription, dbDetach...,
- * dbSetSessionFocus, ...) plus the high-level wrappers in `sessions.ts`
- * that enforce cross-session uniqueness, last-primary protection,
- * unattached-focus-policy, and the cascade rule that detaching the
- * focused chat clears focus.
+ * ...) plus the high-level wrappers in `sessions.ts` that enforce
+ * cross-session uniqueness and output-target behavior.
  *
  * See .ravi/specs/sessions/attach/SPEC.md
  */
@@ -14,19 +12,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   attachChatToSession,
-  clearSessionFocus,
   detachChatFromSession,
   findSessionByAttachedChat,
   getOrCreateSession,
-  getSessionFocus,
-  getSessionUnattachedFocusPolicy,
   listSessionSubscriptions,
   SessionAttachConflictError,
   SessionAttachInstanceMismatchError,
-  SessionDetachLastPrimaryError,
-  SessionFocusUnattachedError,
-  setSessionFocus,
-  setSessionUnattachedFocusPolicy,
   subscriptionAllowsCrossInstance,
 } from "./sessions.js";
 import {
@@ -53,7 +44,7 @@ function makeSession(suffix: string) {
   return getOrCreateSession(`agent:dev:${suffix}`, "dev", "/tmp/dev");
 }
 
-describe("sessions/attach — subscriptions", () => {
+describe("sessions/attach — subscriptions + output attachment", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-session-attach-");
   });
@@ -62,14 +53,16 @@ describe("sessions/attach — subscriptions", () => {
     stateDir = null;
   });
 
-  it("attach creates a new subscription with role 'input' by default", () => {
+  it("attach creates a new subscription and selects it as output by default", () => {
     const session = makeSession("s1");
     const chat = makeChat("c1");
     const result = attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id, attachedByType: "user" });
     expect(result.created).toBe(true);
+    expect(result.outputAttached).toBe(true);
     expect(result.subscription.role).toBe("input");
     expect(result.subscription.sessionKey).toBe(session.sessionKey);
     expect(result.subscription.chatId).toBe(chat.id);
+    expect(result.subscription.outputAttachedAt).toBeNumber();
   });
 
   it("re-attach is idempotent — returns the existing active row", () => {
@@ -79,6 +72,7 @@ describe("sessions/attach — subscriptions", () => {
     const second = attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
     expect(first.subscription.id).toBe(second.subscription.id);
     expect(second.created).toBe(false);
+    expect(second.outputAttached).toBe(true);
     expect(listSessionSubscriptions(session.sessionKey)).toHaveLength(1);
   });
 
@@ -133,15 +127,17 @@ describe("sessions/attach — subscriptions", () => {
     ).toThrow(SubscriptionChatConflictError);
   });
 
-  it("detach soft-deletes and returns true; second detach is a no-op", () => {
+  it("detach soft-deletes non-primary rows and clears output", () => {
     const session = makeSession("s3");
     const chat = makeChat("c3");
     attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
     const first = detachChatFromSession(session.sessionKey, chat.id);
     expect(first.detached).toBe(true);
+    expect(first.outputDetached).toBe(true);
     expect(listSessionSubscriptions(session.sessionKey)).toHaveLength(0);
     const second = detachChatFromSession(session.sessionKey, chat.id);
     expect(second.detached).toBe(false);
+    expect(second.outputDetached).toBe(false);
   });
 
   it("detach-then-reattach reuses the soft-deleted row", () => {
@@ -154,11 +150,33 @@ describe("sessions/attach — subscriptions", () => {
     expect(second.created).toBe(true);
   });
 
-  it("detaching the only primary subscription fails closed", () => {
+  it("detaching the only primary clears output but preserves input subscription", () => {
     const session = makeSession("solo");
     const chat = makeChat("solo-chat");
     attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id, role: "primary" });
-    expect(() => detachChatFromSession(session.sessionKey, chat.id)).toThrow(SessionDetachLastPrimaryError);
+    const result = detachChatFromSession(session.sessionKey, chat.id);
+    expect(result).toEqual({ detached: false, outputDetached: true });
+    const subs = listSessionSubscriptions(session.sessionKey);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].role).toBe("primary");
+    expect(subs[0].outputAttachedAt).toBeUndefined();
+  });
+
+  it("inbound bookkeeping can subscribe without stealing the output attachment", () => {
+    const session = makeSession("bookkeeping");
+    const outputChat = makeChat("bookkeeping-output");
+    const inputChat = makeChat("bookkeeping-input");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
+    attachChatToSession({
+      sessionKey: session.sessionKey,
+      chatId: inputChat.id,
+      setOutputTarget: false,
+      attachedReason: "inbound-route",
+    });
+
+    const subs = listSessionSubscriptions(session.sessionKey);
+    expect(subs.find((s) => s.chatId === outputChat.id)?.outputAttachedAt).toBeNumber();
+    expect(subs.find((s) => s.chatId === inputChat.id)?.outputAttachedAt).toBeUndefined();
   });
 
   it("findSessionByAttachedChat returns the owner subscription", () => {
@@ -176,73 +194,6 @@ describe("sessions/attach — subscriptions", () => {
     attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
     detachChatFromSession(session.sessionKey, chat.id);
     expect(findSessionByAttachedChat(chat.id)).toBeNull();
-  });
-});
-
-describe("sessions/attach — focus", () => {
-  beforeEach(async () => {
-    stateDir = await createIsolatedRaviState("ravi-session-focus-");
-  });
-  afterEach(async () => {
-    await cleanupIsolatedRaviState(stateDir);
-    stateDir = null;
-  });
-
-  it("setSessionFocus on an attached chat persists the row", () => {
-    const session = makeSession("fs1");
-    const chat = makeChat("fs1c");
-    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
-    const focus = setSessionFocus({ sessionKey: session.sessionKey, chatId: chat.id, setByType: "user" });
-    expect(focus.chatId).toBe(chat.id);
-    expect(getSessionFocus(session.sessionKey)?.chatId).toBe(chat.id);
-  });
-
-  it("setSessionFocus on an unattached chat fails closed under default policy", () => {
-    const session = makeSession("fs2");
-    const chat = makeChat("fs2c");
-    expect(getSessionUnattachedFocusPolicy(session.sessionKey)).toBe("fail-closed");
-    expect(() => setSessionFocus({ sessionKey: session.sessionKey, chatId: chat.id })).toThrow(
-      SessionFocusUnattachedError,
-    );
-    expect(getSessionFocus(session.sessionKey)).toBeNull();
-  });
-
-  it("setSessionFocus on an unattached chat auto-attaches under auto-follow policy", () => {
-    const session = makeSession("fs3");
-    const chat = makeChat("fs3c");
-    setSessionUnattachedFocusPolicy(session.sessionKey, "auto-follow");
-    const focus = setSessionFocus({ sessionKey: session.sessionKey, chatId: chat.id });
-    expect(focus.chatId).toBe(chat.id);
-    expect(listSessionSubscriptions(session.sessionKey).map((s) => s.chatId)).toContain(chat.id);
-  });
-
-  it("expired focus is treated as absent and lazily cleaned up", () => {
-    const session = makeSession("fs4");
-    const chat = makeChat("fs4c");
-    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
-    setSessionFocus({ sessionKey: session.sessionKey, chatId: chat.id, expiresAt: Date.now() - 1000 });
-    expect(getSessionFocus(session.sessionKey)).toBeNull();
-  });
-
-  it("clearSessionFocus removes the row idempotently", () => {
-    const session = makeSession("fs5");
-    const chat = makeChat("fs5c");
-    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
-    setSessionFocus({ sessionKey: session.sessionKey, chatId: chat.id });
-    expect(clearSessionFocus(session.sessionKey)).toBe(true);
-    expect(clearSessionFocus(session.sessionKey)).toBe(false);
-  });
-
-  it("detaching the focused chat clears focus (cascade)", () => {
-    const session = makeSession("fs6");
-    const primary = makeChat("primary");
-    const focused = makeChat("focused");
-    attachChatToSession({ sessionKey: session.sessionKey, chatId: primary.id, role: "primary" });
-    attachChatToSession({ sessionKey: session.sessionKey, chatId: focused.id });
-    setSessionFocus({ sessionKey: session.sessionKey, chatId: focused.id });
-    expect(getSessionFocus(session.sessionKey)?.chatId).toBe(focused.id);
-    detachChatFromSession(session.sessionKey, focused.id);
-    expect(getSessionFocus(session.sessionKey)).toBeNull();
   });
 });
 
@@ -354,6 +305,7 @@ describe("sessions/attach — migration (dedupe + backfill)", () => {
     expect(olderSubs.length + newerSubs.length).toBe(1);
     // Most recent binding wins (newer.updated_at > older.updated_at).
     expect(newerSubs).toHaveLength(1);
+    expect(newerSubs[0].outputAttachedAt).toBeNumber();
     expect(olderSubs).toHaveLength(0);
   });
 
@@ -366,6 +318,7 @@ describe("sessions/attach — migration (dedupe + backfill)", () => {
     dbRunSessionAttachMigrationForTests();
     const after1 = listSessionSubscriptions(session.sessionKey);
     expect(after1).toHaveLength(1);
+    expect(after1[0].outputAttachedAt).toBeNumber();
 
     // Re-run; should not crash, should not duplicate, should not lose data.
     dbRunSessionAttachMigrationForTests();
@@ -404,6 +357,7 @@ describe("sessions/attach — migration (dedupe + backfill)", () => {
     const bSubs = listSessionSubscriptions(sessionB.sessionKey).filter((s) => s.chatId === chat.id);
     expect(aSubs).toHaveLength(0);
     expect(bSubs).toHaveLength(1);
+    expect(bSubs[0].outputAttachedAt).toBeNumber();
     expect(findSessionByAttachedChat(chat.id)?.sessionKey).toBe(sessionB.sessionKey);
   });
 });

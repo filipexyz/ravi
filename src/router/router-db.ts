@@ -200,6 +200,31 @@ interface ContextRow {
   revoked_at: number | null;
 }
 
+interface DaemonRestartEpochRow {
+  restart_epoch: string;
+  reason: string;
+  caller_session_name: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface DaemonRestartSessionSnapshotRow {
+  restart_epoch: string;
+  session_key: string;
+  session_name: string;
+  agent_id: string | null;
+  runtime_provider: string | null;
+  activity: string;
+  non_idle: number;
+  last_activity_at: number;
+  stopped_at: number;
+  pending_message_count: number;
+  pending_messages_json: string | null;
+  metadata_json: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 interface ChatRow {
   id: string;
   channel: string;
@@ -692,7 +717,6 @@ export interface UpsertSessionParticipantInput {
 // see .ravi/specs/sessions/attach/SPEC.md
 export type SubscriptionRole = "primary" | "input" | "mirror";
 export type AttachedByType = "user" | "agent" | "system";
-export type UnattachedFocusPolicy = "fail-closed" | "auto-follow";
 
 export interface SessionChatSubscriptionRecord {
   id: number;
@@ -703,6 +727,7 @@ export interface SessionChatSubscriptionRecord {
   attachedById?: string;
   attachedReason?: string;
   contextSnapshotAtAttach?: Record<string, unknown>;
+  outputAttachedAt?: number;
   createdAt: number;
   updatedAt: number;
   detachedAt?: number;
@@ -716,26 +741,55 @@ export interface CreateSessionChatSubscriptionInput {
   attachedById?: string | null;
   attachedReason?: string | null;
   contextSnapshotAtAttach?: Record<string, unknown> | null;
+  outputAttachedAt?: number | null;
 }
 
-export interface SessionFocusRecord {
-  sessionKey: string;
-  chatId: string;
-  setByType: AttachedByType;
-  setById?: string;
-  setReason?: string;
-  expiresAt?: number;
+export interface DaemonRestartEpochRecord {
+  restartEpoch: string;
+  reason: string;
+  callerSessionName?: string;
   createdAt: number;
   updatedAt: number;
 }
 
-export interface SetSessionFocusInput {
+export interface DaemonRestartEpochInput {
+  restartEpoch: string;
+  reason: string;
+  callerSessionName?: string | null;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface DaemonRestartSessionSnapshotRecord {
+  restartEpoch: string;
   sessionKey: string;
-  chatId: string;
-  setByType?: AttachedByType;
-  setById?: string | null;
-  setReason?: string | null;
-  expiresAt?: number | null;
+  sessionName: string;
+  agentId?: string;
+  runtimeProvider?: string;
+  activity: string;
+  nonIdle: boolean;
+  lastActivityAt: number;
+  stoppedAt: number;
+  pendingMessageCount: number;
+  pendingMessagesJson?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DaemonRestartSessionSnapshotInput {
+  restartEpoch: string;
+  sessionKey: string;
+  sessionName: string;
+  agentId?: string | null;
+  runtimeProvider?: string | null;
+  activity: string;
+  nonIdle: boolean;
+  lastActivityAt: number;
+  stoppedAt: number;
+  pendingMessages?: unknown[];
+  metadata?: Record<string, unknown> | null;
+  recordedAt?: number;
 }
 
 export interface ListContextsOptions {
@@ -1170,6 +1224,7 @@ function getDb(): Database {
       attached_by_id TEXT,
       attached_reason TEXT,
       context_snapshot_at_attach_json TEXT,
+      output_attached_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       detached_at INTEGER
@@ -1179,19 +1234,6 @@ function getDb(): Database {
       WHERE detached_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_session_chat_subscriptions_session
       ON session_chat_subscriptions(session_key, detached_at);
-
-    CREATE TABLE IF NOT EXISTS session_focus (
-      session_key TEXT PRIMARY KEY REFERENCES sessions(session_key) ON DELETE CASCADE,
-      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-      set_by_type TEXT NOT NULL DEFAULT 'system' CHECK(set_by_type IN ('user', 'agent', 'system')),
-      set_by_id TEXT,
-      set_reason TEXT,
-      expires_at INTEGER,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_session_focus_chat ON session_focus(chat_id);
-    CREATE INDEX IF NOT EXISTS idx_session_focus_expires ON session_focus(expires_at) WHERE expires_at IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS session_participants (
       id TEXT PRIMARY KEY,
@@ -1539,6 +1581,44 @@ function getDb(): Database {
       ON session_turns(session_key, started_at);
     CREATE INDEX IF NOT EXISTS idx_session_turns_run
       ON session_turns(run_id, started_at);
+
+    CREATE TABLE IF NOT EXISTS daemon_restart_epochs (
+      restart_epoch TEXT PRIMARY KEY,
+      reason TEXT NOT NULL,
+      caller_session_name TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS daemon_restart_session_snapshots (
+      restart_epoch TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      session_name TEXT NOT NULL,
+      agent_id TEXT,
+      runtime_provider TEXT,
+      activity TEXT NOT NULL,
+      non_idle INTEGER NOT NULL DEFAULT 0 CHECK(non_idle IN (0,1)),
+      last_activity_at INTEGER NOT NULL,
+      stopped_at INTEGER NOT NULL,
+      pending_message_count INTEGER NOT NULL DEFAULT 0,
+      pending_messages_json TEXT,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (restart_epoch, session_key),
+      FOREIGN KEY(restart_epoch) REFERENCES daemon_restart_epochs(restart_epoch) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_daemon_restart_snapshots_epoch_active
+      ON daemon_restart_session_snapshots(restart_epoch, non_idle, stopped_at, last_activity_at);
+
+    CREATE TABLE IF NOT EXISTS daemon_restart_resume_deliveries (
+      restart_epoch TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      delivered_at INTEGER NOT NULL,
+      PRIMARY KEY (restart_epoch, session_key),
+      FOREIGN KEY(restart_epoch) REFERENCES daemon_restart_epochs(restart_epoch) ON DELETE CASCADE
+    );
 
     CREATE TABLE IF NOT EXISTS session_trace_blobs (
       sha256 TEXT PRIMARY KEY,
@@ -2216,9 +2296,10 @@ function ensureIdentityChatMigrations(database: Database): void {
   );
   database.exec("CREATE INDEX IF NOT EXISTS idx_session_events_canonical_chat ON session_events(canonical_chat_id)");
 
-  // sessions/attach: per-session output policy for focus on unattached chats.
-  // See .ravi/specs/sessions/attach/SPEC.md
-  ensureColumn(database, "sessions", "unattached_focus_policy", "TEXT NOT NULL DEFAULT 'fail-closed'");
+  // sessions/attach owns the output attachment. Remove legacy focus state
+  // so old focus rows cannot surprise a future downgrade/inspection path.
+  database.exec("DROP TABLE IF EXISTS session_focus");
+  ensureColumn(database, "session_chat_subscriptions", "output_attached_at", "INTEGER");
 
   // sessions/attach: enforce the spec invariant that a chat can only be
   // active in one session at a time. Order matters here:
@@ -2241,6 +2322,11 @@ function ensureIdentityChatMigrations(database: Database): void {
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
     );
     backfillSessionChatSubscriptionsFromBindings(database);
+    backfillSessionOutputAttachments(database);
+    database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
+    database.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_output_target ON session_chat_subscriptions(session_key) WHERE detached_at IS NULL AND output_attached_at IS NOT NULL",
+    );
   })();
 }
 
@@ -2257,6 +2343,11 @@ export function dbRunSessionAttachMigrationForTests(): void {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
   );
   backfillSessionChatSubscriptionsFromBindings(db);
+  backfillSessionOutputAttachments(db);
+  db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_output_target ON session_chat_subscriptions(session_key) WHERE detached_at IS NULL AND output_attached_at IS NOT NULL",
+  );
 }
 
 function dedupeSessionChatSubscriptions(database: Database): void {
@@ -2302,11 +2393,11 @@ function backfillSessionChatSubscriptionsFromBindings(database: Database): void 
       `
       INSERT INTO session_chat_subscriptions (
         session_key, chat_id, role, attached_by_type, attached_by_id,
-        attached_reason, context_snapshot_at_attach_json, created_at, updated_at, detached_at
+        attached_reason, context_snapshot_at_attach_json, output_attached_at, created_at, updated_at, detached_at
       )
       SELECT
         ranked.session_key, ranked.chat_id, 'primary', 'system', NULL,
-        'backfill-from-session-chat-bindings', NULL, ?, ?, NULL
+        'backfill-from-session-chat-bindings', NULL, ?, ?, ?, NULL
       FROM (
         SELECT b.session_key,
                b.chat_id,
@@ -2324,9 +2415,45 @@ function backfillSessionChatSubscriptionsFromBindings(database: Database): void 
         )
     `,
     )
-    .run(now, now);
+    .run(now, now, now);
   if (result.changes > 0) {
     log.info("Backfilled session_chat_subscriptions from session_chat_bindings", { rows: result.changes });
+  }
+}
+
+function backfillSessionOutputAttachments(database: Database): void {
+  const now = Date.now();
+  const result = database
+    .prepare(
+      `
+      UPDATE session_chat_subscriptions
+      SET output_attached_at = ?, updated_at = ?
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT s.id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY s.session_key
+                   ORDER BY CASE WHEN s.role = 'primary' THEN 0 ELSE 1 END,
+                            s.updated_at DESC,
+                            s.id DESC
+                 ) AS rn
+          FROM session_chat_subscriptions s
+          WHERE s.detached_at IS NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM session_chat_subscriptions o
+              WHERE o.session_key = s.session_key
+                AND o.detached_at IS NULL
+                AND o.output_attached_at IS NOT NULL
+            )
+        )
+        WHERE rn = 1
+      )
+    `,
+    )
+    .run(now, now);
+  if (result.changes > 0) {
+    log.info("Backfilled session output attachments", { rows: result.changes });
   }
 }
 
@@ -2344,6 +2471,16 @@ function parseJsonRecord(value: string | null): Record<string, unknown> | undefi
       : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function parseJsonArray(value: string | null): unknown[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
 }
 
@@ -3776,6 +3913,202 @@ function rowToContext(row: ContextRow): ContextRecord {
   return result;
 }
 
+function rowToDaemonRestartEpoch(row: DaemonRestartEpochRow): DaemonRestartEpochRecord {
+  return {
+    restartEpoch: row.restart_epoch,
+    reason: row.reason,
+    callerSessionName: row.caller_session_name ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToDaemonRestartSessionSnapshot(row: DaemonRestartSessionSnapshotRow): DaemonRestartSessionSnapshotRecord {
+  return {
+    restartEpoch: row.restart_epoch,
+    sessionKey: row.session_key,
+    sessionName: row.session_name,
+    agentId: row.agent_id ?? undefined,
+    runtimeProvider: row.runtime_provider ?? undefined,
+    activity: row.activity,
+    nonIdle: row.non_idle === 1,
+    lastActivityAt: row.last_activity_at,
+    stoppedAt: row.stopped_at,
+    pendingMessageCount: row.pending_message_count,
+    pendingMessagesJson: row.pending_messages_json ?? undefined,
+    metadata: parseJsonRecord(row.metadata_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function dbUpsertDaemonRestartEpoch(input: DaemonRestartEpochInput): DaemonRestartEpochRecord {
+  const createdAt = input.createdAt ?? Date.now();
+  const updatedAt = input.updatedAt ?? createdAt;
+  return executeWrite(
+    getDb(),
+    (database) => {
+      database
+        .prepare(
+          `
+          INSERT INTO daemon_restart_epochs (
+            restart_epoch, reason, caller_session_name, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(restart_epoch) DO UPDATE SET
+            reason = excluded.reason,
+            caller_session_name = COALESCE(excluded.caller_session_name, daemon_restart_epochs.caller_session_name),
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run(input.restartEpoch, input.reason, input.callerSessionName ?? null, createdAt, updatedAt);
+
+      const row = database
+        .prepare("SELECT * FROM daemon_restart_epochs WHERE restart_epoch = ?")
+        .get(input.restartEpoch) as DaemonRestartEpochRow | undefined;
+      if (!row) {
+        throw new Error(`Restart epoch not found after upsert: ${input.restartEpoch}`);
+      }
+      return rowToDaemonRestartEpoch(row);
+    },
+    { label: "daemon_restart_epoch_upsert" },
+  );
+}
+
+export function dbRecordDaemonRestartSessionSnapshot(
+  input: DaemonRestartSessionSnapshotInput,
+): DaemonRestartSessionSnapshotRecord {
+  const now = input.recordedAt ?? Date.now();
+  const pendingMessages = input.pendingMessages ?? [];
+  const pendingMessagesJson = pendingMessages.length > 0 ? JSON.stringify(pendingMessages) : null;
+  return executeWrite(
+    getDb(),
+    (database) => {
+      database
+        .prepare(
+          `
+          INSERT INTO daemon_restart_session_snapshots (
+            restart_epoch, session_key, session_name, agent_id, runtime_provider,
+            activity, non_idle, last_activity_at, stopped_at, pending_message_count,
+            pending_messages_json, metadata_json, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(restart_epoch, session_key) DO UPDATE SET
+            session_name = excluded.session_name,
+            agent_id = COALESCE(excluded.agent_id, daemon_restart_session_snapshots.agent_id),
+            runtime_provider = COALESCE(excluded.runtime_provider, daemon_restart_session_snapshots.runtime_provider),
+            activity = excluded.activity,
+            non_idle = excluded.non_idle,
+            last_activity_at = MAX(daemon_restart_session_snapshots.last_activity_at, excluded.last_activity_at),
+            stopped_at = MAX(daemon_restart_session_snapshots.stopped_at, excluded.stopped_at),
+            pending_message_count = excluded.pending_message_count,
+            pending_messages_json = excluded.pending_messages_json,
+            metadata_json = excluded.metadata_json,
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run(
+          input.restartEpoch,
+          input.sessionKey,
+          input.sessionName,
+          input.agentId ?? null,
+          input.runtimeProvider ?? null,
+          input.activity,
+          input.nonIdle ? 1 : 0,
+          input.lastActivityAt,
+          input.stoppedAt,
+          pendingMessages.length,
+          pendingMessagesJson,
+          cleanJsonRecord(input.metadata ?? null),
+          now,
+          now,
+        );
+
+      const row = database
+        .prepare("SELECT * FROM daemon_restart_session_snapshots WHERE restart_epoch = ? AND session_key = ?")
+        .get(input.restartEpoch, input.sessionKey) as DaemonRestartSessionSnapshotRow | undefined;
+      if (!row) {
+        throw new Error(`Restart snapshot not found after upsert: ${input.restartEpoch}/${input.sessionKey}`);
+      }
+      return rowToDaemonRestartSessionSnapshot(row);
+    },
+    { label: "daemon_restart_snapshot_record" },
+  );
+}
+
+export function dbListEligibleDaemonRestartSessionSnapshots(input: {
+  restartEpoch: string;
+  now?: number;
+  windowMs?: number;
+}): DaemonRestartSessionSnapshotRecord[] {
+  const now = input.now ?? Date.now();
+  const windowMs = input.windowMs ?? 60 * 60 * 1000;
+  const cutoff = now - windowMs;
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT snapshots.*
+      FROM daemon_restart_session_snapshots snapshots
+      JOIN sessions live_sessions ON live_sessions.session_key = snapshots.session_key
+      WHERE snapshots.restart_epoch = ?
+        AND snapshots.non_idle = 1
+        AND snapshots.stopped_at >= ?
+        AND (live_sessions.ephemeral = 0 OR live_sessions.expires_at IS NULL OR live_sessions.expires_at > ?)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM daemon_restart_resume_deliveries delivered
+          WHERE delivered.restart_epoch = snapshots.restart_epoch
+            AND delivered.session_key = snapshots.session_key
+        )
+      ORDER BY snapshots.stopped_at ASC, snapshots.session_name ASC
+    `,
+    )
+    .all(input.restartEpoch, cutoff, now) as DaemonRestartSessionSnapshotRow[];
+  return rows.map(rowToDaemonRestartSessionSnapshot);
+}
+
+export function dbGetDaemonRestartPendingMessages(restartEpoch: string, sessionKey: string): unknown[] {
+  const row = getDb()
+    .prepare(
+      "SELECT pending_messages_json FROM daemon_restart_session_snapshots WHERE restart_epoch = ? AND session_key = ?",
+    )
+    .get(restartEpoch, sessionKey) as { pending_messages_json: string | null } | undefined;
+  return parseJsonArray(row?.pending_messages_json ?? null);
+}
+
+export function dbHasDaemonRestartResumeDelivery(restartEpoch: string, sessionKey: string): boolean {
+  const row = getDb()
+    .prepare("SELECT 1 AS found FROM daemon_restart_resume_deliveries WHERE restart_epoch = ? AND session_key = ?")
+    .get(restartEpoch, sessionKey) as { found: number } | undefined;
+  return Boolean(row);
+}
+
+export function dbMarkDaemonRestartResumeDelivered(input: {
+  restartEpoch: string;
+  sessionKey: string;
+  sessionName?: string | null;
+  deliveredAt?: number;
+}): boolean {
+  const deliveredAt = input.deliveredAt ?? Date.now();
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const result = database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO daemon_restart_resume_deliveries (
+            restart_epoch, session_key, session_name, delivered_at
+          )
+          VALUES (?, ?, ?, ?)
+        `,
+        )
+        .run(input.restartEpoch, input.sessionKey, input.sessionName ?? null, deliveredAt);
+      return result.changes > 0;
+    },
+    { label: "daemon_restart_resume_delivered" },
+  );
+}
+
 export function dbUpsertChat(input: UpsertChatInput): ChatRecord {
   return upsertChat(getDb(), input);
 }
@@ -4553,7 +4886,7 @@ export function dbBackfillChatModel(): void {
 }
 
 // ============================================================================
-// sessions/attach — subscriptions & focus
+// sessions/attach — subscriptions
 // See .ravi/specs/sessions/attach/SPEC.md
 // ============================================================================
 
@@ -4566,20 +4899,10 @@ interface SessionChatSubscriptionRow {
   attached_by_id: string | null;
   attached_reason: string | null;
   context_snapshot_at_attach_json: string | null;
+  output_attached_at: number | null;
   created_at: number;
   updated_at: number;
   detached_at: number | null;
-}
-
-interface SessionFocusRow {
-  session_key: string;
-  chat_id: string;
-  set_by_type: string;
-  set_by_id: string | null;
-  set_reason: string | null;
-  expires_at: number | null;
-  created_at: number;
-  updated_at: number;
 }
 
 function rowToSessionChatSubscription(row: SessionChatSubscriptionRow): SessionChatSubscriptionRecord {
@@ -4592,22 +4915,10 @@ function rowToSessionChatSubscription(row: SessionChatSubscriptionRow): SessionC
     attachedById: row.attached_by_id ?? undefined,
     attachedReason: row.attached_reason ?? undefined,
     contextSnapshotAtAttach: parseJsonRecord(row.context_snapshot_at_attach_json),
+    outputAttachedAt: row.output_attached_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     detachedAt: row.detached_at ?? undefined,
-  };
-}
-
-function rowToSessionFocus(row: SessionFocusRow): SessionFocusRecord {
-  return {
-    sessionKey: row.session_key,
-    chatId: row.chat_id,
-    setByType: row.set_by_type as AttachedByType,
-    setById: row.set_by_id ?? undefined,
-    setReason: row.set_reason ?? undefined,
-    expiresAt: row.expires_at ?? undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
   };
 }
 
@@ -4649,6 +4960,7 @@ export function dbCreateSessionChatSubscription(
             attached_by_id = ?,
             attached_reason = ?,
             context_snapshot_at_attach_json = ?,
+            output_attached_at = ?,
             updated_at = ?
         WHERE session_key = ? AND chat_id = ? AND detached_at IS NOT NULL
         `,
@@ -4659,6 +4971,7 @@ export function dbCreateSessionChatSubscription(
         input.attachedById ?? null,
         input.attachedReason ?? null,
         cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
+        input.outputAttachedAt ?? null,
         now,
         input.sessionKey,
         input.chatId,
@@ -4681,9 +4994,9 @@ export function dbCreateSessionChatSubscription(
         `
         INSERT INTO session_chat_subscriptions (
           session_key, chat_id, role, attached_by_type, attached_by_id,
-          attached_reason, context_snapshot_at_attach_json, created_at, updated_at, detached_at
+          attached_reason, context_snapshot_at_attach_json, output_attached_at, created_at, updated_at, detached_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
         `,
       )
       .run(
@@ -4694,6 +5007,7 @@ export function dbCreateSessionChatSubscription(
         input.attachedById ?? null,
         input.attachedReason ?? null,
         cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
+        input.outputAttachedAt ?? null,
         now,
         now,
       );
@@ -4779,6 +5093,101 @@ export function dbFindActiveSubscriptionByChat(chatId: string): SessionChatSubsc
 }
 
 /**
+ * Current output attachment for a session. This is the chat that receives
+ * emitted responses from the session until another attach selects a new one
+ * or detach clears it.
+ */
+export function dbGetSessionOutputAttachment(sessionKey: string): SessionChatSubscriptionRecord | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM session_chat_subscriptions
+      WHERE session_key = ?
+        AND detached_at IS NULL
+        AND output_attached_at IS NOT NULL
+      ORDER BY output_attached_at DESC, updated_at DESC, id DESC
+      LIMIT 1
+    `,
+    )
+    .get(sessionKey) as SessionChatSubscriptionRow | undefined;
+  return row ? rowToSessionChatSubscription(row) : null;
+}
+
+/**
+ * Select a session's output attachment. The target row must already be an
+ * active subscription for this session.
+ */
+export function dbSetSessionOutputAttachment(sessionKey: string, chatId: string): SessionChatSubscriptionRecord {
+  const db = getDb();
+  const now = Date.now();
+  db.transaction(() => {
+    db.prepare(
+      `
+      UPDATE session_chat_subscriptions
+      SET output_attached_at = NULL, updated_at = ?
+      WHERE session_key = ?
+        AND detached_at IS NULL
+        AND output_attached_at IS NOT NULL
+        AND chat_id <> ?
+    `,
+    ).run(now, sessionKey, chatId);
+    const result = db
+      .prepare(
+        `
+        UPDATE session_chat_subscriptions
+        SET output_attached_at = ?, updated_at = ?
+        WHERE session_key = ?
+          AND chat_id = ?
+          AND detached_at IS NULL
+      `,
+      )
+      .run(now, now, sessionKey, chatId);
+    if (result.changes === 0) {
+      throw new Error(`Cannot attach output: chat ${chatId} is not active in session ${sessionKey}`);
+    }
+  })();
+
+  const row = db
+    .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
+    .get(sessionKey, chatId) as SessionChatSubscriptionRow;
+  return rowToSessionChatSubscription(row);
+}
+
+/**
+ * Clear the session's output attachment. When `chatId` is provided, only that
+ * chat is cleared if it is currently selected.
+ */
+export function dbClearSessionOutputAttachment(sessionKey: string, chatId?: string): boolean {
+  const now = Date.now();
+  const result = chatId
+    ? getDb()
+        .prepare(
+          `
+          UPDATE session_chat_subscriptions
+          SET output_attached_at = NULL, updated_at = ?
+          WHERE session_key = ?
+            AND chat_id = ?
+            AND detached_at IS NULL
+            AND output_attached_at IS NOT NULL
+        `,
+        )
+        .run(now, sessionKey, chatId)
+    : getDb()
+        .prepare(
+          `
+          UPDATE session_chat_subscriptions
+          SET output_attached_at = NULL, updated_at = ?
+          WHERE session_key = ?
+            AND detached_at IS NULL
+            AND output_attached_at IS NOT NULL
+        `,
+        )
+        .run(now, sessionKey);
+  return result.changes > 0;
+}
+
+/**
  * Soft-delete a subscription. Idempotent: detaching an already-detached
  * subscription is a no-op. Returns true when the row was actually flipped.
  */
@@ -4786,93 +5195,10 @@ export function dbDetachSessionChatSubscription(sessionKey: string, chatId: stri
   const now = Date.now();
   const result = getDb()
     .prepare(
-      "UPDATE session_chat_subscriptions SET detached_at = ?, updated_at = ? WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL",
+      "UPDATE session_chat_subscriptions SET detached_at = ?, output_attached_at = NULL, updated_at = ? WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL",
     )
     .run(now, now, sessionKey, chatId);
   return result.changes > 0;
-}
-
-/**
- * Get the current focus row, applying expiry semantics: an expired row is
- * treated as absent (returns null) and is lazily cleaned up.
- */
-export function dbGetSessionFocus(sessionKey: string): SessionFocusRecord | null {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM session_focus WHERE session_key = ?").get(sessionKey) as
-    | SessionFocusRow
-    | undefined;
-  if (!row) return null;
-  if (row.expires_at != null && row.expires_at <= Date.now()) {
-    db.prepare("DELETE FROM session_focus WHERE session_key = ?").run(sessionKey);
-    return null;
-  }
-  return rowToSessionFocus(row);
-}
-
-/**
- * Set or replace the focus row. Caller is responsible for ensuring the
- * target chat is subscribed (or applying `unattached_focus_policy`).
- */
-export function dbSetSessionFocus(input: SetSessionFocusInput): SessionFocusRecord {
-  const db = getDb();
-  const now = Date.now();
-  db.prepare(
-    `
-      INSERT INTO session_focus (
-        session_key, chat_id, set_by_type, set_by_id, set_reason, expires_at, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(session_key) DO UPDATE SET
-        chat_id = excluded.chat_id,
-        set_by_type = excluded.set_by_type,
-        set_by_id = excluded.set_by_id,
-        set_reason = excluded.set_reason,
-        expires_at = excluded.expires_at,
-        updated_at = excluded.updated_at
-    `,
-  ).run(
-    input.sessionKey,
-    input.chatId,
-    input.setByType ?? "system",
-    input.setById ?? null,
-    input.setReason ?? null,
-    input.expiresAt ?? null,
-    now,
-    now,
-  );
-  const row = db.prepare("SELECT * FROM session_focus WHERE session_key = ?").get(input.sessionKey) as SessionFocusRow;
-  return rowToSessionFocus(row);
-}
-
-/**
- * Clear the focus row. Idempotent. Returns true when a row was removed.
- */
-export function dbClearSessionFocus(sessionKey: string): boolean {
-  const result = getDb().prepare("DELETE FROM session_focus WHERE session_key = ?").run(sessionKey);
-  return result.changes > 0;
-}
-
-/**
- * Read the session's `unattached_focus_policy`. Defaults to `fail-closed`
- * if the session row is missing the column value (shouldn't happen — the
- * migration sets a NOT NULL DEFAULT — but stay defensive).
- */
-export function dbGetUnattachedFocusPolicy(sessionKey: string): UnattachedFocusPolicy {
-  const row = getDb().prepare("SELECT unattached_focus_policy FROM sessions WHERE session_key = ?").get(sessionKey) as
-    | { unattached_focus_policy: string | null }
-    | undefined;
-  const value = row?.unattached_focus_policy;
-  return value === "auto-follow" ? "auto-follow" : "fail-closed";
-}
-
-/**
- * Write the per-session `unattached_focus_policy`. No-op when the session
- * doesn't exist; caller MUST validate.
- */
-export function dbSetUnattachedFocusPolicy(sessionKey: string, policy: UnattachedFocusPolicy): void {
-  getDb()
-    .prepare("UPDATE sessions SET unattached_focus_policy = ?, updated_at = ? WHERE session_key = ?")
-    .run(policy, Date.now(), sessionKey);
 }
 
 // ============================================================================
