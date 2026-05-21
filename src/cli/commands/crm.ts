@@ -98,15 +98,267 @@ function showCrmContactProfile(contactRef: string, asJson?: boolean) {
     printJson(payload);
     return payload;
   }
-  console.log(`\nCRM contact: ${profile.contact.displayName ?? profile.contact.id}`);
-  console.log(`  lifecycle: ${profile.profile?.lifecycle ?? "unknown"}`);
-  console.log(`  health: ${profile.profile?.relationshipHealth ?? "unknown"}`);
-  console.log(`  priority: ${profile.profile?.priority ?? "normal"}`);
-  console.log(`  next: ${profile.profile?.nextActionSummary ?? "-"}`);
-  console.log(
-    `  links: ${profile.accountMemberships.length} accounts, ${profile.opportunities.length} opportunities, ${profile.tasks.length} tasks`,
-  );
+  renderCrmContactCard(profile);
   return payload;
+}
+
+// ============================================================================
+// Rich contact card renderer (text mode)
+// ============================================================================
+
+const CARD_WIDTH = 80;
+const FACT_VALUE_PREVIEW = 200;
+
+function renderCrmContactCard(profile: NonNullable<ReturnType<typeof getCrmContactProfile>>): void {
+  const { contact, policy, profile: prof, accountMemberships, opportunities, tasks, nextActions, facts } = profile;
+  const name = contact.displayName?.trim() || contact.id;
+
+  console.log("");
+  console.log(name);
+  console.log(divider("─"));
+  printPair("id", contact.id, "kind", contact.kind);
+  printPair("phone", contact.primaryPhone ?? "-", "email", contact.primaryEmail ?? "-");
+  printPair("added", formatDate(contact.createdAt), "updated", formatDate(contact.updatedAt));
+
+  console.log("");
+  console.log("Status");
+  printPair(
+    "lifecycle",
+    prof?.lifecycle ?? "unknown",
+    "health",
+    prof?.relationshipHealth ?? "unknown",
+    "priority",
+    prof?.priority ?? "normal",
+  );
+  printPair(
+    "policy",
+    policy?.status ?? "unknown",
+    "reply",
+    policy?.replyMode ?? "auto",
+    "opt-out",
+    formatBool(policy?.optOut),
+  );
+  const owner = formatOwner(prof?.ownerType, prof?.ownerId);
+  printPair("owner", owner, "source", policy?.source ?? "-");
+  const allowed = policy?.allowedAgents?.length ? policy.allowedAgents.join(", ") : "(all)";
+  printPair("allowed agents", allowed);
+  if (prof?.nextActionSummary || prof?.nextActionAt) {
+    const due = prof.nextActionAt ? formatDate(prof.nextActionAt) : "-";
+    printPair("next at", due);
+    printBlockValue("next", prof.nextActionSummary ?? "-");
+  }
+
+  console.log("");
+  console.log("Interactions");
+  printPair(
+    "count",
+    String(policy?.interactionCount ?? 0),
+    "last in",
+    formatRelative(policy?.lastInboundAt),
+    "last out",
+    formatRelative(policy?.lastOutboundAt),
+  );
+  if (prof?.lastMeaningfulInteractionAt) {
+    printPair("last meaningful", formatRelative(prof.lastMeaningfulInteractionAt));
+  }
+
+  const tags = policy?.tags ?? [];
+  console.log("");
+  console.log(`Tags (${tags.length})`);
+  console.log(`  ${tags.length === 0 ? "(none)" : tags.join(", ")}`);
+
+  const notes = policy?.notes && typeof policy.notes === "object" ? (policy.notes as Record<string, unknown>) : {};
+  const noteKeys = Object.keys(notes);
+  if (noteKeys.length > 0) {
+    console.log("");
+    console.log(`Notes (${noteKeys.length})`);
+    for (const k of noteKeys.slice(0, 10)) {
+      printBlockValue(k, formatNoteValue(notes[k]));
+    }
+    if (noteKeys.length > 10) {
+      console.log(`  … ${noteKeys.length - 10} more (--json for all)`);
+    }
+  }
+
+  const confirmedFacts = facts.filter((f) => f.status === "confirmed");
+  const proposedFacts = facts.filter((f) => f.status === "proposed");
+  if (confirmedFacts.length > 0 || proposedFacts.length > 0) {
+    console.log("");
+    const summary = [
+      confirmedFacts.length ? `${confirmedFacts.length} confirmed` : null,
+      proposedFacts.length ? `${proposedFacts.length} proposed` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    console.log(`Facts (${summary})`);
+    for (const fact of confirmedFacts) printFact(fact);
+    if (proposedFacts.length > 0) {
+      console.log("");
+      console.log("  Proposed");
+      for (const fact of proposedFacts) printFact(fact);
+    }
+  }
+
+  if (accountMemberships.length > 0) {
+    console.log("");
+    console.log(`Accounts (${accountMemberships.length})`);
+    for (const m of accountMemberships) {
+      const accName = m.account?.name ?? "(no name)";
+      const role = m.role ? ` · role ${m.role}` : "";
+      const primary = m.isPrimary ? " · primary" : "";
+      console.log(`  · ${accName} (${m.accountId})${role}${primary}`);
+    }
+  }
+
+  if (opportunities.length > 0) {
+    console.log("");
+    console.log(`Opportunities (${opportunities.length})`);
+    for (const o of opportunities) {
+      const value = o.valueCents != null ? formatMoney(o.valueCents, o.currency) : "-";
+      console.log(`  · ${o.title} · ${o.status} · ${o.priority} · value ${value}`);
+    }
+  }
+
+  const openTasks = tasks.filter((t) => t.status !== "done" && t.status !== "canceled");
+  if (openTasks.length > 0) {
+    console.log("");
+    console.log(`Open tasks (${openTasks.length})`);
+    for (const t of openTasks.slice(0, 10)) {
+      const due = t.dueAt ? formatDate(t.dueAt) : "-";
+      console.log(`  · [${t.priority}] ${due} · ${t.title}`);
+    }
+    if (openTasks.length > 10) {
+      console.log(`  … ${openTasks.length - 10} more (ravi crm tasks list --contact ${contact.id})`);
+    }
+  }
+
+  if (nextActions.length > 0) {
+    console.log("");
+    console.log(`Next actions (${nextActions.length})`);
+    for (const a of nextActions.slice(0, 10)) {
+      const due = a.dueAt ? formatDate(a.dueAt) : "-";
+      console.log(`  · [${a.priority}] ${due} · ${a.title}`);
+    }
+  }
+
+  // Footer: link counts (always shown so callers know they exist even when empty),
+  // plus pointer to --json for the raw payload.
+  console.log("");
+  console.log(
+    `Links: ${accountMemberships.length} accounts · ${opportunities.length} opportunities · ${tasks.length} tasks · ${nextActions.length} next actions`,
+  );
+  console.log("Run with --json for the full payload (raw facts, evidence, metadata, all timestamps).");
+}
+
+function divider(char: string): string {
+  return char.repeat(Math.min(CARD_WIDTH, 80));
+}
+
+function printPair(...labelValuePairs: string[]): void {
+  // Compact 3-column layout: each pair is `label: value` with column padding.
+  const pairs: Array<[string, string]> = [];
+  for (let i = 0; i < labelValuePairs.length; i += 2) {
+    pairs.push([labelValuePairs[i] ?? "", labelValuePairs[i + 1] ?? "-"]);
+  }
+  const cellWidth = pairs.length === 1 ? 76 : pairs.length === 2 ? 38 : 25;
+  const cells = pairs.map(([label, value]) => {
+    const text = `${label}: ${value}`;
+    return text.length > cellWidth ? `${text.slice(0, cellWidth - 1)}…` : text.padEnd(cellWidth);
+  });
+  console.log(`  ${cells.join("")}`);
+}
+
+function printBlockValue(label: string, value: string): void {
+  const lines = value.split("\n");
+  console.log(`  ${label}:`);
+  for (const line of lines) {
+    const wrapped = line.length > CARD_WIDTH - 4 ? `${line.slice(0, CARD_WIDTH - 5)}…` : line;
+    console.log(`    ${wrapped}`);
+  }
+}
+
+function printFact(fact: {
+  key: string;
+  value: unknown;
+  status: string;
+  confidence: number;
+  source: string;
+  updatedAt: string;
+}): void {
+  const value = formatFactValue(fact.value);
+  console.log(`  · ${fact.key}`);
+  const wrapped = value.length > CARD_WIDTH - 6 ? `${value.slice(0, CARD_WIDTH - 7)}…` : value;
+  console.log(`      ${wrapped}`);
+  const conf = Number.isFinite(fact.confidence) ? fact.confidence.toFixed(2) : "?";
+  console.log(`      ${fact.status} · confidence ${conf} · source ${fact.source} · ${formatDate(fact.updatedAt)}`);
+}
+
+function formatFactValue(value: unknown): string {
+  if (value == null) return "-";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    const json = JSON.stringify(value);
+    return json.length > FACT_VALUE_PREVIEW ? `${json.slice(0, FACT_VALUE_PREVIEW - 1)}…` : json;
+  } catch {
+    return String(value);
+  }
+}
+
+function formatNoteValue(value: unknown): string {
+  return formatFactValue(value);
+}
+
+function formatBool(value: boolean | null | undefined): string {
+  return value ? "yes" : "no";
+}
+
+function formatOwner(ownerType?: string | null, ownerId?: string | null): string {
+  if (!ownerType && !ownerId) return "-";
+  if (ownerType && ownerId) return `${ownerType}:${ownerId}`;
+  return ownerType ?? ownerId ?? "-";
+}
+
+// SQLite CURRENT_TIMESTAMP serializes as `YYYY-MM-DD HH:MM:SS` (no T, no
+// zone). The DB stores UTC but the string lacks the marker, so plain
+// `new Date(s)` parses it as local — making "now" look hours in the
+// future on negative-offset hosts. Patch the marker when we detect the
+// SQLite shape; otherwise pass through.
+function parseTimestamp(value: string | number): Date {
+  if (typeof value === "number") return new Date(value);
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) {
+    return new Date(`${value.replace(" ", "T")}Z`);
+  }
+  return new Date(value);
+}
+
+function formatDate(value: string | number | null | undefined): string {
+  if (value == null) return "-";
+  const d = parseTimestamp(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatRelative(value: string | number | null | undefined): string {
+  if (value == null) return "never";
+  const d = parseTimestamp(value);
+  if (Number.isNaN(d.getTime())) return "never";
+  const ms = Date.now() - d.getTime();
+  if (ms < 0) return formatDate(value);
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  return formatDate(value);
+}
+
+function formatMoney(cents: number, currency: string): string {
+  const amount = (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${currency} ${amount}`;
 }
 
 function showCrmAccount(accountRef: string, asJson?: boolean) {
