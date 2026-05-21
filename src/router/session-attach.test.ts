@@ -84,7 +84,7 @@ describe("sessions/attach — subscriptions", () => {
     );
   });
 
-  it("dbCreateSessionChatSubscription translates a UNIQUE(chat_id) race into a typed conflict", async () => {
+  it("dbCreateSessionChatSubscription translates a UNIQUE(chat_id) race on INSERT into a typed conflict", async () => {
     // Bypass the high-level `attachChatToSession` probe to hit the
     // INSERT-side race. `dbCreateSessionChatSubscription` is the layer
     // that catches the raw SQLite UNIQUE error and re-throws as
@@ -99,6 +99,29 @@ describe("sessions/attach — subscriptions", () => {
 
     expect(() =>
       dbCreateSessionChatSubscription({ sessionKey: other.sessionKey, chatId: chat.id, role: "input" }),
+    ).toThrow(SubscriptionChatConflictError);
+  });
+
+  it("dbCreateSessionChatSubscription translates a UNIQUE(chat_id) race on reactivation into a typed conflict", async () => {
+    // Scenario: session B previously attached chat C then detached. Now
+    // session A attaches chat C (creates an active row). When session B
+    // re-attaches chat C, the existence probe for (B, C) returns nothing
+    // active, so the reactivation UPDATE fires and tries to flip B's
+    // soft-detached row back to detached_at=NULL — which violates the
+    // UNIQUE index because A already owns chat C. Without the
+    // reactivation-path catch, that surfaces as a raw SQLite error.
+    const { dbCreateSessionChatSubscription, SubscriptionChatConflictError, dbDetachSessionChatSubscription } =
+      await import("./router-db.js");
+    const sessionB = makeSession("reactivate-b");
+    const sessionA = makeSession("reactivate-a");
+    const chat = makeChat("reactivate-c");
+
+    dbCreateSessionChatSubscription({ sessionKey: sessionB.sessionKey, chatId: chat.id, role: "input" });
+    dbDetachSessionChatSubscription(sessionB.sessionKey, chat.id);
+    dbCreateSessionChatSubscription({ sessionKey: sessionA.sessionKey, chatId: chat.id, role: "input" });
+
+    expect(() =>
+      dbCreateSessionChatSubscription({ sessionKey: sessionB.sessionKey, chatId: chat.id, role: "input" }),
     ).toThrow(SubscriptionChatConflictError);
   });
 

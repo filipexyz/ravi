@@ -4628,44 +4628,53 @@ export function dbCreateSessionChatSubscription(
   if (existingActive) {
     return rowToSessionChatSubscription(existingActive);
   }
-  // Reactivate any prior detached row for the same (session, chat) instead
-  // of accumulating soft-deleted history forever — keeps the audit minimal
-  // while still allowing detach/reattach cycles.
-  const reactivated = db
-    .prepare(
-      `
-      UPDATE session_chat_subscriptions
-      SET detached_at = NULL,
-          role = ?,
-          attached_by_type = ?,
-          attached_by_id = ?,
-          attached_reason = ?,
-          context_snapshot_at_attach_json = ?,
-          updated_at = ?
-      WHERE session_key = ? AND chat_id = ? AND detached_at IS NOT NULL
-      `,
-    )
-    .run(
-      input.role ?? "input",
-      input.attachedByType ?? "system",
-      input.attachedById ?? null,
-      input.attachedReason ?? null,
-      cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
-      now,
-      input.sessionKey,
-      input.chatId,
-    );
-  if (reactivated.changes > 0) {
-    const row = db
-      .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
-      .get(input.sessionKey, input.chatId) as SessionChatSubscriptionRow;
-    return rowToSessionChatSubscription(row);
+
+  // Both write paths below (reactivation UPDATE and fresh INSERT) can
+  // violate the partial UNIQUE index on (chat_id) WHERE detached_at IS
+  // NULL — the reactivation does it by flipping `detached_at = NULL`,
+  // the insert by adding a new active row. Both get translated into the
+  // same typed conflict so concurrent inbound dispatches surface a
+  // clean SessionAttachConflictError instead of raw SQLite errors.
+
+  // Reactivate any prior detached row for the same (session, chat) so
+  // we keep the audit minimal across detach/reattach cycles.
+  try {
+    const reactivated = db
+      .prepare(
+        `
+        UPDATE session_chat_subscriptions
+        SET detached_at = NULL,
+            role = ?,
+            attached_by_type = ?,
+            attached_by_id = ?,
+            attached_reason = ?,
+            context_snapshot_at_attach_json = ?,
+            updated_at = ?
+        WHERE session_key = ? AND chat_id = ? AND detached_at IS NOT NULL
+        `,
+      )
+      .run(
+        input.role ?? "input",
+        input.attachedByType ?? "system",
+        input.attachedById ?? null,
+        input.attachedReason ?? null,
+        cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
+        now,
+        input.sessionKey,
+        input.chatId,
+      );
+    if (reactivated.changes > 0) {
+      const row = db
+        .prepare(
+          "SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL",
+        )
+        .get(input.sessionKey, input.chatId) as SessionChatSubscriptionRow;
+      return rowToSessionChatSubscription(row);
+    }
+  } catch (err) {
+    return translateChatUniqueRace(err, input.sessionKey, input.chatId);
   }
-  // INSERT is wrapped to translate a race condition on the UNIQUE
-  // `idx_session_chat_subscriptions_active_chat` index into a typed
-  // error the caller can recover from. Without this, two concurrent
-  // inbound dispatches targeting different sessions but the same chat
-  // would surface raw SQLite errors and crash the consumer turn.
+
   try {
     const insert = db
       .prepare(
@@ -4693,19 +4702,30 @@ export function dbCreateSessionChatSubscription(
       .get(insert.lastInsertRowid) as SessionChatSubscriptionRow;
     return rowToSessionChatSubscription(row);
   } catch (err) {
-    if (!isUniqueConstraintError(err)) throw err;
-    const existing = dbFindActiveSubscriptionByChat(input.chatId);
-    if (existing && existing.sessionKey === input.sessionKey) {
-      // Race with another path that created our own subscription. Idempotent.
-      return existing;
-    }
-    if (existing) {
-      throw new SubscriptionChatConflictError(input.chatId, existing.sessionKey, input.sessionKey);
-    }
-    // Race against deletion: someone created and detached in between.
-    // Retry once.
-    throw err;
+    return translateChatUniqueRace(err, input.sessionKey, input.chatId);
   }
+}
+
+/**
+ * Translate a raw SQLite UNIQUE-constraint error on the
+ * `(chat_id) WHERE detached_at IS NULL` index into one of:
+ *   - the existing row, when the race winner is the requested session
+ *     (idempotent recovery);
+ *   - `SubscriptionChatConflictError`, when another session won;
+ *   - the original error, when neither path applies (e.g. the winning
+ *     row was detached between the failure and the re-check — no clean
+ *     translation, let the caller decide).
+ *
+ * Non-UNIQUE errors are re-thrown unchanged.
+ */
+function translateChatUniqueRace(err: unknown, sessionKey: string, chatId: string): SessionChatSubscriptionRecord {
+  if (!isUniqueConstraintError(err)) throw err;
+  const existing = dbFindActiveSubscriptionByChat(chatId);
+  if (existing && existing.sessionKey === sessionKey) return existing;
+  if (existing) {
+    throw new SubscriptionChatConflictError(chatId, existing.sessionKey, sessionKey);
+  }
+  throw err;
 }
 
 /**
