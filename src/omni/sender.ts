@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { createOmniClient, type OmniClient } from "./client.js";
 import { logger } from "../utils/logger.js";
+import type { OmniUserMention } from "./mentions.js";
 
 const log = logger.child("omni:sender");
 
@@ -57,10 +58,24 @@ export class OmniSender {
   /**
    * Send a text message via omni.
    */
-  async send(instanceId: string, to: string, text: string, threadId?: string): Promise<{ messageId?: string }> {
+  async send(
+    instanceId: string,
+    to: string,
+    text: string,
+    optionsOrThreadId?: string | { threadId?: string; mentions?: OmniUserMention[] },
+  ): Promise<{ messageId?: string }> {
     try {
+      const options =
+        typeof optionsOrThreadId === "string" ? { threadId: optionsOrThreadId } : (optionsOrThreadId ?? {});
       const result = (await this.withRetry(
-        () => this.client.messages.send({ instanceId, to, text, ...(threadId ? { threadId } : {}) }),
+        () =>
+          this.client.messages.send({
+            instanceId,
+            to,
+            text,
+            ...(options.threadId ? { threadId: options.threadId } : {}),
+            ...(options.mentions?.length ? { mentions: options.mentions } : {}),
+          }),
         `send(${instanceId})`,
       )) as { messageId?: string };
       return { messageId: result.messageId };

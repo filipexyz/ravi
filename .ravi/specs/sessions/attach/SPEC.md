@@ -106,6 +106,31 @@ When the runtime emits a response, the target chat MUST be resolved in this orde
 
 The inbound source chat is NOT an output fallback. This is the key behavior: a session may receive prompts from one chat while all responses land in the chat selected by `attach`.
 
+## Runtime Chat Context
+
+Attach makes a session multi-chat capable. Runtime prompt context MUST therefore distinguish the chat that produced the current prompt from the chat that receives the response.
+
+For every inbound turn:
+
+- `sourceChat` MUST refer to the canonical chat that produced the inbound message.
+- `outputChat` MUST refer to the canonical chat resolved by the active output attachment, when one exists.
+- If `sourceChat` and `outputChat` are the same canonical chat, runtime context MAY render one chat section and mark output as same-as-source.
+- If `sourceChat` and `outputChat` differ, runtime context MUST render them as separate concepts. It MUST NOT imply that participants from one chat belong to the other.
+- Participant lists in prompt context MUST be scoped under `sourceChat.participants` or `outputChat.participants`. They MUST NOT be injected as a session-level participant list.
+- Outbound channel features that depend on target membership, such as native mentions, MUST use `outputChat.participants`.
+- Inbound interpretation features, such as sender metadata, quoted-message context, or inbound mention rendering, MUST use `sourceChat` metadata.
+
+Example shape:
+
+```ts
+{
+  sourceChat: { canonicalChatId: "<source-chat-id>", participants: ["<display-name>"] },
+  outputChat: { canonicalChatId: "<output-chat-id>", participants: ["<display-name>"] }
+}
+```
+
+Specs, tests, and normative examples MUST use placeholders instead of real person or group names.
+
 ## CLI Surface
 
 ```bash

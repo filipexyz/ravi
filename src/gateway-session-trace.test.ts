@@ -13,6 +13,8 @@ import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
 import { listSessionEvents } from "./session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
+import { upsertOmniGroupMetadata } from "./omni/group-metadata-cache.js";
+import type { OmniUserMention } from "./omni/mentions.js";
 
 const emitted: Array<[string, Record<string, unknown>]> = [];
 const emitMock = mock(async (topic: string, payload: Record<string, unknown>) => {
@@ -25,6 +27,14 @@ type RuntimePresenceEventData = {
   nativeEvent?: string;
   _source?: NonNullable<ResponseMessage["target"]>;
 };
+
+type GatewaySendOptions = string | { threadId?: string; mentions?: OmniUserMention[] };
+type GatewaySend = (
+  instanceId: string,
+  chatId: string,
+  text: string,
+  optionsOrThreadId?: GatewaySendOptions,
+) => Promise<unknown>;
 
 let stateDir: string | null = null;
 
@@ -54,7 +64,7 @@ function seedSession() {
 }
 
 function makeGateway(
-  send: (instanceId: string, chatId: string, text: string, threadId?: string) => Promise<unknown>,
+  send: GatewaySend,
   overrides: {
     getActiveTarget?: () => ResponseMessage["target"] | undefined;
     clearActiveTarget?: () => void;
@@ -288,6 +298,61 @@ describe("Gateway session trace instrumentation", () => {
     const updated = getContact(contact.id);
     expect(updated?.last_outbound_at).toBeNull();
     expect(updated?.interaction_count).toBe(0);
+  });
+
+  it("resolves exact outbound group mentions from group participants", async () => {
+    const oldApiUrl = process.env.OMNI_API_URL;
+    const oldApiKey = process.env.OMNI_API_KEY;
+    process.env.OMNI_API_URL = "http://omni.local";
+    process.env.OMNI_API_KEY = "test-key";
+
+    try {
+      const { sessionName } = seedSession();
+      const groupJid = "120363000000000000@g.us";
+      upsertOmniGroupMetadata({
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: groupJid,
+        channel: "whatsapp",
+        name: "Ravi - Dev",
+        participants: [
+          { platformUserId: "91015272759397@lid", displayName: "Ravi Bot" },
+          { platformUserId: "5511947879044@s.whatsapp.net", displayName: "Luís Filipe" },
+        ],
+        fetchedAt: Date.now(),
+      });
+      const send = mock(async (..._args: Parameters<GatewaySend>) => ({ messageId: "outbound-mentioned" }));
+      const gateway = makeGateway(send);
+
+      await handleResponse(
+        gateway,
+        sessionName,
+        makeResponse({
+          response: "oi @Luis @RaviBot @Luisalgo @12345678901234",
+          target: {
+            channel: "whatsapp-baileys",
+            accountId: "main",
+            chatId: groupJid,
+            sourceMessageId: "inbound-group",
+          },
+        }),
+      );
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
+      expect(text).toBe("oi @5511947879044 @91015272759397 @Luisalgo @12345678901234");
+      expect(options).toMatchObject({
+        mentions: expect.arrayContaining([
+          { id: "5511947879044@s.whatsapp.net", type: "user" },
+          { id: "91015272759397@lid", type: "user" },
+        ]),
+      });
+    } finally {
+      if (oldApiUrl === undefined) delete process.env.OMNI_API_URL;
+      else process.env.OMNI_API_URL = oldApiUrl;
+      if (oldApiKey === undefined) delete process.env.OMNI_API_KEY;
+      else process.env.OMNI_API_KEY = oldApiKey;
+    }
   });
 
   it("renews active presence one second after a delivered non-final response", async () => {

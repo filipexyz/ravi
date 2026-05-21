@@ -77,6 +77,7 @@ import {
 import type { AgentConfig } from "../router/types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
+import { normalizeInboundMentionText } from "./mentions.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
 import { runTagRulesForContact } from "../tag-rules/index.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
@@ -540,7 +541,7 @@ export class OmniConsumer {
     }
 
     const { channelType, instanceId } = parsed;
-    const payload = event.payload as MessageReceivedPayload;
+    let payload = event.payload as MessageReceivedPayload;
 
     // Skip reaction messages — these are handled by the REACTION stream consumer
     if (payload.content.type === "reaction") return;
@@ -552,7 +553,19 @@ export class OmniConsumer {
 
     // Derive phone and group status from JIDs
     const rawPayload = payload.rawPayload as Record<string, unknown> | undefined;
-    const editInfo = this.extractMessageEditInfo(payload, rawPayload);
+    let editInfo = this.extractMessageEditInfo(payload, rawPayload);
+    const normalizedMentionText = normalizeInboundMentionText({
+      text: editInfo?.newText ?? payload.content?.text,
+      rawPayload,
+      resolveName: (id) => this.resolveMentionDisplayName(id),
+    });
+    if (
+      normalizedMentionText.text !== undefined &&
+      normalizedMentionText.text !== (editInfo?.newText ?? payload.content?.text)
+    ) {
+      payload = { ...payload, content: { ...payload.content, text: normalizedMentionText.text } };
+      if (editInfo) editInfo = { ...editInfo, newText: normalizedMentionText.text };
+    }
     // isDm: Slack uses lowercase "isDm", Discord/Telegram use "isDM"
     const rawIsDm = rawPayload?.isDm ?? rawPayload?.isDM;
     // rawPayload.isGroup: Telegram sets this explicitly
@@ -2279,6 +2292,11 @@ export class OmniConsumer {
     if (alt) return stripJid(alt);
 
     return fallback;
+  }
+
+  private resolveMentionDisplayName(id: string): string | null | undefined {
+    const stripped = stripJid(id);
+    return getContactName(id) ?? getContactName(stripped) ?? undefined;
   }
 
   private resolveGroupName(rawPayload: Record<string, unknown> | undefined, chatJid: string): string | undefined {

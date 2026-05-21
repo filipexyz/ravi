@@ -66,25 +66,25 @@ The same resolved actor context MUST drive identity-scoped tools and permissions
 
 The exact copy MAY be localized, but the semantic transitions are fixed:
 
-- first human speaker: `Fulano começou a falar`
-- speaker switch: `Agora Beltrano está com a palavra`
-- same speaker after system interruption: `Continuando com Beltrano`
+- first human speaker: `<speaker-a> começou a falar`
+- speaker switch: `Agora <speaker-b> está com a palavra`
+- same speaker after system interruption: `Continuando com <speaker-a>`
 
 Example prompt sequence:
 
 ```text
-[Conversation] Luis Filipe começou a falar.
-Luis Filipe: vamos marcar amanhã
+[Conversation] <speaker-a> começou a falar.
+<speaker-a>: <message>
 
-Luis Filipe: de tarde melhor
+<speaker-a>: <message>
 
 [System] Inform: Artifact completed.
 
-[Conversation] Continuando com Luis Filipe.
-Luis Filipe: coloca no meu calendário
+[Conversation] Continuando com <speaker-a>.
+<speaker-a>: <message>
 
-[Conversation] Agora Rafa está com a palavra.
-Rafa: pra mim pode ser às 16h
+[Conversation] Agora <speaker-b> está com a palavra.
+<speaker-b>: <message>
 ```
 
 ## State Model

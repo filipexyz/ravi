@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { dbUpsertChat, dbUpsertChatParticipant } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
 
@@ -74,6 +75,25 @@ describe("Omni group metadata cache", () => {
   });
 
   it("resolves chat metadata and participants from Omni, then serves the cache locally", async () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+      title: "ravi - dev",
+      seenAt: Date.now(),
+    });
+    dbUpsertChatParticipant({
+      chatId: chat.id,
+      rawPlatformUserId: "5511947879044",
+      normalizedPlatformUserId: "5511999990000",
+      role: "member",
+      status: "active",
+      source: "inbound_message",
+      metadata: { displayName: "Luis Filipe" },
+      seenAt: Date.now(),
+    });
+
     const first = await resolveOmniGroupMetadata({
       omniApiUrl: "http://omni.local",
       omniApiKey: "test-key",
@@ -91,6 +111,11 @@ describe("Omni group metadata cache", () => {
       participantCount: 2,
     });
     expect(first?.participants).toHaveLength(3);
+    expect(first?.participants[0]).toMatchObject({
+      platformUserId: "5511947879044",
+      normalizedPlatformUserId: "5511999990000",
+      mentionUserId: "5511999990000@s.whatsapp.net",
+    });
     expect(formatOmniGroupMembersForPrompt(first)).toEqual(["Luis Filipe (admin)", "R M", "278507271802901"]);
     expect(fetchCalls).toHaveLength(2);
 

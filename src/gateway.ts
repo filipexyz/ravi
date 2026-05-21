@@ -29,6 +29,9 @@ import { assertChannelSupportsStickers } from "./channels/capabilities.js";
 import type { StickerSendEvent } from "./stickers/send.js";
 import { getSessionByName } from "./router/index.js";
 import { dbGetChat, dbGetSessionChatBinding, dbSaveMessageMeta } from "./router/router-db.js";
+import { prepareOmniMentionMessage, type OmniUserMention } from "./omni/mentions.js";
+import { resolveOmniConnection } from "./omni-config.js";
+import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -49,6 +52,21 @@ function normalizeOutboundJid(chatId: string): string {
     return chatId.slice(6) + "@g.us";
   }
   return chatId;
+}
+
+function isWhatsAppGroupJid(chatId: string): boolean {
+  return chatId.endsWith("@g.us");
+}
+
+function mergeMentions(...lists: Array<readonly OmniUserMention[] | undefined>): OmniUserMention[] | undefined {
+  const byId = new Map<string, OmniUserMention>();
+  for (const list of lists) {
+    for (const mention of list ?? []) {
+      byId.set(mention.id, mention);
+    }
+  }
+  const mentions = Array.from(byId.values());
+  return mentions.length ? mentions : undefined;
 }
 
 /** Silent reply token — when response contains this, don't send to channel */
@@ -122,6 +140,43 @@ export class Gateway {
     if (iid) {
       await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
     }
+  }
+
+  private async prepareOutboundMentionMessage(input: {
+    accountId: string;
+    instanceId: string;
+    chatId: string;
+    channel: string;
+    text: string;
+    mentions?: readonly OmniUserMention[];
+  }): Promise<{ text: string; mentions?: OmniUserMention[] }> {
+    if (!input.text.includes("@") || !isWhatsAppGroupJid(input.chatId)) {
+      return { text: input.text, mentions: mergeMentions(input.mentions) };
+    }
+
+    const connection = resolveOmniConnection();
+    if (!connection) {
+      return { text: input.text, mentions: mergeMentions(input.mentions) };
+    }
+
+    const metadata = await resolveOmniGroupMetadata({
+      omniApiUrl: connection.apiUrl,
+      omniApiKey: connection.apiKey,
+      accountId: input.accountId,
+      instanceId: input.instanceId,
+      chatId: input.chatId,
+      channel: input.channel,
+    });
+
+    const prepared = prepareOmniMentionMessage({
+      text: input.text,
+      participants: metadata?.participants,
+    });
+
+    return {
+      text: prepared.text,
+      mentions: mergeMentions(input.mentions, prepared.mentions),
+    };
   }
 
   private presenceTargetKey(target: PresenceTarget | undefined): string | undefined {
@@ -357,7 +412,18 @@ export class Gateway {
     });
 
     try {
-      const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
+      const prepared = await this.prepareOutboundMentionMessage({
+        accountId: target.accountId,
+        instanceId,
+        chatId,
+        channel: target.channel,
+        text,
+      });
+      const sendOptions =
+        prepared.mentions?.length || target.threadId
+          ? { threadId: target.threadId, mentions: prepared.mentions }
+          : undefined;
+      const delivered = await this.omniSender.send(instanceId, chatId, prepared.text, sendOptions);
       this.saveOutboundMessageActorMetadata(sessionName, target, instanceId, chatId, delivered.messageId);
       this.recordOutboundContactInteraction(sessionName, target);
       this.schedulePostDeliveryPresenceRenewal(sessionName, target);
@@ -368,7 +434,7 @@ export class Gateway {
         target,
         deliveredAt: Date.now(),
         durationMs: Date.now() - t0,
-        textLen: text.length,
+        textLen: prepared.text.length,
       });
       log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
     } catch (err) {
@@ -582,6 +648,7 @@ export class Gateway {
           accountId: string;
           to: string;
           text?: string;
+          mentions?: OmniUserMention[];
           poll?: { name: string; values: string[]; selectableCount?: number };
           typingDelayMs?: number;
           pauseMs?: number;
@@ -634,15 +701,23 @@ export class Gateway {
               messageId = res.messageId;
             }
           } else if (data.text) {
+            const prepared = await this.prepareOutboundMentionMessage({
+              accountId: data.accountId,
+              instanceId,
+              chatId: to,
+              channel: data.channel,
+              text: data.text,
+              mentions: data.mentions,
+            });
             const sendStart = Date.now();
             if (typingDelayMs > 0) {
               await this.omniSender.sendTyping(instanceId, to, true);
               await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
-              const res = await this.omniSender.send(instanceId, to, data.text);
+              const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
               messageId = res.messageId;
               await this.omniSender.sendTyping(instanceId, to, false);
             } else {
-              const res = await this.omniSender.send(instanceId, to, data.text);
+              const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
               messageId = res.messageId;
             }
             log.info("Send HTTP completed", { to, durationMs: Date.now() - sendStart });

@@ -332,6 +332,60 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
+  it("renders inbound WhatsApp numeric mention placeholders as mentioned contact names", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-mention",
+      type: "message.received",
+      payload: {
+        externalId: "msg-mention",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "@91015272759397 viu quem marquei aqui?",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+          mentionedJids: ["91015272759397@lid"],
+          mentionedContacts: [{ jid: "91015272759397@lid", name: "ravi" }],
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("@ravi viu quem marquei aqui?");
+    expect(prompt.prompt).not.toContain("@91015272759397 viu quem marquei aqui?");
+    expect(chatMessageCalls[0].content).toMatchObject({
+      type: "text",
+      text: "@ravi viu quem marquei aqui?",
+    });
+    expect(chatMessageCalls[0].rawProvenance).toMatchObject({
+      rawPayload: {
+        mentionedJids: ["91015272759397@lid"],
+        mentionedContacts: [{ jid: "91015272759397@lid", name: "ravi" }],
+      },
+    });
+  });
+
   it("renders attached input origin hints with attach-as-output guidance", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     const primaryChat = actualDbUpsertChat({
