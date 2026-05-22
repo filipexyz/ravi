@@ -49,6 +49,13 @@ mock.module("../../contacts.js", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  getDb: () => ({
+    prepare: () => ({
+      all: () => [],
+      get: () => null,
+      run: () => undefined,
+    }),
+  }),
   getFirstAccountName: () => "main",
   dbGetInstance: () => ({ instanceId: "instance-main" }),
   dbUpsertChat: () => ({
@@ -60,6 +67,7 @@ mock.module("../../router/router-db.js", () => ({
     chatType: "group",
     title: "Launch",
   }),
+  dbUpsertChatParticipant: () => undefined,
   dbCreateRoute: () => ({
     id: 1,
     accountId: "main",
