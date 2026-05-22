@@ -638,6 +638,55 @@ rl.on("line", (line) => {
     expect(calls[0]?.systemPromptAppend).toContain("Runtime rules go here.");
   });
 
+  it("inserts fallback Ravi Rules after runtime Workspace Instructions", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
+    const rulesDir = join(cwd, ".ravi", "rules");
+    mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(join(cwd, "AGENTS.md"), "# Main Agent\n\nThis workspace should not be loaded twice.\n");
+    writeFileSync(join(rulesDir, "project-tracking.md"), "Track project state before closing tasks.\n");
+
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_ravi_rules_order" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["hello"], {
+        cwd,
+        systemPromptAppend: [
+          "## Workspace Instructions",
+          "",
+          "Workspace instructions loaded from runtime.",
+          "",
+          "## Agent Instructions",
+          "",
+          "Agent-specific rules.",
+        ].join("\n"),
+      }),
+    );
+
+    await collectEvents(session.events);
+
+    expect(calls).toHaveLength(1);
+    const systemPromptAppend = calls[0]?.systemPromptAppend ?? "";
+    expect(systemPromptAppend.match(/## Workspace Instructions/g)?.length).toBe(1);
+    expect(systemPromptAppend.match(/## Ravi Rules/g)?.length).toBe(1);
+    expect(systemPromptAppend).toContain("Track project state before closing tasks.");
+    expect(systemPromptAppend).not.toContain("This workspace should not be loaded twice.");
+    expect(systemPromptAppend.indexOf("## Workspace Instructions")).toBeLessThan(
+      systemPromptAppend.indexOf("## Ravi Rules"),
+    );
+    expect(systemPromptAppend.indexOf("## Ravi Rules")).toBeLessThan(
+      systemPromptAppend.indexOf("## Agent Instructions"),
+    );
+  });
+
   it("does not duplicate workspace instructions when the runtime prompt already carries them", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
     const rulesDir = join(cwd, ".ravi", "rules");

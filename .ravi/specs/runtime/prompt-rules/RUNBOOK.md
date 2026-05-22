@@ -39,6 +39,26 @@ Use this flow when a runtime session appears to ignore `.ravi/rules`.
 ## Common Fixes
 
 - If rules are absent, add text rule files under `<session-cwd>/.ravi/rules`.
+- If rules already exist in provider folders, inspect import sources:
+
+  ```bash
+  ravi rules sources all --cwd <session-cwd> --json
+  ravi rules sources all --cwd <session-cwd> --include-user --json
+  ```
+
+- Import provider project rules with an explicit write:
+
+  ```bash
+  ravi rules import all --cwd <session-cwd> --write --json
+  ```
+
+- Import user-level rules only with explicit opt-in:
+
+  ```bash
+  ravi rules import claude --cwd <session-cwd> --include-user --write --json
+  ```
+
 - If rules exist under the repository but the task uses another agent cwd, copy or link the intended rule files into that agent cwd.
 - If the section is duplicated, fix provider fallback detection before changing rule content.
 - If hidden files appear in the prompt, fix `src/runtime/ravi-rules.ts`; do not rename sentinel files to work around the loader.
+- If imported files already exist, review the diff and re-run with `--force` only when overwriting is intended.

@@ -14,6 +14,7 @@ tags:
 applies_to:
   - .ravi/rules
   - src/runtime/ravi-rules.ts
+  - src/cli/commands/rules.ts
   - src/runtime/runtime-system-prompt.ts
   - src/runtime/codex-provider.ts
   - src/runtime/runtime-request-builder.ts
@@ -40,6 +41,7 @@ The source of truth is `<session-cwd>/.ravi/rules`. Files there are rendered int
 - **Rule file**: a non-hidden, non-empty text file under the rules root.
 - **Runtime section**: a `PromptContextSection` with `id=ravi.rules`, `title=Ravi Rules`, `priority=30`, and `source=<cwd>/.ravi/rules`.
 - **Rendered prompt**: final Markdown emitted by `renderPromptSections`.
+- **Import source**: provider-owned rule directories that can be snapshotted into Ravi rules, currently `<cwd>/.claude/rules`, `<cwd>/.agents/rules`, and user-level variants only when explicitly requested.
 
 ## Invariants
 
@@ -57,6 +59,12 @@ The source of truth is `<session-cwd>/.ravi/rules`. Files there are rendered int
 - Provider adapters MAY add a fallback `Ravi Rules` section only when the runtime-provided prompt does not already contain `## Ravi Rules`.
 - Provider adapters MUST NOT duplicate `Ravi Rules` when the runtime-built prompt already carries it.
 - Implementations MUST NOT solve this capability by broadening provider settings to include user-global rules. `.ravi/rules` is the Ravi-owned, workspace-auditable source.
+- Provider-owned rule directories such as `.claude/rules` and `.agents/rules` MAY be imported by CLI, but runtime prompt assembly MUST NOT read them directly.
+- Import commands MUST copy/snapshot into `.ravi/rules/imported/<provider>/<scope>/...` so imported rules are reviewable and traceable as Ravi rules.
+- Import commands MUST dry-run unless the operator passes an explicit write flag.
+- User-level imports from `~/.claude/rules` or `~/.agents/rules` MUST be opt-in. They MUST NOT be included by default because they can contain private preferences.
+- Imports MUST use the same supported-file, empty-file, hidden-file, and binary-file filtering as runtime rule loading.
+- Imports MUST NOT silently overwrite existing imported files. Overwrite MUST require an explicit force flag.
 - Rule files are prompt content. They MUST NOT contain secrets, tokens, private keys, or credentials.
 
 ## Validation
@@ -64,6 +72,7 @@ The source of truth is `<session-cwd>/.ravi/rules`. Files there are rendered int
 - `bun test src/runtime/runtime-system-prompt.test.ts`
 - `bun test src/runtime/codex-provider.test.ts`
 - `bun test src/runtime/session-trace.test.ts`
+- `bun test src/cli/commands/rules.test.ts`
 - `bun test src/tasks/service.test.ts src/tasks/profiles.test.ts`
 - `bun run typecheck`
 - `bun run build`
@@ -75,3 +84,5 @@ The source of truth is `<session-cwd>/.ravi/rules`. Files there are rendered int
 - A hidden sentinel file such as `.gitkeep` leaks into the system prompt.
 - A binary or generated artifact is placed under `.ravi/rules` and corrupts prompt readability.
 - A developer changes `settingSources` to include user settings and accidentally couples Ravi behavior to one provider's private settings loader.
+- An import command copies user-level private rules into a repository without explicit operator intent.
+- Imported rules are overwritten by a later import without review, hiding meaningful prompt changes.

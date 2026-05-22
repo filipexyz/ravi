@@ -2929,6 +2929,28 @@ export type RoutesShowInput = {
 /** Return shape for `routes.show`. (no @Returns declared) */
 export type RoutesShowReturn = unknown;
 
+/** Input shape for `rules.import`. */
+export type RulesImportInput = {
+  cwd?: string;
+  force?: boolean;
+  includeUser?: boolean;
+  source?: string;
+  write?: boolean;
+};
+
+/** Return shape for `rules.import`. (no @Returns declared) */
+export type RulesImportReturn = unknown;
+
+/** Input shape for `rules.sources`. */
+export type RulesSourcesInput = {
+  cwd?: string;
+  includeUser?: boolean;
+  source?: string;
+};
+
+/** Return shape for `rules.sources`. (no @Returns declared) */
+export type RulesSourcesReturn = unknown;
+
 /** Input shape for `sdk.client.check`. */
 export type SdkClientCheckInput = {
   out?: string;

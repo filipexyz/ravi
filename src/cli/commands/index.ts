@@ -43,6 +43,7 @@ export * from "./permissions.js";
 export * from "./projects.js";
 export * from "./prox-calls.js";
 export * from "./react.js";
+export * from "./rules.js";
 export * from "./sdk.js";
 export * from "./self.js";
 export * from "./service.js";
