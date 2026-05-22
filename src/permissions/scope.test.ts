@@ -176,6 +176,32 @@ describe("Scope Isolation", () => {
       expect(enforceScopeCheck("admin", "daemon", "restart").allowed).toBe(true);
       expect(enforceScopeCheck("admin", "agents", "create").allowed).toBe(true);
     });
+
+    it("allows CLI group grants added after a stale agent-runtime context was issued", () => {
+      mockContext = {
+        contextId: "ctx_stale",
+        agentId: "homologacao-solar",
+        sessionKey: "agent:homologacao-solar:group",
+        sessionName: "homologacao-solar",
+        context: {
+          contextId: "ctx_stale",
+          contextKey: "rctx_stale",
+          kind: "agent-runtime",
+          agentId: "homologacao-solar",
+          sessionKey: "agent:homologacao-solar:group",
+          sessionName: "homologacao-solar",
+          capabilities: [
+            { permission: "use", objectType: "tool", objectId: "*" },
+            { permission: "execute", objectType: "executable", objectId: "*" },
+          ],
+          createdAt: 0,
+        },
+      };
+
+      grant("agent", "homologacao-solar", "execute", "group", "agents_create");
+
+      expect(enforceScopeCheck("admin", "agents", "create").allowed).toBe(true);
+    });
   });
 
   // --------------------------------------------------------------------------

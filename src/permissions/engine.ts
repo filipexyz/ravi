@@ -15,8 +15,8 @@
 import { hasRelation, listRelations } from "./relations.js";
 import { resolveToolGroup } from "../cli/tool-registry.js";
 import { getContext } from "../cli/context.js";
-import type { ContextCapability } from "../router/router-db.js";
-import { canWithCapabilities, isAgentSuperadmin, isSuperadmin, matchPattern } from "./capability-context.js";
+import type { ContextRecord } from "../router/router-db.js";
+import { canWithCapabilityContext, isAgentSuperadmin, isSuperadmin, matchPattern } from "./capability-context.js";
 
 export {
   canWithCapabilities,
@@ -116,9 +116,9 @@ export function agentCan(
   // Live superadmin always wins, even when a running context has stale caps.
   if (isAgentSuperadmin(agentId)) return true;
 
-  const scopedCapabilities = getScopedCapabilities(agentId);
-  if (scopedCapabilities) {
-    return canWithCapabilities(scopedCapabilities, permission, objectType, objectId);
+  const scopedContext = getScopedContext(agentId);
+  if (scopedContext) {
+    return canWithCapabilityContext(scopedContext, permission, objectType, objectId);
   }
 
   return can("agent", agentId, permission, objectType, objectId);
@@ -128,9 +128,9 @@ export function agentCan(
 // Helpers
 // ============================================================================
 
-function getScopedCapabilities(agentId: string): ContextCapability[] | undefined {
+function getScopedContext(agentId: string): ContextRecord | undefined {
   const ctx = getContext();
   if (!ctx?.context) return undefined;
   if (ctx.agentId && ctx.agentId !== agentId) return undefined;
-  return ctx.context.capabilities;
+  return ctx.context;
 }
