@@ -40,11 +40,37 @@ import {
   updateCrmPipelineStage,
   updateCrmPipelineStageTopic,
   updateCrmContactProfile,
+  type CrmTask,
   type CrmOwnerType,
 } from "../../contacts.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function formatCrmTaskForJson<T extends Partial<CrmTask>>(task: T): T & Record<string, unknown> {
+  return {
+    ...task,
+    contact_id: task.contactId,
+    account_id: task.accountId,
+    opportunity_id: task.opportunityId,
+    chat_id: task.chatId,
+    session_key: task.sessionKey,
+    task_type: task.taskType,
+    due_at: task.dueAt,
+    due_date: task.dueAt,
+    snoozed_until: task.snoozedUntil,
+    completed_at: task.completedAt,
+    canceled_at: task.canceledAt,
+    owner_type: task.ownerType,
+    owner_id: task.ownerId,
+    created_by_type: task.createdByType,
+    created_by_id: task.createdById,
+    idempotency_key: task.idempotencyKey,
+    ravi_task_id: task.raviTaskId,
+    created_at: task.createdAt,
+    updated_at: task.updatedAt,
+  };
 }
 
 function parseOwner(owner?: string): { ownerType?: CrmOwnerType; ownerId?: string } {
@@ -1478,7 +1504,7 @@ export class CrmTaskCommands {
   ) {
     const task = getCrmTask(taskId);
     if (!task) fail(`CRM task not found: ${taskId}`);
-    const payload = { target: taskId, task };
+    const payload = { target: taskId, task: formatCrmTaskForJson(task) };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -1532,7 +1558,7 @@ export class CrmTaskCommands {
       evidence,
       metadata,
     });
-    const payload = { status: "created" as const, task, changedCount: 1 };
+    const payload = { status: "created" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
     if (asJson) {
       printJson(payload);
     } else {
@@ -1548,7 +1574,7 @@ export class CrmTaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const task = completeCrmTask({ taskId, source: "cli", actorType: "user" });
-    const payload = { status: "done" as const, task, changedCount: 1 };
+    const payload = { status: "done" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
     if (asJson) {
       printJson(payload);
     } else {
@@ -1566,7 +1592,7 @@ export class CrmTaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const task = cancelCrmTask({ taskId, reason, source: "cli", actorType: "user" });
-    const payload = { status: "canceled" as const, task, changedCount: 1 };
+    const payload = { status: "canceled" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
     if (asJson) {
       printJson(payload);
     } else {
@@ -1591,7 +1617,7 @@ export class CrmTaskCommands {
       actorType: "user",
       evidence: reason ? { reason } : undefined,
     });
-    const payload = { status: "snoozed" as const, task, changedCount: 1 };
+    const payload = { status: "snoozed" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
     if (asJson) {
       printJson(payload);
     } else {
@@ -1657,7 +1683,8 @@ export class CrmTaskCommands {
         dueAfter,
       ],
     });
-    const payload = { total: page.total, pagination, items: page.items, tasks: page.items };
+    const items = page.items.map(formatCrmTaskForJson);
+    const payload = { total: page.total, pagination, items, tasks: items };
     if (asJson) {
       printJson(payload);
       return payload;
