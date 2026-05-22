@@ -6963,6 +6963,56 @@ export const RoutesShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `rules.import`. */
+export const RulesImportInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cwd": {
+      "description": "Workspace cwd to import into (default: current directory)",
+      "type": "string"
+    },
+    "force": {
+      "description": "Overwrite existing imported rule files",
+      "type": "boolean"
+    },
+    "includeUser": {
+      "description": "Also import user-level ~/.claude/rules and ~/.agents/rules",
+      "type": "boolean"
+    },
+    "source": {
+      "default": "all",
+      "description": "Source provider: all, claude, agents",
+      "type": "string"
+    },
+    "write": {
+      "description": "Write files. Without this, import runs as dry-run",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `rules.sources`. */
+export const RulesSourcesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cwd": {
+      "description": "Workspace cwd to inspect (default: current directory)",
+      "type": "string"
+    },
+    "includeUser": {
+      "description": "Also include user-level ~/.claude/rules and ~/.agents/rules",
+      "type": "boolean"
+    },
+    "source": {
+      "default": "all",
+      "description": "Source provider: all, claude, agents",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sdk.client.check`. */
 export const SdkClientCheckInputSchema = {
   "additionalProperties": false,
