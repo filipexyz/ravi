@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -4913,7 +4913,7 @@ export function listCrmPipelines(
 ) {
   const database = ensureDb();
   const where: string[] = [];
-  const params: unknown[] = [];
+  const params: SQLQueryBindings[] = [];
   if (options.entityType) {
     where.push("entity_type = ?");
     params.push(normalizeCrmEntityType(options.entityType));
