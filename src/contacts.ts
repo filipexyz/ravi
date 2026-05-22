@@ -35,7 +35,18 @@ let db: Database | null = null;
 let dbPath: string | null = null;
 
 const CONTACT_EVENT_SCOPE_TYPES = new Set(["global", "domain", "project", "chat", "session", "org", "agent", "task"]);
-const CRM_ENTITY_TYPES = new Set(["contact", "account", "opportunity", "task", "activity", "segment", "playbook"]);
+const CRM_ENTITY_TYPES = new Set([
+  "contact",
+  "account",
+  "opportunity",
+  "task",
+  "activity",
+  "segment",
+  "playbook",
+  "pipeline",
+  "pipeline_stage",
+  "pipeline_stage_topic",
+]);
 const CRM_EVENT_SCOPE_TYPES = new Set([
   "global",
   "domain",
@@ -69,6 +80,19 @@ const CRM_PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
 const CRM_OPPORTUNITY_STATUSES = new Set(["open", "won", "lost", "paused", "archived"]);
 const CRM_TASK_STATUSES = new Set(["open", "scheduled", "waiting", "done", "canceled", "snoozed"]);
 const CRM_FACT_STATUSES = new Set(["proposed", "confirmed", "rejected", "superseded"]);
+const CRM_PIPELINE_STATUSES = new Set(["active", "archived"]);
+const CRM_PIPELINE_STAGE_STATUSES = new Set(["active", "archived"]);
+const CRM_PIPELINE_STAGE_CATEGORIES = new Set(["new", "active", "waiting", "terminal_won", "terminal_lost"]);
+const CRM_PIPELINE_STAGE_TOPIC_STATUSES = new Set(["active", "archived"]);
+const CRM_PIPELINE_STAGE_TOPIC_TYPES = new Set([
+  "subject",
+  "objection",
+  "qualification",
+  "proposal",
+  "pricing",
+  "next_action",
+  "risk",
+]);
 
 function ensureDb(): Database {
   const nextDbPath = resolveDbPath();
@@ -124,6 +148,85 @@ function ensureTableColumn(database: Database, table: string, column: string, de
   if (!tableHasColumn(database, table, column)) {
     database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
+
+function ensureCrmEventsEntityTypeCheck(database: Database): void {
+  const row = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'crm_events'").get() as
+    | { sql: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'pipeline_stage_topic'")) return;
+
+  database.exec(`
+    DROP TRIGGER IF EXISTS trg_crm_events_no_update;
+    DROP TRIGGER IF EXISTS trg_crm_events_no_delete;
+    DROP TABLE IF EXISTS crm_events_legacy_entity_type_check;
+    ALTER TABLE crm_events RENAME TO crm_events_legacy_entity_type_check;
+
+    CREATE TABLE crm_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('contact', 'account', 'opportunity', 'task', 'activity', 'segment', 'playbook', 'pipeline', 'pipeline_stage', 'pipeline_stage_topic')),
+      entity_id TEXT NOT NULL,
+
+      contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+      account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+      opportunity_id TEXT REFERENCES crm_opportunities(id) ON DELETE SET NULL,
+      task_id TEXT REFERENCES crm_tasks(id) ON DELETE SET NULL,
+      activity_id TEXT REFERENCES crm_activities(id) ON DELETE SET NULL,
+
+      actor_type TEXT NOT NULL DEFAULT 'system',
+      actor_id TEXT,
+      scope_type TEXT NOT NULL DEFAULT 'global',
+      scope_id TEXT,
+
+      source TEXT NOT NULL,
+      idempotency_key TEXT,
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      payload_json TEXT NOT NULL,
+      previous_payload_json TEXT,
+      evidence_json TEXT,
+
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK(scope_type = 'global' OR scope_id IS NOT NULL)
+    );
+
+    INSERT INTO crm_events (
+      id, event_type, entity_type, entity_id, contact_id, account_id, opportunity_id,
+      task_id, activity_id, actor_type, actor_id, scope_type, scope_id, source,
+      idempotency_key, confidence, payload_json, previous_payload_json, evidence_json, created_at
+    )
+    SELECT
+      id, event_type, entity_type, entity_id, contact_id, account_id, opportunity_id,
+      task_id, activity_id, actor_type, actor_id, scope_type, scope_id, source,
+      idempotency_key, confidence, payload_json, previous_payload_json, evidence_json, created_at
+    FROM crm_events_legacy_entity_type_check;
+
+    DROP TABLE crm_events_legacy_entity_type_check;
+
+    CREATE INDEX IF NOT EXISTS idx_crm_events_entity
+      ON crm_events(entity_type, entity_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_events_contact
+      ON crm_events(contact_id, created_at DESC)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_events_account
+      ON crm_events(account_id, created_at DESC)
+      WHERE account_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_events_opportunity
+      ON crm_events(opportunity_id, created_at DESC)
+      WHERE opportunity_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_events_task
+      ON crm_events(task_id, created_at DESC)
+      WHERE task_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_events_idempotency_key
+      ON crm_events(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+
+    CREATE TRIGGER IF NOT EXISTS trg_crm_events_no_delete
+      BEFORE DELETE ON crm_events
+      BEGIN
+        SELECT RAISE(ABORT, 'crm_events is append-only');
+      END;
+  `);
 }
 
 // ============================================================================
@@ -287,7 +390,7 @@ function initializeCrmSchema(database: Database): void {
     CREATE TABLE IF NOT EXISTS crm_events (
       id TEXT PRIMARY KEY,
       event_type TEXT NOT NULL,
-      entity_type TEXT NOT NULL CHECK(entity_type IN ('contact', 'account', 'opportunity', 'task', 'activity', 'segment', 'playbook')),
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('contact', 'account', 'opportunity', 'task', 'activity', 'segment', 'playbook', 'pipeline', 'pipeline_stage', 'pipeline_stage_topic')),
       entity_id TEXT NOT NULL,
 
       contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
@@ -504,9 +607,11 @@ function initializeCrmSchema(database: Database): void {
       category TEXT NOT NULL DEFAULT 'active',
       probability REAL,
       is_terminal INTEGER NOT NULL DEFAULT 0 CHECK(is_terminal IN (0, 1)),
+      status TEXT NOT NULL DEFAULT 'active',
       metadata_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      archived_at TEXT,
 
       UNIQUE(pipeline_id, key),
       UNIQUE(pipeline_id, sort_order)
@@ -514,6 +619,29 @@ function initializeCrmSchema(database: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_crm_pipeline_stages_pipeline
       ON crm_pipeline_stages(pipeline_id, sort_order);
+
+    CREATE TABLE IF NOT EXISTS crm_pipeline_stage_topics (
+      id TEXT PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES crm_pipelines(id) ON DELETE CASCADE,
+      stage_id TEXT NOT NULL REFERENCES crm_pipeline_stages(id) ON DELETE CASCADE,
+      key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      topic_type TEXT NOT NULL DEFAULT 'subject',
+      status TEXT NOT NULL DEFAULT 'active',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      archived_at TEXT,
+
+      UNIQUE(stage_id, key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_pipeline_stage_topics_stage
+      ON crm_pipeline_stage_topics(stage_id, status, sort_order);
+    CREATE INDEX IF NOT EXISTS idx_crm_pipeline_stage_topics_pipeline
+      ON crm_pipeline_stage_topics(pipeline_id, status, sort_order);
 
     CREATE TABLE IF NOT EXISTS crm_opportunities (
       id TEXT PRIMARY KEY,
@@ -715,7 +843,7 @@ function initializeCrmSchema(database: Database): void {
 
     CREATE TABLE IF NOT EXISTS crm_facts (
       id TEXT PRIMARY KEY,
-      entity_type TEXT NOT NULL CHECK(entity_type IN ('contact', 'account', 'opportunity', 'task', 'activity', 'segment', 'playbook')),
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('contact', 'account', 'opportunity', 'task', 'activity', 'segment', 'playbook', 'pipeline', 'pipeline_stage', 'pipeline_stage_topic')),
       entity_id TEXT NOT NULL,
       contact_id TEXT REFERENCES contacts(id) ON DELETE CASCADE,
       account_id TEXT REFERENCES crm_accounts(id) ON DELETE CASCADE,
@@ -867,7 +995,14 @@ function initializeCrmSchema(database: Database): void {
   ensureTableColumn(database, "crm_opportunities", "idempotency_key", "TEXT");
   ensureTableColumn(database, "crm_tasks", "idempotency_key", "TEXT");
   ensureTableColumn(database, "crm_activities", "idempotency_key", "TEXT");
+  ensureTableColumn(database, "crm_pipelines", "status", "TEXT NOT NULL DEFAULT 'active'");
+  ensureTableColumn(database, "crm_pipeline_stages", "status", "TEXT NOT NULL DEFAULT 'active'");
+  ensureTableColumn(database, "crm_pipeline_stages", "archived_at", "TEXT");
+  ensureCrmEventsEntityTypeCheck(database);
   database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_crm_pipeline_stages_pipeline_status
+      ON crm_pipeline_stages(pipeline_id, status, sort_order);
+
     CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_events_idempotency_key
       ON crm_events(idempotency_key)
       WHERE idempotency_key IS NOT NULL;
@@ -949,15 +1084,17 @@ function initializeCrmSchema(database: Database): void {
   ];
   const insertStage = database.prepare(`
     INSERT INTO crm_pipeline_stages (
-      id, pipeline_id, key, name, sort_order, category, probability, is_terminal, metadata_json
+      id, pipeline_id, key, name, sort_order, category, probability, is_terminal, status, metadata_json
     )
-    VALUES (?, 'crm_pipeline_default', ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, 'crm_pipeline_default', ?, ?, ?, ?, ?, ?, 'active', ?)
     ON CONFLICT(pipeline_id, key) DO UPDATE SET
       name = excluded.name,
       sort_order = excluded.sort_order,
       category = excluded.category,
       probability = excluded.probability,
       is_terminal = excluded.is_terminal,
+      status = excluded.status,
+      archived_at = NULL,
       updated_at = datetime('now')
   `);
   for (const stage of defaultStages) {
@@ -1212,7 +1349,17 @@ export type ReplyMode = "auto" | "mention";
 export type ContactSource = "inbound" | "outbound" | "manual" | "discovered";
 export type ContactEventScopeType = "global" | "domain" | "project" | "chat" | "session" | "org" | "agent" | "task";
 export type ContactEventActorType = "user" | "agent" | "system" | "contact" | "unknown";
-export type CrmEntityType = "contact" | "account" | "opportunity" | "task" | "activity" | "segment" | "playbook";
+export type CrmEntityType =
+  | "contact"
+  | "account"
+  | "opportunity"
+  | "task"
+  | "activity"
+  | "segment"
+  | "playbook"
+  | "pipeline"
+  | "pipeline_stage"
+  | "pipeline_stage_topic";
 export type CrmActorType = "user" | "agent" | "team" | "system" | "contact" | "unknown";
 export type CrmOwnerType = "user" | "agent" | "team" | "system";
 export type CrmContactLifecycle =
@@ -1232,6 +1379,9 @@ export type CrmRelationshipHealth = "unknown" | "good" | "neutral" | "needs_atte
 export type CrmPriority = "low" | "normal" | "high" | "urgent";
 export type CrmOpportunityStatus = "open" | "won" | "lost" | "paused" | "archived";
 export type CrmTaskStatus = "open" | "scheduled" | "waiting" | "done" | "canceled" | "snoozed";
+export type CrmPipelineStatus = "active" | "archived";
+export type CrmPipelineStageStatus = "active" | "archived";
+export type CrmPipelineStageTopicStatus = "active" | "archived";
 export type CrmScopeType =
   | "global"
   | "domain"
@@ -1639,6 +1789,17 @@ export interface LinkCrmAccountContactInput extends CrmMutationOptions {
   metadata?: Record<string, unknown> | null;
 }
 
+export interface CrmPipeline {
+  id: string;
+  name: string;
+  entityType: CrmEntityType;
+  isDefault: boolean;
+  status: CrmPipelineStatus;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CrmPipelineStage {
   id: string;
   pipelineId: string;
@@ -1648,9 +1809,103 @@ export interface CrmPipelineStage {
   category: string;
   probability: number | null;
   isTerminal: boolean;
+  status: CrmPipelineStageStatus;
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  archivedAt: string | null;
+}
+
+export interface CrmPipelineStageTopic {
+  id: string;
+  pipelineId: string;
+  stageId: string;
+  key: string;
+  title: string;
+  description: string | null;
+  topicType: string;
+  status: CrmPipelineStageTopicStatus;
+  sortOrder: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+}
+
+export interface CrmPipelineDetail {
+  pipeline: CrmPipeline;
+  stages: CrmPipelineStage[];
+  topicsByStage: Record<string, CrmPipelineStageTopic[]>;
+}
+
+export interface CrmPipelineStageDetail {
+  pipeline: CrmPipeline;
+  stage: CrmPipelineStage;
+  topics: CrmPipelineStageTopic[];
+}
+
+export interface CreateCrmPipelineInput extends CrmMutationOptions {
+  name: string;
+  entityType?: CrmEntityType | string | null;
+  isDefault?: boolean | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface UpdateCrmPipelineInput extends CrmMutationOptions {
+  pipelineRef: string;
+  name?: string | null;
+  entityType?: CrmEntityType | string | null;
+  isDefault?: boolean | null;
+  status?: CrmPipelineStatus | string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface CreateCrmPipelineStageInput extends CrmMutationOptions {
+  pipelineRef: string;
+  key: string;
+  name: string;
+  sortOrder: number;
+  category?: string | null;
+  probability?: number | null;
+  isTerminal?: boolean | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface UpdateCrmPipelineStageInput extends CrmMutationOptions {
+  pipelineRef: string;
+  stageRef: string;
+  key?: string | null;
+  name?: string | null;
+  sortOrder?: number | null;
+  category?: string | null;
+  probability?: number | null;
+  isTerminal?: boolean | null;
+  status?: CrmPipelineStageStatus | string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface CreateCrmPipelineStageTopicInput extends CrmMutationOptions {
+  pipelineRef: string;
+  stageRef: string;
+  key: string;
+  title: string;
+  description?: string | null;
+  topicType?: string | null;
+  sortOrder?: number | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface UpdateCrmPipelineStageTopicInput extends CrmMutationOptions {
+  pipelineRef: string;
+  stageRef: string;
+  topicRef: string;
+  key?: string | null;
+  title?: string | null;
+  description?: string | null;
+  topicType?: string | null;
+  sortOrder?: number | null;
+  status?: CrmPipelineStageTopicStatus | string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface CrmOpportunity {
@@ -1913,6 +2168,15 @@ export interface CrmOpportunityBoardCard {
   ownerType: CrmOwnerType | null;
   ownerId: string | null;
   updatedAt: string;
+}
+
+export interface ListCrmOpportunityBoardOptions {
+  pipelineRef?: string | null;
+}
+
+export interface CrmOpportunityBoardStage {
+  stage: CrmPipelineStage;
+  opportunities: CrmOpportunityBoardCard[];
 }
 
 export interface ProjectContactEventToCrmActivityInput extends CrmMutationOptions {
@@ -2229,6 +2493,17 @@ interface CrmAccountContactRow {
   updated_at: string;
 }
 
+interface CrmPipelineRow {
+  id: string;
+  name: string;
+  entity_type: CrmEntityType;
+  is_default: number;
+  status: CrmPipelineStatus;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface CrmPipelineStageRow {
   id: string;
   pipeline_id: string;
@@ -2238,9 +2513,27 @@ interface CrmPipelineStageRow {
   category: string;
   probability: number | null;
   is_terminal: number;
+  status: CrmPipelineStageStatus;
   metadata_json: string;
   created_at: string;
   updated_at: string;
+  archived_at: string | null;
+}
+
+interface CrmPipelineStageTopicRow {
+  id: string;
+  pipeline_id: string;
+  stage_id: string;
+  key: string;
+  title: string;
+  description: string | null;
+  topic_type: string;
+  status: CrmPipelineStageTopicStatus;
+  sort_order: number;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
 }
 
 interface CrmOpportunityRow {
@@ -3065,6 +3358,14 @@ function normalizeRequiredText(value: string, label: string): string {
   return trimmed;
 }
 
+function normalizeCrmConfigKey(value: string, label: string): string {
+  const normalized = normalizeRequiredText(value, label).toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(normalized)) {
+    throw new Error(`${label} must use lowercase letters, numbers, "_" or "-"`);
+  }
+  return normalized;
+}
+
 function normalizeOptionalNumber(value: number | null | undefined, label: string, previous: number | null = null) {
   if (value === undefined) return previous;
   if (value === null) return null;
@@ -3165,6 +3466,19 @@ function rowToCrmAccountContact(row: CrmAccountContactRow): CrmAccountContact {
   };
 }
 
+function rowToCrmPipeline(row: CrmPipelineRow): CrmPipeline {
+  return {
+    id: row.id,
+    name: row.name,
+    entityType: row.entity_type,
+    isDefault: row.is_default === 1,
+    status: row.status,
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function rowToCrmPipelineStage(row: CrmPipelineStageRow): CrmPipelineStage {
   return {
     id: row.id,
@@ -3175,9 +3489,29 @@ function rowToCrmPipelineStage(row: CrmPipelineStageRow): CrmPipelineStage {
     category: row.category,
     probability: row.probability,
     isTerminal: row.is_terminal === 1,
+    status: row.status,
     metadata: parseJsonObject(row.metadata_json) ?? {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
+  };
+}
+
+function rowToCrmPipelineStageTopic(row: CrmPipelineStageTopicRow): CrmPipelineStageTopic {
+  return {
+    id: row.id,
+    pipelineId: row.pipeline_id,
+    stageId: row.stage_id,
+    key: row.key,
+    title: row.title,
+    description: row.description,
+    topicType: row.topic_type,
+    status: row.status,
+    sortOrder: row.sort_order,
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
   };
 }
 
@@ -3843,6 +4177,57 @@ function getCrmAccountRow(database: Database, accountRef: string): CrmAccountRow
   return row ?? null;
 }
 
+function getCrmPipelineRow(database: Database, pipelineRef: string): CrmPipelineRow | null {
+  const ref = normalizeRequiredText(pipelineRef, "CRM pipeline");
+  const row = database
+    .prepare("SELECT * FROM crm_pipelines WHERE id = ? OR name = ? ORDER BY is_default DESC, updated_at DESC LIMIT 1")
+    .get(ref, ref) as CrmPipelineRow | undefined;
+  return row ?? null;
+}
+
+function getDefaultCrmPipelineRow(
+  database: Database,
+  entityType: CrmEntityType = "opportunity",
+): CrmPipelineRow | null {
+  const row = database
+    .prepare("SELECT * FROM crm_pipelines WHERE entity_type = ? AND is_default = 1 LIMIT 1")
+    .get(entityType) as CrmPipelineRow | undefined;
+  return row ?? null;
+}
+
+function getCrmPipelineStageRow(database: Database, pipelineId: string, stageRef: string): CrmPipelineStageRow | null {
+  const ref = normalizeRequiredText(stageRef, "CRM pipeline stage");
+  const row = database
+    .prepare(
+      `
+      SELECT * FROM crm_pipeline_stages
+      WHERE pipeline_id = ? AND (id = ? OR key = ?)
+      LIMIT 1
+    `,
+    )
+    .get(pipelineId, ref, ref) as CrmPipelineStageRow | undefined;
+  return row ?? null;
+}
+
+function getCrmPipelineStageTopicRow(
+  database: Database,
+  pipelineId: string,
+  stageId: string,
+  topicRef: string,
+): CrmPipelineStageTopicRow | null {
+  const ref = normalizeRequiredText(topicRef, "CRM pipeline stage topic");
+  const row = database
+    .prepare(
+      `
+      SELECT * FROM crm_pipeline_stage_topics
+      WHERE pipeline_id = ? AND stage_id = ? AND (id = ? OR key = ?)
+      LIMIT 1
+    `,
+    )
+    .get(pipelineId, stageId, ref, ref) as CrmPipelineStageTopicRow | undefined;
+  return row ?? null;
+}
+
 function getCrmOpportunityRow(database: Database, opportunityId: string): CrmOpportunityRow | null {
   const row = database.prepare("SELECT * FROM crm_opportunities WHERE id = ?").get(opportunityId) as
     | CrmOpportunityRow
@@ -3866,6 +4251,29 @@ function requireCrmAccount(database: Database, accountId: string): CrmAccountRow
   const account = getCrmAccountRow(database, accountId);
   if (!account) throw new Error(`CRM account not found: ${accountId}`);
   return account;
+}
+
+function requireCrmPipeline(database: Database, pipelineRef: string): CrmPipelineRow {
+  const pipeline = getCrmPipelineRow(database, pipelineRef);
+  if (!pipeline) throw new Error(`CRM pipeline not found: ${pipelineRef}`);
+  return pipeline;
+}
+
+function requireCrmPipelineStage(database: Database, pipelineId: string, stageRef: string): CrmPipelineStageRow {
+  const stage = getCrmPipelineStageRow(database, pipelineId, stageRef);
+  if (!stage) throw new Error(`CRM pipeline stage not found: ${stageRef}`);
+  return stage;
+}
+
+function requireCrmPipelineStageTopic(
+  database: Database,
+  pipelineId: string,
+  stageId: string,
+  topicRef: string,
+): CrmPipelineStageTopicRow {
+  const topic = getCrmPipelineStageTopicRow(database, pipelineId, stageId, topicRef);
+  if (!topic) throw new Error(`CRM pipeline stage topic not found: ${topicRef}`);
+  return topic;
 }
 
 function requireCrmOpportunity(database: Database, opportunityId: string): CrmOpportunityRow {
@@ -4434,6 +4842,530 @@ export function linkCrmAccountContact(input: LinkCrmAccountContactInput): CrmAcc
   return membership;
 }
 
+function insertCrmConfigEvent(
+  database: Database,
+  input: CrmMutationOptions,
+  eventType: string,
+  entityType: CrmEntityType,
+  entityId: string,
+  payload: unknown,
+  previousPayload?: unknown,
+): void {
+  insertCrmEvent(database, {
+    eventType,
+    entityType,
+    entityId,
+    source: crmMutationSource(input),
+    actorType: input.actorType,
+    actorId: input.actorId,
+    confidence: input.confidence,
+    evidence: input.evidence,
+    scopeType: input.scopeType,
+    scopeId: input.scopeId,
+    idempotencyKey: input.idempotencyKey,
+    payload,
+    previousPayload,
+    emitContactEvent: false,
+  });
+}
+
+function getCrmConfigEventByIdempotencyKey(
+  database: Database,
+  idempotencyKey: string | null,
+  expectedEntityType: CrmEntityType,
+  expectedEventType: string,
+): CrmEventRow | null {
+  if (!idempotencyKey) return null;
+  const existingEvent = getCrmEventRowByIdempotencyKey(database, idempotencyKey);
+  if (!existingEvent) return null;
+  if (existingEvent.entity_type !== expectedEntityType || existingEvent.event_type !== expectedEventType) {
+    throw new Error(
+      `CRM idempotency key already used for ${existingEvent.event_type} ${existingEvent.entity_type}:${existingEvent.entity_id}`,
+    );
+  }
+  return existingEvent;
+}
+
+function countOpenCrmOpportunitiesForStage(database: Database, stageId: string): number {
+  const row = database
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM crm_opportunities
+      WHERE stage_id = ? AND status = 'open' AND archived_at IS NULL
+    `,
+    )
+    .get(stageId) as { count: number } | undefined;
+  return row?.count ?? 0;
+}
+
+function setDefaultCrmPipeline(database: Database, pipeline: CrmPipelineRow): void {
+  database
+    .prepare("UPDATE crm_pipelines SET is_default = 0, updated_at = datetime('now') WHERE entity_type = ? AND id != ?")
+    .run(pipeline.entity_type, pipeline.id);
+  database
+    .prepare("UPDATE crm_pipelines SET is_default = 1, updated_at = datetime('now') WHERE id = ?")
+    .run(pipeline.id);
+}
+
+export function listCrmPipelines(
+  options: { entityType?: CrmEntityType | string | null; includeArchived?: boolean } = {},
+) {
+  const database = ensureDb();
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (options.entityType) {
+    where.push("entity_type = ?");
+    params.push(normalizeCrmEntityType(options.entityType));
+  }
+  if (!options.includeArchived) {
+    where.push("status != 'archived'");
+  }
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM crm_pipelines
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY is_default DESC, name COLLATE NOCASE, id
+    `,
+    )
+    .all(...params) as CrmPipelineRow[];
+  return rows.map(rowToCrmPipeline);
+}
+
+export function getCrmPipeline(pipelineRef: string): CrmPipelineDetail | null {
+  const database = ensureDb();
+  const pipeline = getCrmPipelineRow(database, pipelineRef);
+  if (!pipeline) return null;
+  const stages = listCrmPipelineStages(pipeline.id, { includeArchived: true });
+  const topicsByStage: Record<string, CrmPipelineStageTopic[]> = {};
+  for (const stage of stages) {
+    topicsByStage[stage.id] = listCrmPipelineStageTopics(pipeline.id, stage.id, { includeArchived: true });
+  }
+  return { pipeline: rowToCrmPipeline(pipeline), stages, topicsByStage };
+}
+
+export function listCrmPipelineStages(
+  pipelineRef: string,
+  options: { includeArchived?: boolean } = {},
+): CrmPipelineStage[] {
+  const database = ensureDb();
+  const pipeline = requireCrmPipeline(database, pipelineRef);
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM crm_pipeline_stages
+      WHERE pipeline_id = ?
+        ${options.includeArchived ? "" : "AND status != 'archived'"}
+      ORDER BY sort_order ASC, key ASC
+    `,
+    )
+    .all(pipeline.id) as CrmPipelineStageRow[];
+  return rows.map(rowToCrmPipelineStage);
+}
+
+export function getCrmPipelineStage(pipelineRef: string, stageRef: string): CrmPipelineStageDetail | null {
+  const database = ensureDb();
+  const pipeline = getCrmPipelineRow(database, pipelineRef);
+  if (!pipeline) return null;
+  const stage = getCrmPipelineStageRow(database, pipeline.id, stageRef);
+  if (!stage) return null;
+  const topics = listCrmPipelineStageTopics(pipeline.id, stage.id, { includeArchived: true });
+  return { pipeline: rowToCrmPipeline(pipeline), stage: rowToCrmPipelineStage(stage), topics };
+}
+
+export function listCrmPipelineStageTopics(
+  pipelineRef: string,
+  stageRef: string,
+  options: { includeArchived?: boolean } = {},
+): CrmPipelineStageTopic[] {
+  const database = ensureDb();
+  const pipeline = requireCrmPipeline(database, pipelineRef);
+  const stage = requireCrmPipelineStage(database, pipeline.id, stageRef);
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM crm_pipeline_stage_topics
+      WHERE pipeline_id = ? AND stage_id = ?
+        ${options.includeArchived ? "" : "AND status != 'archived'"}
+      ORDER BY sort_order ASC, key ASC
+    `,
+    )
+    .all(pipeline.id, stage.id) as CrmPipelineStageTopicRow[];
+  return rows.map(rowToCrmPipelineStageTopic);
+}
+
+export function createCrmPipeline(input: CreateCrmPipelineInput): CrmPipeline {
+  const database = ensureDb();
+  const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
+  const existingEvent = getCrmConfigEventByIdempotencyKey(database, idempotencyKey, "pipeline", "crm.pipeline.created");
+  if (existingEvent) {
+    const row = getCrmPipelineRow(database, existingEvent.entity_id);
+    if (!row) throw new Error(`CRM idempotency key already used for missing pipeline: ${existingEvent.entity_id}`);
+    return rowToCrmPipeline(row);
+  }
+  const pipelineId = `crm_pipeline_${generateId()}`;
+  const entityType = input.entityType ? normalizeCrmEntityType(input.entityType) : "opportunity";
+  const pipelineName = normalizeRequiredText(input.name, "CRM pipeline name");
+  let pipeline: CrmPipeline | null = null;
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
+          INSERT INTO crm_pipelines (id, name, entity_type, is_default, status, metadata_json, created_at, updated_at)
+          VALUES (?, ?, ?, 0, 'active', ?, datetime('now'), datetime('now'))
+        `,
+        )
+        .run(pipelineId, pipelineName, entityType, jsonObject(input.metadata));
+      const row = requireCrmPipeline(database, pipelineId);
+      if (input.isDefault) setDefaultCrmPipeline(database, row);
+      const refreshed = requireCrmPipeline(database, pipelineId);
+      pipeline = rowToCrmPipeline(refreshed);
+      insertCrmConfigEvent(
+        database,
+        { ...input, idempotencyKey },
+        "crm.pipeline.created",
+        "pipeline",
+        pipelineId,
+        pipeline,
+      );
+    },
+    { label: "contacts:createCrmPipeline" },
+  );
+  if (!pipeline) throw new Error(`CRM pipeline not created: ${pipelineId}`);
+  return pipeline;
+}
+
+export function updateCrmPipeline(input: UpdateCrmPipelineInput): CrmPipeline {
+  const database = ensureDb();
+  const previous = requireCrmPipeline(database, input.pipelineRef);
+  const nextName =
+    input.name === undefined ? previous.name : normalizeRequiredText(input.name ?? "", "CRM pipeline name");
+  const nextEntityType =
+    input.entityType === undefined ? previous.entity_type : normalizeCrmEntityType(input.entityType ?? "");
+  const nextStatus =
+    input.status === undefined
+      ? previous.status
+      : normalizeCrmEnum<CrmPipelineStatus>(input.status, CRM_PIPELINE_STATUSES, previous.status);
+  const nextMetadata = normalizeMetadataObject(input.metadata, previous.metadata_json);
+  const shouldBeDefault = input.isDefault === undefined ? previous.is_default === 1 : input.isDefault === true;
+  let pipeline: CrmPipeline | null = null;
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare("UPDATE crm_pipelines SET is_default = 0, updated_at = datetime('now') WHERE id = ?")
+        .run(previous.id);
+      database
+        .prepare(
+          `
+          UPDATE crm_pipelines
+          SET name = ?, entity_type = ?, status = ?, metadata_json = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `,
+        )
+        .run(nextName, nextEntityType, nextStatus, jsonObject(nextMetadata), previous.id);
+      const row = requireCrmPipeline(database, previous.id);
+      if (shouldBeDefault) setDefaultCrmPipeline(database, row);
+      pipeline = rowToCrmPipeline(requireCrmPipeline(database, previous.id));
+      insertCrmConfigEvent(
+        database,
+        input,
+        nextStatus === "archived" && previous.status !== "archived" ? "crm.pipeline.archived" : "crm.pipeline.updated",
+        "pipeline",
+        previous.id,
+        pipeline,
+        rowToCrmPipeline(previous),
+      );
+    },
+    { label: "contacts:updateCrmPipeline" },
+  );
+  if (!pipeline) throw new Error(`CRM pipeline not updated: ${input.pipelineRef}`);
+  return pipeline;
+}
+
+export function createCrmPipelineStage(input: CreateCrmPipelineStageInput): CrmPipelineStage {
+  const database = ensureDb();
+  const pipeline = requireCrmPipeline(database, input.pipelineRef);
+  const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
+  const existingEvent = getCrmConfigEventByIdempotencyKey(
+    database,
+    idempotencyKey,
+    "pipeline_stage",
+    "crm.pipeline_stage.created",
+  );
+  if (existingEvent) {
+    const row = getCrmPipelineStageRow(database, pipeline.id, existingEvent.entity_id);
+    if (!row)
+      throw new Error(`CRM idempotency key already used for missing pipeline_stage: ${existingEvent.entity_id}`);
+    return rowToCrmPipelineStage(row);
+  }
+  const stageId = `crm_stage_${generateId()}`;
+  const key = normalizeCrmConfigKey(input.key, "CRM pipeline stage key");
+  const name = normalizeRequiredText(input.name, "CRM pipeline stage name");
+  const category = normalizeCrmEnum<string>(input.category, CRM_PIPELINE_STAGE_CATEGORIES, "active");
+  const isTerminal = input.isTerminal ?? category.startsWith("terminal_");
+  const sortOrder = normalizeOptionalNumber(input.sortOrder, "CRM pipeline stage order", null);
+  if (sortOrder === null) throw new Error("CRM pipeline stage order is required");
+  let stage: CrmPipelineStage | null = null;
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
+          INSERT INTO crm_pipeline_stages (
+            id, pipeline_id, key, name, sort_order, category, probability, is_terminal,
+            status, metadata_json, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, datetime('now'), datetime('now'))
+        `,
+        )
+        .run(
+          stageId,
+          pipeline.id,
+          key,
+          name,
+          sortOrder,
+          category,
+          normalizeProbability(input.probability),
+          isTerminal ? 1 : 0,
+          jsonObject(input.metadata),
+        );
+      stage = rowToCrmPipelineStage(requireCrmPipelineStage(database, pipeline.id, stageId));
+      insertCrmConfigEvent(
+        database,
+        { ...input, idempotencyKey },
+        "crm.pipeline_stage.created",
+        "pipeline_stage",
+        stageId,
+        stage,
+      );
+    },
+    { label: "contacts:createCrmPipelineStage" },
+  );
+  if (!stage) throw new Error(`CRM pipeline stage not created: ${key}`);
+  return stage;
+}
+
+export function updateCrmPipelineStage(input: UpdateCrmPipelineStageInput): CrmPipelineStage {
+  const database = ensureDb();
+  const pipeline = requireCrmPipeline(database, input.pipelineRef);
+  const previous = requireCrmPipelineStage(database, pipeline.id, input.stageRef);
+  const nextKey =
+    input.key === undefined ? previous.key : normalizeCrmConfigKey(input.key ?? "", "CRM pipeline stage key");
+  const nextName =
+    input.name === undefined ? previous.name : normalizeRequiredText(input.name ?? "", "CRM pipeline stage name");
+  const nextCategory =
+    input.category === undefined
+      ? previous.category
+      : normalizeCrmEnum<string>(input.category, CRM_PIPELINE_STAGE_CATEGORIES, previous.category);
+  const nextStatus =
+    input.status === undefined
+      ? previous.status
+      : normalizeCrmEnum<CrmPipelineStageStatus>(input.status, CRM_PIPELINE_STAGE_STATUSES, previous.status);
+  const nextSortOrder = normalizeOptionalNumber(input.sortOrder, "CRM pipeline stage order", previous.sort_order);
+  if (nextSortOrder === null) throw new Error("CRM pipeline stage order cannot be null");
+  const nextProbability = normalizeProbability(input.probability, previous.probability);
+  const nextIsTerminal = input.isTerminal === undefined ? previous.is_terminal === 1 : input.isTerminal === true;
+  const nextMetadata = normalizeMetadataObject(input.metadata, previous.metadata_json);
+  if (previous.status !== "archived" && nextStatus === "archived") {
+    const openOpportunityCount = countOpenCrmOpportunitiesForStage(database, previous.id);
+    if (openOpportunityCount > 0) {
+      const opportunityLabel = openOpportunityCount === 1 ? "opportunity" : "opportunities";
+      throw new Error(
+        `Cannot archive CRM pipeline stage ${previous.key}; move or close ${openOpportunityCount} open ${opportunityLabel} first`,
+      );
+    }
+  }
+  let stage: CrmPipelineStage | null = null;
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
+          UPDATE crm_pipeline_stages
+          SET key = ?, name = ?, sort_order = ?, category = ?, probability = ?, is_terminal = ?,
+              status = ?, metadata_json = ?, archived_at = CASE WHEN ? = 'archived' THEN COALESCE(archived_at, datetime('now')) ELSE NULL END,
+              updated_at = datetime('now')
+          WHERE id = ?
+        `,
+        )
+        .run(
+          nextKey,
+          nextName,
+          nextSortOrder,
+          nextCategory,
+          nextProbability,
+          nextIsTerminal ? 1 : 0,
+          nextStatus,
+          jsonObject(nextMetadata),
+          nextStatus,
+          previous.id,
+        );
+      stage = rowToCrmPipelineStage(requireCrmPipelineStage(database, pipeline.id, previous.id));
+      insertCrmConfigEvent(
+        database,
+        input,
+        nextStatus === "archived" && previous.status !== "archived"
+          ? "crm.pipeline_stage.archived"
+          : "crm.pipeline_stage.updated",
+        "pipeline_stage",
+        previous.id,
+        stage,
+        rowToCrmPipelineStage(previous),
+      );
+    },
+    { label: "contacts:updateCrmPipelineStage" },
+  );
+  if (!stage) throw new Error(`CRM pipeline stage not updated: ${input.stageRef}`);
+  return stage;
+}
+
+export function archiveCrmPipelineStage(input: Omit<UpdateCrmPipelineStageInput, "status">): CrmPipelineStage {
+  return updateCrmPipelineStage({ ...input, status: "archived" });
+}
+
+export function createCrmPipelineStageTopic(input: CreateCrmPipelineStageTopicInput): CrmPipelineStageTopic {
+  const database = ensureDb();
+  const pipeline = requireCrmPipeline(database, input.pipelineRef);
+  const stage = requireCrmPipelineStage(database, pipeline.id, input.stageRef);
+  const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
+  const existingEvent = getCrmConfigEventByIdempotencyKey(
+    database,
+    idempotencyKey,
+    "pipeline_stage_topic",
+    "crm.pipeline_stage_topic.created",
+  );
+  if (existingEvent) {
+    const row = getCrmPipelineStageTopicRow(database, pipeline.id, stage.id, existingEvent.entity_id);
+    if (!row) {
+      throw new Error(`CRM idempotency key already used for missing pipeline_stage_topic: ${existingEvent.entity_id}`);
+    }
+    return rowToCrmPipelineStageTopic(row);
+  }
+  const topicId = `crm_stage_topic_${generateId()}`;
+  const key = normalizeCrmConfigKey(input.key, "CRM pipeline stage topic key");
+  const title = normalizeRequiredText(input.title, "CRM pipeline stage topic title");
+  const topicType = normalizeCrmEnum<string>(input.topicType, CRM_PIPELINE_STAGE_TOPIC_TYPES, "subject");
+  const sortOrder = normalizeOptionalNumber(input.sortOrder, "CRM pipeline stage topic order", 0);
+  if (sortOrder === null) throw new Error("CRM pipeline stage topic order cannot be null");
+  let topic: CrmPipelineStageTopic | null = null;
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
+          INSERT INTO crm_pipeline_stage_topics (
+            id, pipeline_id, stage_id, key, title, description, topic_type, status,
+            sort_order, metadata_json, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, datetime('now'), datetime('now'))
+        `,
+        )
+        .run(
+          topicId,
+          pipeline.id,
+          stage.id,
+          key,
+          title,
+          normalizeOptionalText(input.description),
+          topicType,
+          sortOrder,
+          jsonObject(input.metadata),
+        );
+      topic = rowToCrmPipelineStageTopic(requireCrmPipelineStageTopic(database, pipeline.id, stage.id, topicId));
+      insertCrmConfigEvent(
+        database,
+        { ...input, idempotencyKey },
+        "crm.pipeline_stage_topic.created",
+        "pipeline_stage_topic",
+        topicId,
+        topic,
+      );
+    },
+    { label: "contacts:createCrmPipelineStageTopic" },
+  );
+  if (!topic) throw new Error(`CRM pipeline stage topic not created: ${key}`);
+  return topic;
+}
+
+export function updateCrmPipelineStageTopic(input: UpdateCrmPipelineStageTopicInput): CrmPipelineStageTopic {
+  const database = ensureDb();
+  const pipeline = requireCrmPipeline(database, input.pipelineRef);
+  const stage = requireCrmPipelineStage(database, pipeline.id, input.stageRef);
+  const previous = requireCrmPipelineStageTopic(database, pipeline.id, stage.id, input.topicRef);
+  const nextKey =
+    input.key === undefined ? previous.key : normalizeCrmConfigKey(input.key ?? "", "CRM pipeline stage topic key");
+  const nextTitle =
+    input.title === undefined
+      ? previous.title
+      : normalizeRequiredText(input.title ?? "", "CRM pipeline stage topic title");
+  const nextTopicType =
+    input.topicType === undefined
+      ? previous.topic_type
+      : normalizeCrmEnum<string>(input.topicType, CRM_PIPELINE_STAGE_TOPIC_TYPES, previous.topic_type);
+  const nextStatus =
+    input.status === undefined
+      ? previous.status
+      : normalizeCrmEnum<CrmPipelineStageTopicStatus>(input.status, CRM_PIPELINE_STAGE_TOPIC_STATUSES, previous.status);
+  const nextSortOrder = normalizeOptionalNumber(input.sortOrder, "CRM pipeline stage topic order", previous.sort_order);
+  if (nextSortOrder === null) throw new Error("CRM pipeline stage topic order cannot be null");
+  const nextMetadata = normalizeMetadataObject(input.metadata, previous.metadata_json);
+  let topic: CrmPipelineStageTopic | null = null;
+  executeWrite(
+    database,
+    () => {
+      database
+        .prepare(
+          `
+          UPDATE crm_pipeline_stage_topics
+          SET key = ?, title = ?, description = ?, topic_type = ?, status = ?, sort_order = ?,
+              metadata_json = ?, archived_at = CASE WHEN ? = 'archived' THEN COALESCE(archived_at, datetime('now')) ELSE NULL END,
+              updated_at = datetime('now')
+          WHERE id = ?
+        `,
+        )
+        .run(
+          nextKey,
+          nextTitle,
+          input.description === undefined ? previous.description : normalizeOptionalText(input.description),
+          nextTopicType,
+          nextStatus,
+          nextSortOrder,
+          jsonObject(nextMetadata),
+          nextStatus,
+          previous.id,
+        );
+      topic = rowToCrmPipelineStageTopic(requireCrmPipelineStageTopic(database, pipeline.id, stage.id, previous.id));
+      insertCrmConfigEvent(
+        database,
+        input,
+        nextStatus === "archived" && previous.status !== "archived"
+          ? "crm.pipeline_stage_topic.archived"
+          : "crm.pipeline_stage_topic.updated",
+        "pipeline_stage_topic",
+        previous.id,
+        topic,
+        rowToCrmPipelineStageTopic(previous),
+      );
+    },
+    { label: "contacts:updateCrmPipelineStageTopic" },
+  );
+  if (!topic) throw new Error(`CRM pipeline stage topic not updated: ${input.topicRef}`);
+  return topic;
+}
+
+export function archiveCrmPipelineStageTopic(
+  input: Omit<UpdateCrmPipelineStageTopicInput, "status">,
+): CrmPipelineStageTopic {
+  return updateCrmPipelineStageTopic({ ...input, status: "archived" });
+}
+
 function resolveCrmStage(database: Database, stageRef?: string | null, pipelineId?: string | null): CrmPipelineStage {
   const resolvedPipelineId = pipelineId?.trim() || "crm_pipeline_default";
   const ref = stageRef?.trim();
@@ -4442,13 +5374,15 @@ function resolveCrmStage(database: Database, stageRef?: string | null, pipelineI
         .prepare(
           `
           SELECT * FROM crm_pipeline_stages
-          WHERE pipeline_id = ? AND (id = ? OR key = ?)
+          WHERE pipeline_id = ? AND status != 'archived' AND (id = ? OR key = ?)
           LIMIT 1
         `,
         )
         .get(resolvedPipelineId, ref, ref) as CrmPipelineStageRow | undefined)
     : (database
-        .prepare("SELECT * FROM crm_pipeline_stages WHERE pipeline_id = ? ORDER BY sort_order LIMIT 1")
+        .prepare(
+          "SELECT * FROM crm_pipeline_stages WHERE pipeline_id = ? AND status != 'archived' ORDER BY sort_order LIMIT 1",
+        )
         .get(resolvedPipelineId) as CrmPipelineStageRow | undefined);
   if (!row) throw new Error(`CRM pipeline stage not found: ${ref ?? "default"}`);
   return rowToCrmPipelineStage(row);
@@ -4874,9 +5808,33 @@ export function getCrmOpportunity(opportunityId: string): CrmOpportunity | null 
   return row ? rowToCrmOpportunity(row) : null;
 }
 
-export function listCrmOpportunityBoard(): CrmOpportunityBoardCard[] {
-  const rows = ensureDb().prepare("SELECT * FROM crm_opportunity_board").all() as CrmOpportunityBoardRow[];
+export function listCrmOpportunityBoard(options: ListCrmOpportunityBoardOptions = {}): CrmOpportunityBoardCard[] {
+  const database = ensureDb();
+  const pipeline = options.pipelineRef ? requireCrmPipeline(database, options.pipelineRef) : null;
+  const rows = pipeline
+    ? (database
+        .prepare("SELECT * FROM crm_opportunity_board WHERE pipeline_id = ? ORDER BY stage_order ASC, updated_at DESC")
+        .all(pipeline.id) as CrmOpportunityBoardRow[])
+    : (database.prepare("SELECT * FROM crm_opportunity_board").all() as CrmOpportunityBoardRow[]);
   return rows.map(rowToCrmOpportunityBoardCard);
+}
+
+export function listCrmOpportunityBoardStages(pipelineRef?: string | null): CrmOpportunityBoardStage[] {
+  const database = ensureDb();
+  const pipeline = pipelineRef
+    ? requireCrmPipeline(database, pipelineRef)
+    : (getDefaultCrmPipelineRow(database, "opportunity") ?? requireCrmPipeline(database, "crm_pipeline_default"));
+  const stages = listCrmPipelineStages(pipeline.id);
+  const opportunities = listCrmOpportunityBoard({ pipelineRef: pipeline.id });
+  const grouped = new Map<string, CrmOpportunityBoardCard[]>();
+  for (const opportunity of opportunities) {
+    if (!opportunity.stageKey) continue;
+    grouped.set(opportunity.stageKey, [...(grouped.get(opportunity.stageKey) ?? []), opportunity]);
+  }
+  return stages.map((stage) => ({
+    stage,
+    opportunities: grouped.get(stage.key) ?? [],
+  }));
 }
 
 function refreshCrmContactNextAction(database: Database, contactId: string): void {

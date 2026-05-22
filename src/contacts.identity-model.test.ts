@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import {
   addContactTag,
+  archiveCrmPipelineStage,
   backfillInboundContacts,
   cancelCrmTask,
   closeContacts,
@@ -11,6 +12,9 @@ import {
   createContactEvent,
   createCrmEvent,
   createCrmOpportunity,
+  createCrmPipeline,
+  createCrmPipelineStage,
+  createCrmPipelineStageTopic,
   createCrmTask,
   confirmCrmFact,
   deleteContact,
@@ -18,6 +22,8 @@ import {
   getAllContacts,
   getCrmContactProfile,
   getCrmOpportunity,
+  getCrmPipeline,
+  getCrmPipelineStage,
   getContact,
   getContactsByStatus,
   getContactDetails,
@@ -30,6 +36,10 @@ import {
   listCrmFacts,
   listCrmNextActions,
   listCrmOpportunityContacts,
+  listCrmOpportunityBoardStages,
+  listCrmPipelineStageTopics,
+  listCrmPipelineStages,
+  listCrmPipelines,
   listCrmTasks,
   listContactEvents,
   listContactMetadata,
@@ -43,6 +53,8 @@ import {
   setContactMetadata,
   snoozeCrmTask,
   unlinkContactIdentity,
+  updateCrmPipelineStage,
+  updateCrmPipelineStageTopic,
   updateCrmContactProfile,
   upsertAgentPlatformIdentity,
   upsertContact,
@@ -128,6 +140,9 @@ describe("contacts identity graph schema", () => {
           'crm_contact_profiles',
           'crm_accounts',
           'crm_account_contacts',
+          'crm_pipelines',
+          'crm_pipeline_stages',
+          'crm_pipeline_stage_topics',
           'crm_opportunities',
           'crm_tasks',
           'crm_contact_cards',
@@ -161,6 +176,9 @@ describe("contacts identity graph schema", () => {
       "view:crm_next_actions",
       "table:crm_opportunities",
       "view:crm_opportunity_board",
+      "table:crm_pipeline_stage_topics",
+      "table:crm_pipeline_stages",
+      "table:crm_pipelines",
       "table:crm_tasks",
     ]);
     expect(row).toEqual({ lifecycle: "lead", policy_status: "allowed" });
@@ -217,6 +235,137 @@ describe("contacts identity graph schema", () => {
     );
     expect(() => db.prepare("DELETE FROM crm_events WHERE id = ?").run(event.id)).toThrow(/append-only/);
     db.close();
+  });
+
+  it("configures CRM pipelines, stages, and stage topics with audit events", () => {
+    const pipeline = createCrmPipeline({
+      name: "Reactivation Pipeline",
+      entityType: "opportunity",
+      metadata: { campaignKind: "reactivation" },
+      source: "test",
+      actorType: "agent",
+      actorId: "dev",
+      idempotencyKey: "idem-pipeline-config",
+    });
+    const repeatedPipeline = createCrmPipeline({
+      name: "Reactivation Pipeline Duplicate",
+      entityType: "opportunity",
+      source: "test",
+      idempotencyKey: "idem-pipeline-config",
+    });
+    expect(repeatedPipeline.id).toBe(pipeline.id);
+    expect(repeatedPipeline.name).toBe("Reactivation Pipeline");
+    expect(listCrmPipelines().map((item) => item.id)).toContain(pipeline.id);
+
+    const stage = createCrmPipelineStage({
+      pipelineRef: pipeline.id,
+      key: "inactive_90d",
+      name: "Inactive 90d",
+      sortOrder: 10,
+      category: "active",
+      probability: 0.1,
+      source: "test",
+      actorType: "agent",
+      actorId: "dev",
+      idempotencyKey: "idem-stage-config",
+    });
+    const repeatedStage = createCrmPipelineStage({
+      pipelineRef: pipeline.id,
+      key: "inactive_duplicate",
+      name: "Inactive Duplicate",
+      sortOrder: 11,
+      category: "active",
+      source: "test",
+      idempotencyKey: "idem-stage-config",
+    });
+    expect(repeatedStage.id).toBe(stage.id);
+    expect(repeatedStage.key).toBe("inactive_90d");
+    expect(listCrmPipelineStages(pipeline.id)[0]).toMatchObject({
+      key: "inactive_90d",
+      probability: 0.1,
+      status: "active",
+    });
+
+    const topic = createCrmPipelineStageTopic({
+      pipelineRef: pipeline.id,
+      stageRef: stage.id,
+      key: "last_purchase",
+      title: "Last purchase",
+      topicType: "qualification",
+      sortOrder: 10,
+      source: "test",
+      actorType: "agent",
+      actorId: "dev",
+      idempotencyKey: "idem-topic-config",
+    });
+    const repeatedTopic = createCrmPipelineStageTopic({
+      pipelineRef: pipeline.id,
+      stageRef: stage.id,
+      key: "last_purchase_duplicate",
+      title: "Last purchase duplicate",
+      source: "test",
+      idempotencyKey: "idem-topic-config",
+    });
+    expect(repeatedTopic.id).toBe(topic.id);
+    expect(repeatedTopic.key).toBe("last_purchase");
+    expect(listCrmPipelineStageTopics(pipeline.id, stage.id)[0]).toMatchObject({
+      key: "last_purchase",
+      title: "Last purchase",
+    });
+
+    expect(getCrmPipeline(pipeline.id)?.topicsByStage[stage.id]?.[0]?.id).toBe(topic.id);
+    expect(getCrmPipelineStage(pipeline.id, stage.key)?.topics[0]?.key).toBe("last_purchase");
+
+    updateCrmPipelineStageTopic({
+      pipelineRef: pipeline.id,
+      stageRef: stage.id,
+      topicRef: topic.id,
+      status: "archived",
+      source: "test",
+    });
+    expect(listCrmPipelineStageTopics(pipeline.id, stage.id)).toHaveLength(0);
+
+    updateCrmPipelineStage({
+      pipelineRef: pipeline.id,
+      stageRef: stage.id,
+      status: "archived",
+      source: "test",
+    });
+    expect(listCrmPipelineStages(pipeline.id)).toHaveLength(0);
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const eventTypes = db.prepare("SELECT event_type FROM crm_events ORDER BY created_at, id").all() as Array<{
+      event_type: string;
+    }>;
+    db.close();
+    expect(eventTypes.map((event) => event.event_type)).toEqual(
+      expect.arrayContaining([
+        "crm.pipeline.created",
+        "crm.pipeline_stage.created",
+        "crm.pipeline_stage_topic.created",
+        "crm.pipeline_stage_topic.archived",
+        "crm.pipeline_stage.archived",
+      ]),
+    );
+  });
+
+  it("rejects archiving pipeline stages while open opportunities still reference them", () => {
+    const account = createCrmAccount({ name: "Archive Guard Account", source: "test" });
+    const opportunity = createCrmOpportunity({
+      title: "Archive Guard Opportunity",
+      accountId: account.id,
+      stageKey: "qualified",
+      source: "test",
+    });
+
+    expect(() =>
+      archiveCrmPipelineStage({ pipelineRef: "crm_pipeline_default", stageRef: "qualified", source: "test" }),
+    ).toThrow(/move or close 1 open opportunity/);
+
+    const qualifiedStage = listCrmOpportunityBoardStages("crm_pipeline_default").find(
+      (group) => group.stage.key === "qualified",
+    );
+    expect(qualifiedStage?.opportunities.map((item) => item.opportunityId)).toContain(opportunity.id);
   });
 
   it("keeps contact timeline events append-only at storage level", () => {

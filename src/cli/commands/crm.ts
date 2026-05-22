@@ -3,15 +3,22 @@ import { Arg, Command, Group, Option, Scope } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import {
+  archiveCrmPipelineStage,
+  archiveCrmPipelineStageTopic,
   cancelCrmTask,
   completeCrmTask,
   confirmCrmFact,
   createCrmAccount,
   createCrmOpportunity,
+  createCrmPipeline,
+  createCrmPipelineStage,
+  createCrmPipelineStageTopic,
   createCrmTask,
   getCrmAccount,
   getCrmContactProfile,
   getCrmOpportunity,
+  getCrmPipeline,
+  getCrmPipelineStage,
   getCrmTask,
   linkCrmAccountContact,
   linkCrmOpportunityContact,
@@ -19,12 +26,19 @@ import {
   listCrmFacts,
   listCrmNextActions,
   listCrmOpportunityBoard,
+  listCrmOpportunityBoardStages,
   listCrmOpportunityContacts,
+  listCrmPipelineStageTopics,
+  listCrmPipelineStages,
+  listCrmPipelines,
   listCrmTasks,
   moveCrmOpportunityStage,
   proposeCrmFact,
   rejectCrmFact,
   snoozeCrmTask,
+  updateCrmPipeline,
+  updateCrmPipelineStage,
+  updateCrmPipelineStageTopic,
   updateCrmContactProfile,
   type CrmOwnerType,
 } from "../../contacts.js";
@@ -51,6 +65,19 @@ function parseOptionalNumber(value: string | undefined, label: string): number |
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) fail(`${label} must be a number`);
   return parsed;
+}
+
+function parseRequiredNumber(value: string, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) fail(`${label} must be a number`);
+  return parsed;
+}
+
+function parseBooleanValue(value: string, label: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "sim", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "nao", "não", "off"].includes(normalized)) return false;
+  fail(`${label} must be true/false`);
 }
 
 function parseJsonObjectArg(value: string): Record<string, unknown> | null {
@@ -532,11 +559,29 @@ export class ACrmCommands {
 
   @Scope("open")
   @Command({ name: "board", description: "Show open opportunity board" })
-  board(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const board = listCrmOpportunityBoard();
-    const payload = { total: board.length, opportunities: board };
+  board(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--pipeline <pipeline>", description: "Filter by CRM pipeline ID or name" }) pipeline?: string,
+    @Option({ flags: "--include-empty-stages", description: "Include configured stages with no opportunities" })
+    includeEmptyStages?: boolean,
+  ) {
+    const board = listCrmOpportunityBoard({ pipelineRef: pipeline });
+    const stages = includeEmptyStages ? listCrmOpportunityBoardStages(pipeline) : undefined;
+    const payload = stages
+      ? { total: board.length, stages, opportunities: board }
+      : { total: board.length, opportunities: board };
     if (asJson) {
       printJson(payload);
+      return payload;
+    }
+    if (stages) {
+      console.log("\nCRM opportunity board:\n");
+      for (const group of stages) {
+        console.log(`${group.stage.key} ${group.stage.name} (${group.opportunities.length})`);
+        for (const opportunity of group.opportunities) {
+          console.log(`  - ${opportunity.opportunityId}: ${opportunity.title}`);
+        }
+      }
       return payload;
     }
     if (board.length === 0) {
@@ -546,6 +591,396 @@ export class ACrmCommands {
     console.log("\nCRM opportunity board:\n");
     for (const opportunity of board) {
       console.log(`- ${opportunity.stageKey ?? "-"} ${opportunity.opportunityId}: ${opportunity.title}`);
+    }
+    return payload;
+  }
+}
+
+@Group({
+  name: "crm.pipeline",
+  description: "CRM configurable pipelines",
+})
+export class CrmPipelineCommands {
+  @Scope("open")
+  @Command({ name: "list", description: "List CRM pipelines" })
+  list(
+    @Option({ flags: "--entity-type <type>", description: "Filter by CRM entity type" }) entityType?: string,
+    @Option({ flags: "--include-archived", description: "Include archived pipelines" }) includeArchived?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const pipelines = listCrmPipelines({ entityType, includeArchived: Boolean(includeArchived) });
+    const payload = { total: pipelines.length, pipelines };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (pipelines.length === 0) {
+      console.log("No CRM pipelines found.");
+      return payload;
+    }
+    for (const pipeline of pipelines) {
+      console.log(`- ${pipeline.isDefault ? "*" : "-"} ${pipeline.id} ${pipeline.name} ${pipeline.status}`);
+    }
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({ name: "show", description: "Show one CRM pipeline with stages and topics" })
+  show(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const payload = pipeline;
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`\nCRM pipeline: ${pipeline.pipeline.name}`);
+    console.log(`  id: ${pipeline.pipeline.id}`);
+    console.log(`  entity: ${pipeline.pipeline.entityType}`);
+    console.log(`  status: ${pipeline.pipeline.status}`);
+    console.log("\nStages:");
+    for (const stage of pipeline.stages) {
+      const topics = pipeline.topicsByStage[stage.id] ?? [];
+      console.log(
+        `- ${stage.key} ${stage.name} order=${stage.sortOrder} status=${stage.status} topics=${topics.length}`,
+      );
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "create", description: "Create a CRM pipeline" })
+  create(
+    @Arg("name", { description: "Pipeline name" }) name: string,
+    @Option({ flags: "--entity-type <type>", description: "CRM entity type (default: opportunity)" })
+    entityType?: string,
+    @Option({ flags: "--default", description: "Mark as default pipeline for the entity type" }) isDefault?: boolean,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object" }) metadataJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated create attempts" })
+    idempotencyKey?: string,
+  ) {
+    const pipeline = createCrmPipeline({
+      name,
+      entityType,
+      isDefault: isDefault === true,
+      metadata: parseOptionalJsonObject(metadataJson, "--metadata"),
+      source: "cli",
+      actorType: "user",
+      idempotencyKey,
+    });
+    const payload = { status: "created" as const, pipeline, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline created: ${pipeline.id} ${pipeline.name}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "set", description: "Set a CRM pipeline field" })
+  set(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("field", { description: "name|entity-type|default|status|metadata" }) field: string,
+    @Arg("value", { description: "New value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const normalizedField = field.trim().toLowerCase();
+    const input: Parameters<typeof updateCrmPipeline>[0] = {
+      pipelineRef,
+      source: "cli",
+      actorType: "user",
+    };
+    if (normalizedField === "name") input.name = value;
+    else if (normalizedField === "entity-type" || normalizedField === "entitytype") input.entityType = value;
+    else if (normalizedField === "default" || normalizedField === "is-default")
+      input.isDefault = parseBooleanValue(value, field);
+    else if (normalizedField === "status") input.status = value;
+    else if (normalizedField === "metadata") input.metadata = parseJsonObjectArg(value);
+    else fail(`Unsupported CRM pipeline field: ${field}`);
+
+    const pipeline = updateCrmPipeline(input);
+    const payload = { status: "updated" as const, pipeline, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline updated: ${pipeline.id} ${pipeline.name}`);
+    }
+    return payload;
+  }
+}
+
+@Group({
+  name: "crm.pipeline.stage",
+  description: "CRM pipeline stages",
+})
+export class CrmPipelineStageCommands {
+  @Scope("open")
+  @Command({ name: "list", description: "List stages in a CRM pipeline" })
+  list(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({ flags: "--include-archived", description: "Include archived stages" }) includeArchived?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const stages = listCrmPipelineStages(pipelineRef, { includeArchived: Boolean(includeArchived) });
+    const payload = { pipeline: pipelineRef, total: stages.length, stages };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (stages.length === 0) {
+      console.log("No CRM pipeline stages found.");
+      return payload;
+    }
+    for (const stage of stages) {
+      console.log(`- ${stage.sortOrder} ${stage.key} ${stage.name} ${stage.status}`);
+    }
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({ name: "show", description: "Show one CRM pipeline stage" })
+  show(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const stage = getCrmPipelineStage(pipelineRef, stageRef);
+    if (!stage) fail(`CRM pipeline stage not found: ${stageRef}`);
+    if (asJson) {
+      printJson(stage);
+      return stage;
+    }
+    console.log(`\nCRM pipeline stage: ${stage.stage.name}`);
+    console.log(`  key: ${stage.stage.key}`);
+    console.log(`  order: ${stage.stage.sortOrder}`);
+    console.log(`  topics: ${stage.topics.length}`);
+    return stage;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "add", description: "Add a stage to a CRM pipeline" })
+  add(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("key", { description: "Stage key" }) key: string,
+    @Option({ flags: "--name <name>", description: "Stage display name" }) name?: string,
+    @Option({ flags: "--order <n>", description: "Stage sort order" }) order?: string,
+    @Option({ flags: "--category <category>", description: "new|active|waiting|terminal_won|terminal_lost" })
+    category?: string,
+    @Option({ flags: "--probability <n>", description: "Default probability between 0 and 1" }) probability?: string,
+    @Option({ flags: "--terminal", description: "Mark stage as terminal" }) terminal?: boolean,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object" }) metadataJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated create attempts" })
+    idempotencyKey?: string,
+  ) {
+    if (!name) fail("--name is required");
+    if (!order) fail("--order is required");
+    const stage = createCrmPipelineStage({
+      pipelineRef,
+      key,
+      name,
+      sortOrder: parseRequiredNumber(order, "--order"),
+      category,
+      probability: parseOptionalNumber(probability, "--probability") ?? undefined,
+      isTerminal: terminal === true ? true : undefined,
+      metadata: parseOptionalJsonObject(metadataJson, "--metadata"),
+      source: "cli",
+      actorType: "user",
+      idempotencyKey,
+    });
+    const payload = { status: "created" as const, stage, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage created: ${stage.key} ${stage.name}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "set", description: "Set a CRM pipeline stage field" })
+  set(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Arg("field", { description: "key|name|order|category|probability|terminal|status|metadata" }) field: string,
+    @Arg("value", { description: "New value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const normalizedField = field.trim().toLowerCase();
+    const input: Parameters<typeof updateCrmPipelineStage>[0] = {
+      pipelineRef,
+      stageRef,
+      source: "cli",
+      actorType: "user",
+    };
+    if (normalizedField === "key") input.key = value;
+    else if (normalizedField === "name") input.name = value;
+    else if (normalizedField === "order" || normalizedField === "sort-order")
+      input.sortOrder = parseRequiredNumber(value, field);
+    else if (normalizedField === "category") input.category = value;
+    else if (normalizedField === "probability") input.probability = parseOptionalNumber(value, field);
+    else if (normalizedField === "terminal" || normalizedField === "is-terminal")
+      input.isTerminal = parseBooleanValue(value, field);
+    else if (normalizedField === "status") input.status = value;
+    else if (normalizedField === "metadata") input.metadata = parseJsonObjectArg(value);
+    else fail(`Unsupported CRM pipeline stage field: ${field}`);
+
+    const stage = updateCrmPipelineStage(input);
+    const payload = { status: "updated" as const, stage, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage updated: ${stage.key} ${stage.name}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "archive", description: "Archive a CRM pipeline stage" })
+  archive(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const stage = archiveCrmPipelineStage({ pipelineRef, stageRef, source: "cli", actorType: "user" });
+    const payload = { status: "archived" as const, stage, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage archived: ${stage.key}`);
+    }
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({ name: "topics", description: "List topics configured for a CRM pipeline stage" })
+  topics(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Option({ flags: "--include-archived", description: "Include archived topics" }) includeArchived?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const topics = listCrmPipelineStageTopics(pipelineRef, stageRef, { includeArchived: Boolean(includeArchived) });
+    const payload = { pipeline: pipelineRef, stage: stageRef, total: topics.length, topics };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (topics.length === 0) {
+      console.log("No CRM pipeline stage topics found.");
+      return payload;
+    }
+    for (const topic of topics) {
+      console.log(`- ${topic.sortOrder} ${topic.key} ${topic.title} ${topic.status}`);
+    }
+    return payload;
+  }
+}
+
+@Group({
+  name: "crm.pipeline.stage.topic",
+  description: "CRM pipeline stage topics",
+})
+export class CrmPipelineStageTopicCommands {
+  @Scope("writeContacts")
+  @Command({ name: "add", description: "Add a topic to a CRM pipeline stage" })
+  add(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Arg("key", { description: "Topic key" }) key: string,
+    @Option({ flags: "--title <title>", description: "Topic title" }) title?: string,
+    @Option({ flags: "--description <text>", description: "Topic description" }) description?: string,
+    @Option({
+      flags: "--type <type>",
+      description: "subject|objection|qualification|proposal|pricing|next_action|risk",
+    })
+    topicType?: string,
+    @Option({ flags: "--order <n>", description: "Topic sort order" }) order?: string,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object" }) metadataJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated create attempts" })
+    idempotencyKey?: string,
+  ) {
+    if (!title) fail("--title is required");
+    const topic = createCrmPipelineStageTopic({
+      pipelineRef,
+      stageRef,
+      key,
+      title,
+      description,
+      topicType,
+      sortOrder: order === undefined ? undefined : parseRequiredNumber(order, "--order"),
+      metadata: parseOptionalJsonObject(metadataJson, "--metadata"),
+      source: "cli",
+      actorType: "user",
+      idempotencyKey,
+    });
+    const payload = { status: "created" as const, topic, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage topic created: ${topic.key} ${topic.title}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "set", description: "Set a CRM pipeline stage topic field" })
+  set(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Arg("topic", { description: "Topic key or ID" }) topicRef: string,
+    @Arg("field", { description: "key|title|description|type|order|status|metadata" }) field: string,
+    @Arg("value", { description: "New value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const normalizedField = field.trim().toLowerCase();
+    const input: Parameters<typeof updateCrmPipelineStageTopic>[0] = {
+      pipelineRef,
+      stageRef,
+      topicRef,
+      source: "cli",
+      actorType: "user",
+    };
+    if (normalizedField === "key") input.key = value;
+    else if (normalizedField === "title") input.title = value;
+    else if (normalizedField === "description") input.description = parseNullable(value);
+    else if (normalizedField === "type" || normalizedField === "topic-type") input.topicType = value;
+    else if (normalizedField === "order" || normalizedField === "sort-order")
+      input.sortOrder = parseRequiredNumber(value, field);
+    else if (normalizedField === "status") input.status = value;
+    else if (normalizedField === "metadata") input.metadata = parseJsonObjectArg(value);
+    else fail(`Unsupported CRM pipeline stage topic field: ${field}`);
+
+    const topic = updateCrmPipelineStageTopic(input);
+    const payload = { status: "updated" as const, topic, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage topic updated: ${topic.key} ${topic.title}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "archive", description: "Archive a CRM pipeline stage topic" })
+  archive(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Arg("topic", { description: "Topic key or ID" }) topicRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const topic = archiveCrmPipelineStageTopic({ pipelineRef, stageRef, topicRef, source: "cli", actorType: "user" });
+    const payload = { status: "archived" as const, topic, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage topic archived: ${topic.key}`);
     }
     return payload;
   }
