@@ -1019,7 +1019,10 @@ export type CrmAccountShowInput = {
 export type CrmAccountShowReturn = unknown;
 
 /** Input shape for `crm.board`. */
-export type CrmBoardInput = Record<string, never>;
+export type CrmBoardInput = {
+  includeEmptyStages?: boolean;
+  pipeline?: string;
+};
 
 /** Return shape for `crm.board`. (no @Returns declared) */
 export type CrmBoardReturn = unknown;
@@ -1188,6 +1191,147 @@ export type CrmOpportunityShowInput = {
 
 /** Return shape for `crm.opportunity.show`. (no @Returns declared) */
 export type CrmOpportunityShowReturn = unknown;
+
+/** Input shape for `crm.pipeline.create`. */
+export type CrmPipelineCreateInput = {
+  default?: boolean;
+  entityType?: string;
+  idempotencyKey?: string;
+  metadata?: string;
+  name: string;
+};
+
+/** Return shape for `crm.pipeline.create`. (no @Returns declared) */
+export type CrmPipelineCreateReturn = unknown;
+
+/** Input shape for `crm.pipeline.list`. */
+export type CrmPipelineListInput = {
+  entityType?: string;
+  includeArchived?: boolean;
+};
+
+/** Return shape for `crm.pipeline.list`. (no @Returns declared) */
+export type CrmPipelineListReturn = unknown;
+
+/** Input shape for `crm.pipeline.set`. */
+export type CrmPipelineSetInput = {
+  field: string;
+  pipeline: string;
+  value: string;
+};
+
+/** Return shape for `crm.pipeline.set`. (no @Returns declared) */
+export type CrmPipelineSetReturn = unknown;
+
+/** Input shape for `crm.pipeline.show`. */
+export type CrmPipelineShowInput = {
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.show`. (no @Returns declared) */
+export type CrmPipelineShowReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.add`. */
+export type CrmPipelineStageAddInput = {
+  category?: string;
+  idempotencyKey?: string;
+  key: string;
+  metadata?: string;
+  name?: string;
+  order?: string;
+  pipeline: string;
+  probability?: string;
+  terminal?: boolean;
+};
+
+/** Return shape for `crm.pipeline.stage.add`. (no @Returns declared) */
+export type CrmPipelineStageAddReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.archive`. */
+export type CrmPipelineStageArchiveInput = {
+  pipeline: string;
+  stage: string;
+};
+
+/** Return shape for `crm.pipeline.stage.archive`. (no @Returns declared) */
+export type CrmPipelineStageArchiveReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.list`. */
+export type CrmPipelineStageListInput = {
+  includeArchived?: boolean;
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.stage.list`. (no @Returns declared) */
+export type CrmPipelineStageListReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.set`. */
+export type CrmPipelineStageSetInput = {
+  field: string;
+  pipeline: string;
+  stage: string;
+  value: string;
+};
+
+/** Return shape for `crm.pipeline.stage.set`. (no @Returns declared) */
+export type CrmPipelineStageSetReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.show`. */
+export type CrmPipelineStageShowInput = {
+  pipeline: string;
+  stage: string;
+};
+
+/** Return shape for `crm.pipeline.stage.show`. (no @Returns declared) */
+export type CrmPipelineStageShowReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.topic.add`. */
+export type CrmPipelineStageTopicAddInput = {
+  description?: string;
+  idempotencyKey?: string;
+  key: string;
+  metadata?: string;
+  order?: string;
+  pipeline: string;
+  stage: string;
+  title?: string;
+  type?: string;
+};
+
+/** Return shape for `crm.pipeline.stage.topic.add`. (no @Returns declared) */
+export type CrmPipelineStageTopicAddReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.topic.archive`. */
+export type CrmPipelineStageTopicArchiveInput = {
+  pipeline: string;
+  stage: string;
+  topic: string;
+};
+
+/** Return shape for `crm.pipeline.stage.topic.archive`. (no @Returns declared) */
+export type CrmPipelineStageTopicArchiveReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.topic.set`. */
+export type CrmPipelineStageTopicSetInput = {
+  field: string;
+  pipeline: string;
+  stage: string;
+  topic: string;
+  value: string;
+};
+
+/** Return shape for `crm.pipeline.stage.topic.set`. (no @Returns declared) */
+export type CrmPipelineStageTopicSetReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.topics`. */
+export type CrmPipelineStageTopicsInput = {
+  includeArchived?: boolean;
+  pipeline: string;
+  stage: string;
+};
+
+/** Return shape for `crm.pipeline.stage.topics`. (no @Returns declared) */
+export type CrmPipelineStageTopicsReturn = unknown;
 
 /** Input shape for `crm.task.cancel`. */
 export type CrmTaskCancelInput = {
@@ -2971,19 +3115,6 @@ export type SessionsExtendInput = {
 /** Return shape for `sessions.extend`. (no @Returns declared) */
 export type SessionsExtendReturn = unknown;
 
-/** Input shape for `sessions.focus`. */
-export type SessionsFocusInput = {
-  chat?: string;
-  clear?: boolean;
-  expires?: string;
-  nameOrKey: string;
-  reason?: string;
-  show?: boolean;
-};
-
-/** Return shape for `sessions.focus`. (no @Returns declared) */
-export type SessionsFocusReturn = unknown;
-
 /** Input shape for `sessions.goal`. */
 export type SessionsGoalInput = {
   action: string;
@@ -3213,15 +3344,6 @@ export type SessionsSetTtlInput = {
 
 /** Return shape for `sessions.set-ttl`. (no @Returns declared) */
 export type SessionsSetTtlReturn = unknown;
-
-/** Input shape for `sessions.set-unattached-focus-policy`. */
-export type SessionsSetUnattachedFocusPolicyInput = {
-  nameOrKey: string;
-  policy: string;
-};
-
-/** Return shape for `sessions.set-unattached-focus-policy`. (no @Returns declared) */
-export type SessionsSetUnattachedFocusPolicyReturn = unknown;
 
 /** Input shape for `sessions.subscriptions`. */
 export type SessionsSubscriptionsInput = {
@@ -4229,6 +4351,94 @@ export type VideoAnalyzeInput = {
 /** Return shape for `video.analyze`. (no @Returns declared) */
 export type VideoAnalyzeReturn = unknown;
 
+/** Input shape for `watch.connectors`. */
+export type WatchConnectorsInput = {
+  provider?: string;
+};
+
+/** Return shape for `watch.connectors`. (no @Returns declared) */
+export type WatchConnectorsReturn = unknown;
+
+/** Input shape for `watch.create`. */
+export type WatchCreateInput = {
+  event?: string;
+  installation?: string;
+  name?: string;
+  placement?: string;
+  project?: string;
+  provider: string;
+  resource: string;
+  resourceId?: string;
+};
+
+/** Return shape for `watch.create`. (no @Returns declared) */
+export type WatchCreateReturn = unknown;
+
+/** Input shape for `watch.disable`. */
+export type WatchDisableInput = {
+  id: string;
+};
+
+/** Return shape for `watch.disable`. (no @Returns declared) */
+export type WatchDisableReturn = unknown;
+
+/** Input shape for `watch.enable`. */
+export type WatchEnableInput = {
+  id: string;
+};
+
+/** Return shape for `watch.enable`. (no @Returns declared) */
+export type WatchEnableReturn = unknown;
+
+/** Input shape for `watch.events`. */
+export type WatchEventsInput = {
+  id: string;
+};
+
+/** Return shape for `watch.events`. (no @Returns declared) */
+export type WatchEventsReturn = unknown;
+
+/** Input shape for `watch.list`. */
+export type WatchListInput = {
+  limit?: string;
+  offset?: string;
+  provider?: string;
+  status?: string;
+};
+
+/** Return shape for `watch.list`. (no @Returns declared) */
+export type WatchListReturn = unknown;
+
+/** Input shape for `watch.rm`. */
+export type WatchRmInput = {
+  id: string;
+};
+
+/** Return shape for `watch.rm`. (no @Returns declared) */
+export type WatchRmReturn = unknown;
+
+/** Input shape for `watch.show`. */
+export type WatchShowInput = {
+  id: string;
+};
+
+/** Return shape for `watch.show`. (no @Returns declared) */
+export type WatchShowReturn = unknown;
+
+/** Input shape for `watch.trigger`. */
+export type WatchTriggerInput = {
+  account?: string;
+  agent?: string;
+  cooldown?: string;
+  event?: string;
+  id: string;
+  message?: string;
+  session?: string;
+};
+
+/** Return shape for `watch.trigger`. (no @Returns declared) */
+export type WatchTriggerReturn = unknown;
+
 /** Input shape for `whatsapp.dm.ack`. */
 export type WhatsappDmAckInput = {
   account?: string;
@@ -4385,6 +4595,17 @@ export type WhatsappGroupRevokeInviteInput = {
 
 /** Return shape for `whatsapp.group.revoke-invite`. (no @Returns declared) */
 export type WhatsappGroupRevokeInviteReturn = unknown;
+
+/** Input shape for `whatsapp.group.send`. */
+export type WhatsappGroupSendInput = {
+  account?: string;
+  groupId: string;
+  mention?: string[];
+  message: string;
+};
+
+/** Return shape for `whatsapp.group.send`. (no @Returns declared) */
+export type WhatsappGroupSendReturn = unknown;
 
 /** Input shape for `whatsapp.group.settings`. */
 export type WhatsappGroupSettingsInput = {

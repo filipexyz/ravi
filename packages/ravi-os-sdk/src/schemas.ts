@@ -2437,7 +2437,16 @@ export const CrmAccountShowInputSchema = {
 /** JSON Schema for the input body of `crm.board`. */
 export const CrmBoardInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "includeEmptyStages": {
+      "description": "Include configured stages with no opportunities",
+      "type": "boolean"
+    },
+    "pipeline": {
+      "description": "Filter by CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2840,6 +2849,363 @@ export const CrmOpportunityShowInputSchema = {
   },
   "required": [
     "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.create`. */
+export const CrmPipelineCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "default": {
+      "description": "Mark as default pipeline for the entity type",
+      "type": "boolean"
+    },
+    "entityType": {
+      "description": "CRM entity type (default: opportunity)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated create attempts",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Metadata JSON object",
+      "type": "string"
+    },
+    "name": {
+      "description": "Pipeline name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.list`. */
+export const CrmPipelineListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "entityType": {
+      "description": "Filter by CRM entity type",
+      "type": "string"
+    },
+    "includeArchived": {
+      "description": "Include archived pipelines",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.set`. */
+export const CrmPipelineSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "field": {
+      "description": "name|entity-type|default|status|metadata",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "value": {
+      "description": "New value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "pipeline",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.show`. */
+export const CrmPipelineShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.add`. */
+export const CrmPipelineStageAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "description": "new|active|waiting|terminal_won|terminal_lost",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated create attempts",
+      "type": "string"
+    },
+    "key": {
+      "description": "Stage key",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Metadata JSON object",
+      "type": "string"
+    },
+    "name": {
+      "description": "Stage display name",
+      "type": "string"
+    },
+    "order": {
+      "description": "Stage sort order",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "probability": {
+      "description": "Default probability between 0 and 1",
+      "type": "string"
+    },
+    "terminal": {
+      "description": "Mark stage as terminal",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "key",
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.archive`. */
+export const CrmPipelineStageArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline",
+    "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.list`. */
+export const CrmPipelineStageListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeArchived": {
+      "description": "Include archived stages",
+      "type": "boolean"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.set`. */
+export const CrmPipelineStageSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "field": {
+      "description": "key|name|order|category|probability|terminal|status|metadata",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    },
+    "value": {
+      "description": "New value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "pipeline",
+    "stage",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.show`. */
+export const CrmPipelineStageShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline",
+    "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.topic.add`. */
+export const CrmPipelineStageTopicAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "Topic description",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated create attempts",
+      "type": "string"
+    },
+    "key": {
+      "description": "Topic key",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Metadata JSON object",
+      "type": "string"
+    },
+    "order": {
+      "description": "Topic sort order",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    },
+    "title": {
+      "description": "Topic title",
+      "type": "string"
+    },
+    "type": {
+      "description": "subject|objection|qualification|proposal|pricing|next_action|risk",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "pipeline",
+    "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.topic.archive`. */
+export const CrmPipelineStageTopicArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    },
+    "topic": {
+      "description": "Topic key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline",
+    "stage",
+    "topic"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.topic.set`. */
+export const CrmPipelineStageTopicSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "field": {
+      "description": "key|title|description|type|order|status|metadata",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    },
+    "topic": {
+      "description": "Topic key or ID",
+      "type": "string"
+    },
+    "value": {
+      "description": "New value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "pipeline",
+    "stage",
+    "topic",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.topics`. */
+export const CrmPipelineStageTopicsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeArchived": {
+      "description": "Include archived topics",
+      "type": "boolean"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline",
+    "stage"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6930,41 +7296,6 @@ export const SessionsExtendInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `sessions.focus`. */
-export const SessionsFocusInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "chat": {
-      "description": "Chat to focus output on",
-      "type": "string"
-    },
-    "clear": {
-      "description": "Clear focus (return to default behaviour)",
-      "type": "boolean"
-    },
-    "expires": {
-      "description": "TTL like '30m', '2h', '1d'",
-      "type": "string"
-    },
-    "nameOrKey": {
-      "description": "Session name or key",
-      "type": "string"
-    },
-    "reason": {
-      "description": "Why focus is being set (audit)",
-      "type": "string"
-    },
-    "show": {
-      "description": "Show the current focus",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "nameOrKey"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `sessions.goal`. */
 export const SessionsGoalInputSchema = {
   "additionalProperties": false,
@@ -7527,26 +7858,6 @@ export const SessionsSetTtlInputSchema = {
   "required": [
     "duration",
     "nameOrKey"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `sessions.set-unattached-focus-policy`. */
-export const SessionsSetUnattachedFocusPolicyInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "nameOrKey": {
-      "description": "Session name or key",
-      "type": "string"
-    },
-    "policy": {
-      "description": "fail-closed | auto-follow",
-      "type": "string"
-    }
-  },
-  "required": [
-    "nameOrKey",
-    "policy"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10041,6 +10352,200 @@ export const VideoAnalyzeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `watch.connectors`. */
+export const WatchConnectorsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "description": "Filter by provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.create`. */
+export const WatchCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "description": "Event type; comma-separated for multiple",
+      "type": "string"
+    },
+    "installation": {
+      "description": "Console provider installation id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human name for this watch",
+      "type": "string"
+    },
+    "placement": {
+      "description": "auto|local|console (default: auto)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Connector id: github or npm",
+      "type": "string"
+    },
+    "resource": {
+      "description": "Watched resource, e.g. owner/repo or npm package",
+      "type": "string"
+    },
+    "resourceId": {
+      "description": "Console provider resource id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider",
+    "resource"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.disable`. */
+export const WatchDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.enable`. */
+export const WatchEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.events`. */
+export const WatchEventsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.list`. */
+export const WatchListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of watches to skip",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider",
+      "type": "string"
+    },
+    "status": {
+      "description": "active|disabled|error|all",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.rm`. */
+export const WatchRmInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.show`. */
+export const WatchShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.trigger`. */
+export const WatchTriggerInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Outbound account id",
+      "type": "string"
+    },
+    "agent": {
+      "description": "Agent id (default: current/default agent)",
+      "type": "string"
+    },
+    "cooldown": {
+      "description": "Cooldown between fires (default: 5s)",
+      "type": "string"
+    },
+    "event": {
+      "description": "Specific event type for multi-event watches",
+      "type": "string"
+    },
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    },
+    "message": {
+      "description": "Prompt to run when the watch fires",
+      "type": "string"
+    },
+    "session": {
+      "description": "main or isolated (default: isolated)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.dm.ack`. */
 export const WhatsappDmAckInputSchema = {
   "additionalProperties": false,
@@ -10400,6 +10905,37 @@ export const WhatsappGroupRevokeInviteInputSchema = {
   },
   "required": [
     "groupId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `whatsapp.group.send`. */
+export const WhatsappGroupSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "WhatsApp account ID",
+      "type": "string"
+    },
+    "groupId": {
+      "description": "Group ID, JID, or 'here' for the current chat",
+      "type": "string"
+    },
+    "mention": {
+      "description": "Mention group participant by name, phone, LID, or JID. Can be repeated or comma-separated.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "message": {
+      "description": "Message text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "groupId",
+    "message"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
