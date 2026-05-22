@@ -13,6 +13,7 @@ import {
 import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "./utils/pagination.js";
 import { nats } from "./nats.js";
+import { dbCanonicalizeDmChatForContact } from "./router/router-db.js";
 
 // Re-export shared phone helpers.
 export {
@@ -8448,12 +8449,31 @@ export function backfillInboundContacts(input: BackfillInboundContactsInput = {}
         const participantsUpdated = chatDatabase
           ? upsertBackfilledChatParticipant(chatDatabase, candidate, intake.contact.id, platformIdentityId)
           : 0;
+        const canonicalChat =
+          chatDatabase && candidate.chatId && candidate.chatType === "dm"
+            ? dbCanonicalizeDmChatForContact({
+                chatId: candidate.chatId,
+                contactId: intake.contact.id,
+                platformChatId: candidate.platformSenderId,
+                title: candidate.displayName ?? null,
+                avatarUrl: candidate.avatarUrl ?? null,
+                rawProvenance: {
+                  source: "inbound_contact_backfill",
+                  candidateKey: candidate.key,
+                  sources: candidate.sources,
+                  platformChatId: candidate.provenance.platformChatId ?? null,
+                },
+                seenAt: candidate.lastSeenAt ?? Date.now(),
+              })
+            : null;
+        const canonicalChatId = canonicalChat?.id ?? candidate.chatId;
         const readingListMemberAdded = chatDatabase
-          ? addBackfilledChatToReadingList(chatDatabase, readingList?.id ?? null, candidate.chatId)
+          ? addBackfilledChatToReadingList(chatDatabase, readingList?.id ?? null, canonicalChatId)
           : false;
 
         item = {
           ...item,
+          chatId: canonicalChatId,
           contactId: intake.contact.id,
           platformIdentityId,
           createdContact: intake.createdContact,

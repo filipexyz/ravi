@@ -13,6 +13,8 @@ const actualChatDbModule = await import("../db.js");
 const actualDbSaveMessageMeta = actualRouterDbModule.dbSaveMessageMeta;
 const actualDbGetMessageMeta = actualRouterDbModule.dbGetMessageMeta;
 const actualDbUpsertChat = actualRouterDbModule.dbUpsertChat;
+const actualDbCanonicalizeDmChatForContact = actualRouterDbModule.dbCanonicalizeDmChatForContact;
+const actualDbContactDmNormalizedChatId = actualRouterDbModule.dbContactDmNormalizedChatId;
 const actualDbUpsertChatMessage = actualRouterDbModule.dbUpsertChatMessage;
 const actualDbUpsertChatParticipant = actualRouterDbModule.dbUpsertChatParticipant;
 const actualDbBindSessionToChat = actualRouterDbModule.dbBindSessionToChat;
@@ -200,6 +202,10 @@ mock.module("../router/router-db.js", () => ({
   }),
   dbGetMessageMeta: mock((messageId: string) => messageMetaById.get(messageId) ?? actualDbGetMessageMeta(messageId)),
   dbUpsertChat: mock((input: Parameters<typeof actualDbUpsertChat>[0]) => actualDbUpsertChat(input)),
+  dbCanonicalizeDmChatForContact: mock((input: Parameters<typeof actualDbCanonicalizeDmChatForContact>[0]) =>
+    actualDbCanonicalizeDmChatForContact(input),
+  ),
+  dbContactDmNormalizedChatId: actualDbContactDmNormalizedChatId,
   dbUpsertChatMessage: mock((input: Parameters<typeof actualDbUpsertChatMessage>[0]) => {
     chatMessageCalls.push(input);
     return actualDbUpsertChatMessage(input);

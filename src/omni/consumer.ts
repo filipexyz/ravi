@@ -45,6 +45,8 @@ import {
 } from "../contacts.js";
 import {
   dbBindSessionToChat,
+  dbCanonicalizeDmChatForContact,
+  dbContactDmNormalizedChatId,
   dbGetMessageMeta,
   dbSaveMessageMeta,
   dbUpsertChat,
@@ -677,10 +679,27 @@ export class OmniConsumer {
     // - Strip JID domain suffixes (@g.us, @s.whatsapp.net)
     const sessionChannel = channelType.replace(/-baileys$/, "");
     const sessionGroupId = isGroup ? chatJid.replace(/@.*$/, "") : undefined;
-    const canonicalChat = dbUpsertChat({
+    const normalizedSenderId = resolvedSenderPhone || senderPhone;
+    let senderPlatformIdentity = resolveSenderPlatformIdentity({
+      channel: sessionChannel,
+      instanceId,
+      normalizedSenderId,
+      rawSenderId: senderPhone,
+      rawProviderSenderId: payload.from,
+    });
+    let senderContact =
+      senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
+        ? getContact(senderPlatformIdentity.ownerId)
+        : (getContact(resolvedSenderPhone) ?? getContact(senderPhone));
+    const senderContactChatKey =
+      !isGroup && !threadId && !isNonDmChannel && senderPlatformIdentity?.ownerType !== "agent" && senderContact?.id
+        ? dbContactDmNormalizedChatId(senderContact.id)
+        : undefined;
+    let canonicalChat = dbUpsertChat({
       channel: sessionChannel,
       instanceId,
       platformChatId: threadId ? `${chatJid}#${threadId}` : chatJid,
+      normalizedChatId: senderContactChatKey,
       chatType: threadId ? "thread" : isGroup ? "group" : isNonDmChannel ? "channel" : "dm",
       title: rawPayloadString(rawPayload, "chatName") ?? null,
       rawProvenance: {
@@ -694,18 +713,23 @@ export class OmniConsumer {
       },
       seenAt: msgTs,
     });
-    const normalizedSenderId = resolvedSenderPhone || senderPhone;
-    let senderPlatformIdentity = resolveSenderPlatformIdentity({
-      channel: sessionChannel,
-      instanceId,
-      normalizedSenderId,
-      rawSenderId: senderPhone,
-      rawProviderSenderId: payload.from,
-    });
-    let senderContact =
-      senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
-        ? getContact(senderPlatformIdentity.ownerId)
-        : (getContact(resolvedSenderPhone) ?? getContact(senderPhone));
+    if (senderContactChatKey && senderContact?.id) {
+      canonicalChat = dbCanonicalizeDmChatForContact({
+        chatId: canonicalChat.id,
+        contactId: senderContact.id,
+        platformChatId: chatJid,
+        title: rawPayloadString(rawPayload, "chatName") ?? rawPayloadString(rawPayload, "pushName") ?? null,
+        rawProvenance: {
+          source: "omni.message.received",
+          eventId: event.id,
+          accountId: effectiveAccountId,
+          instanceId,
+          chatId: chatJid,
+          senderId: payload.from,
+        },
+        seenAt: msgTs,
+      });
+    }
 
     if (
       !isGroup &&
@@ -748,6 +772,23 @@ export class OmniConsumer {
         });
         if (intake.platformIdentity) senderPlatformIdentity = intake.platformIdentity;
         if (intake.contact) senderContact = intake.contact;
+        if (!threadId && !isNonDmChannel && intake.contact?.id) {
+          canonicalChat = dbCanonicalizeDmChatForContact({
+            chatId: canonicalChat.id,
+            contactId: intake.contact.id,
+            platformChatId: chatJid,
+            title: rawPayloadString(rawPayload, "chatName") ?? rawPayloadString(rawPayload, "pushName") ?? null,
+            rawProvenance: {
+              source: "omni.message.received",
+              eventId: event.id,
+              accountId: effectiveAccountId,
+              instanceId,
+              chatId: chatJid,
+              senderId: payload.from,
+            },
+            seenAt: msgTs,
+          });
+        }
       } catch (error) {
         log.warn("Failed to ensure inbound contact", {
           instanceId,
