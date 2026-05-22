@@ -491,8 +491,11 @@ describe("CRM commands", () => {
     });
 
     expect((pipelinePayload.pipelines as Array<Record<string, unknown>>)[0]?.id).toBe("crm_pipeline_default");
+    expect((pipelinePayload.pagination as Record<string, unknown>).returned).toBe(1);
     expect((stagePayload.stages as Array<Record<string, unknown>>)[0]?.key).toBe("qualified");
+    expect((stagePayload.pagination as Record<string, unknown>).returned).toBe(1);
     expect((topicPayload.topics as Array<Record<string, unknown>>)[0]?.key).toBe("budget");
+    expect((topicPayload.pagination as Record<string, unknown>).returned).toBe(1);
     expect((boardPayload.stages as Array<Record<string, unknown>>)[0]).toMatchObject({
       stage: expect.objectContaining({ key: "qualified" }),
     });

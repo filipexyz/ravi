@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option, Scope } from "../decorators.js";
 import { fail } from "../context.js";
-import { buildCliOffsetPagination } from "../pagination.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   archiveCrmPipelineStage,
   archiveCrmPipelineStageTopic,
@@ -607,20 +607,33 @@ export class CrmPipelineCommands {
     @Option({ flags: "--entity-type <type>", description: "Filter by CRM entity type" }) entityType?: string,
     @Option({ flags: "--include-archived", description: "Include archived pipelines" }) includeArchived?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching pipelines to skip (default: 0)" })
+    offset?: string,
   ) {
     const pipelines = listCrmPipelines({ entityType, includeArchived: Boolean(includeArchived) });
-    const payload = { total: pipelines.length, pipelines };
+    const page = paginateCliItems(pipelines, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "pipeline", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: ["--entity-type", entityType, ...(includeArchived ? ["--include-archived"] : [])],
+    });
+    const payload = { total: page.total, pagination, items: page.items, pipelines: page.items };
     if (asJson) {
       printJson(payload);
       return payload;
     }
-    if (pipelines.length === 0) {
+    if (page.items.length === 0) {
       console.log("No CRM pipelines found.");
       return payload;
     }
-    for (const pipeline of pipelines) {
+    for (const pipeline of page.items) {
       console.log(`- ${pipeline.isDefault ? "*" : "-"} ${pipeline.id} ${pipeline.name} ${pipeline.status}`);
     }
+    if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
     return payload;
   }
 
@@ -725,20 +738,32 @@ export class CrmPipelineStageCommands {
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
     @Option({ flags: "--include-archived", description: "Include archived stages" }) includeArchived?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching stages to skip (default: 0)" }) offset?: string,
   ) {
     const stages = listCrmPipelineStages(pipelineRef, { includeArchived: Boolean(includeArchived) });
-    const payload = { pipeline: pipelineRef, total: stages.length, stages };
+    const page = paginateCliItems(stages, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "pipeline", "stage", "list", pipelineRef],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: includeArchived ? ["--include-archived"] : [],
+    });
+    const payload = { pipeline: pipelineRef, total: page.total, pagination, items: page.items, stages: page.items };
     if (asJson) {
       printJson(payload);
       return payload;
     }
-    if (stages.length === 0) {
+    if (page.items.length === 0) {
       console.log("No CRM pipeline stages found.");
       return payload;
     }
-    for (const stage of stages) {
+    for (const stage of page.items) {
       console.log(`- ${stage.sortOrder} ${stage.key} ${stage.name} ${stage.status}`);
     }
+    if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
     return payload;
   }
 
@@ -864,20 +889,39 @@ export class CrmPipelineStageCommands {
     @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
     @Option({ flags: "--include-archived", description: "Include archived topics" }) includeArchived?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching topics to skip (default: 0)" }) offset?: string,
   ) {
     const topics = listCrmPipelineStageTopics(pipelineRef, stageRef, { includeArchived: Boolean(includeArchived) });
-    const payload = { pipeline: pipelineRef, stage: stageRef, total: topics.length, topics };
+    const page = paginateCliItems(topics, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "pipeline", "stage", "topics", pipelineRef, stageRef],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: includeArchived ? ["--include-archived"] : [],
+    });
+    const payload = {
+      pipeline: pipelineRef,
+      stage: stageRef,
+      total: page.total,
+      pagination,
+      items: page.items,
+      topics: page.items,
+    };
     if (asJson) {
       printJson(payload);
       return payload;
     }
-    if (topics.length === 0) {
+    if (page.items.length === 0) {
       console.log("No CRM pipeline stage topics found.");
       return payload;
     }
-    for (const topic of topics) {
+    for (const topic of page.items) {
       console.log(`- ${topic.sortOrder} ${topic.key} ${topic.title} ${topic.status}`);
     }
+    if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
     return payload;
   }
 }
