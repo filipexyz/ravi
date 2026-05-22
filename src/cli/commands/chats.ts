@@ -4,6 +4,7 @@ import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import {
   dbAddChatToReadingList,
+  dbBackfillChatMessageProviderTimestamps,
   dbCreateChatReadingList,
   dbFindChatByRef,
   dbFindChatReadingList,
@@ -365,6 +366,62 @@ export class ChatsCommands {
     console.log(`Messages (${page.items.length} returned of ${page.total}):\n`);
     for (const message of page.items) renderMessage(message);
     if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
+    return payload;
+  }
+
+  @Scope("admin")
+  @Command({
+    name: "backfill-provider-timestamps",
+    description: "Backfill message provider timestamps from raw provenance",
+  })
+  backfillProviderTimestamps(
+    @Option({ flags: "--limit <n>", description: "Maximum matching messages to inspect/apply" }) limit?: string,
+    @Option({ flags: "--apply", description: "Write corrected provider timestamps. Without this, runs dry-run." })
+    apply?: boolean,
+    @Option({ flags: "--dry-run", description: "Force preview mode even if --apply is present" }) dryRun?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (apply && dryRun) {
+      fail("Use either --apply or --dry-run, not both");
+    }
+
+    const result = dbBackfillChatMessageProviderTimestamps({
+      limit,
+      dryRun: apply !== true,
+    });
+    const nextCommand = result.dryRun
+      ? ["ravi", "chats", "backfill-provider-timestamps", limit ? `--limit ${limit}` : null, "--apply"]
+          .filter(Boolean)
+          .join(" ")
+      : null;
+    const payload = {
+      action: "chats.backfill-provider-timestamps",
+      ...result,
+      nextCommand,
+    };
+
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    const title = result.dryRun ? "Provider timestamp backfill dry-run" : "Provider timestamp backfill applied";
+    console.log(`\n${title}`);
+    console.log(`  Scanned: ${result.scanned}`);
+    console.log(`  Candidates: ${result.candidates}`);
+    console.log(`  Skipped: ${result.skipped}`);
+    console.log(`  Already correct: ${result.unchanged}`);
+    console.log(`  Would update: ${result.wouldUpdate}`);
+    if (!result.dryRun) console.log(`  Updated: ${result.updated}`);
+    if (result.items.length > 0) {
+      console.log("\nSample:");
+      for (const item of result.items.slice(0, 10)) {
+        console.log(
+          `- ${item.id} ${item.providerMessageId}: ${item.previousProviderTimestamp ?? "-"} -> ${item.providerTimestamp}`,
+        );
+      }
+    }
+    if (nextCommand) console.log(`\nApply:\n  ${nextCommand}`);
     return payload;
   }
 }

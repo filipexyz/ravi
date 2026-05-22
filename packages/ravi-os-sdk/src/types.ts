@@ -356,6 +356,16 @@ export type AudioGenerateInput = {
 /** Return shape for `audio.generate`. (no @Returns declared) */
 export type AudioGenerateReturn = unknown;
 
+/** Input shape for `chats.backfill-provider-timestamps`. */
+export type ChatsBackfillProviderTimestampsInput = {
+  apply?: boolean;
+  dryRun?: boolean;
+  limit?: string;
+};
+
+/** Return shape for `chats.backfill-provider-timestamps`. (no @Returns declared) */
+export type ChatsBackfillProviderTimestampsReturn = unknown;
+
 /** Input shape for `chats.list`. */
 export type ChatsListInput = {
   agent?: string;

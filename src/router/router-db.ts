@@ -17,6 +17,7 @@ import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
+import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
 
@@ -551,6 +552,25 @@ export interface ChatMessageRecord {
   ingestedAt: number;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface ChatMessageProviderTimestampBackfillItem {
+  id: string;
+  chatId: string;
+  providerMessageId: string;
+  previousProviderTimestamp?: number;
+  providerTimestamp: number;
+}
+
+export interface ChatMessageProviderTimestampBackfillResult {
+  dryRun: boolean;
+  scanned: number;
+  candidates: number;
+  skipped: number;
+  unchanged: number;
+  wouldUpdate: number;
+  updated: number;
+  items: ChatMessageProviderTimestampBackfillItem[];
 }
 
 export interface ChatMessageWithSortKey extends ChatMessageRecord {
@@ -2615,6 +2635,26 @@ function rowToChatMessageWithSortKey(row: ChatMessageWithSortKeyRow): ChatMessag
   };
 }
 
+function parsePositiveIntegerOption(value: number | string | null | undefined, optionName: string): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${optionName} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function rawPayloadRecord(rawProvenance: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  const rawPayload = rawProvenance?.rawPayload;
+  if (!rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload)) return undefined;
+  return rawPayload as Record<string, unknown>;
+}
+
+function providerTimestampFromRawProvenance(rawProvenanceJson: string | null): number | undefined {
+  const rawPayload = rawPayloadRecord(parseJsonRecord(rawProvenanceJson));
+  return timestampLikeToMs(rawPayload?.messageTimestamp);
+}
+
 function rowToChatReadingList(row: ChatReadingListRow): ChatReadingListRecord {
   return {
     id: row.id,
@@ -4356,6 +4396,80 @@ export function dbListChatMessages(chatId: string, limit = 50): ChatMessageRecor
     )
     .all(chatId, limit) as ChatMessageRow[];
   return rows.map(rowToChatMessage);
+}
+
+export function dbBackfillChatMessageProviderTimestamps(
+  input: { dryRun?: boolean; limit?: number | string | null } = {},
+): ChatMessageProviderTimestampBackfillResult {
+  const limit = parsePositiveIntegerOption(input.limit, "--limit");
+  const limitSql = limit ? "LIMIT ?" : "";
+  const params = limit ? [limit] : [];
+  const database = getDb();
+  const rows = database
+    .prepare(
+      `
+      SELECT id, chat_id, provider_message_id, provider_timestamp, raw_provenance_json
+      FROM chat_messages
+      WHERE raw_provenance_json LIKE '%messageTimestamp%'
+      ORDER BY ingested_at ASC, id ASC
+      ${limitSql}
+    `,
+    )
+    .all(...params) as Array<
+    Pick<ChatMessageRow, "id" | "chat_id" | "provider_message_id" | "provider_timestamp" | "raw_provenance_json">
+  >;
+
+  let skipped = 0;
+  let unchanged = 0;
+  const items: ChatMessageProviderTimestampBackfillItem[] = [];
+
+  for (const row of rows) {
+    const providerTimestamp = providerTimestampFromRawProvenance(row.raw_provenance_json);
+    if (providerTimestamp === undefined) {
+      skipped++;
+      continue;
+    }
+    if (row.provider_timestamp === providerTimestamp) {
+      unchanged++;
+      continue;
+    }
+    items.push({
+      id: row.id,
+      chatId: row.chat_id,
+      providerMessageId: row.provider_message_id,
+      previousProviderTimestamp: row.provider_timestamp ?? undefined,
+      providerTimestamp,
+    });
+  }
+
+  const dryRun = input.dryRun !== false;
+  let updated = 0;
+  if (!dryRun && items.length > 0) {
+    updated = executeWrite(
+      database,
+      (db) => {
+        const now = Date.now();
+        const stmt = db.prepare("UPDATE chat_messages SET provider_timestamp = ?, updated_at = ? WHERE id = ?");
+        let changes = 0;
+        for (const item of items) {
+          changes += stmt.run(item.providerTimestamp, now, item.id).changes;
+        }
+        return changes;
+      },
+      { label: "router:backfillChatMessageProviderTimestamps" },
+    );
+  }
+
+  return {
+    dryRun,
+    scanned: rows.length,
+    candidates: rows.length - skipped,
+    skipped,
+    unchanged,
+    wouldUpdate: items.length,
+    updated,
+    items: items.slice(0, 20),
+  };
 }
 
 function normalizeReadingListOwner(input: { ownerType?: string | null; ownerId?: string | null }): {
