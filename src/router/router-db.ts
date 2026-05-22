@@ -513,6 +513,16 @@ export interface UpsertChatInput {
   seenAt?: number;
 }
 
+export interface CanonicalizeDmChatForContactInput {
+  chatId: string;
+  contactId: string;
+  platformChatId?: string | null;
+  title?: string | null;
+  avatarUrl?: string | null;
+  rawProvenance?: Record<string, unknown> | null;
+  seenAt?: number;
+}
+
 export interface ChatParticipantRecord {
   id: string;
   chatId: string;
@@ -2548,6 +2558,12 @@ function normalizeChatIdentity(channel: string, platformChatId: string, chatType
   return trimmed.toLowerCase();
 }
 
+export function dbContactDmNormalizedChatId(contactId: string): string {
+  const trimmed = contactId.trim();
+  if (!trimmed) throw new Error("contactId is required to canonicalize a DM chat");
+  return `contact:${trimmed}`;
+}
+
 function inferChatType(platformChatId: string, explicit?: ChatType | null): ChatType {
   if (explicit && explicit !== "unknown") return explicit;
   if (platformChatId.includes("#")) return "thread";
@@ -2739,8 +2755,11 @@ function upsertChat(database: Database, input: UpsertChatInput): ChatRecord {
   const channel = normalizeChannelId(input.channel);
   const instanceId = input.instanceId?.trim() ?? "";
   const chatType = inferChatType(input.platformChatId, input.chatType);
+  const existingByPlatform = findChatByPlatformOrAlias(database, channel, instanceId, input.platformChatId);
   const normalizedChatId =
-    input.normalizedChatId?.trim() || normalizeChatIdentity(channel, input.platformChatId, chatType);
+    existingByPlatform?.normalized_chat_id ||
+    input.normalizedChatId?.trim() ||
+    normalizeChatIdentity(channel, input.platformChatId, chatType);
   const id = semanticId("chat", [channel, instanceId, normalizedChatId]);
 
   database
@@ -2783,6 +2802,402 @@ function upsertChat(database: Database, input: UpsertChatInput): ChatRecord {
   const row = database
     .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
     .get(channel, instanceId, normalizedChatId) as ChatRow;
+  return rowToChat(row);
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+function chatPlatformAliases(row: ChatRow): string[] {
+  const provenance = parseJsonRecord(row.raw_provenance_json);
+  const canonicalization =
+    provenance?.canonicalization && typeof provenance.canonicalization === "object"
+      ? (provenance.canonicalization as Record<string, unknown>)
+      : {};
+  const platformChatIds = Array.isArray(canonicalization.platformChatIds)
+    ? canonicalization.platformChatIds.filter((value): value is string => typeof value === "string")
+    : [];
+  return uniqueStrings([row.platform_chat_id, ...platformChatIds]);
+}
+
+function findChatByPlatformOrAlias(
+  database: Database,
+  channel: string,
+  instanceId: string,
+  platformChatId: string,
+): ChatRow | undefined {
+  const exact = database
+    .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND platform_chat_id = ?")
+    .get(channel, instanceId, platformChatId) as ChatRow | undefined;
+  if (exact) return exact;
+
+  const rows = database
+    .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND raw_provenance_json IS NOT NULL")
+    .all(channel, instanceId) as ChatRow[];
+  return rows.find((row) => chatPlatformAliases(row).includes(platformChatId));
+}
+
+function mergeChatCanonicalizationProvenance(
+  target: ChatRow,
+  source: ChatRow | null,
+  input: CanonicalizeDmChatForContactInput,
+): Record<string, unknown> {
+  const existingTarget = parseJsonRecord(target.raw_provenance_json) ?? {};
+  const existingSource = source ? (parseJsonRecord(source.raw_provenance_json) ?? {}) : {};
+  const existingCanonicalization =
+    existingTarget.canonicalization && typeof existingTarget.canonicalization === "object"
+      ? (existingTarget.canonicalization as Record<string, unknown>)
+      : {};
+  const previousPlatformChatIds = Array.isArray(existingCanonicalization.platformChatIds)
+    ? existingCanonicalization.platformChatIds.filter((value): value is string => typeof value === "string")
+    : [];
+  const previousMergedChatIds = Array.isArray(existingCanonicalization.mergedChatIds)
+    ? existingCanonicalization.mergedChatIds.filter((value): value is string => typeof value === "string")
+    : [];
+  return mergeJsonRecords(existingSource, existingTarget, input.rawProvenance ?? undefined, {
+    canonicalization: {
+      ...existingCanonicalization,
+      source: "contact_dm",
+      contactId: input.contactId,
+      platformChatIds: uniqueStrings([
+        ...previousPlatformChatIds,
+        target.platform_chat_id,
+        source?.platform_chat_id,
+        input.platformChatId,
+      ]),
+      mergedChatIds: uniqueStrings([
+        ...previousMergedChatIds,
+        source?.id && source.id !== target.id ? source.id : null,
+      ]),
+    },
+  })!;
+}
+
+function mergeChatMessagesIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database.prepare("SELECT * FROM chat_messages WHERE chat_id = ?").all(sourceChatId) as ChatMessageRow[];
+  for (const row of rows) {
+    const existing = database
+      .prepare(
+        `
+        SELECT *
+        FROM chat_messages
+        WHERE channel = ? AND instance_id = ? AND chat_id = ? AND provider_message_id = ?
+      `,
+      )
+      .get(row.channel, row.instance_id, targetChatId, row.provider_message_id) as ChatMessageRow | undefined;
+    if (!existing) {
+      database
+        .prepare("UPDATE chat_messages SET chat_id = ?, updated_at = ? WHERE id = ?")
+        .run(targetChatId, now, row.id);
+      continue;
+    }
+    const mergedProvenance = mergeJsonRecords(
+      parseJsonRecord(existing.raw_provenance_json),
+      parseJsonRecord(row.raw_provenance_json),
+      { mergedFromChatId: sourceChatId },
+    );
+    database
+      .prepare(
+        `
+        UPDATE chat_messages
+        SET raw_sender_id = COALESCE(raw_sender_id, ?),
+            normalized_sender_id = COALESCE(normalized_sender_id, ?),
+            actor_type = CASE WHEN actor_type = 'unknown' AND ? != 'unknown' THEN ? ELSE actor_type END,
+            contact_id = COALESCE(contact_id, ?),
+            agent_id = COALESCE(agent_id, ?),
+            platform_identity_id = COALESCE(platform_identity_id, ?),
+            message_type = COALESCE(message_type, ?),
+            content_json = COALESCE(content_json, ?),
+            raw_provenance_json = COALESCE(?, raw_provenance_json),
+            provider_timestamp = COALESCE(provider_timestamp, ?),
+            updated_at = ?
+        WHERE id = ?
+      `,
+      )
+      .run(
+        row.raw_sender_id,
+        row.normalized_sender_id,
+        row.actor_type,
+        row.actor_type,
+        row.contact_id,
+        row.agent_id,
+        row.platform_identity_id,
+        row.message_type,
+        row.content_json,
+        cleanJsonRecord(mergedProvenance),
+        row.provider_timestamp,
+        now,
+        existing.id,
+      );
+    database.prepare("DELETE FROM chat_messages WHERE id = ?").run(row.id);
+  }
+}
+
+function mergeChatParticipantsIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database
+    .prepare("SELECT * FROM chat_participants WHERE chat_id = ?")
+    .all(sourceChatId) as ChatParticipantRow[];
+  for (const row of rows) {
+    upsertChatParticipant(database, {
+      chatId: targetChatId,
+      platformIdentityId: row.platform_identity_id,
+      contactId: row.contact_id,
+      agentId: row.agent_id,
+      rawPlatformUserId: row.raw_platform_user_id,
+      normalizedPlatformUserId: row.normalized_platform_user_id ?? undefined,
+      role: row.role,
+      status: row.status,
+      source: row.source,
+      metadata: mergeJsonRecords(parseJsonRecord(row.metadata_json), { canonicalizedFromChatId: sourceChatId }),
+      seenAt: Math.max(row.last_seen_at, now),
+    });
+    database.prepare("DELETE FROM chat_participants WHERE id = ?").run(row.id);
+  }
+}
+
+function mergeSessionChatBindingsIntoTarget(database: Database, sourceChatId: string, targetChatId: string): void {
+  const rows = database
+    .prepare("SELECT session_key FROM session_chat_bindings WHERE chat_id = ?")
+    .all(sourceChatId) as Array<{ session_key: string }>;
+  for (const row of rows) {
+    const existing = database
+      .prepare("SELECT 1 FROM session_chat_bindings WHERE session_key = ? AND chat_id = ?")
+      .get(row.session_key, targetChatId);
+    if (existing) {
+      database
+        .prepare("DELETE FROM session_chat_bindings WHERE session_key = ? AND chat_id = ?")
+        .run(row.session_key, sourceChatId);
+    } else {
+      database
+        .prepare("UPDATE session_chat_bindings SET chat_id = ? WHERE session_key = ? AND chat_id = ?")
+        .run(targetChatId, row.session_key, sourceChatId);
+    }
+  }
+}
+
+function mergeSessionChatSubscriptionsIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database
+    .prepare("SELECT id, session_key, detached_at FROM session_chat_subscriptions WHERE chat_id = ?")
+    .all(sourceChatId) as Array<{ id: number; session_key: string; detached_at: number | null }>;
+  for (const row of rows) {
+    const activeTarget = database
+      .prepare("SELECT 1 FROM session_chat_subscriptions WHERE chat_id = ? AND detached_at IS NULL")
+      .get(targetChatId);
+    const activePair = database
+      .prepare("SELECT 1 FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
+      .get(row.session_key, targetChatId);
+    if (row.detached_at === null && (activeTarget || activePair)) {
+      database
+        .prepare("UPDATE session_chat_subscriptions SET detached_at = ?, updated_at = ? WHERE id = ?")
+        .run(now, now, row.id);
+      continue;
+    }
+    database
+      .prepare("UPDATE session_chat_subscriptions SET chat_id = ?, updated_at = ? WHERE id = ?")
+      .run(targetChatId, now, row.id);
+  }
+}
+
+function mergeReadingListMembersIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database
+    .prepare("SELECT id, list_id, removed_at FROM chat_reading_list_members WHERE chat_id = ?")
+    .all(sourceChatId) as Array<{ id: string; list_id: string; removed_at: number | null }>;
+  for (const row of rows) {
+    const activeTarget = database
+      .prepare("SELECT 1 FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL")
+      .get(row.list_id, targetChatId);
+    if (row.removed_at === null && activeTarget) {
+      database.prepare("UPDATE chat_reading_list_members SET removed_at = ? WHERE id = ?").run(now, row.id);
+    } else {
+      database.prepare("UPDATE chat_reading_list_members SET chat_id = ? WHERE id = ?").run(targetChatId, row.id);
+    }
+  }
+}
+
+function mergeReadingCursorsIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database.prepare("SELECT * FROM chat_reading_cursors WHERE chat_id = ?").all(sourceChatId) as Array<{
+    id: string;
+    list_id: string;
+    reader_type: string;
+    reader_id: string;
+    last_read_message_id: string | null;
+    last_read_message_sort_key: string | null;
+    last_read_event_id: string | null;
+    last_read_event_sort_key: string | null;
+    last_read_at: number | null;
+    read_reason: string | null;
+    metadata_json: string | null;
+    updated_at: number;
+  }>;
+  for (const row of rows) {
+    const existing = database
+      .prepare(
+        `
+        SELECT id, updated_at
+        FROM chat_reading_cursors
+        WHERE list_id = ? AND chat_id = ? AND reader_type = ? AND reader_id = ?
+      `,
+      )
+      .get(row.list_id, targetChatId, row.reader_type, row.reader_id) as { id: string; updated_at: number } | undefined;
+    if (!existing) {
+      database
+        .prepare("UPDATE chat_reading_cursors SET chat_id = ?, updated_at = ? WHERE id = ?")
+        .run(targetChatId, now, row.id);
+      continue;
+    }
+    if (row.updated_at > existing.updated_at) {
+      database
+        .prepare(
+          `
+          UPDATE chat_reading_cursors
+          SET last_read_message_id = ?,
+              last_read_message_sort_key = ?,
+              last_read_event_id = ?,
+              last_read_event_sort_key = ?,
+              last_read_at = ?,
+              read_reason = ?,
+              metadata_json = ?,
+              updated_at = ?
+          WHERE id = ?
+        `,
+        )
+        .run(
+          row.last_read_message_id,
+          row.last_read_message_sort_key,
+          row.last_read_event_id,
+          row.last_read_event_sort_key,
+          row.last_read_at,
+          row.read_reason,
+          row.metadata_json,
+          now,
+          existing.id,
+        );
+    }
+    database.prepare("DELETE FROM chat_reading_cursors WHERE id = ?").run(row.id);
+  }
+  database
+    .prepare("UPDATE chat_reading_cursor_events SET chat_id = ? WHERE chat_id = ?")
+    .run(targetChatId, sourceChatId);
+}
+
+function canonicalizeDmChatForContact(database: Database, input: CanonicalizeDmChatForContactInput): ChatRecord {
+  const contactId = input.contactId.trim();
+  if (!contactId) throw new Error("contactId is required to canonicalize a DM chat");
+  const source = database.prepare("SELECT * FROM chats WHERE id = ?").get(input.chatId) as ChatRow | undefined;
+  if (!source) throw new Error(`Chat not found: ${input.chatId}`);
+  if (source.chat_type !== "dm") return rowToChat(source);
+
+  const now = input.seenAt ?? Date.now();
+  const normalizedChatId = dbContactDmNormalizedChatId(contactId);
+  const target = database
+    .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
+    .get(source.channel, source.instance_id, normalizedChatId) as ChatRow | undefined;
+  const targetRow = target ?? source;
+  const rawProvenance = mergeChatCanonicalizationProvenance(targetRow, target ? source : null, input);
+
+  if (!target || target.id === source.id) {
+    database
+      .prepare(
+        `
+        UPDATE chats
+        SET normalized_chat_id = ?,
+            platform_chat_id = COALESCE(?, platform_chat_id),
+            title = COALESCE(?, title),
+            avatar_url = COALESCE(?, avatar_url),
+            raw_provenance_json = ?,
+            last_seen_at = MAX(last_seen_at, ?),
+            updated_at = ?
+        WHERE id = ?
+      `,
+      )
+      .run(
+        normalizedChatId,
+        input.platformChatId ?? null,
+        input.title ?? null,
+        input.avatarUrl ?? null,
+        cleanJsonRecord(rawProvenance),
+        now,
+        now,
+        source.id,
+      );
+    const row = database.prepare("SELECT * FROM chats WHERE id = ?").get(source.id) as ChatRow;
+    return rowToChat(row);
+  }
+
+  mergeChatMessagesIntoTarget(database, source.id, target.id, now);
+  mergeChatParticipantsIntoTarget(database, source.id, target.id, now);
+  mergeSessionChatBindingsIntoTarget(database, source.id, target.id);
+  mergeSessionChatSubscriptionsIntoTarget(database, source.id, target.id, now);
+  mergeReadingListMembersIntoTarget(database, source.id, target.id, now);
+  mergeReadingCursorsIntoTarget(database, source.id, target.id, now);
+
+  database
+    .prepare("UPDATE message_metadata SET canonical_chat_id = ? WHERE canonical_chat_id = ?")
+    .run(target.id, source.id);
+  database
+    .prepare("UPDATE session_events SET canonical_chat_id = ? WHERE canonical_chat_id = ?")
+    .run(target.id, source.id);
+  database
+    .prepare(
+      `
+      UPDATE chats
+      SET platform_chat_id = COALESCE(?, platform_chat_id),
+          title = COALESCE(?, title),
+          avatar_url = COALESCE(?, avatar_url),
+          raw_provenance_json = ?,
+          first_seen_at = MIN(first_seen_at, ?),
+          last_seen_at = MAX(last_seen_at, ?),
+          updated_at = ?
+      WHERE id = ?
+    `,
+    )
+    .run(
+      input.platformChatId ?? source.platform_chat_id,
+      input.title ?? source.title,
+      input.avatarUrl ?? source.avatar_url,
+      cleanJsonRecord(rawProvenance),
+      source.first_seen_at,
+      Math.max(source.last_seen_at, now),
+      now,
+      target.id,
+    );
+  database.prepare("DELETE FROM chats WHERE id = ?").run(source.id);
+
+  const row = database.prepare("SELECT * FROM chats WHERE id = ?").get(target.id) as ChatRow;
   return rowToChat(row);
 }
 
@@ -4153,6 +4568,12 @@ export function dbUpsertChat(input: UpsertChatInput): ChatRecord {
   return upsertChat(getDb(), input);
 }
 
+export function dbCanonicalizeDmChatForContact(input: CanonicalizeDmChatForContactInput): ChatRecord {
+  return executeWrite(getDb(), (database) => canonicalizeDmChatForContact(database, input), {
+    label: "canonicalize_dm_chat_for_contact",
+  });
+}
+
 export function dbGetChat(id: string): ChatRecord | null {
   const row = getDb().prepare("SELECT * FROM chats WHERE id = ?").get(id) as ChatRow | undefined;
   return row ? rowToChat(row) : null;
@@ -4170,7 +4591,9 @@ export function dbFindChat(input: {
   const row = getDb()
     .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
     .get(channel, instanceId, normalizedChatId) as ChatRow | undefined;
-  return row ? rowToChat(row) : null;
+  if (row) return rowToChat(row);
+  const byPlatform = findChatByPlatformOrAlias(getDb(), channel, instanceId, input.platformChatId);
+  return byPlatform ? rowToChat(byPlatform) : null;
 }
 
 function chatRefCandidates(ref: string): string[] {
