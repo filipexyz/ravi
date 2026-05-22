@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { SessionEntry } from "../../router/types.js";
 
 afterAll(() => mock.restore());
 
@@ -25,6 +26,8 @@ let instanceNames = new Set<string>(["main"]);
 let contactStatuses = new Map<string, { status: string }>();
 let allowContactCalls: string[] = [];
 let liveWinner: { route?: { pattern?: string | null } | null; agentId: string } | null = null;
+let sessions: Array<Partial<SessionEntry> & Pick<SessionEntry, "sessionKey" | "agentId">> = [];
+let deletedSessionKeys: string[] = [];
 let pendingEntries: Array<{
   accountId: string;
   phone: string;
@@ -198,8 +201,11 @@ mock.module("../../contacts.js", () => ({
 
 mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
-  listSessions: () => [],
-  deleteSession: () => {},
+  listSessions: () => sessions as SessionEntry[],
+  deleteSession: (sessionKey: string) => {
+    deletedSessionKeys.push(sessionKey);
+    sessions = sessions.filter((session) => session.sessionKey !== sessionKey);
+  },
 }));
 
 mock.module("../runtime-target.js", () => ({
@@ -240,6 +246,8 @@ describe("RoutesCommands", () => {
     contactStatuses = new Map();
     allowContactCalls = [];
     liveWinner = null;
+    sessions = [];
+    deletedSessionKeys = [];
     pendingEntries = [];
   });
 
@@ -418,6 +426,41 @@ describe("RoutesCommands", () => {
     expect(payload.removedPending).toBe(true);
     expect((payload.route as Record<string, unknown>).priority).toBe(7);
     expect((payload.liveEffect as Record<string, unknown>).status).toBe("verified");
+  });
+
+  it("cleans conflicting sessions only inside the mutated instance", () => {
+    instanceNames = new Set(["main", "hana-zap"]);
+    routes = [
+      {
+        id: 1,
+        accountId: "hana-zap",
+        pattern: "group:120363424772797713",
+        agent: "dev",
+        priority: 0,
+      },
+    ];
+    sessions = [
+      {
+        sessionKey: "agent:dev:whatsapp:main:group:120363424772797713",
+        agentId: "dev",
+        accountId: "main",
+        lastAccountId: "main",
+      },
+      {
+        sessionKey: "agent:dev:whatsapp:hana-zap:group:120363424772797713",
+        agentId: "dev",
+        accountId: "hana-zap",
+        lastAccountId: "hana-zap",
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new InstancesRoutesCommands().set("hana-zap", "group:120363424772797713", "agent", "hana-zap", undefined, true);
+    });
+
+    expect(payload.cleanedSessions).toBe(1);
+    expect(deletedSessionKeys).toEqual(["agent:dev:whatsapp:hana-zap:group:120363424772797713"]);
+    expect(sessions.map((session) => session.sessionKey)).toEqual(["agent:dev:whatsapp:main:group:120363424772797713"]);
   });
 
   it("prints pending entries in --json mode", () => {

@@ -37,6 +37,7 @@ import {
   ensureContactFromInbound,
   isContactAllowedForAgent,
   recordInbound,
+  resolveAgentPlatformIdentity,
   resolvePlatformIdentity,
   saveAccountPending,
   type PlatformIdentity,
@@ -282,12 +283,27 @@ function resolveSenderPlatformIdentity(input: {
       ? []
       : uniqueStrings([input.normalizedSenderId, input.rawSenderId]);
 
-  const channelLookups = [
-    { channel: input.channel, instanceIds: uniqueStrings([input.instanceId, ""]), senderIds },
+  for (const platformUserId of senderIds) {
+    const identity = resolvePlatformIdentity({ channel: input.channel, instanceId: input.instanceId, platformUserId });
+    if (identity) return identity;
+  }
+
+  // Agent channel accounts are scoped to the instance they own, but in a
+  // shared WhatsApp group their messages are received by every connected
+  // Ravi instance in the group. Resolve exact agent-owned platform ids
+  // across instances before generic/global fallbacks so agent accounts do
+  // not get downgraded to legacy phone contacts on sibling accounts.
+  for (const platformUserId of senderIds) {
+    const identity = resolveAgentPlatformIdentity({ channel: input.channel, platformUserId });
+    if (identity) return identity;
+  }
+
+  const fallbackLookups = [
+    { channel: input.channel, instanceIds: [""], senderIds },
     ...(input.channel === "whatsapp" ? [{ channel: "phone", instanceIds: [""], senderIds: phoneFallbackIds }] : []),
   ];
 
-  for (const lookup of channelLookups) {
+  for (const lookup of fallbackLookups) {
     for (const instanceId of lookup.instanceIds) {
       if (lookup.senderIds.length === 0) continue;
       for (const platformUserId of lookup.senderIds) {
@@ -972,6 +988,21 @@ export class OmniConsumer {
       identityConfidence: effectiveActorMetadata.identityConfidence ?? null,
       identityProvenance: effectiveActorMetadata.identityProvenance ?? null,
     };
+    const saveInboundMessageMeta = (extra: { transcription?: string; mediaPath?: string; mediaType?: string } = {}) => {
+      if (!payload.externalId || !chatJid) return;
+      dbSaveMessageMeta(payload.externalId, chatJid, {
+        canonicalChatId: effectiveActorMetadata.canonicalChatId,
+        actorType: effectiveActorMetadata.actorType,
+        contactId: effectiveActorMetadata.contactId,
+        agentId: effectiveActorMetadata.actorAgentId,
+        platformIdentityId: effectiveActorMetadata.platformIdentityId,
+        rawSenderId: effectiveActorMetadata.rawSenderId,
+        normalizedSenderId: effectiveActorMetadata.normalizedSenderId,
+        identityConfidence: effectiveActorMetadata.identityConfidence,
+        identityProvenance: effectiveActorMetadata.identityProvenance,
+        ...extra,
+      });
+    };
 
     // Fail-soft trace recorder shared by every trace on this path. Trace
     // writes must never crash the inbound handler, so each call is guarded
@@ -1036,6 +1067,26 @@ export class OmniConsumer {
         preview: payload.content?.text ?? null,
       }),
     );
+
+    if (effectiveActorType === "agent") {
+      saveInboundMessageMeta();
+      rejectRoute("agent_actor_observed", {
+        reason: "agent_actor_observed",
+        actorAgentId: effectiveActorAgentId ?? null,
+        platformIdentityId: effectivePlatformIdentityId ?? null,
+        routeSessionKey: matched.sessionKey,
+        routeAgentId: matched.agent.id,
+      });
+      log.info("Agent-origin channel message observed; suppressing runtime dispatch", {
+        instanceId,
+        accountId: effectiveAccountId,
+        chatId: chatJid,
+        senderId: senderPhone,
+        actorAgentId: effectiveActorAgentId,
+        routeSessionKey: matched.sessionKey,
+      });
+      return;
+    }
 
     // -- Policy resolution helper --
     // Lookup order: route.policy → instance config → default
@@ -1283,22 +1334,11 @@ export class OmniConsumer {
     const agentCwd = expandHome(agent.cwd);
     const mediaResult = await this.processMedia(payload, agentCwd);
 
-    if (payload.externalId && chatJid) {
-      dbSaveMessageMeta(payload.externalId, chatJid, {
-        canonicalChatId: effectiveActorMetadata.canonicalChatId,
-        actorType: effectiveActorMetadata.actorType,
-        contactId: effectiveActorMetadata.contactId,
-        agentId: effectiveActorMetadata.actorAgentId,
-        platformIdentityId: effectiveActorMetadata.platformIdentityId,
-        rawSenderId: effectiveActorMetadata.rawSenderId,
-        normalizedSenderId: effectiveActorMetadata.normalizedSenderId,
-        identityConfidence: effectiveActorMetadata.identityConfidence,
-        identityProvenance: effectiveActorMetadata.identityProvenance,
-        transcription: mediaResult?.transcript,
-        mediaPath: mediaResult?.localPath,
-        mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
-      });
-    }
+    saveInboundMessageMeta({
+      transcription: mediaResult?.transcript,
+      mediaPath: mediaResult?.localPath,
+      mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
+    });
 
     // Extract reply/quoted message context (works across all channels)
     const replyContext = this.extractReplyContext(payload.replyToId, rawPayload);

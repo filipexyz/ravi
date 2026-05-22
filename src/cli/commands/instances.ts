@@ -75,6 +75,7 @@ import {
   type AccountPendingEntry,
 } from "../../contacts.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
+import type { SessionEntry } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
@@ -530,10 +531,28 @@ function printRouteExplanation(name: string, pattern?: string, channel?: string)
   console.log(`  Mutate config: ravi instances routes add ${name} "${pattern}" <agent>`);
 }
 
-function deleteConflictingSessions(pattern: string, targetAgent: string, opts: { silent?: boolean } = {}): number {
+function sessionKeyAccountId(sessionKey: string): string | null {
+  const parts = sessionKey.split(":");
+  return parts[0] === "agent" && parts.length >= 5 ? parts[3] : null;
+}
+
+function sessionBelongsToRouteAccount(session: SessionEntry, accountId: string): boolean {
+  return (
+    session.accountId === accountId ||
+    session.lastAccountId === accountId ||
+    sessionKeyAccountId(session.sessionKey) === accountId
+  );
+}
+
+function deleteConflictingSessions(
+  pattern: string,
+  targetAgent: string,
+  opts: { accountId: string; silent?: boolean },
+): number {
   const sessions = listSessions();
   let deleted = 0;
   for (const session of sessions) {
+    if (!sessionBelongsToRouteAccount(session, opts.accountId)) continue;
     if (pattern.startsWith("group:")) {
       const groupId = pattern.replace("group:", "");
       if (session.sessionKey.includes(`group:${groupId}`) && session.agentId !== targetAgent) {
@@ -1636,7 +1655,7 @@ export class InstancesRoutesCommands {
       }
 
       // Clean conflicting sessions
-      const cleaned = deleteConflictingSessions(pattern, agent, { silent: Boolean(asJson) });
+      const cleaned = deleteConflictingSessions(pattern, agent, { accountId: name, silent: Boolean(asJson) });
 
       const payload = {
         status: "added" as const,
@@ -1816,7 +1835,7 @@ export class InstancesRoutesCommands {
 
       let cleaned = 0;
       if (key === "agent") {
-        cleaned = deleteConflictingSessions(pattern, value, { silent: Boolean(asJson) });
+        cleaned = deleteConflictingSessions(pattern, value, { accountId: name, silent: Boolean(asJson) });
       }
 
       const payload = {

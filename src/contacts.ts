@@ -6106,6 +6106,35 @@ export function resolvePlatformIdentity(input: {
   return row ? rowToPlatformIdentity(row) : null;
 }
 
+export function resolveAgentPlatformIdentity(input: {
+  channel: string;
+  platformUserId: string;
+}): PlatformIdentity | null {
+  const database = ensureDb();
+  const channel = normalizePlatformIdentityChannel(input.channel);
+  const normalized = normalizeIdentityForChannel(channel, input.platformUserId);
+  if (!channel || !normalized) return null;
+
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM platform_identities
+      WHERE owner_type = 'agent'
+        AND channel = ?
+        AND normalized_platform_user_id = ?
+      ORDER BY is_primary DESC, last_seen_at DESC, updated_at DESC
+    `,
+    )
+    .all(channel, normalized) as PlatformIdentityRow[];
+
+  if (rows.length === 0) return null;
+
+  const ownerIds = new Set(rows.map((row) => row.owner_id).filter((ownerId): ownerId is string => Boolean(ownerId)));
+  if (ownerIds.size !== 1) return null;
+
+  return rowToPlatformIdentity(rows[0]);
+}
+
 export function getAgentPlatformIdentity(input: {
   agentId: string;
   channel?: string | null;

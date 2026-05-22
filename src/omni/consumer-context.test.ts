@@ -29,6 +29,8 @@ const messageMetaSaveCalls: Array<[string, string, Record<string, unknown>]> = [
 const agentPlatformIdentityCalls: Array<Record<string, unknown>> = [];
 const ensureContactFromInboundCalls: Array<Record<string, unknown>> = [];
 const platformIdentityByUser = new Map<string, Record<string, unknown>>();
+const platformIdentityByLookup = new Map<string, Record<string, unknown>>();
+const agentPlatformIdentityByUser = new Map<string, Record<string, unknown>>();
 const contactByRef = new Map<string, Record<string, unknown>>();
 const messageMetaById = new Map<string, MessageMetadata>();
 const recordInboundCalls: string[] = [];
@@ -49,6 +51,14 @@ function defaultRouteResult(): Record<string, unknown> {
       mode: "active",
     },
   };
+}
+
+function platformIdentityLookupKey(input: {
+  channel?: string | null;
+  instanceId?: string | null;
+  platformUserId: string;
+}) {
+  return `${input.channel ?? ""}:${input.instanceId ?? ""}:${input.platformUserId}`;
 }
 
 mock.module("../nats.js", () => ({
@@ -155,8 +165,12 @@ mock.module("../contacts.js", () => ({
       eventIds: [],
     };
   }),
-  resolvePlatformIdentity: (input: { platformUserId: string }) =>
-    platformIdentityByUser.get(input.platformUserId) ?? null,
+  resolvePlatformIdentity: (input: { channel?: string | null; instanceId?: string | null; platformUserId: string }) =>
+    platformIdentityByLookup.get(platformIdentityLookupKey(input)) ??
+    platformIdentityByUser.get(input.platformUserId) ??
+    null,
+  resolveAgentPlatformIdentity: (input: { platformUserId: string }) =>
+    agentPlatformIdentityByUser.get(input.platformUserId) ?? null,
   upsertAgentPlatformIdentity: mock((input: Record<string, unknown>) => {
     agentPlatformIdentityCalls.push(input);
     return {
@@ -255,6 +269,8 @@ describe("OmniConsumer channel context", () => {
     agentPlatformIdentityCalls.length = 0;
     ensureContactFromInboundCalls.length = 0;
     platformIdentityByUser.clear();
+    platformIdentityByLookup.clear();
+    agentPlatformIdentityByUser.clear();
     contactByRef.clear();
     messageMetaById.clear();
     recordInboundCalls.length = 0;
@@ -783,7 +799,7 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
-  it("resolves an agent-owned platform identity as an agent actor", async () => {
+  it("observes same-instance agent messages without publishing a prompt", async () => {
     platformIdentityByUser.set("5511000000000", {
       id: "pi_agent_sender",
       ownerType: "agent",
@@ -828,30 +844,109 @@ describe("OmniConsumer channel context", () => {
       timestamp: Date.now(),
     });
 
-    expect(promptCalls).toHaveLength(1);
-    expect(promptCalls[0][1].context).toMatchObject({
-      actorType: "agent",
-      actorAgentId: "dev",
-      platformIdentityId: "pi_agent_sender",
-      rawSenderId: "5511000000000",
-      normalizedSenderId: "5511000000000",
-    });
+    expect(promptCalls).toHaveLength(0);
+    expect(sessionParticipantCalls).toHaveLength(0);
     expect(chatParticipantCalls[0]).toMatchObject({
       agentId: "dev",
       contactId: null,
       platformIdentityId: "pi_agent_sender",
       role: "agent",
     });
-    expect(sessionParticipantCalls[0]).toMatchObject({
-      ownerType: "agent",
-      ownerId: "dev",
+    expect(chatMessageCalls[0]).toMatchObject({
+      actorType: "agent",
+      agentId: "dev",
       platformIdentityId: "pi_agent_sender",
-      role: "agent",
+      rawSenderId: "5511000000000",
+      normalizedSenderId: "5511000000000",
     });
     expect(messageMetaSaveCalls[0][2]).toMatchObject({
       actorType: "agent",
       agentId: "dev",
       platformIdentityId: "pi_agent_sender",
+      rawSenderId: "5511000000000",
+      normalizedSenderId: "5511000000000",
+    });
+  });
+
+  it("observes cross-instance agent messages without publishing a prompt", async () => {
+    platformIdentityByLookup.set(
+      platformIdentityLookupKey({ channel: "phone", instanceId: "", platformUserId: "551153045142" }),
+      {
+        id: "pi_legacy_hana_contact",
+        ownerType: "contact",
+        ownerId: "contact_hana_legacy",
+        channel: "phone",
+        instanceId: "",
+        platformUserId: "551153045142",
+        normalizedPlatformUserId: "551153045142",
+        confidence: 0.9,
+      },
+    );
+    agentPlatformIdentityByUser.set("551153045142", {
+      id: "pi_hana_agent",
+      ownerType: "agent",
+      ownerId: "dev",
+      channel: "whatsapp",
+      instanceId: "instance-hana",
+      platformUserId: "551153045142@s.whatsapp.net",
+      normalizedPlatformUserId: "551153045142",
+      confidence: 1,
+    });
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-agent-cross-instance",
+      type: "message.received",
+      payload: {
+        externalId: "msg-agent-cross-instance",
+        chatId: "120363424772797713@g.us",
+        from: "551153045142@s.whatsapp.net",
+        content: {
+          type: "text",
+          text: "resposta da outra conta-agent",
+        },
+        rawPayload: {
+          pushName: "Hana",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(0);
+    expect(sessionParticipantCalls).toHaveLength(0);
+    expect(chatMessageCalls[0]).toMatchObject({
+      actorType: "agent",
+      agentId: "dev",
+      platformIdentityId: "pi_hana_agent",
+      rawSenderId: "551153045142",
+      normalizedSenderId: "551153045142",
+    });
+    expect(chatParticipantCalls[0]).toMatchObject({
+      agentId: "dev",
+      contactId: null,
+      platformIdentityId: "pi_hana_agent",
+      role: "agent",
+    });
+    expect(messageMetaSaveCalls[0][2]).toMatchObject({
+      actorType: "agent",
+      agentId: "dev",
+      platformIdentityId: "pi_hana_agent",
+      rawSenderId: "551153045142",
+      normalizedSenderId: "551153045142",
     });
   });
 
