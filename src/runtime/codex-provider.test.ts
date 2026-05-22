@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
@@ -605,9 +605,45 @@ rl.on("line", (line) => {
     expect(calls[0]?.systemPromptAppend).toContain("Runtime rules go here.");
   });
 
+  it("loads .ravi/rules into the Codex system prompt when the runtime prompt does not carry them", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
+    const rulesDir = join(cwd, ".ravi", "rules");
+    mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(join(rulesDir, "project-tracking.md"), "Track project state before closing tasks.\n");
+
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_ravi_rules" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["hello"], {
+        cwd,
+        systemPromptAppend: "Runtime rules go here.",
+      }),
+    );
+
+    await collectEvents(session.events);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.systemPromptAppend).toContain("## Ravi Rules");
+    expect(calls[0]?.systemPromptAppend).toContain(`Ravi rules loaded from ${rulesDir}.`);
+    expect(calls[0]?.systemPromptAppend).toContain("Track project state before closing tasks.");
+    expect(calls[0]?.systemPromptAppend).toContain("Runtime rules go here.");
+  });
+
   it("does not duplicate workspace instructions when the runtime prompt already carries them", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
+    const rulesDir = join(cwd, ".ravi", "rules");
+    mkdirSync(rulesDir, { recursive: true });
     writeFileSync(join(cwd, "AGENTS.md"), "# Main Agent\n\nThis should not be loaded twice.\n");
+    writeFileSync(join(rulesDir, "project-tracking.md"), "This rule should not be loaded twice.\n");
 
     const { calls, transport } = createMockTransport([
       () => ({
@@ -628,6 +664,10 @@ rl.on("line", (line) => {
           "",
           "Workspace instructions loaded from runtime.",
           "",
+          "## Ravi Rules",
+          "",
+          "Ravi rules loaded from runtime.",
+          "",
           "## Runtime",
           "",
           "Runtime rules go here.",
@@ -640,8 +680,11 @@ rl.on("line", (line) => {
     expect(calls).toHaveLength(1);
     const systemPromptAppend = calls[0]?.systemPromptAppend ?? "";
     expect(systemPromptAppend.match(/## Workspace Instructions/g)?.length).toBe(1);
+    expect(systemPromptAppend.match(/## Ravi Rules/g)?.length).toBe(1);
     expect(systemPromptAppend).toContain("Workspace instructions loaded from runtime.");
+    expect(systemPromptAppend).toContain("Ravi rules loaded from runtime.");
     expect(systemPromptAppend).not.toContain("This should not be loaded twice.");
+    expect(systemPromptAppend).not.toContain("This rule should not be loaded twice.");
   });
 
   it("migrates legacy CLAUDE.md workspaces before loading Codex instructions", async () => {

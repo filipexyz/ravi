@@ -15,6 +15,7 @@ import {
 
 const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
+import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import { buildCodexSkillVisibilitySnapshot, markLoadedFromInstructionSources } from "./skill-visibility.js";
 import type {
   RuntimeApprovalEvent,
@@ -1894,6 +1895,9 @@ async function buildCodexSystemPromptAppend(
   const workspaceInstructions = runtimePromptIncludesWorkspaceInstructions(runtimeInstructions)
     ? null
     : await loadWorkspaceInstructions(cwd);
+  const raviRulesSection = runtimePromptIncludesRaviRules(runtimeInstructions)
+    ? null
+    : await buildRaviRulesPromptSection(cwd);
   if (workspaceInstructions) {
     sections.push(
       [
@@ -1905,6 +1909,10 @@ async function buildCodexSystemPromptAppend(
     );
   }
 
+  if (raviRulesSection) {
+    sections.push(`## ${raviRulesSection.title}\n\n${raviRulesSection.content}`);
+  }
+
   if (runtimeInstructions) {
     sections.push(runtimeInstructions);
   }
@@ -1914,6 +1922,10 @@ async function buildCodexSystemPromptAppend(
 
 function runtimePromptIncludesWorkspaceInstructions(runtimeSystemPromptAppend: string): boolean {
   return /^## Workspace Instructions$/m.test(runtimeSystemPromptAppend);
+}
+
+function runtimePromptIncludesRaviRules(runtimeSystemPromptAppend: string): boolean {
+  return /^## Ravi Rules$/m.test(runtimeSystemPromptAppend);
 }
 
 function buildCodexSkillCatalogInstruction(syncedSkillNames: string[]): string {

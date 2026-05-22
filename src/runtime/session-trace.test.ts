@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   getOrCreateSession,
@@ -261,7 +261,10 @@ describe("runtime session trace instrumentation", () => {
   });
 
   it("records adapter.request with prompt blobs when the runtime prompt generator yields", async () => {
+    const rulesDir = join(stateDir ?? "/tmp", ".ravi", "rules");
+    mkdirSync(rulesDir, { recursive: true });
     writeFileSync(join(stateDir ?? "/tmp", "AGENTS.md"), "# Trace Workspace\n\nTrace workspace instruction.\n");
+    writeFileSync(join(rulesDir, "project-tracking.md"), "Trace Ravi rule.\n");
 
     const streaming = makeStreamingSession({
       pendingMessages: [
@@ -354,6 +357,8 @@ describe("runtime session trace instrumentation", () => {
     expect(systemPrompt).toContain("## Identidade");
     expect(systemPrompt).toContain("## Workspace Instructions");
     expect(systemPrompt).toContain("Trace workspace instruction.");
+    expect(systemPrompt).toContain("## Ravi Rules");
+    expect(systemPrompt).toContain("Trace Ravi rule.");
     expect(systemPrompt).toContain("## Agent Instructions");
     expect(systemPrompt).toContain("Trace agent instruction.");
     expect(getSessionTraceBlob(turn?.userPromptSha256 ?? "")?.contentText).toBe("hello trace");
@@ -366,6 +371,13 @@ describe("runtime session trace instrumentation", () => {
           id: "workspace.instructions",
           title: "Workspace Instructions",
           source: join(stateDir ?? "/tmp", "AGENTS.md"),
+          chars: expect.any(Number),
+          sha256: expect.any(String),
+        }),
+        expect.objectContaining({
+          id: "ravi.rules",
+          title: "Ravi Rules",
+          source: rulesDir,
           chars: expect.any(Number),
           sha256: expect.any(String),
         }),
