@@ -9,6 +9,7 @@ let crmContactProfile: Record<string, unknown> | null = null;
 let crmAccount: Record<string, unknown> | null = null;
 let crmOpportunity: Record<string, unknown> | null = null;
 let crmTask: Record<string, unknown> | null = null;
+let taskRecords: Array<Record<string, unknown>> = [];
 let nextActionRecords: Array<Record<string, unknown>> = [];
 let contactCardRecords: Array<Record<string, unknown>> = [];
 let opportunityBoardRecords: Array<Record<string, unknown>> = [];
@@ -277,6 +278,7 @@ mock.module("../../contacts.js", () => ({
           ...crmTask,
         }
       : null,
+  listCrmTasks: (options: { limit?: string; offset?: string }) => pageRecords(taskRecords, options),
   createCrmTask: (input: Record<string, unknown>) => {
     lastTaskCreateInput = input;
     return { id: "crm_task_1", title: input.title, contactId: input.contactRef ?? null };
@@ -345,6 +347,37 @@ describe("CRM commands", () => {
     crmAccount = { lifecycle: "lead" };
     crmOpportunity = { valueCents: 500_000 };
     crmTask = { dueAt: "2026-05-09T10:00:00Z" };
+    taskRecords = [
+      {
+        id: "crm_task_1",
+        contactId: "contact-1",
+        accountId: "crm_acc_1",
+        opportunityId: "crm_opp_1",
+        chatId: "chat-1",
+        sessionKey: "dev",
+        title: "Follow up",
+        body: null,
+        taskType: "commitment",
+        status: "open",
+        priority: "urgent",
+        dueAt: "2026-05-09T10:00:00Z",
+        snoozedUntil: null,
+        completedAt: null,
+        canceledAt: null,
+        ownerType: "agent",
+        ownerId: "dev",
+        createdByType: "user",
+        createdById: "luis",
+        source: "test",
+        idempotencyKey: "idem-task",
+        confidence: 0.9,
+        evidence: [],
+        metadata: {},
+        raviTaskId: "task-1",
+        createdAt: "2026-05-09T09:00:00Z",
+        updatedAt: "2026-05-09T09:30:00Z",
+      },
+    ];
     nextActionRecords = [
       {
         taskId: "crm_task_1",
@@ -440,6 +473,49 @@ describe("CRM commands", () => {
     expect(payload.total).toBe(1);
     expect((payload.pagination as Record<string, unknown>).returned).toBe(1);
     expect((payload.items as Array<Record<string, unknown>>)[0]?.taskId).toBe("crm_task_1");
+  });
+
+  it("adds snake_case aliases to CRM task JSON surfaces", () => {
+    const listPayload = captureJson(() => {
+      new CrmTaskCommands().list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "10",
+        "0",
+        true,
+      );
+    });
+    const showPayload = captureJson(() => {
+      new CrmTaskCommands().show("crm_task_1", true);
+    });
+
+    const task = (listPayload.tasks as Array<Record<string, unknown>>)[0];
+    expect(task).toMatchObject({
+      taskType: "commitment",
+      task_type: "commitment",
+      dueAt: "2026-05-09T10:00:00Z",
+      due_at: "2026-05-09T10:00:00Z",
+      due_date: "2026-05-09T10:00:00Z",
+      ownerType: "agent",
+      owner_type: "agent",
+      idempotencyKey: "idem-task",
+      idempotency_key: "idem-task",
+      createdAt: "2026-05-09T09:00:00Z",
+      created_at: "2026-05-09T09:00:00Z",
+    });
+    expect((listPayload.items as Array<Record<string, unknown>>)[0]).toEqual(task);
+    expect(showPayload.task).toMatchObject({
+      dueAt: "2026-05-09T10:00:00Z",
+      due_at: "2026-05-09T10:00:00Z",
+      due_date: "2026-05-09T10:00:00Z",
+    });
   });
 
   it("supports direct ravi crm contact/account/opportunity read commands", () => {
