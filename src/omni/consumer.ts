@@ -82,6 +82,7 @@ import { normalizeInboundMentionText } from "./mentions.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
 import { runTagRulesForContact } from "../tag-rules/index.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
+import { firstProviderTimestampMs } from "../utils/provider-timestamp.js";
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
 import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
@@ -158,6 +159,7 @@ interface MessageReceivedPayload {
     isVoiceNote?: boolean;
   };
   replyToId?: string;
+  platformTimestamp?: number | string;
   rawPayload?: Record<string, unknown>;
 }
 
@@ -240,6 +242,13 @@ function rawPayloadNumber(rawPayload: Record<string, unknown> | undefined, key: 
   if (typeof value !== "string") return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function resolveMessageProviderTimestampMs(payload: MessageReceivedPayload, envelopeTimestamp: number): number {
+  return (
+    firstProviderTimestampMs(payload.platformTimestamp, payload.rawPayload?.messageTimestamp, envelopeTimestamp) ??
+    Date.now()
+  );
 }
 
 /**
@@ -562,7 +571,10 @@ export class OmniConsumer {
     // Skip reaction messages — these are handled by the REACTION stream consumer
     if (payload.content.type === "reaction") return;
 
-    const msgTs = event.timestamp > 1e12 ? event.timestamp : event.timestamp * 1000;
+    // Provider timestamps are the source of truth for message ordering.
+    // History-sync batches can share one envelope timestamp while each message
+    // carries its original platform timestamp in the payload.
+    const msgTs = resolveMessageProviderTimestampMs(payload, event.timestamp);
     // History-sync/old messages must still feed the durable chat/contact ledger.
     // They are suppressed only before route/runtime dispatch to avoid replaying prompts.
     const suppressRuntimeReplay = event.metadata?.ingestMode === "history-sync" || msgTs < this.startedAt - 5_000;

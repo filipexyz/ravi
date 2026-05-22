@@ -533,6 +533,7 @@ describe("OmniConsumer channel context", () => {
 
   it("captures history-sync messages without replaying them to runtime", async () => {
     contactIntakeMode = "pending";
+    const originalMessageTimestamp = 1_761_059_699;
     const sender = {
       send: mock(async () => {}),
       sendTyping: mock(async () => {}),
@@ -557,6 +558,7 @@ describe("OmniConsumer channel context", () => {
           pushName: "Lead Importado",
           resolvedSenderPhone: "5511999904321",
           isGroup: false,
+          messageTimestamp: originalMessageTimestamp,
         },
       },
       metadata: {
@@ -564,7 +566,7 @@ describe("OmniConsumer channel context", () => {
         channelType: "whatsapp-baileys",
         ingestMode: "history-sync",
       },
-      timestamp: Date.now(),
+      timestamp: 1_777_777_777_000,
     });
 
     expect(ensureContactFromInboundCalls).toHaveLength(1);
@@ -577,8 +579,12 @@ describe("OmniConsumer channel context", () => {
       actorType: "contact",
       contactId: "contact_auto",
       platformIdentityId: "pi_auto",
+      providerTimestamp: originalMessageTimestamp * 1000,
       rawProvenance: {
         ingestMode: "history-sync",
+        rawPayload: {
+          messageTimestamp: originalMessageTimestamp,
+        },
       },
     });
   });
