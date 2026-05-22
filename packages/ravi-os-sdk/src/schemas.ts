@@ -2895,6 +2895,14 @@ export const CrmPipelineListInputSchema = {
     "includeArchived": {
       "description": "Include archived pipelines",
       "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching pipelines to skip (default: 0)",
+      "type": "string"
     }
   },
   "type": "object"
@@ -3015,6 +3023,14 @@ export const CrmPipelineStageListInputSchema = {
     "includeArchived": {
       "description": "Include archived stages",
       "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching stages to skip (default: 0)",
+      "type": "string"
     },
     "pipeline": {
       "description": "CRM pipeline ID or name",
@@ -3193,6 +3209,14 @@ export const CrmPipelineStageTopicsInputSchema = {
     "includeArchived": {
       "description": "Include archived topics",
       "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching topics to skip (default: 0)",
+      "type": "string"
     },
     "pipeline": {
       "description": "CRM pipeline ID or name",

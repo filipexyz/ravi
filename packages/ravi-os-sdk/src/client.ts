@@ -1330,6 +1330,8 @@ export class RaviClient {
       list: async (options?: {
         entityType?: string;
         includeArchived?: boolean;
+        limit?: string;
+        offset?: string;
       }): Promise<CrmPipelineListReturn> => {
         return this.transport.call({
           groupSegments: ["crm","pipeline"],
@@ -1381,6 +1383,8 @@ export class RaviClient {
         /** List stages in a CRM pipeline */
         list: async (pipeline: string, options?: {
           includeArchived?: boolean;
+          limit?: string;
+          offset?: string;
         }): Promise<CrmPipelineStageListReturn> => {
           return this.transport.call({
             groupSegments: ["crm","pipeline","stage"],
@@ -1440,6 +1444,8 @@ export class RaviClient {
         /** List topics configured for a CRM pipeline stage */
         topics: async (pipeline: string, stage: string, options?: {
           includeArchived?: boolean;
+          limit?: string;
+          offset?: string;
         }): Promise<CrmPipelineStageTopicsReturn> => {
           return this.transport.call({
             groupSegments: ["crm","pipeline","stage"],

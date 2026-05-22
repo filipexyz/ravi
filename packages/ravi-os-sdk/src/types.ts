@@ -1208,6 +1208,8 @@ export type CrmPipelineCreateReturn = unknown;
 export type CrmPipelineListInput = {
   entityType?: string;
   includeArchived?: boolean;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `crm.pipeline.list`. (no @Returns declared) */
@@ -1259,6 +1261,8 @@ export type CrmPipelineStageArchiveReturn = unknown;
 /** Input shape for `crm.pipeline.stage.list`. */
 export type CrmPipelineStageListInput = {
   includeArchived?: boolean;
+  limit?: string;
+  offset?: string;
   pipeline: string;
 };
 
@@ -1326,6 +1330,8 @@ export type CrmPipelineStageTopicSetReturn = unknown;
 /** Input shape for `crm.pipeline.stage.topics`. */
 export type CrmPipelineStageTopicsInput = {
   includeArchived?: boolean;
+  limit?: string;
+  offset?: string;
   pipeline: string;
   stage: string;
 };
