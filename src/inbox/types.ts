@@ -2,9 +2,8 @@
  * Local mirror of the Console agent-inbox.
  *
  * Console owns the API and authorization. Local Ravi owns the durable mirror,
- * NATS publish, and triggers integration. See
- * `.ravi/specs/console/agent-inbox/local-polling/SPEC.md` in the Console repo
- * for the contract this module implements.
+ * NATS publish, and triggers integration. See `.ravi/specs/cli/inbox/SPEC.md`
+ * for the public local CLI/plumbing contract.
  */
 
 export const INBOX_NATS_SUBJECT = "ravi.console.inbox.item" as const;
@@ -100,13 +99,13 @@ export interface ConsoleInboxItem {
   sensitivity: string;
   title: string | null;
   summary: string | null;
-  source: { type: string; id: string };
-  actor: { type: string | null; id: string | null };
-  target: { type: string | null; id: string | null };
+  source: InboxSourceRef;
+  actor: InboxEntityRef;
+  target: InboxEntityRef;
   organization: { id: string };
   project: { id: string } | null;
   payload: Record<string, unknown> | null;
-  links: Record<string, unknown> | null;
+  links: InboxLink[] | null;
   occurredAt: string;
   createdAt: string;
   lease: {
@@ -116,7 +115,7 @@ export interface ConsoleInboxItem {
   } | null;
 }
 
-/** Canonical NATS payload published per `console/agent-inbox/event-contract`. */
+/** Canonical NATS payload published per `.ravi/specs/cli/inbox/SPEC.md`. */
 export interface InboxNatsPayload {
   version: 1;
   eventId: string;
@@ -130,11 +129,11 @@ export interface InboxNatsPayload {
   summary: string | null;
   organization: { id: string };
   project: { id: string } | null;
-  source: { type: string; id: string };
-  actor: { type: string | null; id: string | null };
-  target: { type: string | null; id: string | null };
+  source: InboxSourceRef;
+  actor: InboxEntityRef;
+  target: InboxEntityRef;
   payload: Record<string, unknown> | null;
-  links: Record<string, unknown> | null;
+  links: InboxLink[] | null;
   delivery: {
     subscriptionId: string;
     installationId: string;
@@ -148,3 +147,18 @@ export interface InboxNatsPayload {
   occurredAt: string;
   createdAt: string;
 }
+
+export type InboxSourceRef = Record<string, unknown> & {
+  type: string;
+  id?: string | null;
+};
+
+export type InboxEntityRef = Record<string, unknown> & {
+  type: string | null;
+  id: string | null;
+};
+
+export type InboxLink = Record<string, unknown> & {
+  label?: string;
+  url?: string;
+};

@@ -8,6 +8,8 @@ capabilities:
   - machine-json
   - listing-contracts
   - cloud-auth
+  - watch
+  - inbox
 tags:
   - cli
   - agents

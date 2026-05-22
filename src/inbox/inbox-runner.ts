@@ -12,8 +12,8 @@
  *   6. Apply backoff on transport/auth errors. AUTH_REQUIRED /
  *      INSTALLATION_REVOKED parks the subscription until `ravi login` runs.
  *
- * Contract reference: `.ravi/specs/console/agent-inbox/local-polling/SPEC.md`
- * in the Console repo.
+ * Contract reference: `.ravi/specs/cli/inbox/SPEC.md` and
+ * `.ravi/specs/watch/SPEC.md`.
  */
 
 import { ConsoleApiClient, refreshCredentialsForStore } from "../cloud-auth/client.js";
@@ -22,6 +22,7 @@ import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } f
 import type { CloudCredentials } from "../cloud-auth/types.js";
 import { publish } from "../nats.js";
 import { logger } from "../utils/logger.js";
+import { watchEventFromInboxPayload } from "../watch/events.js";
 import {
   ackInboxItems as ackInboxItemsRemote,
   fetchInboxPulse,
@@ -398,9 +399,14 @@ class InboxRunner {
       return { delivered: true };
     }
 
+    const watchEvent = watchEventFromInboxPayload(natsPayload, { inboxItemId: localItem.id });
+
     // 2. Publish to NATS.
     try {
       await publish(INBOX_NATS_SUBJECT, natsPayload as unknown as Record<string, unknown>);
+      if (watchEvent) {
+        await publish(watchEvent.subject, watchEvent as unknown as Record<string, unknown>);
+      }
     } catch (error) {
       log.error("Failed to publish inbox event to NATS", {
         itemId: input.item.itemId,
