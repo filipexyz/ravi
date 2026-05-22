@@ -925,6 +925,26 @@ export const AudioGenerateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `chats.backfill-provider-timestamps`. */
+export const ChatsBackfillProviderTimestampsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Write corrected provider timestamps. Without this, runs dry-run.",
+      "type": "boolean"
+    },
+    "dryRun": {
+      "description": "Force preview mode even if --apply is present",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum matching messages to inspect/apply",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.list`. */
 export const ChatsListInputSchema = {
   "additionalProperties": false,
