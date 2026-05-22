@@ -509,6 +509,7 @@ export class ContextCommands {
 
       const decision = evaluateBashPermission(command, {
         agentId: context.agentId,
+        kind: context.kind,
         sessionKey: context.sessionKey,
         sessionName: context.sessionName,
         capabilities: context.capabilities,

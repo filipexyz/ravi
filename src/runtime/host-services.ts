@@ -345,6 +345,7 @@ async function authorizeRuntimeCommandExecution(
   const eventData = request.eventData;
   const buildBashContext = () => ({
     agentId: options.agentId,
+    kind: options.context.kind,
     ...(options.context.sessionKey ? { sessionKey: options.context.sessionKey } : {}),
     sessionName: options.context.sessionName ?? options.sessionName,
     capabilities: options.context.capabilities,

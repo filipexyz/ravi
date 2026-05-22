@@ -7,6 +7,7 @@ import { dbUpsertSkillGateRule, getOrCreateSession, getSession } from "../router
 import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
+import { grantRelation } from "../permissions/relations.js";
 
 let stateDir: string | null = null;
 let previousCodexHome: string | undefined;
@@ -259,5 +260,35 @@ describe("runtime host skill-gate enforcement", () => {
 
     expect(decision.approved).toBe(true);
     expect(getSession("agent:main:main")?.runtimeSessionParams?.skillVisibility).toBeUndefined();
+  });
+
+  it("honors live executable grants after an agent-runtime context was issued", async () => {
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "permission-live-grant-test",
+      runtimeProvider: "codex",
+      providerSessionId: "thread-1",
+      runtimeSessionDisplayId: "thread-1",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "permission-live-grant-test",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+    });
+    grantRelation("agent", "main", "execute", "executable", "git", "test");
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "permission-live-grant-test",
+      toolContext: {},
+    });
+
+    const decision = await services.authorizeCommandExecution({
+      command: "git status",
+      input: {},
+    });
+
+    expect(decision.approved).toBe(true);
   });
 });
