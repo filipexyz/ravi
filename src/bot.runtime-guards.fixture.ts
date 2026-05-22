@@ -7,6 +7,7 @@ setDefaultTimeout(20_000);
 
 const actualDbModule = await import("./db.js");
 const actualRouterIndexModule = await import("./router/index.js");
+const actualRouterDbModule = await import("./router/router-db.js");
 const actualCliContextModule = await import("./cli/context.js");
 const actualRemoteSpawnNatsModule = await import("./remote-spawn-nats.js");
 const actualPermissionsEngineModule = await import("./permissions/engine.js");
@@ -714,6 +715,33 @@ function makePrompt(text: string) {
   };
 }
 
+function attachOutputForSession(sessionKey: string): void {
+  const now = Date.now();
+  actualRouterDbModule
+    .getDb()
+    .prepare(
+      `
+      INSERT OR IGNORE INTO sessions (session_key, name, agent_id, agent_cwd, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    )
+    .run(sessionKey, sessionKey, "main", "/tmp/ravi-test-bot/main", now, now);
+  const suffix = sessionKey.replace(/[^a-zA-Z0-9_-]+/g, "_");
+  const chat = actualRouterDbModule.dbUpsertChat({
+    channel: "whatsapp",
+    instanceId: "main",
+    platformChatId: `${suffix}@s.whatsapp.net`,
+    chatType: "dm",
+    title: `test-${suffix}`,
+  });
+  actualRouterDbModule.dbCreateSessionChatSubscription({
+    sessionKey,
+    chatId: chat.id,
+    attachedReason: "runtime-guard-test-output",
+    outputAttachedAt: Date.now(),
+  });
+}
+
 async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -848,6 +876,7 @@ describe("RaviBot runtime guards", () => {
 
   it("keeps runtime failure responses bounded while preserving runtime error detail", async () => {
     const sessionKey = "agent:main:runtime-failure";
+    attachOutputForSession(sessionKey);
     const longError = `TypeError: oD is not a function\n${"at minified.bundle.js:1:1\n".repeat(100)}`;
     runtimeStartImpl = (providerId) => ({
       provider: providerId,
@@ -1570,6 +1599,7 @@ describe("RaviBot runtime guards", () => {
     };
 
     const bot = createBot();
+    attachOutputForSession(sessionKey);
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first"));
     await afterTool;
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("second"));
