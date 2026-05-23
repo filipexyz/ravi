@@ -204,7 +204,7 @@ ravi triggers list
 
 # Add trigger: notify when contacts change
 ravi triggers add "Contato alterado" \
-  --topic "ravi._cli.cli.contacts.*" \
+  --topic "ravi.*.cli.contacts.*" \
   --message "Um contato foi alterado. Notifica o grupo do Slack e atualiza o CRM." \
   --agent main \
   --cooldown 30s
@@ -218,7 +218,7 @@ ravi triggers add "Permission Alert" \
 
 # Add trigger: log all contact changes
 ravi triggers add "Contact Audit" \
-  --topic "ravi._cli.cli.contacts.*" \
+  --topic "ravi.*.cli.contacts.*" \
   --message "Um contato foi modificado. Registre a mudança no log de auditoria." \
   --agent main \
   --session isolated
@@ -233,7 +233,7 @@ ravi triggers disable <id>
 # Update properties
 ravi triggers set <id> name "New Name"
 ravi triggers set <id> message "Nova instrução"
-ravi triggers set <id> topic "ravi._cli.cli.contacts.*"
+ravi triggers set <id> topic "ravi.*.cli.contacts.*"
 ravi triggers set <id> agent jarvis
 ravi triggers set <id> session main          # main or isolated
 ravi triggers set <id> cooldown 30s          # supports: 5s, 30s, 1m, 5m, 1h
@@ -247,7 +247,8 @@ ravi triggers rm <id>
 
 **Topic Catalog:**
 - `ravi triggers topics` - Inspect trigger-ready subjects, payload schemas, examples, and notes
-- `ravi._cli.cli.{group}.{command}` - CLI command audit events
+- `ravi.*.cli.{group}.{command}` - CLI command audit events emitted from an agent session
+- `ravi._cli.cli.{group}.{command}` - CLI command audit events emitted outside an agent session
 - `ravi.inbound.reaction` - Normalized emoji reactions
 - `ravi.audit.denied` - Permission or policy denial events
 - Custom publisher subjects are allowed when explicitly emitted by local code
