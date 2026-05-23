@@ -204,21 +204,21 @@ ravi triggers list
 
 # Add trigger: notify when contacts change
 ravi triggers add "Contato alterado" \
-  --topic "ravi.*.cli.contacts.*" \
+  --topic "ravi._cli.cli.contacts.*" \
   --message "Um contato foi alterado. Notifica o grupo do Slack e atualiza o CRM." \
   --agent main \
   --cooldown 30s
 
-# Add trigger: alert on agent tool errors
-ravi triggers add "Agent Error Alert" \
-  --topic "ravi.*.tool" \
-  --message "Um tool deu erro. Analise o que aconteceu e me avise se precisa de ação." \
+# Add trigger: alert on permission denials
+ravi triggers add "Permission Alert" \
+  --topic "ravi.audit.denied" \
+  --message "Uma permissão foi negada. Analise o que aconteceu e me avise se precisa de ação." \
   --agent main \
   --cooldown 1m
 
 # Add trigger: log all contact changes
 ravi triggers add "Contact Audit" \
-  --topic "ravi.*.cli.contacts.*" \
+  --topic "ravi._cli.cli.contacts.*" \
   --message "Um contato foi modificado. Registre a mudança no log de auditoria." \
   --agent main \
   --session isolated
@@ -233,7 +233,7 @@ ravi triggers disable <id>
 # Update properties
 ravi triggers set <id> name "New Name"
 ravi triggers set <id> message "Nova instrução"
-ravi triggers set <id> topic "ravi.*.cli.contacts.*"
+ravi triggers set <id> topic "ravi._cli.cli.contacts.*"
 ravi triggers set <id> agent jarvis
 ravi triggers set <id> session main          # main or isolated
 ravi triggers set <id> cooldown 30s          # supports: 5s, 30s, 1m, 5m, 1h
@@ -245,15 +245,15 @@ ravi triggers test <id>
 ravi triggers rm <id>
 ```
 
-**Available Topics:**
-- `ravi.*.cli.{group}.{command}` - CLI tool executions (e.g., `ravi.*.cli.contacts.add`)
-- `ravi.*.tool` - SDK tool executions (Bash, Read, etc.)
-- `message.received.{channelType}.{instanceId}` - Inbound channel messages (from omni)
+**Topic Catalog:**
+- `ravi triggers topics` - Inspect trigger-ready subjects, payload schemas, examples, and notes
+- `ravi._cli.cli.{group}.{command}` - CLI command audit events
+- `ravi.inbound.reaction` - Normalized emoji reactions
+- `ravi.audit.denied` - Permission or policy denial events
+- Custom publisher subjects are allowed when explicitly emitted by local code
 
 **Blocked Topics (anti-loop):**
-- `ravi.*.prompt` - Would create trigger→prompt→trigger loops
-- `ravi.*.response` - Would create trigger→response self-fire loops
-- `ravi.*.claude` - Internal SDK events, same risk
+- `ravi.session.*` - Reserved session runtime subjects
 
 **Options:**
 - `--topic <pattern>` - NATS topic pattern to subscribe to (required)

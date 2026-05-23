@@ -160,6 +160,24 @@ describe("TriggersCommands topic validation", () => {
     expect(createdTriggers).toHaveLength(0);
   });
 
+  it("rejects channel reaction aliases with canonical topic hint", async () => {
+    const commands = new TriggersCommands();
+
+    await expect(commands.add("reaction", "whatsapp.*.reaction", "hello")).rejects.toThrow(
+      "Use 'ravi.inbound.reaction'",
+    );
+
+    expect(createdTriggers).toHaveLength(0);
+  });
+
+  it("rejects legacy CLI topic aliases with canonical topic hint", async () => {
+    const commands = new TriggersCommands();
+
+    await expect(commands.add("cli", "ravi.*.cli.contacts.*", "hello")).rejects.toThrow("Use 'ravi._cli.cli.*.*'");
+
+    expect(createdTriggers).toHaveLength(0);
+  });
+
   it("rejects ravi.session topics on set", async () => {
     const commands = new TriggersCommands();
 
@@ -197,6 +215,24 @@ describe("TriggersCommands topic validation", () => {
         effectiveAgentId: "main",
         cooldownDescription: "5s",
       },
+    });
+  });
+
+  it("prints trigger topic catalog in --json mode", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(async () => commands.topics(true));
+
+    expect(payload).toMatchObject({
+      topics: expect.arrayContaining([
+        expect.objectContaining({
+          pattern: "ravi.inbound.reaction",
+          payload: "{ targetMessageId, emoji, senderId }",
+        }),
+        expect.objectContaining({
+          pattern: "ravi._cli.cli.*.*",
+        }),
+      ]),
     });
   });
 

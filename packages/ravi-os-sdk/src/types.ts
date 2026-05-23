@@ -4379,6 +4379,12 @@ export type TriggersTestInput = {
 /** Return shape for `triggers.test`. (no @Returns declared) */
 export type TriggersTestReturn = unknown;
 
+/** Input shape for `triggers.topics`. */
+export type TriggersTopicsInput = Record<string, never>;
+
+/** Return shape for `triggers.topics`. (no @Returns declared) */
+export type TriggersTopicsReturn = unknown;
+
 /** Input shape for `video.analyze`. */
 export type VideoAnalyzeInput = {
   output?: string;

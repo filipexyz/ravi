@@ -141,14 +141,14 @@ String values longer than 300 characters are automatically truncated. Unresolved
 ```bash
 # Add trigger with filter and template
 ravi triggers add "Deploy Alert" \
-  --topic "ravi.*.cli.deploy.*" \
+  --topic "ravi._cli.cli.deploy.*" \
   --message "Deploy on {{data.environment}}: {{data.status}}" \
   --filter 'data.status == "success"' \
   --cooldown 1m
 
 # Basic trigger
 ravi triggers add "Contato alterado" \
-  --topic "ravi.*.cli.contacts.*" \
+  --topic "ravi._cli.cli.contacts.*" \
   --message "Um contato foi alterado. Notifica o grupo."
 
 # Manage

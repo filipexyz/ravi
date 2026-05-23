@@ -20,7 +20,8 @@ import {
   type TriggerInput,
   type Trigger,
 } from "../../triggers/index.js";
-import { getBlockedTriggerTopicReason } from "../../triggers/topic-policy.js";
+import { getTriggerTopicCatalog, type TriggerTopicCatalogEntry } from "../../triggers/topic-catalog.js";
+import { getDisallowedTriggerTopicReason } from "../../triggers/topic-policy.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
@@ -35,12 +36,51 @@ function serializeTrigger(trigger: Trigger) {
   };
 }
 
+function printTopicSummary(): void {
+  console.log("\nTrigger topic catalog:");
+  for (const entry of getTriggerTopicCatalog().slice(0, 8)) {
+    console.log(`  ${entry.pattern.padEnd(30)} ${entry.description}`);
+  }
+  console.log("  ... run `ravi triggers topics` for schemas, examples, and notes");
+}
+
+function printTopicCatalog(topics: TriggerTopicCatalogEntry[]): void {
+  console.log("\nTrigger Topics:\n");
+  let currentCategory: string | null = null;
+  for (const entry of topics) {
+    if (entry.category !== currentCategory) {
+      currentCategory = entry.category;
+      console.log(`${currentCategory.toUpperCase()}`);
+    }
+    console.log(`  ${entry.pattern}`);
+    console.log(`    ${entry.description}`);
+    console.log(`    payload: ${entry.payload}`);
+    if (entry.filters?.length) console.log(`    filters: ${entry.filters.join(" | ")}`);
+    if (entry.examples[0]) console.log(`    example: ${entry.examples[0]}`);
+    if (entry.notes?.length) {
+      for (const note of entry.notes) console.log(`    note: ${note}`);
+    }
+  }
+}
+
 @Group({
   name: "triggers",
   description: "Event triggers",
   scope: "resource",
 })
 export class TriggersCommands {
+  @Command({ name: "topics", description: "List trigger-ready NATS topics" })
+  topics(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const topics = getTriggerTopicCatalog();
+    const payload = { topics };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      printTopicCatalog(topics);
+    }
+    return payload;
+  }
+
   @Command({ name: "list", description: "List all event triggers" })
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -82,15 +122,12 @@ export class TriggersCommands {
       console.log("\nNo triggers configured.\n");
       console.log("Usage:");
       console.log(
-        '  ravi triggers add "Contato alterado" --topic "ravi.*.cli.contacts.*" --message "Notifica o grupo"',
+        '  ravi triggers add "Contato alterado" --topic "ravi._cli.cli.contacts.*" --message "Notifica o grupo"',
       );
-      console.log('  ravi triggers add "Agent Error" --topic "ravi.*.tool" --message "Analise o erro" --cooldown 1m');
-      console.log("\nAvailable topics:");
-      console.log("  ravi.*.cli.{group}.{command}   CLI tool executions (e.g., ravi.*.cli.contacts.add)");
-      console.log("  ravi.*.tool                    SDK tool executions (Bash, Read, etc.)");
-      console.log("  ravi.*.response                Agent responses");
-      console.log("  whatsapp.*.inbound             WhatsApp messages");
-      console.log("  matrix.*.inbound               Matrix messages");
+      console.log(
+        '  ravi triggers add "Permission Alert" --topic "ravi.audit.denied" --message "Analise o erro" --cooldown 1m',
+      );
+      printTopicSummary();
     } else {
       console.log("\nEvent Triggers:\n");
       console.log("  ID        NAME                      ENABLED  TOPIC                           FIRES");
@@ -159,12 +196,7 @@ export class TriggersCommands {
       }
       console.log(`  Created:         ${new Date(trigger.createdAt).toLocaleString()}`);
 
-      console.log("\nAvailable topics:");
-      console.log("  ravi.*.cli.{group}.{command}   CLI tool executions");
-      console.log("  ravi.*.tool                    SDK tool executions");
-      console.log("  ravi.*.response                Agent responses");
-      console.log("  whatsapp.*.inbound             WhatsApp messages");
-      console.log("  matrix.*.inbound               Matrix messages");
+      printTopicSummary();
     }
     return payload;
   }
@@ -212,9 +244,9 @@ export class TriggersCommands {
     if (!message) {
       fail("--message is required");
     }
-    const blockedReason = getBlockedTriggerTopicReason(topic);
-    if (blockedReason) {
-      fail(blockedReason);
+    const disallowedReason = getDisallowedTriggerTopicReason(topic);
+    if (disallowedReason) {
+      fail(disallowedReason);
     }
 
     // Validate agent if provided
@@ -411,9 +443,9 @@ export class TriggersCommands {
           break;
 
         case "topic": {
-          const blockedReason = getBlockedTriggerTopicReason(value);
-          if (blockedReason) {
-            fail(blockedReason);
+          const disallowedReason = getDisallowedTriggerTopicReason(value);
+          if (disallowedReason) {
+            fail(disallowedReason);
           }
           updated = dbUpdateTrigger(id, { topic: value });
           logHuman(`✓ Topic set: ${id} -> ${value}`);
