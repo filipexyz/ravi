@@ -713,6 +713,50 @@ describe("OmniConsumer channel context", () => {
     ]);
   });
 
+  it("publishes hash-space messages as normal chat instead of command failures", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-hash-space",
+      type: "message.received",
+      payload: {
+        externalId: "msg-hash-space",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "# nota comum",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("Luis Filipe:");
+    expect(prompt.prompt).toContain("# nota comum");
+    expect(prompt.prompt).not.toContain("## Ravi Command:");
+    expect(prompt.commands).toBeUndefined();
+  });
+
   it("resets the runtime session and republishes an Omni message edit as a rebase replay", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     actualUpdateProviderSession(sessionKey, "codex", "provider-before-edit");

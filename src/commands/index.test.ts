@@ -30,6 +30,9 @@ describe("Ravi Commands", () => {
       rawArguments: "123 high",
     });
     expect(parseRaviCommandInvocation("please #review-pr 123")).toEqual({ kind: "none" });
+    expect(parseRaviCommandInvocation("#")).toEqual({ kind: "none" });
+    expect(parseRaviCommandInvocation("# ")).toEqual({ kind: "none" });
+    expect(parseRaviCommandInvocation("# heading")).toEqual({ kind: "none" });
     expect(parseRaviCommandInvocation("#bad_name")).toMatchObject({
       kind: "invalid",
     });
@@ -113,6 +116,15 @@ describe("Ravi Commands", () => {
     const raviHome = tempDir();
     const agent: AgentConfig = { id: "dev", cwd: agentCwd };
     const prompt = { prompt: "#missing-command keep this as chat" };
+
+    expect(expandRaviCommandPrompt(prompt, { agent, env: { RAVI_HOME: raviHome } as NodeJS.ProcessEnv })).toBe(prompt);
+  });
+
+  it("passes hash-space messages through as normal prompts", () => {
+    const agentCwd = tempDir();
+    const raviHome = tempDir();
+    const agent: AgentConfig = { id: "dev", cwd: agentCwd };
+    const prompt = { prompt: "# heading as normal chat" };
 
     expect(expandRaviCommandPrompt(prompt, { agent, env: { RAVI_HOME: raviHome } as NodeJS.ProcessEnv })).toBe(prompt);
   });
