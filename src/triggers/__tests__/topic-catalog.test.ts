@@ -27,4 +27,8 @@ describe("trigger topic catalog", () => {
   it("allows custom publisher subjects", () => {
     expect(getTriggerTopicDiagnostic("doma.rdp.>")).toBeUndefined();
   });
+
+  it("allows session CLI command subjects", () => {
+    expect(getTriggerTopicDiagnostic("ravi.*.cli.contacts.*")).toBeUndefined();
+  });
 });

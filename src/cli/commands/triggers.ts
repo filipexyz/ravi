@@ -122,7 +122,7 @@ export class TriggersCommands {
       console.log("\nNo triggers configured.\n");
       console.log("Usage:");
       console.log(
-        '  ravi triggers add "Contato alterado" --topic "ravi._cli.cli.contacts.*" --message "Notifica o grupo"',
+        '  ravi triggers add "Contato alterado" --topic "ravi.*.cli.contacts.*" --message "Notifica o grupo"',
       );
       console.log(
         '  ravi triggers add "Permission Alert" --topic "ravi.audit.denied" --message "Analise o erro" --cooldown 1m',

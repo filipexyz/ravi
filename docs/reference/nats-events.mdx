@@ -99,6 +99,12 @@ ravi.{sessionKey}.cli.{group}.{command}
 
 Example: `ravi.agent:main:main.cli.contacts.add`
 
+Standalone CLI commands that are not tied to a session use `_cli` as the session token:
+
+```
+ravi._cli.cli.{group}.{command}
+```
+
 ## Copilot Events (Claude Code Bridge)
 
 Events from Claude Code sessions, published by the hook script:

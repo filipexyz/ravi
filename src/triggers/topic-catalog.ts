@@ -57,13 +57,27 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     notes: ["Subscriber support exists in approval flows; publisher availability depends on the channel provider."],
   },
   {
-    id: "cli.command",
+    id: "cli.session-command",
+    category: "cli",
+    pattern: "ravi.*.cli.*.*",
+    title: "Session CLI command audit",
+    description: "CLI command execution audit events emitted from an agent session.",
+    payload: "{ tool, input, isError, status, durationMs, timestamp, sessionKey, cliInvocation }",
+    examples: ['ravi triggers add "Agent contact CLI audit" --topic "ravi.*.cli.contacts.*" --message "..."'],
+    filters: ['data.isError == "true"', 'data.sessionKey == "dev"', 'data.tool == "contacts_add"'],
+    notes: [
+      "The wildcard between ravi and cli matches the emitting session key.",
+      "Standalone CLI invocations that are not tied to a session use ravi._cli.cli.<group>.<command>.",
+    ],
+  },
+  {
+    id: "cli.standalone-command",
     category: "cli",
     pattern: "ravi._cli.cli.*.*",
-    title: "CLI command audit",
-    description: "Ravi CLI command execution audit events.",
+    title: "Standalone CLI command audit",
+    description: "Ravi CLI command execution audit events emitted outside an agent session.",
     payload: "{ tool, input, isError, status, durationMs, timestamp, sessionKey, cliInvocation }",
-    examples: ['ravi triggers add "Contact CLI audit" --topic "ravi._cli.cli.contacts.*" --message "..."'],
+    examples: ['ravi triggers add "Standalone contact CLI audit" --topic "ravi._cli.cli.contacts.*" --message "..."'],
     filters: ['data.isError == "true"', 'data.tool == "contacts_add"'],
   },
   {
@@ -194,14 +208,6 @@ export function getTriggerTopicDiagnostic(topic: string): TriggerTopicDiagnostic
     return {
       level: "error",
       message: `Channel alias '${trimmed}' is not a trigger-ready subject. Channel messages are consumed by the session router; use a published Ravi topic from 'ravi triggers topics'.`,
-    };
-  }
-
-  if (/^ravi\.\*\.cli(?:\.|$)/.test(trimmed)) {
-    return {
-      level: "error",
-      suggestedPattern: "ravi._cli.cli.*.*",
-      message: `Legacy CLI pattern '${trimmed}' is not published. Use 'ravi._cli.cli.*.*' or a narrower 'ravi._cli.cli.<group>.<command>' pattern.`,
     };
   }
 

@@ -170,12 +170,17 @@ describe("TriggersCommands topic validation", () => {
     expect(createdTriggers).toHaveLength(0);
   });
 
-  it("rejects legacy CLI topic aliases with canonical topic hint", async () => {
+  it("allows session CLI topics", async () => {
     const commands = new TriggersCommands();
 
-    await expect(commands.add("cli", "ravi.*.cli.contacts.*", "hello")).rejects.toThrow("Use 'ravi._cli.cli.*.*'");
+    await commands.add("cli", "ravi.*.cli.contacts.*", "hello");
 
-    expect(createdTriggers).toHaveLength(0);
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "cli",
+        topic: "ravi.*.cli.contacts.*",
+      }),
+    );
   });
 
   it("rejects ravi.session topics on set", async () => {
@@ -228,6 +233,9 @@ describe("TriggersCommands topic validation", () => {
         expect.objectContaining({
           pattern: "ravi.inbound.reaction",
           payload: "{ targetMessageId, emoji, senderId }",
+        }),
+        expect.objectContaining({
+          pattern: "ravi.*.cli.*.*",
         }),
         expect.objectContaining({
           pattern: "ravi._cli.cli.*.*",

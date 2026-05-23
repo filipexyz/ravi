@@ -75,7 +75,8 @@ Channel message aliases such as `whatsapp.*.inbound` and channel reaction aliase
 
 | Pattern | Description |
 |---------|-------------|
-| `ravi._cli.cli.*.*` | CLI command audit events |
+| `ravi.*.cli.*.*` | CLI command audit events emitted from an agent session |
+| `ravi._cli.cli.*.*` | CLI command audit events emitted outside an agent session |
 | `ravi.console.inbox.item` | Console inbox item delivery |
 | `ravi.watch.*.*` | Normalized watch events |
 | `ravi.task.*.event` | Task lifecycle events |
@@ -121,7 +122,6 @@ The CLI rejects topics that are known to be inferred aliases rather than real pu
 ```
 whatsapp.*.reaction     # use ravi.inbound.reaction
 whatsapp.*.inbound      # channel messages are routed to sessions, not trigger subjects
-ravi.*.cli.contacts.*   # use ravi._cli.cli.contacts.*
 ravi.*.tool             # session runtime subjects are blocked for triggers
 ```
 
@@ -198,7 +198,7 @@ Unresolved variables (paths that do not exist in the event data) are left as-is 
 ```bash
 # Simple template
 ravi triggers add "Session Monitor" \
-  --topic "ravi._cli.cli.sessions.*" \
+  --topic "ravi.*.cli.sessions.*" \
   --message "Session CLI command executed. Check if the result looks correct."
 
 # Template with truncated content
@@ -308,7 +308,7 @@ Disabled triggers keep their configuration but stop subscribing to events.
 ```bash
 ravi triggers set <id> name "New Name"
 ravi triggers set <id> message "New prompt text"
-ravi triggers set <id> topic "ravi._cli.cli.contacts.*"
+ravi triggers set <id> topic "ravi.*.cli.contacts.*"
 ravi triggers set <id> agent vendas
 ravi triggers set <id> session main
 ravi triggers set <id> cooldown 30s
@@ -362,7 +362,7 @@ Track when contacts are added or modified:
 
 ```bash
 ravi triggers add "Contact Audit" \
-  --topic "ravi._cli.cli.contacts.*" \
+  --topic "ravi.*.cli.contacts.*" \
   --message "A contact was modified. Log the change for auditing." \
   --session isolated
 ```
@@ -384,7 +384,7 @@ Only fire for events in a specific project directory:
 
 ```bash
 ravi triggers add "Project Watcher" \
-  --topic "ravi._cli.cli.*.*" \
+  --topic "ravi.*.cli.*.*" \
   --message "Activity detected in the project. Last action: {{data.last_assistant_message}}" \
   --filter 'data.cwd startsWith "/workspace/ravi/copilot"' \
   --cooldown 30s
@@ -418,7 +418,7 @@ Verify that the trigger shows `ENABLED: yes` and that the topic pattern is corre
 Subscribe to the trigger's topic directly with NATS:
 
 ```bash
-nats sub "ravi._cli.cli.contacts.*" --server nats://127.0.0.1:4223
+nats sub "ravi.*.cli.contacts.*" --server nats://127.0.0.1:4223
 ```
 
 ### Check daemon logs
