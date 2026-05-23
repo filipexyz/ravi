@@ -209,10 +209,10 @@ ravi triggers add "Contato alterado" \
   --agent main \
   --cooldown 30s
 
-# Add trigger: alert on agent tool errors
-ravi triggers add "Agent Error Alert" \
-  --topic "ravi.*.tool" \
-  --message "Um tool deu erro. Analise o que aconteceu e me avise se precisa de ação." \
+# Add trigger: alert on permission denials
+ravi triggers add "Permission Alert" \
+  --topic "ravi.audit.denied" \
+  --message "Uma permissão foi negada. Analise o que aconteceu e me avise se precisa de ação." \
   --agent main \
   --cooldown 1m
 
@@ -245,15 +245,16 @@ ravi triggers test <id>
 ravi triggers rm <id>
 ```
 
-**Available Topics:**
-- `ravi.*.cli.{group}.{command}` - CLI tool executions (e.g., `ravi.*.cli.contacts.add`)
-- `ravi.*.tool` - SDK tool executions (Bash, Read, etc.)
-- `message.received.{channelType}.{instanceId}` - Inbound channel messages (from omni)
+**Topic Catalog:**
+- `ravi triggers topics` - Inspect trigger-ready subjects, payload schemas, examples, and notes
+- `ravi.*.cli.{group}.{command}` - CLI command audit events emitted from an agent session
+- `ravi._cli.cli.{group}.{command}` - CLI command audit events emitted outside an agent session
+- `ravi.inbound.reaction` - Normalized emoji reactions
+- `ravi.audit.denied` - Permission or policy denial events
+- Custom publisher subjects are allowed when explicitly emitted by local code
 
 **Blocked Topics (anti-loop):**
-- `ravi.*.prompt` - Would create trigger→prompt→trigger loops
-- `ravi.*.response` - Would create trigger→response self-fire loops
-- `ravi.*.claude` - Internal SDK events, same risk
+- `ravi.session.*` - Reserved session runtime subjects
 
 **Options:**
 - `--topic <pattern>` - NATS topic pattern to subscribe to (required)

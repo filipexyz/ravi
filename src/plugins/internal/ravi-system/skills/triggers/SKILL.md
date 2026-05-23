@@ -3,7 +3,7 @@ name: trigger-manager
 description: |
   Gerencia triggers de eventos do sistema Ravi. Use quando o usuário quiser:
   - Criar, listar, ver ou deletar triggers
-  - Configurar reações automáticas a eventos (CLI, SDK tools, mensagens)
+  - Configurar reações automáticas a eventos CLI, watch, audit e inbound normalizado
   - Ativar/desativar triggers existentes
   - Testar triggers manualmente
 ---
@@ -56,34 +56,38 @@ ravi triggers test <id>
 ravi triggers rm <id>
 ```
 
-## Tópicos Disponíveis
+## Banco de Tópicos
 
-Patterns usam wildcards (`*`):
+Use `ravi triggers topics` para ver subjects trigger-ready com schema de payload, exemplos, filtros comuns e notas operacionais. Skills e docs devem usar esse catálogo como fonte de hints, em vez de inferir topics por simetria.
 
 ### Inbound e Canais
 
 | Pattern | Descrição |
 |---------|-----------|
-| `whatsapp.*.inbound` | Mensagens WhatsApp recebidas |
-| `matrix.*.inbound` | Mensagens Matrix recebidas |
-| `ravi.inbound.reaction` | Reações recebidas (emoji) |
-| `ravi.inbound.reply` | Replies a mensagens do bot |
-| `ravi.inbound.pollVote` | Votos em enquetes |
+| `ravi.inbound.reaction` | Reações recebidas. Payload: `{ targetMessageId, emoji, senderId }` |
+| `ravi.inbound.reply` | Replies a mensagens do bot. Payload: `{ targetMessageId, text, senderId }` |
+| `ravi.inbound.pollVote` | Votos em enquetes. Payload: `{ pollMessageId, votes: [{ name, voters[] }] }` |
+
+Aliases como `whatsapp.*.reaction`, `whatsapp.*.inbound` e `matrix.*.inbound` não são subjects publicados para triggers. Mensagens de canal entram pelo router de sessão; reação usa `ravi.inbound.reaction`.
 
 ### Contatos e Aprovações
 
 | Pattern | Descrição |
 |---------|-----------|
 | `ravi.contacts.pending` | Novo contato/grupo pendente de aprovação |
+| `ravi.chats.pending` | Novo chat/grupo pendente de aprovação |
 | `ravi.approval.request` | Pedido de aprovação cascading |
 | `ravi.approval.response` | Resposta de aprovação |
 
-### Agent e Tools
+### CLI, Watch e Tasks
 
 | Pattern | Descrição |
 |---------|-----------|
-| `ravi.*.cli.{group}.{command}` | Execuções de CLI tools (ex: `ravi.*.cli.contacts.add`) |
-| `ravi.*.tool` | Execuções de SDK tools (Bash, Read, etc) |
+| `ravi.*.cli.*.*` | Auditoria de comandos CLI emitidos por sessão |
+| `ravi._cli.cli.*.*` | Auditoria de comandos CLI standalone |
+| `ravi.console.inbox.item` | Item entregue pelo Console inbox |
+| `ravi.watch.*.*` | Evento normalizado de watch |
+| `ravi.task.*.event` | Evento de ciclo de vida de task |
 
 ### Delivery / Receipts
 
@@ -91,6 +95,13 @@ Patterns usam wildcards (`*`):
 |---------|-----------|
 | `ravi.outbound.deliver` | Mensagens enviadas para canais |
 | `ravi.outbound.receipt` | Read receipts enviados |
+
+### Audit
+
+| Pattern | Descrição |
+|---------|-----------|
+| `ravi.audit.denied` | Permissão negada |
+| `ravi.instances.unregistered` | Evento de instância Omni não registrada |
 
 **Bloqueados (anti-loop):** Triggers em tópicos `ravi.session.*` são rejeitados para evitar loops internos.
 
@@ -142,7 +153,7 @@ ravi triggers add "Contato alterado" --topic "ravi.*.cli.contacts.*" --message "
 
 Criar trigger para monitorar erros:
 ```bash
-ravi triggers add "Agent Error" --topic "ravi.*.tool" --message "Analise o erro e sugira correção" --cooldown 1m
+ravi triggers add "Permission Alert" --topic "ravi.audit.denied" --message "Analise o erro e sugira correção" --cooldown 1m
 ```
 
 ## Relação com NATS

@@ -89,6 +89,7 @@ Para timeline completa de sessão, use `RAVI_EVENTS` junto de `MESSAGE`/`REACTIO
 | `ravi.inbound.pollVote` | `{ pollMessageId, votes: [{ name, voters[] }] }` — subscriber existe, publisher vem do omni |
 
 > As mensagens inbound dos canais chegam via **omni JetStream** nos subjects `message.received.{channelType}.{instanceId}`, não via pub/sub ravi. O `OmniConsumer` consome esses streams e traduz para prompts de sessão.
+> Reações são normalizadas em `ravi.inbound.reaction`. Aliases como `whatsapp.*.reaction` não são publicados.
 
 ### Delivery (bot → gateway → omni)
 

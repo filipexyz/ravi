@@ -10423,6 +10423,13 @@ export const TriggersTestInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `triggers.topics`. */
+export const TriggersTopicsInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `video.analyze`. */
 export const VideoAnalyzeInputSchema = {
   "additionalProperties": false,
