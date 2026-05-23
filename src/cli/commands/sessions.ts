@@ -34,6 +34,7 @@ import {
   attachChatToSession,
   detachChatFromSession,
   listSessionSubscriptions,
+  setSessionChatSpeechMode,
   SessionAttachConflictError,
 } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
@@ -128,6 +129,10 @@ function printJsonl(payload: unknown): void {
 
 export function buildSessionDetachCommand(sessionRef: string, chatId: string): string {
   return `ravi sessions detach ${sessionRef} --chat ${chatId}`;
+}
+
+export function buildSessionUnmuteCommand(sessionRef: string, chatId: string): string {
+  return `ravi sessions unmute ${sessionRef} --chat ${chatId}`;
 }
 
 function formatTagSlugs(tags: TagBinding[]): string {
@@ -3759,6 +3764,72 @@ export class SessionCommands {
     }
   }
 
+  @Command({ name: "mute", description: "Keep a subscribed chat as listen-only for a session" })
+  mute(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    if (!chatRef?.trim()) {
+      fail("--chat is required");
+      return;
+    }
+    const chat = resolveAttachChat(chatRef);
+    if (!chat) {
+      fail(`Chat not found: ${chatRef}`);
+      return;
+    }
+    const subscription = setSessionChatSpeechMode({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      speechMode: "muted",
+      reason: "cli-mute",
+    });
+    if (asJson) {
+      printJson({ sessionKey: session.sessionKey, chatId: chat.id, speechMode: subscription.speechMode, subscription });
+      return;
+    }
+    console.log(`Muted chat ${chat.id} for session ${session.name ?? session.sessionKey}; inbound remains subscribed`);
+  }
+
+  @Command({ name: "unmute", description: "Allow a subscribed chat to receive session responses" })
+  unmute(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    if (!chatRef?.trim()) {
+      fail("--chat is required");
+      return;
+    }
+    const chat = resolveAttachChat(chatRef);
+    if (!chat) {
+      fail(`Chat not found: ${chatRef}`);
+      return;
+    }
+    const subscription = setSessionChatSpeechMode({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      speechMode: "speak",
+      reason: "cli-unmute",
+    });
+    if (asJson) {
+      printJson({ sessionKey: session.sessionKey, chatId: chat.id, speechMode: subscription.speechMode, subscription });
+      return;
+    }
+    console.log(`Unmuted chat ${chat.id} for session ${session.name ?? session.sessionKey}`);
+  }
+
   @Command({ name: "subscriptions", description: "List chats attached to a session" })
   subscriptions(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -3791,7 +3862,7 @@ export class SessionCommands {
       const title = chat?.title ?? "(no title)";
       const channel = chat?.channel ?? "?";
       const outputMarker = sub.outputAttachedAt ? " output" : "";
-      console.log(`  [${sub.role}${outputMarker}] ${sub.chatId} — ${title} (${channel})`);
+      console.log(`  [${sub.role}${outputMarker} speech=${sub.speechMode}] ${sub.chatId} — ${title} (${channel})`);
     }
   }
 }

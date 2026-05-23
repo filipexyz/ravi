@@ -16,6 +16,7 @@ import {
   findSessionByAttachedChat,
   getOrCreateSession,
   listSessionSubscriptions,
+  setSessionChatSpeechMode,
   SessionAttachConflictError,
   SessionAttachInstanceMismatchError,
   subscriptionAllowsCrossInstance,
@@ -62,6 +63,7 @@ describe("sessions/attach — subscriptions + output attachment", () => {
     expect(result.subscription.role).toBe("input");
     expect(result.subscription.sessionKey).toBe(session.sessionKey);
     expect(result.subscription.chatId).toBe(chat.id);
+    expect(result.subscription.speechMode).toBe("speak");
     expect(result.subscription.outputAttachedAt).toBeNumber();
   });
 
@@ -159,6 +161,7 @@ describe("sessions/attach — subscriptions + output attachment", () => {
     const subs = listSessionSubscriptions(session.sessionKey);
     expect(subs).toHaveLength(1);
     expect(subs[0].role).toBe("primary");
+    expect(subs[0].speechMode).toBe("muted");
     expect(subs[0].outputAttachedAt).toBeUndefined();
   });
 
@@ -175,8 +178,53 @@ describe("sessions/attach — subscriptions + output attachment", () => {
     });
 
     const subs = listSessionSubscriptions(session.sessionKey);
-    expect(subs.find((s) => s.chatId === outputChat.id)?.outputAttachedAt).toBeNumber();
-    expect(subs.find((s) => s.chatId === inputChat.id)?.outputAttachedAt).toBeUndefined();
+    const outputSub = subs.find((s) => s.chatId === outputChat.id);
+    const inputSub = subs.find((s) => s.chatId === inputChat.id);
+    expect(outputSub?.outputAttachedAt).toBeNumber();
+    expect(outputSub?.speechMode).toBe("speak");
+    expect(inputSub?.outputAttachedAt).toBeUndefined();
+    expect(inputSub?.speechMode).toBe("muted");
+  });
+
+  it("can toggle speech mode without detaching the input subscription", () => {
+    const session = makeSession("speech-toggle");
+    const chat = makeChat("speech-toggle-chat");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id, setOutputTarget: false });
+
+    const unmuted = setSessionChatSpeechMode({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      speechMode: "speak",
+      reason: "test-unmute",
+    });
+    expect(unmuted.speechMode).toBe("speak");
+
+    const muted = setSessionChatSpeechMode({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      speechMode: "muted",
+      reason: "test-mute",
+    });
+    expect(muted.speechMode).toBe("muted");
+    expect(findSessionByAttachedChat(chat.id)?.sessionKey).toBe(session.sessionKey);
+  });
+
+  it("muting the default output clears output while preserving the input subscription", () => {
+    const session = makeSession("mute-output");
+    const chat = makeChat("mute-output-chat");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
+
+    const muted = setSessionChatSpeechMode({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      speechMode: "muted",
+      reason: "test-mute-output",
+    });
+
+    expect(muted.speechMode).toBe("muted");
+    expect(muted.outputAttachedAt).toBeUndefined();
+    expect(findSessionByAttachedChat(chat.id)?.sessionKey).toBe(session.sessionKey);
+    expect(listSessionSubscriptions(session.sessionKey)).toHaveLength(1);
   });
 
   it("findSessionByAttachedChat returns the owner subscription", () => {

@@ -17,6 +17,7 @@ import {
   dbGetInstanceByInstanceId,
   dbListSessionChatSubscriptions,
   dbRenameRouteSessionName,
+  dbSetSessionChatSpeechMode,
   dbSetSessionOutputAttachment,
   getDb,
   getDbChanges,
@@ -25,6 +26,7 @@ import {
   type AttachedByType,
   type CreateSessionChatSubscriptionInput,
   type SessionChatSubscriptionRecord,
+  type SubscriptionSpeechMode,
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
@@ -943,6 +945,8 @@ export interface AttachChatToSessionInput {
   attachedReason?: string | null;
   contextSnapshotAtAttach?: Record<string, unknown> | null;
   setOutputTarget?: boolean;
+  speechMode?: SubscriptionSpeechMode;
+  speechReason?: string | null;
 }
 
 export interface AttachChatToSessionResult {
@@ -977,6 +981,15 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
       const subscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
       return { subscription, created: false, outputAttached: true };
     }
+    if (input.speechMode && input.speechMode !== ownActive.speechMode) {
+      const subscription = dbSetSessionChatSpeechMode(
+        input.sessionKey,
+        input.chatId,
+        input.speechMode,
+        input.speechReason ?? input.attachedReason ?? "attach-speech-update",
+      );
+      return { subscription, created: false, outputAttached: subscription.outputAttachedAt !== undefined };
+    }
     return { subscription: ownActive, created: false, outputAttached: false };
   }
 
@@ -988,8 +1001,14 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
     throw new SessionAttachConflictError(input.chatId, existingOwner.sessionKey, input.sessionKey);
   }
   try {
-    const subscription = dbCreateSessionChatSubscription(input as CreateSessionChatSubscriptionInput);
-    if (input.setOutputTarget ?? true) {
+    const setOutputTarget = input.setOutputTarget ?? true;
+    const speechMode = input.speechMode ?? (setOutputTarget || input.role === "primary" ? "speak" : "muted");
+    const subscription = dbCreateSessionChatSubscription({
+      ...(input as CreateSessionChatSubscriptionInput),
+      speechMode,
+      speechReason: input.speechReason ?? input.attachedReason ?? null,
+    });
+    if (setOutputTarget) {
       const outputSubscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
       return { subscription: outputSubscription, created: true, outputAttached: true };
     }
@@ -1008,6 +1027,15 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
     }
     throw err;
   }
+}
+
+export function setSessionChatSpeechMode(input: {
+  sessionKey: string;
+  chatId: string;
+  speechMode: SubscriptionSpeechMode;
+  reason?: string | null;
+}): SessionChatSubscriptionRecord {
+  return dbSetSessionChatSpeechMode(input.sessionKey, input.chatId, input.speechMode, input.reason ?? null);
 }
 
 /**

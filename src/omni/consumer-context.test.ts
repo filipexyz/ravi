@@ -354,6 +354,56 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
+  it("does not mute an existing primary output subscription on repeated inbound from the same chat", async () => {
+    const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    for (const externalId of ["msg-primary-first", "msg-primary-second"]) {
+      await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+        id: `evt-${externalId}`,
+        type: "message.received",
+        payload: {
+          externalId,
+          chatId: "120363424772797713@g.us",
+          from: "178035101794451",
+          content: {
+            type: "text",
+            text: "oi",
+          },
+          rawPayload: {
+            pushName: "Luis Filipe",
+            chatName: "ravi - dev",
+            resolvedSenderPhone: "5511947879044",
+            isGroup: true,
+          },
+        },
+        metadata: {
+          instanceId: "instance-1",
+          channelType: "whatsapp-baileys",
+          ingestMode: "realtime",
+        },
+        timestamp: Date.now(),
+      });
+    }
+
+    const subscriptions = actualRouterSessionsModule.listSessionSubscriptions(sessionKey);
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0]).toMatchObject({
+      role: "primary",
+      speechMode: "speak",
+    });
+    expect(subscriptions[0].outputAttachedAt).toBeDefined();
+    expect(promptCalls).toHaveLength(2);
+    expect(promptCalls[1][1].prompt).toContain("source_speech=speak");
+  });
+
   it("renders inbound WhatsApp numeric mention placeholders as mentioned contact names", async () => {
     const sender = {
       send: mock(async () => {}),
@@ -468,10 +518,10 @@ describe("OmniConsumer channel context", () => {
     });
     expect(promptCalls).toHaveLength(1);
     const [, prompt] = promptCalls[0];
-    expect(prompt.prompt).toContain(
-      `[origin] inbound veio de ${inputChat?.id} (subscription da sessão "dev"). Este chat já está atachado como input.`,
-    );
-    expect(prompt.prompt).toContain("Para fazer respostas saírem neste chat");
+    expect(prompt.prompt).toContain(`[session surfaces] session=dev source_chat=${inputChat?.id}`);
+    expect(prompt.prompt).toContain("source_speech=muted");
+    expect(prompt.prompt).toContain(`ravi sessions unmute dev --chat ${inputChat?.id}`);
+    expect(prompt.prompt).toContain("Do not mention mute, unmute, attach, subscriptions, routing, or output mechanics");
     expect(prompt.prompt).not.toContain("ravi sessions focus");
   });
 

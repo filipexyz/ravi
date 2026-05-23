@@ -218,7 +218,9 @@ mock.module("../../tags/service.js", () => ({
 }));
 
 const { SessionCommands } = await import("./sessions.js");
-const { buildSessionDetachCommand, extractNormalizedTranscriptMessages } = await import("./sessions.js");
+const { buildSessionDetachCommand, buildSessionUnmuteCommand, extractNormalizedTranscriptMessages } = await import(
+  "./sessions.js"
+);
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -422,6 +424,10 @@ describe("SessionCommands list --json", () => {
 describe("SessionCommands attach hints", () => {
   it("builds the detach command returned by attach", () => {
     expect(buildSessionDetachCommand("dev", "chat_123")).toBe("ravi sessions detach dev --chat chat_123");
+  });
+
+  it("builds the unmute command used by muted source hints", () => {
+    expect(buildSessionUnmuteCommand("dev", "chat_123")).toBe("ravi sessions unmute dev --chat chat_123");
   });
 });
 

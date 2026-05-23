@@ -62,6 +62,7 @@ describe("buildSystemPrompt", () => {
     const prompt = renderPromptSections(sections);
     expect(prompt.startsWith("## Identidade\n\nVocê é Ravi.")).toBe(true);
     expect(prompt).toContain("## Extra Context\n\nInjected context text.");
+    expect(prompt).toContain("ravi sessions unmute");
     expect(prompt).not.toContain("ravi sessions focus");
     expect(prompt).not.toContain("focus_chat");
     expect(prompt).not.toContain('"id"');
