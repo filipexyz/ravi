@@ -62,6 +62,8 @@ Use `ravi triggers topics` to inspect the trigger-ready topic catalog with paylo
 
 Channel message aliases such as `whatsapp.*.inbound` and channel reaction aliases such as `whatsapp.*.reaction` are not trigger-ready subjects. Inbound channel messages are consumed by the session router from Omni streams; reaction triggers use `ravi.inbound.reaction`.
 
+Reaction payloads are correlation events, not full message records. `ravi.inbound.reaction` currently carries `targetMessageId`, `emoji`, and `senderId`; it does not guarantee `chatId`, caption, media metadata, or business/domain state. If a routine needs that state, persist a mapping keyed by the outbound message id before waiting for the reaction.
+
 ### Contacts and Approvals
 
 | Pattern | Description |
@@ -101,7 +103,7 @@ The trigger system includes multiple layers of protection against infinite loops
 
 ### 1. Blocked Topic Prefixes
 
-Topics starting with `ravi.session.` are rejected at subscription time. This prevents triggers from reacting to internal session events that could create prompt-trigger-prompt loops.
+Topics starting with `ravi.session.` are accepted by the CLI for persistence compatibility, but the runner refuses to arm them. This prevents triggers from reacting to internal session events that could create prompt-trigger-prompt loops.
 
 ### 2. Session Filter
 
@@ -115,9 +117,9 @@ Events with `_trigger: true` in their data payload are skipped. This flag is set
 
 Each trigger has a configurable cooldown (default: 5 seconds). After a trigger fires, it will not fire again until the cooldown period elapses, regardless of how many matching events arrive.
 
-### Disallowed Topic Aliases
+### Topic Alias Warnings
 
-The CLI rejects topics that are known to be inferred aliases rather than real publishers:
+The CLI accepts custom NATS subjects, but warns when a topic looks like an inferred alias rather than a Ravi publisher. Prefer the canonical built-in subjects in maintained examples:
 
 ```
 whatsapp.*.reaction     # use ravi.inbound.reaction
@@ -176,8 +178,8 @@ ravi triggers set <id> filter 'data.output includes "error"'
 # Match events ending with a suffix
 ravi triggers set <id> filter 'data.tool endsWith "_list"'
 
-# Match a WhatsApp approval reaction in one chat
-ravi triggers set <id> filter 'data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")'
+# Match an approval reaction from one sender
+ravi triggers set <id> filter 'data.senderId == "5511999999999" && (data.emoji == "👍" || data.emoji == "👍🏻")'
 
 # Exclude one source
 ravi triggers set <id> filter '!(data.source == "test")'
@@ -407,10 +409,24 @@ Trigger on approved reactions:
 ravi triggers add "Reaction Approval" \
   --topic "ravi.inbound.reaction" \
   --filter 'data.emoji includes "👍"' \
-  --message "Reaction received for {{data.targetMessageId}}. Resolve local state and continue if approved." \
+  --message "Reaction received for {{data.targetMessageId}}. Resolve local state by targetMessageId and continue only if a pending item matches." \
   --session isolated \
   --cooldown 5s
 ```
+
+For approval-by-reaction workflows, store enough state before posting the review message:
+
+```json
+{
+  "external_msg_123": {
+    "domainId": "item_123",
+    "destinationChatId": "chat_public",
+    "status": "pending"
+  }
+}
+```
+
+The trigger agent should load that state by `{{data.targetMessageId}}`, publish at most once, mark the item processed, and stay silent when there is no match.
 
 ## Debugging Triggers
 
@@ -473,7 +489,7 @@ The filter must match the restricted parser syntax. Double or single quotes arou
 data.cwd == "/workspace/ravi"
 data.tool startsWith "contacts"
 data.output includes 'error'
-data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")
+data.senderId == "5511999999999" && (data.emoji == "👍" || data.emoji == "👍🏻")
 !(data.source == "test")
 
 # Invalid (CLI add/set reject these)

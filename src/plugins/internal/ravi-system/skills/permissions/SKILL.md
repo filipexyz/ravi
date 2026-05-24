@@ -249,6 +249,8 @@ ravi permissions init agent:dev safe-executables
 ravi permissions init agent:dev full-access
 ```
 
+`full-access` significa "permitido pelo Ravi". Ele não promete que hooks globais do provider, policies locais, RTK, Codex/Claude PreToolUse ou outras integrações externas vão permitir o comando final. Se `permissions check` retorna permitido mas a tool ainda falha, trate como fronteira de runtime/hook e investigue a mensagem de denial antes de adicionar mais grants.
+
 ## Comandos
 
 ### Listar permissões

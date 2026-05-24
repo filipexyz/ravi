@@ -70,6 +70,8 @@ Use `ravi triggers topics` para ver templates built-in com schema de payload, ex
 
 Aliases como `whatsapp.*.reaction`, `whatsapp.*.inbound` e `matrix.*.inbound` não são templates built-in e recebem aviso do CLI. Eles ainda são aceitos como subjects custom; para reações Ravi normais, use `ravi.inbound.reaction`.
 
+**Importante para reactions:** `ravi.inbound.reaction` é um evento de correlação, não uma mensagem completa. O payload atual não garante `chatId`, caption, mídia ou estado de negócio. Se a automação precisa saber "qual item foi aprovado", grave antes um mapping durável `targetMessageId -> domain state` quando enviar a mensagem-alvo.
+
 ### Contatos e Aprovações
 
 | Pattern | Descrição |
@@ -113,7 +115,7 @@ Triggers suportam filtros opcionais que impedem o disparo quando o evento não c
 ravi triggers add "..." --filter 'data.cwd startsWith "/path/to/workspace"'
 ravi triggers set <id> filter 'data.cwd != "/path/to/ignored-workspace"'
 ravi triggers set <id> filter 'data.permission_mode == "bypassPermissions"'
-ravi triggers set <id> filter 'data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")'
+ravi triggers set <id> filter 'data.senderId == "5511999999999" && (data.emoji == "👍" || data.emoji == "👍🏻")'
 ```
 
 **Sintaxe:** `data.<path> <operador> "<valor>"`, com composicao opcional por `&&`, `||`, `!` e parenteses.
@@ -158,6 +160,16 @@ Criar trigger para monitorar erros:
 ```bash
 ravi triggers add "Permission Alert" --topic "ravi.audit.denied" --message "Analise o erro e sugira correção" --cooldown 1m
 ```
+
+Criar trigger para aprovação por reaction:
+```bash
+ravi triggers add "Approval Reaction" \
+  --topic "ravi.inbound.reaction" \
+  --filter 'data.emoji includes "👍"' \
+  --message "Reaction {{data.emoji}} on {{data.targetMessageId}}. Load local approval state by targetMessageId. If there is no pending item or it was already processed, respond @@SILENT@@. Otherwise publish once and mark processed."
+```
+
+Para receitas completas com cron, state local e publicação idempotente, use a skill `automation-recipes`.
 
 ## Relação com NATS
 

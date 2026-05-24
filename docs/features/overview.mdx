@@ -104,7 +104,7 @@ Event-driven triggers that subscribe to NATS topics and fire agent prompts when 
 
 **Anti-loop protection:**
 
-- Blocked prefixes: topics starting with `ravi.session.` are rejected at subscription time
+- Blocked prefixes: topics starting with `ravi.session.` can be saved by the CLI for compatibility, but the runner refuses to arm them
 - Session filter: events from trigger sessions (`:trigger:` in topic) are skipped
 - Data flag: events with `_trigger: true` are skipped
 - Cooldown: per-trigger cooldown (default 5s) prevents rapid re-firing. Cooldown is set in-memory immediately on first match to prevent race conditions with concurrent events
@@ -123,7 +123,7 @@ data.permission_mode != "bypassPermissions"
 data.cwd startsWith "/workspace/ravi"
 data.hook_event_name endsWith "Submit"
 data.tool includes "Bash"
-data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")
+data.senderId == "5511999999999" && (data.emoji == "👍" || data.emoji == "👍🏻")
 ```
 
 Precedence is `!` before `&&` before `||`. If the filter is empty or missing, the trigger always fires. CLI commands reject invalid filter syntax before persisting it. Runtime evaluation still fails open for legacy invalid filters and logs a warning. If the data path doesn't exist, the filter returns false (no match).

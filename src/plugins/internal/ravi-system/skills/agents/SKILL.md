@@ -195,6 +195,19 @@ ravi permissions grant agent:<id> execute executable:git
 
 Ver skill `permissions-manager` para documentação completa.
 
+### REBAC vs hooks do provider
+
+`full-access` libera a camada de permissões do Ravi: tools, grupos e executáveis. Isso não desativa automaticamente hooks globais do provider, denylist local, PreToolUse externo ou políticas instaladas fora do Ravi.
+
+Quando Bash ainda é negado depois de `ravi permissions check` permitir:
+
+1. Leia a mensagem de denial e identifique se veio do Ravi ou do provider/hook externo.
+2. Verifique hooks locais do workspace do agent antes de mudar grants.
+3. Se o agent precisa executar scripts próprios, prefira permitir o script/binário específico em vez de contornar tudo.
+4. Um bypass local de hook só deve ser usado como decisão explícita do operador, em workspace controlado, e documentado no `AGENTS.md` do agent.
+
+Agents podem editar código/scripts próprios dentro do seu `cwd` quando a tarefa permitir, mas não devem reverter mudanças feitas por outro agente/operador sem inspecionar o diff e confirmar a intenção.
+
 ## Debounce de Mensagens
 
 Agrupa mensagens rápidas antes de processar:
