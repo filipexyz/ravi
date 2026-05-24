@@ -199,6 +199,8 @@ ravi sessions execute <name> "tarefa"
 ravi sessions inform <name> "info"
 ```
 
+`sessions send` envia prompt/contexto para a sessão do agent; ele não publica texto visível diretamente em WhatsApp, Telegram, Matrix ou outro canal externo. Se o objetivo é falar com uma pessoa/canal, deixe a sessão responder normalmente ou use uma CLI explícita de canal/mídia/outbound apropriada.
+
 ### Session Trace
 
 Use `ravi sessions trace` quando precisar entender uma sessão real ponta a ponta:

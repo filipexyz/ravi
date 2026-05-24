@@ -90,6 +90,7 @@ Para timeline completa de sessão, use `RAVI_EVENTS` junto de `MESSAGE`/`REACTIO
 
 > As mensagens inbound dos canais chegam via **omni JetStream** nos subjects `message.received.{channelType}.{instanceId}`, não via pub/sub ravi. O `OmniConsumer` consome esses streams e traduz para prompts de sessão.
 > Reações são normalizadas em `ravi.inbound.reaction`. Aliases como `whatsapp.*.reaction` não são publicados.
+> O payload de reaction e deliberadamente pequeno: use `targetMessageId` como chave de correlacao. Se uma rotina precisa recuperar chat, caption, produto, campanha ou outro estado de dominio, esse estado deve ter sido gravado pela rotina quando a mensagem-alvo foi enviada.
 
 ### Delivery (bot → gateway → omni)
 

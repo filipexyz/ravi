@@ -70,6 +70,7 @@ Sessions do NOT own:
 - A session MAY have one or more attached chats (see `sessions/attach`). The original `session_chat_bindings` row identifies the primary chat for legacy compatibility.
 - A session MUST have at most one attached output chat. Output delivery MUST resolve to that output attachment. The inbound source chat MUST NOT be used as an implicit output fallback.
 - If a session has no output attachment, it MUST NOT emit externally.
+- `ravi sessions send` and related inter-session commands inject prompt/context into a Ravi session. They MUST NOT be documented as direct external channel delivery primitives. Visible outbound channel delivery belongs to the session response path or to explicit channel/media/outbound commands.
 - Session reset MUST clear provider continuity state (per `runtime/session-continuity`) but MUST NOT silently drop attach subscriptions — those are routing/wiring, not provider state.
 - Deletion of a session MUST cascade to delete its subscriptions.
 
