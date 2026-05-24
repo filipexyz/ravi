@@ -22,6 +22,7 @@ import {
 } from "../../triggers/index.js";
 import { getTriggerTopicCatalog, type TriggerTopicCatalogEntry } from "../../triggers/topic-catalog.js";
 import { getTriggerTopicWarnings } from "../../triggers/topic-policy.js";
+import { validateFilter } from "../../triggers/filter.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
@@ -66,6 +67,15 @@ function printTopicCatalog(topics: TriggerTopicCatalogEntry[]): void {
 function printTopicWarnings(warnings: string[]): void {
   for (const warning of warnings) {
     console.warn(`Warning: ${warning}`);
+  }
+}
+
+function assertValidTriggerFilter(filter: string | undefined): void {
+  const validation = validateFilter(filter);
+  if (!validation.ok) {
+    fail(
+      `Invalid filter: ${validation.error}. Use data.<path> <operator> "value"; combine with &&, ||, !, and parentheses.`,
+    );
   }
 }
 
@@ -251,6 +261,7 @@ export class TriggersCommands {
       fail("--message is required");
     }
     const topicWarnings = getTriggerTopicWarnings(topic);
+    assertValidTriggerFilter(filter);
 
     // Validate agent if provided
     if (agent) {
@@ -500,6 +511,7 @@ export class TriggersCommands {
 
         case "filter": {
           const filterValue = value === "null" || value === "-" ? undefined : value;
+          assertValidTriggerFilter(filterValue);
           updated = dbUpdateTrigger(id, { filter: filterValue });
           normalizedValue = filterValue ?? null;
           logHuman(`✓ Filter set: ${id} -> ${filterValue ?? "(none)"}`);

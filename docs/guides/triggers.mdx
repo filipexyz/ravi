@@ -133,7 +133,10 @@ Filters are optional expressions that evaluate against the event data. If the fi
 
 ```
 data.<path> <operator> "<value>"
+data.<path> <operator> "<value>" && (data.<path> <operator> "<value>" || !data.<path> <operator> "<value>")
 ```
+
+Use `&&`, `||`, unary `!`, and parentheses for boolean composition. Precedence is `!`, then `&&`, then `||`.
 
 ### Operators
 
@@ -151,9 +154,9 @@ The `data.<path>` notation uses dot-separated keys to traverse into the event da
 
 Values are coerced to strings for comparison. If the path does not exist in the event data, the filter evaluates to false (trigger does not fire).
 
-### Fail-Open Behavior
+### Invalid Syntax
 
-If a filter expression has invalid syntax (does not match the expected format), the trigger fires anyway and a warning is logged. This prevents misconfigured filters from silently disabling triggers.
+`ravi triggers add --filter ...` and `ravi triggers set <id> filter ...` reject invalid syntax before saving it. Existing legacy filters that are already persisted still fail open at runtime and log a warning, which prevents old bad filters from silently disabling triggers.
 
 ### Filter Examples
 
@@ -172,6 +175,12 @@ ravi triggers set <id> filter 'data.output includes "error"'
 
 # Match events ending with a suffix
 ravi triggers set <id> filter 'data.tool endsWith "_list"'
+
+# Match a WhatsApp approval reaction in one chat
+ravi triggers set <id> filter 'data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")'
+
+# Exclude one source
+ravi triggers set <id> filter '!(data.source == "test")'
 
 # Remove a filter
 ravi triggers set <id> filter -
@@ -457,16 +466,19 @@ ravi daemon logs -f
 
 ### Verify filter syntax
 
-The filter must match the regex pattern `data.<path> <operator> "<value>"`. Double or single quotes around the value are both accepted:
+The filter must match the restricted parser syntax. Double or single quotes around the value are both accepted, and boolean expressions can be composed with `&&`, `||`, `!`, and parentheses:
 
 ```bash
 # Valid
 data.cwd == "/workspace/ravi"
 data.tool startsWith "contacts"
 data.output includes 'error'
+data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")
+!(data.source == "test")
 
-# Invalid (will fail open with a warning)
+# Invalid (CLI add/set reject these)
 cwd == "/workspace"          # Missing data. prefix
 data.cwd = "/workspace"      # Single = is not valid
 data.cwd == /workspace       # Missing quotes around value
+data.cwd == "/workspace" &&  # Missing right side
 ```

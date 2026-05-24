@@ -1,11 +1,14 @@
 import { describe, it, expect } from "bun:test";
-import { evaluateFilter } from "../filter.js";
+import { evaluateFilter, validateFilter } from "../filter.js";
 
 const data = {
   cwd: "/workspace/fm",
+  chatId: "120363424@g.us",
+  emoji: "👍",
   session_id: "381f8b5c-3961-4bde-86d6-96e6a15c0176",
   permission_mode: "bypassPermissions",
   hook_event_name: "Stop",
+  target: { type: "reaction", source: "whatsapp" },
   nested: { level: "deep" },
 };
 
@@ -97,6 +100,41 @@ describe("evaluateFilter", () => {
     });
   });
 
+  describe("boolean operators", () => {
+    it("supports && expressions", () => {
+      expect(evaluateFilter(`data.chatId == "120363424@g.us" && data.emoji includes "👍"`, data)).toBe(true);
+      expect(evaluateFilter(`data.chatId == "120363424@g.us" && data.emoji == "👎"`, data)).toBe(false);
+    });
+
+    it("supports || expressions", () => {
+      expect(evaluateFilter(`data.emoji == "👎" || data.emoji == "👍"`, data)).toBe(true);
+      expect(evaluateFilter(`data.emoji == "👎" || data.emoji == "👍🏻"`, data)).toBe(false);
+    });
+
+    it("supports parentheses and operator precedence", () => {
+      expect(
+        evaluateFilter(`data.target.source == "whatsapp" && (data.emoji == "👎" || data.emoji == "👍")`, data),
+      ).toBe(true);
+      expect(
+        evaluateFilter(
+          `(data.target.source == "telegram" || data.target.source == "matrix") && data.emoji == "👍"`,
+          data,
+        ),
+      ).toBe(false);
+      expect(evaluateFilter(`data.emoji == "👍" || data.chatId == "wrong" && data.cwd == "wrong"`, data)).toBe(true);
+    });
+
+    it("supports unary negation", () => {
+      expect(evaluateFilter(`!(data.emoji == "👎")`, data)).toBe(true);
+      expect(evaluateFilter(`!data.emoji includes "👍"`, data)).toBe(false);
+    });
+
+    it("does not treat trailing boolean syntax as part of a string value", () => {
+      expect(evaluateFilter(`data.chatId == "120363424@g.us" && data.emoji == "👍"`, data)).toBe(true);
+      expect(evaluateFilter(`data.chatId == "120363424@g.us" && data.emoji == "👍🏻"`, data)).toBe(false);
+    });
+  });
+
   describe("invalid syntax", () => {
     it("returns true (fail open) for completely invalid expression", () => {
       expect(evaluateFilter("this is not valid", data)).toBe(true);
@@ -121,5 +159,50 @@ describe("evaluateFilter", () => {
       const dataWithBool = { active: true };
       expect(evaluateFilter(`data.active == "true"`, dataWithBool)).toBe(true);
     });
+  });
+});
+
+describe("validateFilter", () => {
+  it("accepts empty filters", () => {
+    expect(validateFilter(undefined)).toEqual({ ok: true });
+    expect(validateFilter("")).toEqual({ ok: true });
+  });
+
+  it("accepts composed boolean filters", () => {
+    expect(validateFilter(`data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")`)).toEqual({
+      ok: true,
+    });
+  });
+
+  it("rejects missing quoted values", () => {
+    const result = validateFilter("data.active == true");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("Expected quoted string value");
+    }
+  });
+
+  it("rejects empty path segments", () => {
+    const result = validateFilter(`data.target. == "reaction"`);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("Expected data.<path>");
+    }
+  });
+
+  it("rejects incomplete boolean expressions", () => {
+    const result = validateFilter(`data.emoji == "👍" &&`);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("Expected data.<path>");
+    }
+  });
+
+  it("rejects unbalanced parentheses", () => {
+    const result = validateFilter(`(data.emoji == "👍"`);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("Expected ')'");
+    }
   });
 });

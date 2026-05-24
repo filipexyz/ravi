@@ -113,13 +113,16 @@ Triggers suportam filtros opcionais que impedem o disparo quando o evento não c
 ravi triggers add "..." --filter 'data.cwd startsWith "/path/to/workspace"'
 ravi triggers set <id> filter 'data.cwd != "/path/to/ignored-workspace"'
 ravi triggers set <id> filter 'data.permission_mode == "bypassPermissions"'
+ravi triggers set <id> filter 'data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")'
 ```
 
-**Sintaxe:** `data.<path> <operador> "<valor>"`
+**Sintaxe:** `data.<path> <operador> "<valor>"`, com composicao opcional por `&&`, `||`, `!` e parenteses.
 
 Operadores: `==`, `!=`, `startsWith`, `endsWith`, `includes`
 
-Filtro inválido = fail open (trigger dispara mesmo assim, log de warning).
+Precedencia: `!` antes de `&&` antes de `||`.
+
+Valores devem ser strings com aspas. O CLI rejeita filtros invalidos em `add` e `set` antes de salvar. Filtros legados invalidos ja persistidos continuam em fail open no runtime, com log de warning.
 
 ## Template Variables
 
