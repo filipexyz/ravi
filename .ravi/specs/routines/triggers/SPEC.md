@@ -1,6 +1,6 @@
 ---
 id: routines/triggers
-title: "Trigger Topics"
+title: "Trigger Topics And Filters"
 kind: capability
 domain: routines
 capability: triggers
@@ -17,13 +17,16 @@ tags:
   - triggers
   - nats
   - topics
+  - filters
 ---
 
-# Trigger Topics
+# Trigger Topics And Filters
 
 ## Intent
 
 Trigger topics are the event subjects a routine can observe. The trigger topic catalog is the durable bank of examples, schemas, notes, and patterns that humans and agents should consult before creating a trigger.
+
+Trigger filters are the deterministic pre-agent predicate for event payloads. They prevent avoidable agent runs and MUST be safe to evaluate without `eval` or arbitrary code execution.
 
 ## Invariants
 
@@ -31,11 +34,21 @@ Trigger topics are the event subjects a routine can observe. The trigger topic c
 - Trigger examples in docs, skills, and CLI help MUST use cataloged subjects unless they are explicitly marked as custom publisher subjects.
 - Channel transport aliases such as `whatsapp.*.reaction`, `whatsapp.*.inbound`, and `matrix.*.inbound` MUST NOT be documented as trigger-ready subjects unless a Ravi publisher actually emits them.
 - Emoji reaction triggers MUST use `ravi.inbound.reaction` until a different subject is deliberately added to the catalog and publisher.
-- The CLI SHOULD reject known inferred aliases that do not have publishers, while still allowing custom subjects such as `doma.rdp.>`.
+- The CLI MUST NOT block custom NATS subjects. It SHOULD warn when a subject is outside the built-in catalog or looks like a known inferred alias without a Ravi publisher.
 - The catalog SHOULD include payload schema, example command, common filters, and operational notes for each subject.
+- Trigger filters MUST support the comparison operators `==`, `!=`, `startsWith`, `endsWith`, and `includes`.
+- Trigger filters MUST support boolean composition with `&&`, `||`, unary `!`, and parentheses.
+- Trigger filter precedence MUST be `!` before `&&` before `||`.
+- Trigger filter values MUST be quoted strings; event values are coerced to strings for comparison.
+- Trigger filter evaluation MUST NOT use JavaScript `eval`, `new Function`, or shell execution.
+- The CLI MUST reject invalid filter syntax before persisting a new or updated trigger filter.
+- Runtime evaluation MAY fail open for legacy persisted invalid filters, but it MUST log a warning with the parse error.
 
 ## Acceptance Criteria
 
 - `ravi triggers topics --json` exposes the catalog in machine-readable form.
-- `ravi triggers add --topic "whatsapp.*.reaction"` fails with a hint to use `ravi.inbound.reaction`.
+- `ravi triggers add --topic "whatsapp.*.reaction"` succeeds with a warning that `ravi.inbound.reaction` is the canonical built-in reaction subject.
+- `ravi triggers add --topic "custom.external.>"` succeeds with a warning that the subject is custom/outside built-in templates.
+- `ravi triggers add --filter 'data.chatId == "X" && (data.status == "approved" || data.status == "manual")'` persists the filter and evaluates correctly.
+- `ravi triggers set <id> filter 'data.ok == true'` fails clearly because values must be quoted.
 - Skills and docs point users to the catalog instead of asking them to infer subjects by symmetry.

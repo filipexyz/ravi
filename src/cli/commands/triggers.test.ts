@@ -87,6 +87,7 @@ mock.module("../../triggers/index.js", () => ({
       accountId: input.accountId,
       cooldownMs: input.cooldownMs,
       session: input.session,
+      filter: input.filter,
       enabled: true,
       fireCount: 0,
       createdAt: 1,
@@ -207,6 +208,46 @@ describe("TriggersCommands topic guidance", () => {
     );
   });
 
+  it("accepts composed boolean filters on add", async () => {
+    const commands = new TriggersCommands();
+
+    await commands.add(
+      "filtered",
+      "ravi.inbound.reaction",
+      "hello",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      `data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")`,
+    );
+
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "filtered",
+        filter: `data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")`,
+      }),
+    );
+  });
+
+  it("rejects invalid filters on add before persisting", async () => {
+    const commands = new TriggersCommands();
+
+    await expect(
+      commands.add(
+        "bad",
+        "ravi.inbound.reaction",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "data.ok == true",
+      ),
+    ).rejects.toThrow("Invalid filter");
+    expect(createdTriggers).toEqual([]);
+  });
+
   it("allows ravi.session topics on set but prints an internal topic warning", async () => {
     const commands = new TriggersCommands();
 
@@ -274,18 +315,25 @@ describe("TriggersCommands topic guidance", () => {
   it("prints updated trigger data in --json mode", async () => {
     const commands = new TriggersCommands();
 
-    const payload = await captureJson(() => commands.set("trg_1", "filter", "data.ok == true", true));
+    const payload = await captureJson(() => commands.set("trg_1", "filter", `data.ok == "true"`, true));
 
     expect(payload).toMatchObject({
       status: "updated",
       target: { type: "trigger", id: "trg_1" },
       changedCount: 1,
       property: "filter",
-      value: "data.ok == true",
+      value: `data.ok == "true"`,
       trigger: {
         id: "trg_1",
-        filter: "data.ok == true",
+        filter: `data.ok == "true"`,
       },
     });
+  });
+
+  it("rejects invalid filters on set before updating", async () => {
+    const commands = new TriggersCommands();
+
+    await expect(commands.set("trg_1", "filter", `data.ok == "true" &&`)).rejects.toThrow("Invalid filter");
+    expect(updatedTriggers).toEqual([]);
   });
 });

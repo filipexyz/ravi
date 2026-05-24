@@ -29,7 +29,11 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     examples: [
       'ravi triggers add "Approval by reaction" --topic "ravi.inbound.reaction" --filter \'data.emoji includes "👍"\' --message "..."',
     ],
-    filters: ['data.emoji includes "👍"', 'data.senderId == "5511999999999"'],
+    filters: [
+      'data.emoji includes "👍"',
+      'data.senderId == "5511999999999"',
+      'data.senderId == "5511999999999" && data.emoji includes "👍"',
+    ],
     notes: [
       "This is the canonical reaction trigger subject.",
       "The payload identifies the reacted message as targetMessageId. Keep domain mappings keyed by external message id when a routine needs to recover business state.",
