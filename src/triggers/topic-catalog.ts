@@ -13,7 +13,7 @@ export interface TriggerTopicCatalogEntry {
 }
 
 export interface TriggerTopicDiagnostic {
-  level: "error";
+  level: "warning";
   message: string;
   suggestedPattern?: string;
 }
@@ -184,6 +184,21 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
 
 const CHANNEL_ALIAS_RE = /^(whatsapp|matrix)(?:\.([*.>]|[^.]+))?\.(inbound|reaction)$/;
 
+function matchesTopicPattern(topic: string, pattern: string): boolean {
+  const topicParts = topic.split(".");
+  const patternParts = pattern.split(".");
+
+  for (let i = 0; i < patternParts.length; i += 1) {
+    const patternPart = patternParts[i];
+    if (patternPart === ">") return true;
+    if (i >= topicParts.length) return false;
+    if (patternPart === "*") continue;
+    if (patternPart !== topicParts[i]) return false;
+  }
+
+  return topicParts.length === patternParts.length;
+}
+
 export function getTriggerTopicCatalog(): TriggerTopicCatalogEntry[] {
   return TOPICS.map((entry) => ({
     ...entry,
@@ -193,6 +208,11 @@ export function getTriggerTopicCatalog(): TriggerTopicCatalogEntry[] {
   }));
 }
 
+export function isTriggerTopicInCatalog(topic: string): boolean {
+  const trimmed = topic.trim();
+  return TOPICS.some((entry) => trimmed === entry.pattern || matchesTopicPattern(trimmed, entry.pattern));
+}
+
 export function getTriggerTopicDiagnostic(topic: string): TriggerTopicDiagnostic | undefined {
   const trimmed = topic.trim();
   const channelAlias = trimmed.match(CHANNEL_ALIAS_RE);
@@ -200,21 +220,28 @@ export function getTriggerTopicDiagnostic(topic: string): TriggerTopicDiagnostic
     const [, channel, , eventKind] = channelAlias;
     if (eventKind === "reaction") {
       return {
-        level: "error",
+        level: "warning",
         suggestedPattern: "ravi.inbound.reaction",
-        message: `Channel alias '${trimmed}' is not published. Use 'ravi.inbound.reaction' for ${channel} emoji reactions.`,
+        message: `Topic '${trimmed}' is not in the built-in templates. Ravi reactions are normally published as 'ravi.inbound.reaction' for ${channel} emoji reactions.`,
       };
     }
     return {
-      level: "error",
-      message: `Channel alias '${trimmed}' is not a trigger-ready subject. Channel messages are consumed by the session router; use a published Ravi topic from 'ravi triggers topics'.`,
+      level: "warning",
+      message: `Topic '${trimmed}' is not in the built-in templates. Channel messages are normally consumed by the session router; custom NATS subjects are still accepted.`,
     };
   }
 
   if (/^ravi\.\*\.tool$/.test(trimmed) || /^ravi\.\*\.response$/.test(trimmed)) {
     return {
-      level: "error",
-      message: `Pattern '${trimmed}' does not match a trigger-ready publisher. Session runtime subjects live under 'ravi.session.*' and are blocked for triggers to prevent loops.`,
+      level: "warning",
+      message: `Topic '${trimmed}' is not in the built-in templates. Session runtime publishers usually live under 'ravi.session.*'; custom NATS subjects are still accepted.`,
+    };
+  }
+
+  if (!isTriggerTopicInCatalog(trimmed)) {
+    return {
+      level: "warning",
+      message: `Topic '${trimmed}' is not in the built-in trigger topic templates. It will be accepted as a custom NATS subject; make sure a publisher emits it.`,
     };
   }
 
