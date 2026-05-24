@@ -144,30 +144,54 @@ async function captureJson(run: () => Promise<unknown>): Promise<Record<string, 
   return JSON.parse(lines.join("\n")) as Record<string, unknown>;
 }
 
-describe("TriggersCommands topic validation", () => {
+async function captureWarnings(run: () => Promise<unknown>): Promise<string[]> {
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map((arg) => String(arg)).join(" "));
+  };
+
+  try {
+    await run();
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  return warnings;
+}
+
+describe("TriggersCommands topic guidance", () => {
   beforeEach(() => {
     createdTriggers.length = 0;
     updatedTriggers.length = 0;
   });
 
-  it("rejects ravi.session topics on add", async () => {
+  it("allows ravi.session topics on add but prints an internal topic warning", async () => {
     const commands = new TriggersCommands();
 
-    await expect(commands.add("loop", "ravi.session.agent-main.prompt", "hello")).rejects.toThrow(
-      "Triggers cannot subscribe",
-    );
+    const warnings = await captureWarnings(() => commands.add("loop", "ravi.session.agent-main.prompt", "hello"));
 
-    expect(createdTriggers).toHaveLength(0);
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "loop",
+        topic: "ravi.session.agent-main.prompt",
+      }),
+    );
+    expect(warnings.join("\n")).toContain("runner skips ravi.session.*");
   });
 
-  it("rejects channel reaction aliases with canonical topic hint", async () => {
+  it("allows channel reaction aliases with canonical topic warning", async () => {
     const commands = new TriggersCommands();
 
-    await expect(commands.add("reaction", "whatsapp.*.reaction", "hello")).rejects.toThrow(
-      "Use 'ravi.inbound.reaction'",
-    );
+    const warnings = await captureWarnings(() => commands.add("reaction", "whatsapp.*.reaction", "hello"));
 
-    expect(createdTriggers).toHaveLength(0);
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "reaction",
+        topic: "whatsapp.*.reaction",
+      }),
+    );
+    expect(warnings.join("\n")).toContain("ravi.inbound.reaction");
   });
 
   it("allows session CLI topics", async () => {
@@ -183,14 +207,16 @@ describe("TriggersCommands topic validation", () => {
     );
   });
 
-  it("rejects ravi.session topics on set", async () => {
+  it("allows ravi.session topics on set but prints an internal topic warning", async () => {
     const commands = new TriggersCommands();
 
-    await expect(commands.set("trg_1", "topic", "ravi.session.agent-main.runtime")).rejects.toThrow(
-      "Triggers cannot subscribe",
-    );
+    const warnings = await captureWarnings(() => commands.set("trg_1", "topic", "ravi.session.agent-main.runtime"));
 
-    expect(updatedTriggers).toHaveLength(0);
+    expect(updatedTriggers).toContainEqual({
+      id: "trg_1",
+      patch: { topic: "ravi.session.agent-main.runtime" },
+    });
+    expect(warnings.join("\n")).toContain("runner skips ravi.session.*");
   });
 
   it("prints created trigger data in --json mode", async () => {
@@ -214,6 +240,7 @@ describe("TriggersCommands topic validation", () => {
       status: "created",
       target: { type: "trigger", id: "trg_1" },
       changedCount: 1,
+      warnings: [expect.stringContaining("custom NATS subject")],
       trigger: {
         id: "trg_1",
         name: "json trigger",

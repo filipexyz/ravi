@@ -21,7 +21,7 @@ import {
   type Trigger,
 } from "../../triggers/index.js";
 import { getTriggerTopicCatalog, type TriggerTopicCatalogEntry } from "../../triggers/topic-catalog.js";
-import { getDisallowedTriggerTopicReason } from "../../triggers/topic-policy.js";
+import { getTriggerTopicWarnings } from "../../triggers/topic-policy.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
@@ -60,6 +60,12 @@ function printTopicCatalog(topics: TriggerTopicCatalogEntry[]): void {
     if (entry.notes?.length) {
       for (const note of entry.notes) console.log(`    note: ${note}`);
     }
+  }
+}
+
+function printTopicWarnings(warnings: string[]): void {
+  for (const warning of warnings) {
+    console.warn(`Warning: ${warning}`);
   }
 }
 
@@ -244,10 +250,7 @@ export class TriggersCommands {
     if (!message) {
       fail("--message is required");
     }
-    const disallowedReason = getDisallowedTriggerTopicReason(topic);
-    if (disallowedReason) {
-      fail(disallowedReason);
-    }
+    const topicWarnings = getTriggerTopicWarnings(topic);
 
     // Validate agent if provided
     if (agent) {
@@ -333,10 +336,12 @@ export class TriggersCommands {
         target: { type: "trigger" as const, id: trigger.id },
         changedCount: 1,
         trigger: serializeTrigger(trigger),
+        ...(topicWarnings.length ? { warnings: topicWarnings } : {}),
       };
       if (asJson) {
         printJson(payload);
       } else {
+        printTopicWarnings(topicWarnings);
         console.log(`\n✓ Created trigger: ${trigger.id}`);
         console.log(`  Name:       ${trigger.name}`);
         console.log(`  Topic:      ${trigger.topic}`);
@@ -427,6 +432,7 @@ export class TriggersCommands {
     try {
       let updated: Trigger | null = null;
       let normalizedValue: unknown = value;
+      let warnings: string[] = [];
       const logHuman = (message: string) => {
         if (!asJson) console.log(message);
       };
@@ -443,11 +449,9 @@ export class TriggersCommands {
           break;
 
         case "topic": {
-          const disallowedReason = getDisallowedTriggerTopicReason(value);
-          if (disallowedReason) {
-            fail(disallowedReason);
-          }
+          warnings = getTriggerTopicWarnings(value);
           updated = dbUpdateTrigger(id, { topic: value });
+          if (!asJson) printTopicWarnings(warnings);
           logHuman(`✓ Topic set: ${id} -> ${value}`);
           break;
         }
@@ -515,6 +519,7 @@ export class TriggersCommands {
         property: key,
         value: normalizedValue,
         trigger: current ? serializeTrigger(current) : null,
+        ...(warnings.length ? { warnings } : {}),
       };
       if (asJson) {
         printJson(payload);

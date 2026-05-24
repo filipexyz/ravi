@@ -11,21 +11,24 @@ describe("trigger topic catalog", () => {
     );
   });
 
-  it("rejects inferred channel reaction aliases", () => {
+  it("warns about inferred channel reaction aliases", () => {
     expect(getTriggerTopicDiagnostic("whatsapp.*.reaction")).toMatchObject({
-      level: "error",
+      level: "warning",
       suggestedPattern: "ravi.inbound.reaction",
     });
   });
 
-  it("rejects inferred channel inbound aliases", () => {
+  it("warns about inferred channel inbound aliases", () => {
     expect(getTriggerTopicDiagnostic("whatsapp.*.inbound")).toMatchObject({
-      level: "error",
+      level: "warning",
     });
   });
 
-  it("allows custom publisher subjects", () => {
-    expect(getTriggerTopicDiagnostic("doma.rdp.>")).toBeUndefined();
+  it("warns but allows custom publisher subjects", () => {
+    expect(getTriggerTopicDiagnostic("doma.rdp.>")).toMatchObject({
+      level: "warning",
+      message: expect.stringContaining("custom NATS subject"),
+    });
   });
 
   it("allows session CLI command subjects", () => {

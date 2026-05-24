@@ -58,7 +58,7 @@ ravi triggers rm <id>
 
 ## Banco de Tópicos
 
-Use `ravi triggers topics` para ver subjects trigger-ready com schema de payload, exemplos, filtros comuns e notas operacionais. Skills e docs devem usar esse catálogo como fonte de hints, em vez de inferir topics por simetria.
+Use `ravi triggers topics` para ver templates built-in com schema de payload, exemplos, filtros comuns e notas operacionais. O catálogo é fonte de hints, não whitelist: topics externos/custom publicados no NATS são aceitos.
 
 ### Inbound e Canais
 
@@ -68,7 +68,7 @@ Use `ravi triggers topics` para ver subjects trigger-ready com schema de payload
 | `ravi.inbound.reply` | Replies a mensagens do bot. Payload: `{ targetMessageId, text, senderId }` |
 | `ravi.inbound.pollVote` | Votos em enquetes. Payload: `{ pollMessageId, votes: [{ name, voters[] }] }` |
 
-Aliases como `whatsapp.*.reaction`, `whatsapp.*.inbound` e `matrix.*.inbound` não são subjects publicados para triggers. Mensagens de canal entram pelo router de sessão; reação usa `ravi.inbound.reaction`.
+Aliases como `whatsapp.*.reaction`, `whatsapp.*.inbound` e `matrix.*.inbound` não são templates built-in e recebem aviso do CLI. Eles ainda são aceitos como subjects custom; para reações Ravi normais, use `ravi.inbound.reaction`.
 
 ### Contatos e Aprovações
 
@@ -103,7 +103,7 @@ Aliases como `whatsapp.*.reaction`, `whatsapp.*.inbound` e `matrix.*.inbound` n�
 | `ravi.audit.denied` | Permissão negada |
 | `ravi.instances.unregistered` | Evento de instância Omni não registrada |
 
-**Bloqueados (anti-loop):** Triggers em tópicos `ravi.session.*` são rejeitados para evitar loops internos.
+**Avisos:** O CLI aceita topics fora do catálogo e apenas alerta. O runner ignora assinaturas em `ravi.session.*` para evitar loops internos.
 
 ## Filtros
 
