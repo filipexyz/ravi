@@ -1978,7 +1978,12 @@ function getDb(): Database {
       -- Execution config
       session_target TEXT DEFAULT 'main',
       reply_session TEXT,
+      execution_type TEXT DEFAULT 'agent',
       payload_text TEXT NOT NULL,
+      shell_command TEXT,
+      shell_timeout_ms INTEGER,
+      shell_env_file TEXT,
+      on_error TEXT,
 
       -- State
       next_run_at INTEGER,
@@ -1986,6 +1991,7 @@ function getDb(): Database {
       last_status TEXT,
       last_error TEXT,
       last_duration_ms INTEGER,
+      last_exit_code INTEGER,
 
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -2047,6 +2053,30 @@ function getDb(): Database {
   if (!cronColumns.some((c) => c.name === "account_id")) {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN account_id TEXT");
     log.info("Added account_id column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "execution_type")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN execution_type TEXT DEFAULT 'agent'");
+    log.info("Added execution_type column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "shell_command")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN shell_command TEXT");
+    log.info("Added shell_command column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "shell_timeout_ms")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN shell_timeout_ms INTEGER");
+    log.info("Added shell_timeout_ms column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "shell_env_file")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN shell_env_file TEXT");
+    log.info("Added shell_env_file column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "on_error")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN on_error TEXT");
+    log.info("Added on_error column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "last_exit_code")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN last_exit_code INTEGER");
+    log.info("Added last_exit_code column to cron_jobs table");
   }
 
   // Migration: add heartbeat_account_id column to agents

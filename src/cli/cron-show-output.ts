@@ -1,4 +1,6 @@
 import type { CronJob } from "../cron/index.js";
+import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../cron/shell-executor.js";
+import { formatDurationMs } from "../cron/schedule.js";
 import { formatInspectionMeta, formatInspectionSection } from "./inspection-output.js";
 
 const CRON_DB_META = { source: "cron-db", freshness: "persisted" } as const;
@@ -58,6 +60,18 @@ function blockLines(
 }
 
 function buildCronExecutionLines(job: CronJob, agentId: string, routing: CronRoutingResolution): string[] {
+  if (job.executionType === "shell") {
+    const lines = [
+      "The daemon executes this shell command directly; no agent prompt is published for successful runs.",
+    ];
+    if (job.onError) {
+      lines.push(`On failure, \`${job.onError}\` receives a diagnostic prompt with exit code and captured output.`);
+    } else {
+      lines.push("On failure, status and logs are recorded, but no agent/session notification is sent.");
+    }
+    return lines;
+  }
+
   const lines = [
     `agent \`${agentId}\` receives the prompt${job.agentId ? "" : " (resolved from the runtime default agent)"}.`,
   ];
@@ -89,6 +103,14 @@ function buildCronExecutionLines(job: CronJob, agentId: string, routing: CronRou
 
 function buildCronRoutingLines(job: CronJob, routing: CronRoutingResolution): string[] {
   const lines: string[] = [];
+
+  if (job.executionType === "shell") {
+    lines.push("Shell jobs do not use reply routing during successful execution.");
+    if (job.onError) {
+      lines.push("The configured on-error action is the only path that can publish a prompt to a session.");
+    }
+    return lines;
+  }
 
   if (routing.kind === "resolved-session") {
     lines.push(
@@ -150,13 +172,30 @@ export function buildCronShowOutput(
   const lines = [`\nCron Job: ${job.name}\n`];
 
   lines.push(fieldLine("ID", job.id, CRON_DB_META));
-  lines.push(fieldLine("Agent", job.agentId ?? "(default)", CRON_DB_META));
-  lines.push(fieldLine("Account", job.accountId ?? "(auto)", CRON_DB_META));
+  lines.push(fieldLine("Mode", job.executionType, CRON_DB_META));
+  if (job.executionType === "agent") {
+    lines.push(fieldLine("Agent", job.agentId ?? "(default)", CRON_DB_META));
+    lines.push(fieldLine("Account", job.accountId ?? "(auto)", CRON_DB_META));
+  } else if (job.agentId) {
+    lines.push(fieldLine("Owner", job.agentId, CRON_DB_META));
+  }
   lines.push(fieldLine("Enabled", job.enabled ? "yes" : "no", CRON_DB_META));
   lines.push(fieldLine("Schedule", scheduleDescription, CRON_SCHEDULE_META));
-  lines.push(fieldLine("Session", job.sessionTarget, CRON_DB_META));
-  if (job.replySession) {
-    lines.push(fieldLine("Reply session", job.replySession, CRON_DB_META));
+  if (job.executionType === "agent") {
+    lines.push(fieldLine("Session", job.sessionTarget, CRON_DB_META));
+    if (job.replySession) {
+      lines.push(fieldLine("Reply session", job.replySession, CRON_DB_META));
+    }
+  } else {
+    lines.push(
+      fieldLine("Timeout", formatDurationMs(job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS), CRON_DB_META),
+    );
+    if (job.shellEnvFile) {
+      lines.push(fieldLine("Env file", job.shellEnvFile, CRON_DB_META));
+    }
+    if (job.onError) {
+      lines.push(fieldLine("On error", job.onError, CRON_DB_META));
+    }
   }
   if (job.description) {
     lines.push(fieldLine("Description", job.description, CRON_DB_META));
@@ -173,7 +212,11 @@ export function buildCronShowOutput(
     lines.push(`    - ${line}`);
   }
   lines.push("");
-  lines.push(...blockLines("Message", CRON_DB_META, job.message.split("\n")));
+  if (job.executionType === "shell") {
+    lines.push(...blockLines("Shell", CRON_DB_META, (job.shellCommand ?? "").split("\n")));
+  } else {
+    lines.push(...blockLines("Message", CRON_DB_META, job.message.split("\n")));
+  }
   lines.push("");
   if (job.nextRunAt) {
     lines.push(fieldLine("Next run", new Date(job.nextRunAt).toLocaleString(), CRON_RUNTIME_META));
@@ -183,6 +226,9 @@ export function buildCronShowOutput(
     lines.push(fieldLine("Last status", job.lastStatus ?? "-", CRON_RUNTIME_META));
     if (job.lastDurationMs !== undefined) {
       lines.push(fieldLine("Last duration", `${job.lastDurationMs}ms`, CRON_RUNTIME_META));
+    }
+    if (job.lastExitCode !== undefined) {
+      lines.push(fieldLine("Last exit", job.lastExitCode, CRON_RUNTIME_META));
     }
     if (job.lastError) {
       lines.push(fieldLine("Last error", job.lastError, CRON_RUNTIME_META));

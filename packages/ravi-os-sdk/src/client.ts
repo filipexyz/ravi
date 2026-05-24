@@ -1559,9 +1559,14 @@ export class RaviClient {
       cron?: string;
       deleteAfter?: boolean;
       description?: string;
+      envFile?: string;
       every?: string;
+      exec?: string;
       isolated?: boolean;
       message?: string;
+      onError?: string;
+      shell?: string;
+      timeout?: string;
       tz?: string;
     }): Promise<CronAddReturn> => {
       return this.transport.call({

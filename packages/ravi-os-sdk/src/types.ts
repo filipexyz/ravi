@@ -1431,10 +1431,15 @@ export type CronAddInput = {
   cron?: string;
   deleteAfter?: boolean;
   description?: string;
+  envFile?: string;
   every?: string;
+  exec?: string;
   isolated?: boolean;
   message?: string;
   name: string;
+  onError?: string;
+  shell?: string;
+  timeout?: string;
   tz?: string;
 };
 

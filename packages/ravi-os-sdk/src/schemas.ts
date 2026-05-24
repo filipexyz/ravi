@@ -3473,8 +3473,16 @@ export const CronAddInputSchema = {
       "description": "Job description",
       "type": "string"
     },
+    "envFile": {
+      "description": "Env file loaded for shell jobs",
+      "type": "string"
+    },
     "every": {
       "description": "Interval (e.g., 30m, 1h)",
+      "type": "string"
+    },
+    "exec": {
+      "description": "Alias for --shell",
       "type": "string"
     },
     "isolated": {
@@ -3487,6 +3495,18 @@ export const CronAddInputSchema = {
     },
     "name": {
       "description": "Job name",
+      "type": "string"
+    },
+    "onError": {
+      "description": "Error action, e.g. notify-session:<session>",
+      "type": "string"
+    },
+    "shell": {
+      "description": "Run a shell command directly without invoking an agent",
+      "type": "string"
+    },
+    "timeout": {
+      "description": "Shell timeout, e.g. 60 or 5m",
       "type": "string"
     },
     "tz": {
@@ -3589,7 +3609,7 @@ export const CronSetInputSchema = {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after",
       "type": "string"
     },
     "value": {
