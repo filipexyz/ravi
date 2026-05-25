@@ -11,6 +11,7 @@ import {
   dbUpsertSelectorMember,
   dbSoftRemoveSelectorMember,
   dbIsActiveMember,
+  dbCanReadChat,
 } from "./db.js";
 import type {
   DynamicListSelector,
@@ -220,6 +221,7 @@ export async function tickReadingLists(options: TickReadingListsOptions = {}): P
     added: 0,
     removed: 0,
     errors: 0,
+    permissionDenied: 0,
     dryRun: !apply,
     transitions: [],
   };
@@ -257,6 +259,10 @@ export async function tickReadingLists(options: TickReadingListsOptions = {}): P
           const { matched } = evaluateSelectorForContact(selector, contact, now);
           const chatPage = dbListChats({ contactId: contact.id, limit: 500 });
           for (const item of chatPage.items) {
+            if (!dbCanReadChat(list.ownerType, list.ownerId, item.chat.id)) {
+              result.permissionDenied += 1;
+              continue;
+            }
             const transition = applyMembershipForChat(list, selector, item.chat.id, contact.id, matched, cause, apply);
             if (transition) {
               result.transitions.push(transition);
@@ -282,6 +288,10 @@ export async function tickReadingLists(options: TickReadingListsOptions = {}): P
       for (const item of allChats.items) {
         result.targetsProcessed += 1;
         try {
+          if (!dbCanReadChat(list.ownerType, list.ownerId, item.chat.id)) {
+            result.permissionDenied += 1;
+            continue;
+          }
           const { matched } = evaluateSelectorForChat(selector, item.chat.id, now);
           const transition = applyMembershipForChat(list, selector, item.chat.id, null, matched, cause, apply);
           if (transition) {

@@ -182,6 +182,31 @@ export function dbUpdateReadingListMetadata(listId: string, metadata: Record<str
     .run(metadata ? JSON.stringify(metadata) : null, Date.now(), listId);
 }
 
+/**
+ * Check if the list owner has read access to a specific chat.
+ * Agent owners must be a participant in the chat.
+ * Contact owners must be a participant in the chat.
+ * System/instance owners have implicit access.
+ */
+export function dbCanReadChat(ownerType: string, ownerId: string, chatId: string): boolean {
+  const db = getDb();
+  if (ownerType === "agent") {
+    return (
+      db
+        .prepare("SELECT 1 AS found FROM chat_participants WHERE chat_id = ? AND agent_id = ? LIMIT 1")
+        .get(chatId, ownerId) != null
+    );
+  }
+  if (ownerType === "contact") {
+    return (
+      db
+        .prepare("SELECT 1 AS found FROM chat_participants WHERE chat_id = ? AND contact_id = ? LIMIT 1")
+        .get(chatId, ownerId) != null
+    );
+  }
+  return true;
+}
+
 /** Return true if the given chat has an active (non-removed) membership in the list. */
 export function dbIsActiveMember(listId: string, chatId: string): boolean {
   const row = getDb()

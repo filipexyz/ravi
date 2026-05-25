@@ -78,6 +78,7 @@ export interface TickReadingListsResult {
   added: number;
   removed: number;
   errors: number;
+  permissionDenied: number;
   dryRun: boolean;
   transitions: MembershipTransition[];
 }

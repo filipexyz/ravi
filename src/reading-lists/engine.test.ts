@@ -273,6 +273,47 @@ describe("tickReadingLists", () => {
     expect(dbIsActiveMember(list2.id, chatScoped.id)).toBe(false);
   });
 
+  it("H-1a: adds member when list owner is participant in the chat (permission granted)", async () => {
+    const agentId = "test-agent-h1";
+    const contact = makeContact("5511200000010", "cobranca");
+    const chat = makeContactChat("5511200000010", contact.id);
+    // Add agent as participant → permission granted
+    dbUpsertChatParticipant({ chatId: chat.id, contactId: null, agentId, role: "agent", source: "inbound" });
+    const list = dbCreateChatReadingList({
+      name: "h1-allowed-list",
+      mode: "dynamic",
+      ownerType: "agent",
+      ownerId: agentId,
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    const result = await tickReadingLists({ apply: true, listId: list.id });
+
+    expect(result.added).toBe(1);
+    expect(result.permissionDenied).toBe(0);
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
+  });
+
+  it("H-1b: skips chat and increments permissionDenied when owner is not a participant", async () => {
+    const agentId = "test-agent-h1-denied";
+    const contact = makeContact("5511200000011", "cobranca");
+    const chat = makeContactChat("5511200000011", contact.id);
+    // Agent is NOT added as participant → permission denied
+    const list = dbCreateChatReadingList({
+      name: "h1-denied-list",
+      mode: "dynamic",
+      ownerType: "agent",
+      ownerId: agentId,
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    const result = await tickReadingLists({ apply: true, listId: list.id });
+
+    expect(result.added).toBe(0);
+    expect(result.permissionDenied).toBeGreaterThanOrEqual(1);
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(false);
+  });
+
   it("increments errors counter when selector is invalid (fails Zod)", async () => {
     // Create list with a non-null but invalid selector (passes NOT NULL filter but fails safeParse)
     const list = dbCreateChatReadingList({
