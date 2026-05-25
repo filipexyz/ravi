@@ -24,6 +24,14 @@ import {
   type ChatMessageWithSortKey,
 } from "../../router/router-db.js";
 import { getContact } from "../../contacts.js";
+import {
+  DynamicListSelectorSchema,
+  dbUpdateReadingListSelector,
+  dbUpdateReadingListMode,
+  dbUpdateReadingListMetadata,
+  tickReadingLists,
+  explainSelector,
+} from "../../reading-lists/index.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -427,9 +435,23 @@ export class ChatReadingListCommands {
     @Option({ flags: "--visibility <visibility>", description: "private|team|system (default: system)" })
     visibility?: string,
     @Option({ flags: "--mode <mode>", description: "static|dynamic|hybrid (default: static)" }) mode?: string,
+    @Option({ flags: "--selector <json>", description: "Declarative selector JSON for dynamic/hybrid lists" })
+    selectorJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const parsedOwner = parseScopedRef(owner, defaultOwner());
+    let selector: Record<string, unknown> | undefined;
+    if (selectorJson) {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(selectorJson);
+      } catch {
+        fail("--selector must be valid JSON");
+      }
+      const parsed = DynamicListSelectorSchema.safeParse(raw);
+      if (!parsed.success) fail(`Invalid selector: ${parsed.error.message}`);
+      selector = parsed.data as Record<string, unknown>;
+    }
     const list = dbCreateChatReadingList({
       name,
       description,
@@ -437,6 +459,7 @@ export class ChatReadingListCommands {
       ownerId: parsedOwner.id,
       visibility,
       mode,
+      selector,
     });
     const payload = { list };
     if (asJson) {
@@ -637,6 +660,113 @@ export class ChatReadingListCommands {
       return payload;
     }
     console.log(`Marked ${list.name}/${chatId} read through ${cursor.lastReadMessageId ?? "now"}.`);
+    return payload;
+  }
+
+  @Scope("admin")
+  @Command({ name: "set", description: "Update a field on a reading list (selector|mode|metadata)" })
+  set(
+    @Arg("list", { description: "List id or name" }) listRef: string,
+    @Arg("field", { description: "Field to update: selector|mode|metadata" }) field: string,
+    @Arg("value", { description: "New value (JSON for selector/metadata, string for mode)" }) value: string,
+    @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const list = resolveReadingList(listRef, owner);
+    let updated: unknown;
+    if (field === "selector") {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(value);
+      } catch {
+        fail("value must be valid JSON for field selector");
+      }
+      const parsed = DynamicListSelectorSchema.safeParse(raw);
+      if (!parsed.success) fail(`Invalid selector: ${parsed.error.message}`);
+      dbUpdateReadingListSelector(list.id, parsed.data);
+      updated = parsed.data;
+    } else if (field === "mode") {
+      dbUpdateReadingListMode(list.id, value);
+      updated = value;
+    } else if (field === "metadata") {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(value);
+      } catch {
+        fail("value must be valid JSON for field metadata");
+      }
+      dbUpdateReadingListMetadata(list.id, raw as Record<string, unknown>);
+      updated = raw;
+    } else {
+      fail(`Unknown field "${field}". Valid fields: selector, mode, metadata`);
+    }
+    const payload = { list: { id: list.id, name: list.name }, field, updated };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`Updated ${field} on ${list.name} (${list.id}).`);
+    return payload;
+  }
+
+  @Scope("admin")
+  @Command({ name: "tick", description: "Run the dynamic membership evaluation cycle" })
+  async tick(
+    @Option({ flags: "--list <id-or-name>", description: "Restrict evaluation to one list" }) listId?: string,
+    @Option({ flags: "--apply", description: "Write membership changes (default: dry-run)" }) apply?: boolean,
+    @Option({ flags: "--limit <n>", description: "Max contacts/chats to evaluate per list" }) limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const result = await tickReadingLists({
+      apply: apply ?? false,
+      listId,
+      limit: limit ? Number(limit) : undefined,
+    });
+    const payload = result;
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`Tick complete (${result.dryRun ? "dry-run" : "applied"}):`);
+    console.log(`  Lists processed: ${result.listsProcessed}`);
+    console.log(`  Targets evaluated: ${result.targetsProcessed}`);
+    console.log(`  Added: ${result.added} | Removed: ${result.removed} | Errors: ${result.errors}`);
+    return payload;
+  }
+
+  @Scope("admin")
+  @Command({ name: "explain", description: "Explain why a contact or chat matches (or doesn't) a dynamic list" })
+  explain(
+    @Arg("list", { description: "List id or name" }) listRef: string,
+    @Option({ flags: "--target <type:id>", description: "contact:<id> or chat:<id>" }) target?: string,
+    @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const list = resolveReadingList(listRef, owner);
+    if (!target) fail("--target is required (e.g. --target contact:<id> or --target chat:<id>)");
+    const separator = target.indexOf(":");
+    if (separator <= 0 || separator === target.length - 1) {
+      fail("--target must use <type:id> format, e.g. contact:contact_abc or chat:chat_xyz");
+    }
+    const targetType = target.slice(0, separator) as "contact" | "chat";
+    const targetId = target.slice(separator + 1);
+    if (targetType !== "contact" && targetType !== "chat") {
+      fail(`--target type must be "contact" or "chat", got "${targetType}"`);
+    }
+    const result = explainSelector(list, { type: targetType, id: targetId });
+    if (!result) fail(`No valid selector on list "${list.name}" or target not found`);
+    const payload = result;
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`\nExplain: ${list.name} / ${targetType}:${targetId}`);
+    console.log(`Matched: ${result.matched}`);
+    console.log(`Selector scope: ${result.selector.scope}`);
+    console.log(`Trace (${result.trace.length} entries):`);
+    for (const entry of result.trace) {
+      console.log(`  ${JSON.stringify(entry)}`);
+    }
     return payload;
   }
 }

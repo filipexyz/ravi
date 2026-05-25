@@ -88,7 +88,15 @@ describe("ChatsCommands --json", () => {
     expect(JSON.stringify(rawReadPayload)).toContain("messageSecret");
 
     const createdPayload = captureJson(() => {
-      lists.create("crm-analysis-pending", "agent:ravi-crm", "CRM analysis queue", undefined, undefined, true);
+      lists.create(
+        "crm-analysis-pending",
+        "agent:ravi-crm",
+        "CRM analysis queue",
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
     });
     expect((createdPayload.list as Record<string, unknown>).ownerType).toBe("agent");
 
