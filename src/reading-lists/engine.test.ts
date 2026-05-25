@@ -571,6 +571,38 @@ describe("membership state machine", () => {
     expect(row?.source).toBe("selector");
   });
 
+  it("M-2: removes member with target_missing when referenced chat no longer exists", async () => {
+    const list = dbCreateChatReadingList({
+      name: "target-missing-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    // Insert orphaned member directly (chat_id does not exist in chats table)
+    // Disable FK enforcement to simulate a member whose chat was removed without CASCADE
+    const orphanChatId = "chat_orphan_nonexistent_12345";
+    getDb().exec("PRAGMA foreign_keys = OFF");
+    getDb()
+      .prepare(
+        `INSERT INTO chat_reading_list_members (id, list_id, chat_id, source, priority, metadata_json, added_at, removed_at)
+         VALUES ('crlm_orphan_test_01', ?, ?, 'selector', 0, NULL, ?, NULL)`,
+      )
+      .run(list.id, orphanChatId, Date.now());
+    getDb().exec("PRAGMA foreign_keys = ON");
+
+    expect(dbIsActiveMember(list.id, orphanChatId)).toBe(true);
+
+    // Tick should detect orphan and soft-remove the member
+    const result = await tickReadingLists({ apply: true, listId: list.id });
+
+    expect(result.removed).toBeGreaterThanOrEqual(1);
+    expect(dbIsActiveMember(list.id, orphanChatId)).toBe(false);
+    const row = getDb()
+      .prepare("SELECT removed_at FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ?")
+      .get(list.id, orphanChatId) as { removed_at: number | null } | undefined;
+    expect(row?.removed_at).not.toBeNull();
+  });
+
   it("hybrid list: selector does NOT remove manually-added members (source guard)", () => {
     const chat = makeChat("60000001");
     const list = dbCreateChatReadingList({

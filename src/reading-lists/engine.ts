@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { getAllContacts, getContactById } from "../contacts.js";
 import { nats } from "../nats.js";
-import { dbListChats } from "../router/router-db.js";
+import { dbListChats, dbGetChat } from "../router/router-db.js";
 import { evaluateContactConditions, evaluateChatConditions } from "../tag-rules/conditions.js";
 import type { ContactCondition, ChatCondition } from "../tag-rules/types.js";
 import { logger } from "../utils/logger.js";
@@ -12,6 +12,8 @@ import {
   dbSoftRemoveSelectorMember,
   dbIsActiveMember,
   dbCanReadChat,
+  dbGetActiveMembers,
+  dbHasSoftDeletedMember,
 } from "./db.js";
 import type {
   DynamicListSelector,
@@ -166,14 +168,17 @@ function applyMembershipForChat(
   const isActive = dbIsActiveMember(list.id, chatId);
 
   if (matched && !isActive) {
+    const isReentry = dbHasSoftDeletedMember(list.id, chatId);
+    const kind = isReentry ? "reactivated" : "added";
     if (apply) {
       const meta = buildMemberMetadata(cause, selector);
       const { written } = dbUpsertSelectorMember({ listId: list.id, chatId, metadata: meta });
       if (written) {
-        emitMembershipEvent("ravi.chats.lists.member.added", list.id, chatId, contactId, cause).catch(() => {});
+        const topic = isReentry ? "ravi.chats.lists.member.reactivated" : "ravi.chats.lists.member.added";
+        emitMembershipEvent(topic, list.id, chatId, contactId, cause).catch(() => {});
       }
     }
-    return { listId: list.id, chatId, contactId, kind: "added", source: "selector", cause };
+    return { listId: list.id, chatId, contactId, kind, source: "selector", cause };
   }
 
   if (!matched && isActive) {
@@ -303,6 +308,27 @@ export async function tickReadingLists(options: TickReadingListsOptions = {}): P
           log.error("Error evaluating chat in tick", { listId: list.id, chatId: item.chat.id, error: err });
           result.errors += 1;
         }
+      }
+    }
+
+    // Orphan check: soft-remove members whose referenced chat was deleted (target_missing)
+    const activeMembers = dbGetActiveMembers(list.id);
+    for (const member of activeMembers) {
+      if (!dbGetChat(member.chatId)) {
+        const orphanMeta = { ...buildMemberMetadata(cause, selector), reason: "target_missing" };
+        if (apply) {
+          dbSoftRemoveSelectorMember({ listId: list.id, chatId: member.chatId, metadata: orphanMeta });
+          emitMembershipEvent("ravi.chats.lists.member.removed", list.id, member.chatId, null, cause).catch(() => {});
+        }
+        result.transitions.push({
+          listId: list.id,
+          chatId: member.chatId,
+          contactId: null,
+          kind: "removed",
+          source: "selector",
+          cause,
+        });
+        result.removed += 1;
       }
     }
   }

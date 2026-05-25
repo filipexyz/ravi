@@ -207,6 +207,25 @@ export function dbCanReadChat(ownerType: string, ownerId: string, chatId: string
   return true;
 }
 
+/** Return all active (non-removed) selector-managed members for a list. */
+export function dbGetActiveMembers(listId: string): ChatReadingListMemberRecord[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM chat_reading_list_members WHERE list_id = ? AND removed_at IS NULL AND source = 'selector'")
+    .all(listId) as ChatReadingListMemberRow[];
+  return rows.map(rowToMember);
+}
+
+/** Return true if there is a soft-deleted member row for (listId, chatId). Used to detect re-entry vs new insert. */
+export function dbHasSoftDeletedMember(listId: string, chatId: string): boolean {
+  return (
+    getDb()
+      .prepare(
+        "SELECT 1 AS found FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NOT NULL LIMIT 1",
+      )
+      .get(listId, chatId) != null
+  );
+}
+
 /** Return true if the given chat has an active (non-removed) membership in the list. */
 export function dbIsActiveMember(listId: string, chatId: string): boolean {
   const row = getDb()
