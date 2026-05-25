@@ -393,6 +393,7 @@ export type ChatsListsCreateInput = {
   mode?: string;
   name: string;
   owner?: string;
+  selector?: string;
   visibility?: string;
 };
 
@@ -414,6 +415,16 @@ export type ChatsListsDeltaInput = {
 
 /** Return shape for `chats.lists.delta`. (no @Returns declared) */
 export type ChatsListsDeltaReturn = unknown;
+
+/** Input shape for `chats.lists.explain`. */
+export type ChatsListsExplainInput = {
+  list: string;
+  owner?: string;
+  target?: string;
+};
+
+/** Return shape for `chats.lists.explain`. (no @Returns declared) */
+export type ChatsListsExplainReturn = unknown;
 
 /** Input shape for `chats.lists.list`. */
 export type ChatsListsListInput = {
@@ -466,6 +477,27 @@ export type ChatsListsRemoveInput = {
 
 /** Return shape for `chats.lists.remove`. (no @Returns declared) */
 export type ChatsListsRemoveReturn = unknown;
+
+/** Input shape for `chats.lists.set`. */
+export type ChatsListsSetInput = {
+  field: string;
+  list: string;
+  owner?: string;
+  value: string;
+};
+
+/** Return shape for `chats.lists.set`. (no @Returns declared) */
+export type ChatsListsSetReturn = unknown;
+
+/** Input shape for `chats.lists.tick`. */
+export type ChatsListsTickInput = {
+  apply?: boolean;
+  limit?: string;
+  list?: string;
+};
+
+/** Return shape for `chats.lists.tick`. (no @Returns declared) */
+export type ChatsListsTickReturn = unknown;
 
 /** Input shape for `chats.read`. */
 export type ChatsReadInput = {

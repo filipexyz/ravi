@@ -1033,6 +1033,10 @@ export const ChatsListsCreateInputSchema = {
       "description": "Owner scope (default: current agent or system:ravi)",
       "type": "string"
     },
+    "selector": {
+      "description": "Declarative selector JSON for dynamic/hybrid lists",
+      "type": "string"
+    },
     "visibility": {
       "description": "private|team|system (default: system)",
       "type": "string"
@@ -1087,6 +1091,29 @@ export const ChatsListsDeltaInputSchema = {
   },
   "required": [
     "chat",
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.explain`. */
+export const ChatsListsExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "target": {
+      "description": "contact:<id> or chat:<id>",
+      "type": "string"
+    }
+  },
+  "required": [
     "list"
   ],
   "type": "object"
@@ -1228,6 +1255,55 @@ export const ChatsListsRemoveInputSchema = {
     "chat",
     "list"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.set`. */
+export const ChatsListsSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "field": {
+      "description": "Field to update: selector|mode|metadata",
+      "type": "string"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    },
+    "value": {
+      "description": "New value (JSON for selector/metadata, string for mode)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "list",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.tick`. */
+export const ChatsListsTickInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Write membership changes (default: dry-run)",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Max contacts/chats to evaluate per list",
+      "type": "string"
+    },
+    "list": {
+      "description": "Restrict evaluation to one list",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
