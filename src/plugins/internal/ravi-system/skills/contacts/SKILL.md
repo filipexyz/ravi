@@ -238,11 +238,34 @@ Modos:
 
 Para a base já existente, use `ravi contacts backfill`. Para novas mensagens, configure `contactIntakeMode`.
 
+## Relação com Reading Lists Dinâmicas
+
+Tags de contato são a entrada primária do motor de membership dinâmico. Listas com `mode: dynamic` ou `mode: hybrid` têm um `selector` que pode filtrar por `has-tag`, `not-has-tag`, `has-any-tag`, `has-all-tags` no scope `contact`.
+
+Quando uma tag é adicionada ou removida (via `ravi contacts tag/untag` ou via tag rule), o motor:
+1. Detecta quais listas dinâmicas usam essa tag como condição.
+2. Reavalia o contato e todos os chats associados.
+3. Adiciona ou remove automaticamente (soft-delete, cursor preservado).
+
+```bash
+# Ver listas afetadas por um contato
+ravi chats lists explain <lista> --target contact:<id>
+
+# Forçar reavaliação de uma lista
+ravi chats lists tick --list <nome-ou-id> --apply
+
+# Criar lista que agrupa chats de contatos com tag "lifecycle:qualified"
+ravi chats lists create "Leads Qualificados" --mode dynamic \
+  --selector '{"scope":"contact","match":"all","conditions":[{"kind":"has-tag","tag":"lifecycle:qualified"}]}'
+```
+
+Spec completa: `.ravi/specs/channels/chats/reading-lists/DYNAMIC-MEMBERSHIP.md`
+
 ## Relação com Observers e CRM
 
 Contacts deve parar na identidade/policy/vínculo com chat. Depois:
 
-- Reading lists organizam quais chats serão lidos.
+- Reading lists organizam quais chats serão lidos (estáticas: seleção manual; dinâmicas: seleção por tags/condições).
 - Observers analisam deltas de mensagens.
 - CRM recebe conclusões: facts, opportunities, activities, tasks e next actions.
 

@@ -182,6 +182,34 @@ Rode via cron:
 
 NATS: assine `ravi.tags.rule.applied` para reagir em outros sistemas.
 
+## Integração com Reading Lists
+
+Tag rules são a entrada reativa do motor de membership dinâmico. Cada vez que uma rule aplica (`ravi.tags.rule.applied`), o motor de reading lists:
+
+1. Consulta o índice reverso (tag_slug → Set<list_id>) para descobrir quais listas usam essa tag como condição.
+2. Agenda reavaliação debounced (500 ms) para o contato ou chat afetado.
+3. Aplica a máquina de estado: MATCHED + fora → adiciona; NOT_MATCHED + dentro → soft-delete.
+
+Consequência prática: **toda mudança de tag via rule é propagada automaticamente para as listas dinâmicas relevantes — sem polling manual**.
+
+Para forçar reavaliação imediata:
+
+```bash
+ravi chats lists tick --list <nome-ou-id> --apply
+ravi chats lists explain <lista> --target contact:<id>
+```
+
+Para criar uma lista que filtra contatos com `lifecycle:qualified`:
+
+```bash
+ravi chats lists create "Leads Qualificados" --mode dynamic \
+  --selector '{"scope":"contact","match":"all","conditions":[{"kind":"has-tag","tag":"lifecycle:qualified"}]}'
+```
+
+Ao aplicar a rule que adiciona `lifecycle:qualified`, o contato entra automaticamente na lista. Ao reverter (rule remove a tag), o contato sai — com o cursor preservado (leitura independente de membership).
+
 ## Spec
 
 Spec normativa: `tags/auto-tagging` em `.ravi/specs`. Cobre invariants, performance, audit, e convergência futura com observer rules compostas.
+
+Spec do motor de membership: `.ravi/specs/channels/chats/reading-lists/DYNAMIC-MEMBERSHIP.md`.
