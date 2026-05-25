@@ -646,3 +646,109 @@ describe("membership state machine", () => {
     expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
   });
 });
+
+// ============================================================================
+// AC-4, AC-5, AC-6, AC-10 — explicit coverage (L-3, L-4, L-5)
+// ============================================================================
+
+describe("AC-4: tick never mutates contact tags", () => {
+  it("contact tag count is unchanged after tick", async () => {
+    const contact = makeContact("5511600000001", "cobranca");
+    makeContactChat("5511600000001", contact.id);
+    const list = dbCreateChatReadingList({
+      name: "no-tag-mutation-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    const tagsBefore = getDb().prepare("SELECT COUNT(*) AS n FROM tag_bindings WHERE asset_type = 'contact'").get() as {
+      n: number;
+    };
+
+    await tickReadingLists({ apply: true, listId: list.id });
+
+    const tagsAfter = getDb().prepare("SELECT COUNT(*) AS n FROM tag_bindings WHERE asset_type = 'contact'").get() as {
+      n: number;
+    };
+
+    expect(tagsAfter.n).toBe(tagsBefore.n);
+  });
+});
+
+describe("AC-5: reactive path evaluates only lists affected by tag change", () => {
+  it("getAffectedListIds returns only lists mentioning the changed tag", () => {
+    const targetTag = "rare-tag-ac5";
+    dbCreateChatReadingList({
+      name: "ac5-target-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: targetTag }] },
+    });
+    // Create 5 lists with other tags
+    for (let i = 0; i < 5; i++) {
+      dbCreateChatReadingList({
+        name: `ac5-other-list-${i}`,
+        mode: "dynamic",
+        selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: `other-tag-${i}` }] },
+      });
+    }
+
+    refreshReverseIndex();
+
+    const affected = getAffectedListIds([targetTag]);
+    // Only the one list mentioning targetTag should be affected — no full scan
+    expect(affected.size).toBe(1);
+
+    // Lists with other tags are NOT affected
+    const affectedByOther = getAffectedListIds(["other-tag-0"]);
+    expect(affectedByOther.size).toBe(1);
+    const allTagsAffected = getAffectedListIds(["other-tag-0", "other-tag-1", "other-tag-2"]);
+    expect(allTagsAffected.size).toBe(3);
+  });
+});
+
+describe("AC-6: --limit caps contacts processed in tick", () => {
+  it("targetsProcessed equals limit when contact pool exceeds limit", async () => {
+    for (let i = 0; i < 10; i++) {
+      const phone = `55119000${i.toString().padStart(4, "0")}`;
+      makeContact(phone, "cobranca");
+    }
+    const list = dbCreateChatReadingList({
+      name: "limit-cap-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    const result = await tickReadingLists({ apply: false, limit: 5, listId: list.id });
+
+    expect(result.targetsProcessed).toBe(5);
+  });
+});
+
+describe("AC-10: explain returns trace compatible with tag-rules evaluate structure", () => {
+  it("has-tag condition trace includes kind, tag, contactTags, matched fields", () => {
+    makeContact("5511700000001");
+    const contact = getContact("5511700000001")!;
+    const list = dbCreateChatReadingList({
+      name: "explain-struct-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    const result = explainSelector(list, { type: "contact", id: contact.id });
+
+    expect(result).not.toBeNull();
+    expect(result).toMatchObject({
+      listId: list.id,
+      selector: expect.objectContaining({ scope: "contact" }),
+      target: { type: "contact", id: contact.id },
+      matched: false,
+      trace: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "has-tag",
+          tag: "cobranca",
+          matched: false,
+        }),
+      ]),
+    });
+  });
+});
