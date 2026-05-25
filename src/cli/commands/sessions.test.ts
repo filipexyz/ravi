@@ -25,6 +25,7 @@ let routerConfig: { agents: Record<string, Record<string, unknown>> } = { agents
 let chatHistory: Array<Record<string, unknown>> = [];
 let chatHistoryByChat: Array<Record<string, unknown>> = [];
 let messageMetadataRows: Array<Record<string, unknown>> = [];
+const chatRecords = new Map<string, Record<string, unknown>>();
 let displayNameUpdates: Array<{ sessionKey: string; displayName: string }> = [];
 let deletedSessionKeys: string[] = [];
 let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
@@ -146,6 +147,7 @@ mock.module("../../router/index.js", () => ({
 
 mock.module("../../router/router-db.js", () => ({
   ...actualRouterDbModule,
+  dbGetChat: (chatId: string) => chatRecords.get(chatId) ?? actualRouterDbModule.dbGetChat(chatId),
   dbListContexts: (options?: { sessionKey?: string }) =>
     listedContexts.filter((context) => {
       if (!options?.sessionKey) return true;
@@ -229,6 +231,7 @@ const {
   buildSessionEditMessageCommand,
   buildSessionDetachCommand,
   buildSessionUnmuteCommand,
+  serializeSessionActionMessage,
   extractNormalizedTranscriptMessages,
 } = await import("./sessions.js");
 
@@ -268,6 +271,7 @@ beforeEach(() => {
   chatHistory = [];
   chatHistoryByChat = [];
   messageMetadataRows = [];
+  chatRecords.clear();
   displayNameUpdates = [];
   deletedSessionKeys = [];
   renameSessionNameCalls = [];
@@ -455,9 +459,55 @@ describe("SessionCommands attach hints", () => {
 
     expect(hint).toContain("ravi sessions actions --json");
     expect(hint).toContain("recentOwnMessages.items");
+    expect(hint).toContain("chatId");
+    expect(hint).toContain("chatTitle");
     expect(hint).toContain("ravi sessions delete-message <message-id>");
     expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto"');
     expect(hint).toContain("Only delete or edit messages authored by this session's agent");
+  });
+
+  it("includes chat identity on recent own action messages", () => {
+    chatRecords.set("chat_ae70f8bc7ec999d2e2048219", {
+      id: "chat_ae70f8bc7ec999d2e2048219",
+      title: "ravi - dev",
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "120363424772797713@g.us",
+    });
+
+    const item = serializeSessionActionMessage(
+      {
+        sessionKey: "agent:dev:whatsapp:main:chat_ae70f8bc7ec999d2e2048219",
+        name: "dev",
+        agentId: "dev",
+      } as any,
+      {
+        id: "msg_123",
+        providerMessageId: "3EB0123",
+        chatId: "chat_ae70f8bc7ec999d2e2048219",
+        channel: "whatsapp",
+        instanceId: "main",
+        content: { text: "vou corrigir" },
+        messageType: "text",
+        providerTimestamp: "2026-05-25T23:00:00.000Z",
+        ingestedAt: "2026-05-25T23:00:01.000Z",
+        deletedAt: null,
+        editedAt: null,
+      } as any,
+    );
+
+    expect(item).toMatchObject({
+      id: "msg_123",
+      chatId: "chat_ae70f8bc7ec999d2e2048219",
+      chatTitle: "ravi - dev",
+      chat: {
+        id: "chat_ae70f8bc7ec999d2e2048219",
+        title: "ravi - dev",
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: "120363424772797713@g.us",
+      },
+    });
   });
 });
 

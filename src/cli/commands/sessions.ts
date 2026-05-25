@@ -182,6 +182,7 @@ export function buildSessionActionsPromptHint(): string {
     "Use this payload as the canonical conversational action surface for the current session.",
     `First run \`${buildCurrentSessionActionsCommand()}\` to inspect available tools and recent own message IDs.`,
     "For accidental own outbound messages, pick the target from `recentOwnMessages.items`.",
+    "Use each recent message's `chatId` and `chatTitle` to confirm which group/chat the action targets.",
     `To delete an own outbound message, run \`${buildCurrentSessionDeleteMessageCommand("<message-id>")}\`.`,
     `To edit an own outbound text message, run \`${buildCurrentSessionEditMessageCommand("<message-id>", "novo texto")}\`.`,
     "Only delete or edit messages authored by this session's agent; do not use these tools on user messages.",
@@ -198,6 +199,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
       useWhen: "Remove an accidental outbound message authored by this session's agent.",
       constraints: [
         "Target must be an own outbound message returned by recentOwnMessages.",
+        "Confirm the target item's chatId/chatTitle before acting.",
         "Do not use on user-authored messages.",
         "Prefer the canonical item id when available.",
       ],
@@ -213,6 +215,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
       useWhen: "Correct an accidental outbound text message authored by this session's agent.",
       constraints: [
         "Target must be an own outbound message returned by recentOwnMessages.",
+        "Confirm the target item's chatId/chatTitle before acting.",
         "Use only for text content that should be replaced.",
         "Do not expose internal message IDs to users unless debugging requires it.",
       ],
@@ -251,15 +254,39 @@ function sessionActionChatIds(session: SessionEntry): string[] {
   return Array.from(ids);
 }
 
-function serializeSessionActionMessage(
+function serializeSessionActionChat(chatId: string | undefined): Record<string, unknown> | null {
+  if (!chatId) return null;
+  const chat = dbGetChat(chatId);
+  if (!chat) {
+    return {
+      id: chatId,
+      title: null,
+      channel: null,
+      instanceId: null,
+      platformChatId: null,
+    };
+  }
+  return {
+    id: chat.id,
+    title: chat.title ?? null,
+    channel: chat.channel,
+    instanceId: chat.instanceId,
+    platformChatId: chat.platformChatId,
+  };
+}
+
+export function serializeSessionActionMessage(
   _session: SessionEntry,
   message: ChatMessageWithSortKey | ChatMessageRecord,
 ): Record<string, unknown> {
   const sentAt = message.providerTimestamp ?? message.ingestedAt;
+  const chat = serializeSessionActionChat(message.chatId);
   return {
     id: message.id,
     providerMessageId: message.providerMessageId,
     chatId: message.chatId,
+    chatTitle: typeof chat?.title === "string" ? chat.title : null,
+    chat,
     channel: message.channel,
     instanceId: message.instanceId,
     text: extractActionMessageText(message) ?? null,
@@ -322,6 +349,7 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
     usage: {
       discoveryCommand: buildCurrentSessionActionsCommand(),
       messageIdSource: "recentOwnMessages.items[].id or recentOwnMessages.items[].providerMessageId",
+      chatContextSource: "recentOwnMessages.items[].chatId and recentOwnMessages.items[].chatTitle",
       tools: toolHints,
     },
     actions: [
@@ -375,6 +403,7 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
     },
     hints: [
       "Read promptHint and usage.tools before choosing a conversational action.",
+      "Use recentOwnMessages.items[].chatId and recentOwnMessages.items[].chatTitle to confirm the group/chat first.",
       "Use recentOwnMessages.items[].commands.delete to remove an accidental message you sent.",
       "Use recentOwnMessages.items[].commands.edit to edit an accidental message you sent.",
       "message.delete and message.edit are scoped to messages sent by this session's agent.",
