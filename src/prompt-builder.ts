@@ -155,6 +155,8 @@ function sessionActionsText(sessionName?: string): string {
 
 Essa é a fonte canônica para descobrir operações conversacionais do chat, como apagar ou editar suas próprias mensagens, reagir, responder, enviar stickers e novas capacidades expostas pelo runtime. Não assuma que uma ação existe: consulte esta superfície quando precisar trabalhar sobre uma mensagem ou canal.
 
+Leia os campos \`promptHint\` e \`usage.tools\` retornados por \`actions --json\`; eles explicam quais ferramentas estão disponíveis, de onde tirar o ID da mensagem e quais restrições aplicar antes de apagar ou editar.
+
 O CLI infere a sessão pelo contexto de execução do agent. Não passe o nome da sessão quando estiver rodando dentro do Ravi; use \`ravi sessions actions ${sessionRef} --json\` apenas para depuração fora do runtime.
 
 Para apagar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions delete-message <message-id>\`.

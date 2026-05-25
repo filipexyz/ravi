@@ -177,6 +177,51 @@ export function buildCurrentSessionReadCommand(): string {
   return "ravi sessions read --json";
 }
 
+export function buildSessionActionsPromptHint(): string {
+  return [
+    "Use this payload as the canonical conversational action surface for the current session.",
+    `First run \`${buildCurrentSessionActionsCommand()}\` to inspect available tools and recent own message IDs.`,
+    "For accidental own outbound messages, pick the target from `recentOwnMessages.items`.",
+    `To delete an own outbound message, run \`${buildCurrentSessionDeleteMessageCommand("<message-id>")}\`.`,
+    `To edit an own outbound text message, run \`${buildCurrentSessionEditMessageCommand("<message-id>", "novo texto")}\`.`,
+    "Only delete or edit messages authored by this session's agent; do not use these tools on user messages.",
+  ].join("\n");
+}
+
+function buildSessionActionToolHints(): Record<string, Record<string, unknown>> {
+  return {
+    deleteMessage: {
+      id: "message.delete",
+      tool: "ravi sessions delete-message",
+      command: buildCurrentSessionDeleteMessageCommand("<message-id>"),
+      idSource: "recentOwnMessages.items[].id or recentOwnMessages.items[].providerMessageId",
+      useWhen: "Remove an accidental outbound message authored by this session's agent.",
+      constraints: [
+        "Target must be an own outbound message returned by recentOwnMessages.",
+        "Do not use on user-authored messages.",
+        "Prefer the canonical item id when available.",
+      ],
+      promptHint:
+        "After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions delete-message <message-id>`.",
+    },
+    editMessage: {
+      id: "message.edit",
+      tool: "ravi sessions edit-message",
+      command: buildCurrentSessionEditMessageCommand("<message-id>", "novo texto"),
+      idSource: "recentOwnMessages.items[].id or recentOwnMessages.items[].providerMessageId",
+      textSource: "The corrected replacement text you want visible in the chat.",
+      useWhen: "Correct an accidental outbound text message authored by this session's agent.",
+      constraints: [
+        "Target must be an own outbound message returned by recentOwnMessages.",
+        "Use only for text content that should be replaced.",
+        "Do not expose internal message IDs to users unless debugging requires it.",
+      ],
+      promptHint:
+        'After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions edit-message <message-id> "novo texto"`.',
+    },
+  };
+}
+
 function sessionActionRef(session: Pick<SessionEntry, "name" | "sessionKey">): string {
   return session.name ?? session.sessionKey;
 }
@@ -234,6 +279,8 @@ function serializeSessionActionMessage(
 function buildSessionActionsPayload(session: SessionEntry, options: { limit?: number } = {}): Record<string, unknown> {
   const ref = sessionActionRef(session);
   const limit = options.limit ?? 10;
+  const toolHints = buildSessionActionToolHints();
+  const promptHint = buildSessionActionsPromptHint();
   const subscriptions = listSessionSubscriptions(session.sessionKey).map((subscription) => {
     const chat = dbGetChat(subscription.chatId);
     return {
@@ -271,18 +318,30 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
       chatIds,
       subscriptions,
     },
+    promptHint,
+    usage: {
+      discoveryCommand: buildCurrentSessionActionsCommand(),
+      messageIdSource: "recentOwnMessages.items[].id or recentOwnMessages.items[].providerMessageId",
+      tools: toolHints,
+    },
     actions: [
       {
         id: "message.delete",
         status: "available",
         description: "Delete one of this session agent's own channel messages.",
         command: buildCurrentSessionDeleteMessageCommand("<message-id>"),
+        promptHint: toolHints.deleteMessage.promptHint,
+        idSource: toolHints.deleteMessage.idSource,
+        constraints: toolHints.deleteMessage.constraints,
       },
       {
         id: "message.edit",
         status: "available",
         description: "Edit one of this session agent's own text channel messages.",
         command: buildCurrentSessionEditMessageCommand("<message-id>"),
+        promptHint: toolHints.editMessage.promptHint,
+        idSource: toolHints.editMessage.idSource,
+        constraints: toolHints.editMessage.constraints,
       },
       {
         id: "message.react",
@@ -315,6 +374,7 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
       items: recentOwnMessages.items.map((message) => serializeSessionActionMessage(session, message)),
     },
     hints: [
+      "Read promptHint and usage.tools before choosing a conversational action.",
       "Use recentOwnMessages.items[].commands.delete to remove an accidental message you sent.",
       "Use recentOwnMessages.items[].commands.edit to edit an accidental message you sent.",
       "message.delete and message.edit are scoped to messages sent by this session's agent.",
@@ -4076,6 +4136,9 @@ export class SessionCommands {
       const status = action.status === "available" ? "available" : "planned";
       const command = typeof action.command === "string" ? ` — ${action.command}` : "";
       console.log(`  ${action.id}: ${status}${command}`);
+    }
+    if (typeof payload.promptHint === "string") {
+      console.log(`\nPrompt hint:\n${payload.promptHint}`);
     }
 
     const recent = payload.recentOwnMessages as { items: Array<Record<string, unknown>>; total: number };

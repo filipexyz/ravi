@@ -223,6 +223,7 @@ const {
   buildCurrentSessionDeleteMessageCommand,
   buildCurrentSessionEditMessageCommand,
   buildCurrentSessionReadCommand,
+  buildSessionActionsPromptHint,
   buildSessionActionsCommand,
   buildSessionDeleteMessageCommand,
   buildSessionEditMessageCommand,
@@ -447,6 +448,16 @@ describe("SessionCommands attach hints", () => {
     expect(buildSessionActionsCommand("dev")).toBe("ravi sessions actions dev --json");
     expect(buildSessionDeleteMessageCommand("dev", "cm_123")).toBe("ravi sessions delete-message dev cm_123");
     expect(buildSessionEditMessageCommand("dev", "cm_123")).toBe('ravi sessions edit-message dev cm_123 "<new-text>"');
+  });
+
+  it("builds a prompt-ready hint for session action tools", () => {
+    const hint = buildSessionActionsPromptHint();
+
+    expect(hint).toContain("ravi sessions actions --json");
+    expect(hint).toContain("recentOwnMessages.items");
+    expect(hint).toContain("ravi sessions delete-message <message-id>");
+    expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(hint).toContain("Only delete or edit messages authored by this session's agent");
   });
 });
 

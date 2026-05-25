@@ -68,6 +68,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("ravi sessions delete-message <message-id>");
     expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto"');
     expect(prompt).toContain("O CLI infere a sessão pelo contexto de execução do agent.");
+    expect(prompt).toContain("Leia os campos `promptHint` e `usage.tools` retornados por `actions --json`");
     expect(prompt).toContain("apagar ou editar suas próprias mensagens, reagir, responder, enviar stickers");
     expect(prompt).not.toContain("ravi sessions focus");
     expect(prompt).not.toContain("focus_chat");
