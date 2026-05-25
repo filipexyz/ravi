@@ -3084,6 +3084,15 @@ export type ServiceWaInput = Record<string, never>;
 /** Return shape for `service.wa`. (no @Returns declared) */
 export type ServiceWaReturn = unknown;
 
+/** Input shape for `sessions.actions`. */
+export type SessionsActionsInput = {
+  limit?: string;
+  nameOrKey?: string;
+};
+
+/** Return shape for `sessions.actions`. (no @Returns declared) */
+export type SessionsActionsReturn = unknown;
+
 /** Input shape for `sessions.answer`. */
 export type SessionsAnswerInput = {
   barrier?: string;
@@ -3128,6 +3137,15 @@ export type SessionsDeleteInput = {
 /** Return shape for `sessions.delete`. (no @Returns declared) */
 export type SessionsDeleteReturn = unknown;
 
+/** Input shape for `sessions.delete-message`. */
+export type SessionsDeleteMessageInput = {
+  messageRef?: string;
+  sessionOrMessage: string;
+};
+
+/** Return shape for `sessions.delete-message`. (no @Returns declared) */
+export type SessionsDeleteMessageReturn = unknown;
+
 /** Input shape for `sessions.detach`. */
 export type SessionsDetachInput = {
   chat?: string;
@@ -3136,6 +3154,17 @@ export type SessionsDetachInput = {
 
 /** Return shape for `sessions.detach`. (no @Returns declared) */
 export type SessionsDetachReturn = unknown;
+
+/** Input shape for `sessions.edit-message`. */
+export type SessionsEditMessageInput = {
+  messageOrText?: string;
+  sessionOrMessage: string;
+  text?: string;
+  textArg?: string;
+};
+
+/** Return shape for `sessions.edit-message`. (no @Returns declared) */
+export type SessionsEditMessageReturn = unknown;
 
 /** Input shape for `sessions.execute`. */
 export type SessionsExecuteInput = {
@@ -3214,6 +3243,15 @@ export type SessionsListInput = {
 /** Return shape for `sessions.list`. (no @Returns declared) */
 export type SessionsListReturn = unknown;
 
+/** Input shape for `sessions.mute`. */
+export type SessionsMuteInput = {
+  chat?: string;
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.mute`. (no @Returns declared) */
+export type SessionsMuteReturn = unknown;
+
 /** Input shape for `sessions.prune`. */
 export type SessionsPruneInput = {
   agent?: string;
@@ -3230,7 +3268,7 @@ export type SessionsPruneReturn = unknown;
 export type SessionsReadInput = {
   count?: string;
   messageId?: string;
-  nameOrKey: string;
+  nameOrKey?: string;
   workspace?: boolean;
 };
 
@@ -3416,6 +3454,15 @@ export type SessionsTraceInput = {
 
 /** Return shape for `sessions.trace`. (no @Returns declared) */
 export type SessionsTraceReturn = unknown;
+
+/** Input shape for `sessions.unmute`. */
+export type SessionsUnmuteInput = {
+  chat?: string;
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.unmute`. (no @Returns declared) */
+export type SessionsUnmuteReturn = unknown;
 
 /** Input shape for `sessions.visibility`. */
 export type SessionsVisibilityInput = {

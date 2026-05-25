@@ -7230,6 +7230,22 @@ export const ServiceWaInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.actions`. */
+export const SessionsActionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Recent own messages to include (default: 10)",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Optional session name/key override (defaults to current session)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.answer`. */
 export const SessionsAnswerInputSchema = {
   "additionalProperties": false,
@@ -7340,6 +7356,25 @@ export const SessionsDeleteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.delete-message`. */
+export const SessionsDeleteMessageInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "messageRef": {
+      "description": "Canonical or provider message id",
+      "type": "string"
+    },
+    "sessionOrMessage": {
+      "description": "Session name/key, or message id when running inside a session",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sessionOrMessage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.detach`. */
 export const SessionsDetachInputSchema = {
   "additionalProperties": false,
@@ -7355,6 +7390,33 @@ export const SessionsDetachInputSchema = {
   },
   "required": [
     "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.edit-message`. */
+export const SessionsEditMessageInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "messageOrText": {
+      "description": "Message id, or new text when running inside a session",
+      "type": "string"
+    },
+    "sessionOrMessage": {
+      "description": "Session name/key, or message id when running inside a session",
+      "type": "string"
+    },
+    "text": {
+      "description": "New text content",
+      "type": "string"
+    },
+    "textArg": {
+      "description": "New text for explicit session mode",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sessionOrMessage"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -7548,6 +7610,25 @@ export const SessionsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.mute`. */
+export const SessionsMuteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "description": "Canonical chat id (or platform/normalized id)",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.prune`. */
 export const SessionsPruneInputSchema = {
   "additionalProperties": false,
@@ -7589,7 +7670,7 @@ export const SessionsReadInputSchema = {
       "type": "string"
     },
     "nameOrKey": {
-      "description": "Session name or key",
+      "description": "Optional session name/key override (defaults to current session)",
       "type": "string"
     },
     "workspace": {
@@ -7597,9 +7678,6 @@ export const SessionsReadInputSchema = {
       "type": "boolean"
     }
   },
-  "required": [
-    "nameOrKey"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8049,6 +8127,25 @@ export const SessionsTraceInputSchema = {
     },
     "until": {
       "description": "End time: ISO, epoch ms, or duration like 30m",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.unmute`. */
+export const SessionsUnmuteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "description": "Canonical chat id (or platform/normalized id)",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
       "type": "string"
     }
   },
