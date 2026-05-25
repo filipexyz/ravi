@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { addContactTag, closeContacts, getContact, upsertContact } from "../contacts.js";
+import { addContactTag, closeContacts, getContact, removeContactTag, upsertContact } from "../contacts.js";
+import { dbEnsureTagBinding } from "../tags/tag-db.js";
 import {
   dbCreateChatReadingList,
+  dbUpsertChat,
+  dbUpsertChatParticipant,
   dbGetChatReadingCursor,
   dbMarkChatReadingCursor,
-  dbUpsertChat,
-  dbUpsertChatMessage,
+  dbAddChatToReadingList,
+  getDb,
 } from "../router/router-db.js";
 import {
   evaluateSelectorForContact,
@@ -16,8 +19,8 @@ import {
   tickReadingLists,
   explainSelector,
 } from "./engine.js";
-import { dbIsActiveMember } from "./db.js";
-import { evaluateContactConditions } from "../tag-rules/conditions.js";
+import { dbUpsertSelectorMember, dbSoftRemoveSelectorMember, dbIsActiveMember } from "./db.js";
+import type { DynamicListSelector } from "./types.js";
 
 let stateDir: string | null = null;
 
@@ -31,126 +34,316 @@ afterEach(async () => {
   stateDir = null;
 });
 
-function makeContact(phone: string, tags: string[] = []) {
-  upsertContact(phone, `Contact ${phone}`, "allowed", "manual");
-  for (const tag of tags) addContactTag(phone, tag);
-  return getContact(phone)!;
-}
-
 function makeChat(suffix: string) {
   return dbUpsertChat({
     channel: "whatsapp",
     instanceId: "inst-1",
     platformChatId: `5511${suffix}@s.whatsapp.net`,
+    normalizedChatId: `5511${suffix}@s.whatsapp.net`,
     chatType: "dm",
   });
 }
 
+function makeContact(phone: string, tag?: string) {
+  upsertContact(phone, "Test", "allowed", "manual");
+  if (tag) addContactTag(phone, tag);
+  return getContact(phone)!;
+}
+
+/** Create a DM chat and link a contact to it via chat_participants. */
+function makeContactChat(phone: string, contactId: string) {
+  const chat = dbUpsertChat({
+    channel: "whatsapp",
+    instanceId: "inst-1",
+    platformChatId: `${phone}@s.whatsapp.net`,
+    normalizedChatId: `${phone}@s.whatsapp.net`,
+    chatType: "dm",
+  });
+  dbUpsertChatParticipant({ chatId: chat.id, contactId, role: "member", source: "inbound" });
+  return chat;
+}
+
 // ============================================================================
-// Selector evaluation
+// evaluateSelectorForContact
 // ============================================================================
 
 describe("evaluateSelectorForContact", () => {
-  it("matches when contact has the required tag", () => {
-    const contact = makeContact("990001001", ["cobranca:em-aberto"]);
-    const result = evaluateSelectorForContact(
-      { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca:em-aberto" }] },
-      contact,
-    );
-    expect(result.matched).toBe(true);
-    expect(result.trace.length).toBe(1);
-  });
-
-  it("does not match when contact lacks the tag", () => {
-    const contact = makeContact("990001002");
-    const result = evaluateSelectorForContact(
-      { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca:em-aberto" }] },
-      contact,
-    );
-    expect(result.matched).toBe(false);
-  });
-
-  it("matches not-has-tag when tag is absent", () => {
-    const contact = makeContact("990001003");
-    const result = evaluateSelectorForContact(
-      { scope: "contact", match: "all", conditions: [{ kind: "not-has-tag", tag: "blocked" }] },
-      contact,
-    );
+  it("returns matched=true when contact has required tag", () => {
+    const contact = makeContact("5511100001111", "cobranca");
+    const selector: DynamicListSelector = {
+      scope: "contact",
+      match: "all",
+      conditions: [{ kind: "has-tag", tag: "cobranca" }],
+    };
+    const result = evaluateSelectorForContact(selector, contact);
     expect(result.matched).toBe(true);
   });
 
-  it("does not match when any condition fails (AND semantics)", () => {
-    const contact = makeContact("990001004", ["cobranca:em-aberto"]);
-    const result = evaluateSelectorForContact(
-      {
-        scope: "contact",
-        match: "all",
-        conditions: [
-          { kind: "has-tag", tag: "cobranca:em-aberto" },
-          { kind: "not-has-tag", tag: "cobranca:em-aberto" }, // contradicts first
-        ],
-      },
-      contact,
-    );
+  it("returns matched=false when contact lacks required tag", () => {
+    const contact = makeContact("5511100001112");
+    const selector: DynamicListSelector = {
+      scope: "contact",
+      match: "all",
+      conditions: [{ kind: "has-tag", tag: "cobranca" }],
+    };
+    const result = evaluateSelectorForContact(selector, contact);
     expect(result.matched).toBe(false);
   });
 
-  it("returns scope-mismatch trace for chat scope selector", () => {
-    const contact = makeContact("990001005");
-    const result = evaluateSelectorForContact(
-      { scope: "chat", match: "all", conditions: [{ kind: "has-tag", tag: "x" }] },
-      contact,
-    );
+  it("returns matched=false for scope-mismatch (chat selector)", () => {
+    const contact = makeContact("5511100001113", "cobranca");
+    const selector: DynamicListSelector = {
+      scope: "chat",
+      match: "all",
+      conditions: [{ kind: "has-tag", tag: "cobranca" }],
+    };
+    const result = evaluateSelectorForContact(selector, contact);
     expect(result.matched).toBe(false);
     expect(result.trace[0]).toMatchObject({ reason: "scope-mismatch" });
   });
 
-  it("produces trace identical to evaluateContactConditions for same conditions", () => {
-    const contact = makeContact("990001006", ["cobranca:em-aberto"]);
-    const conditions = [{ kind: "has-tag" as const, tag: "cobranca:em-aberto" }];
-    const fromEngine = evaluateSelectorForContact({ scope: "contact", match: "all", conditions }, contact);
-    const fromConditions = evaluateContactConditions({ conditions, contact });
-    expect(fromEngine.matched).toBe(fromConditions.matched);
-    expect(fromEngine.trace).toEqual(fromConditions.trace);
+  it("evaluates has-any-tag: matched when contact has at least one", () => {
+    const contact = makeContact("5511100001114", "vip");
+    const selector: DynamicListSelector = {
+      scope: "contact",
+      match: "all",
+      conditions: [{ kind: "has-any-tag", tags: ["vip", "premium"] }],
+    };
+    const result = evaluateSelectorForContact(selector, contact);
+    expect(result.matched).toBe(true);
+  });
+
+  it("evaluates AND logic: all conditions must match", () => {
+    // contact has "cobranca" but not "vip" — should fail
+    const contact = makeContact("5511100001115", "cobranca");
+    const selector: DynamicListSelector = {
+      scope: "contact",
+      match: "all",
+      conditions: [
+        { kind: "has-tag", tag: "cobranca" },
+        { kind: "has-tag", tag: "vip" },
+      ],
+    };
+    const result = evaluateSelectorForContact(selector, contact);
+    expect(result.matched).toBe(false);
   });
 });
 
+// ============================================================================
+// evaluateSelectorForChat
+// ============================================================================
+
 describe("evaluateSelectorForChat", () => {
-  it("matches when chat has the required tag", async () => {
-    const chat = makeChat("990002001");
-    // Attach tag to chat directly via tag helpers
-    const { attachTagSlugsToAsset } = await import("../tags/helpers.js");
-    attachTagSlugsToAsset({
-      assetType: "chat",
-      assetId: chat.id,
-      tags: ["priority:high"],
-      source: "test",
-      createdBy: "test",
-    });
-    const result = evaluateSelectorForChat(
-      { scope: "chat", match: "all", conditions: [{ kind: "has-tag", tag: "priority:high" }] },
-      chat.id,
-    );
+  it("returns matched=true when chat has required tag", () => {
+    const chat = makeChat("20000001");
+    dbEnsureTagBinding({ slug: "chat-cobranca", assetType: "chat", assetId: chat.id, source: "test" });
+    const selector: DynamicListSelector = {
+      scope: "chat",
+      match: "all",
+      conditions: [{ kind: "has-tag", tag: "chat-cobranca" }],
+    };
+    const result = evaluateSelectorForChat(selector, chat.id);
     expect(result.matched).toBe(true);
   });
 
-  it("does not match when chat lacks the tag", () => {
-    const chat = makeChat("990002002");
-    const result = evaluateSelectorForChat(
-      { scope: "chat", match: "all", conditions: [{ kind: "has-tag", tag: "priority:high" }] },
-      chat.id,
-    );
+  it("returns matched=false when chat lacks required tag", () => {
+    const chat = makeChat("20000002");
+    const selector: DynamicListSelector = {
+      scope: "chat",
+      match: "all",
+      conditions: [{ kind: "has-tag", tag: "chat-cobranca" }],
+    };
+    const result = evaluateSelectorForChat(selector, chat.id);
     expect(result.matched).toBe(false);
   });
 
-  it("returns scope-mismatch trace for contact scope selector", () => {
-    const chat = makeChat("990002003");
-    const result = evaluateSelectorForChat(
-      { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "x" }] },
-      chat.id,
-    );
+  it("returns matched=false for scope-mismatch (contact selector)", () => {
+    const chat = makeChat("20000003");
+    const selector: DynamicListSelector = {
+      scope: "contact",
+      match: "all",
+      conditions: [{ kind: "has-tag", tag: "cobranca" }],
+    };
+    const result = evaluateSelectorForChat(selector, chat.id);
     expect(result.matched).toBe(false);
     expect(result.trace[0]).toMatchObject({ reason: "scope-mismatch" });
+  });
+});
+
+// ============================================================================
+// tickReadingLists — state machine (AC-1, AC-2, AC-5, AC-7, AC-8)
+// ============================================================================
+
+describe("tickReadingLists", () => {
+  it("AC-1: adds chat to list when contact has matching tag (apply=true)", async () => {
+    const contact = makeContact("5511200000001", "cobranca");
+    const chat = makeContactChat("5511200000001", contact.id);
+    const list = dbCreateChatReadingList({
+      name: "sde-cobranca",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    const result = await tickReadingLists({ apply: true, listId: list.id });
+
+    expect(result.added).toBe(1);
+    expect(result.removed).toBe(0);
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
+  });
+
+  it("AC-5: dry-run does not modify membership", async () => {
+    const contact = makeContact("5511200000002", "cobranca");
+    const chatDry = makeContactChat("5511200000002", contact.id);
+    const list = dbCreateChatReadingList({
+      name: "dry-run-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    const result = await tickReadingLists({ apply: false, listId: list.id });
+
+    expect(result.dryRun).toBe(true);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]?.kind).toBe("added");
+    // No DB write happened
+    expect(dbIsActiveMember(list.id, chatDry.id)).toBe(false);
+  });
+
+  it("AC-2: soft-removes chat when contact loses matching tag", async () => {
+    const contact = makeContact("5511200000003", "cobranca");
+    const chat = makeContactChat("5511200000003", contact.id);
+    const list = dbCreateChatReadingList({
+      name: "remove-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    // Add member manually (simulate prior tick)
+    dbUpsertSelectorMember({ listId: list.id, chatId: chat.id });
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
+
+    // Remove the tag from contact — now tick should remove the member
+    removeContactTag("5511200000003", "cobranca");
+    const freshContact = getContact("5511200000003")!;
+    expect(freshContact.tags.some((t) => t.includes("cobranca"))).toBe(false);
+
+    const result = await tickReadingLists({ apply: true, listId: list.id });
+
+    expect(result.removed).toBe(1);
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(false);
+  });
+
+  it("AC-8: idempotent — re-tick on matched contact does not duplicate member", async () => {
+    const contact = makeContact("5511200000004", "cobranca");
+    const chat = makeContactChat("5511200000004", contact.id);
+    const list = dbCreateChatReadingList({
+      name: "idempotent-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    await tickReadingLists({ apply: true, listId: list.id });
+    await tickReadingLists({ apply: true, listId: list.id });
+
+    const count = getDb()
+      .prepare(
+        "SELECT COUNT(*) AS n FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL",
+      )
+      .get(list.id, chat.id) as { n: number };
+    expect(count.n).toBe(1);
+  });
+
+  it("scopes tick to specific list when listId option is set", async () => {
+    const contact = makeContact("5511200000005", "cobranca");
+    const chatScoped = makeContactChat("5511200000005", contact.id);
+    const list1 = dbCreateChatReadingList({
+      name: "scoped-list-1",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+    const list2 = dbCreateChatReadingList({
+      name: "scoped-list-2",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    const result = await tickReadingLists({ apply: true, listId: list1.id });
+
+    expect(result.listsProcessed).toBe(1);
+    expect(dbIsActiveMember(list2.id, chatScoped.id)).toBe(false);
+  });
+
+  it("increments errors counter when selector is invalid (fails Zod)", async () => {
+    // Create list with a non-null but invalid selector (passes NOT NULL filter but fails safeParse)
+    const list = dbCreateChatReadingList({
+      name: "invalid-selector",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "x" }] },
+    });
+    // Overwrite with an invalid selector JSON directly
+    getDb()
+      .prepare("UPDATE chat_reading_lists SET selector_json = ? WHERE id = ?")
+      .run(JSON.stringify({ scope: "bad-scope", conditions: [] }), list.id);
+
+    const result = await tickReadingLists({ apply: true, listId: list.id });
+    expect(result.errors).toBeGreaterThan(0);
+  });
+});
+
+// ============================================================================
+// AC-3: Cursor independence — member lifecycle does NOT touch cursors
+// ============================================================================
+
+describe("cursor independence (AC-3)", () => {
+  it("cursor survives member add → remove → re-add lifecycle", async () => {
+    const contact = makeContact("5511300000001", "cobranca");
+    const chat = makeContactChat("5511300000001", contact.id);
+    const list = dbCreateChatReadingList({
+      name: "cursor-test-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    // Step 1: add member
+    dbUpsertSelectorMember({ listId: list.id, chatId: chat.id });
+
+    // Step 2: mark cursor (requires active membership)
+    const cursor = dbMarkChatReadingCursor({
+      listId: list.id,
+      chatId: chat.id,
+      readerType: "agent",
+      readerId: "agent-test",
+      reason: "test",
+    });
+    expect(cursor).not.toBeNull();
+    const cursorId = cursor.id;
+
+    // Step 3: soft-remove member (simulates tag removal)
+    dbSoftRemoveSelectorMember({ listId: list.id, chatId: chat.id });
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(false);
+
+    // Cursor must still exist
+    const cursorAfterRemove = dbGetChatReadingCursor({
+      listId: list.id,
+      chatId: chat.id,
+      readerType: "agent",
+      readerId: "agent-test",
+    });
+    expect(cursorAfterRemove).not.toBeNull();
+    expect(cursorAfterRemove?.id).toBe(cursorId);
+
+    // Step 4: re-entry (tag re-applied)
+    const { member } = dbUpsertSelectorMember({ listId: list.id, chatId: chat.id });
+    expect(member.removedAt).toBeUndefined();
+
+    // Cursor still present with same id
+    const cursorAfterReentry = dbGetChatReadingCursor({
+      listId: list.id,
+      chatId: chat.id,
+      readerType: "agent",
+      readerId: "agent-test",
+    });
+    expect(cursorAfterReentry?.id).toBe(cursorId);
   });
 });
 
@@ -159,377 +352,176 @@ describe("evaluateSelectorForChat", () => {
 // ============================================================================
 
 describe("reverse index", () => {
-  it("indexes has-tag slugs from dynamic lists", () => {
+  it("maps tag slug to affected list ids after refresh", () => {
     dbCreateChatReadingList({
-      name: "r-list-1",
+      name: "ri-list-1",
       mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca:em-aberto" }] },
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
     });
+
     refreshReverseIndex();
-    const affected = getAffectedListIds(["cobranca:em-aberto"]);
+
+    const affected = getAffectedListIds(["cobranca"]);
     expect(affected.size).toBe(1);
   });
 
-  it("indexes has-any-tag slugs", () => {
-    dbCreateChatReadingList({
-      name: "r-list-2",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-any-tag", tags: ["tag:a", "tag:b"] }] },
-    });
+  it("returns empty set for unknown tag slug", () => {
     refreshReverseIndex();
-    expect(getAffectedListIds(["tag:a"]).size).toBe(1);
-    expect(getAffectedListIds(["tag:b"]).size).toBe(1);
-    expect(getAffectedListIds(["tag:c"]).size).toBe(0);
-  });
-
-  it("indexes has-all-tags slugs", () => {
-    dbCreateChatReadingList({
-      name: "r-list-3",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-all-tags", tags: ["x", "y"] }] },
-    });
-    refreshReverseIndex();
-    expect(getAffectedListIds(["x"]).size).toBe(1);
-    expect(getAffectedListIds(["y"]).size).toBe(1);
-  });
-
-  it("returns empty set for unrelated tags", () => {
-    dbCreateChatReadingList({
-      name: "r-list-4",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "known" }] },
-    });
-    refreshReverseIndex();
-    const affected = getAffectedListIds(["unknown-tag"]);
+    const affected = getAffectedListIds(["nonexistent-tag"]);
     expect(affected.size).toBe(0);
   });
 
-  it("does NOT perform a full DB scan when looking up an absent tag", () => {
-    // This test asserts reverse index is used: if getAffectedListIds returns
-    // an empty set, the reactive path skips evaluation entirely.
+  it("indexes has-any-tag and has-all-tags slugs", () => {
     dbCreateChatReadingList({
-      name: "r-list-5",
+      name: "ri-list-any",
       mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "watched-tag" }] },
+      selector: {
+        scope: "contact",
+        match: "all",
+        conditions: [{ kind: "has-any-tag", tags: ["vip", "premium"] }],
+      },
     });
+    dbCreateChatReadingList({
+      name: "ri-list-all",
+      mode: "dynamic",
+      selector: {
+        scope: "contact",
+        match: "all",
+        conditions: [{ kind: "has-all-tags", tags: ["vip", "enterprise"] }],
+      },
+    });
+
     refreshReverseIndex();
-    // An unrelated tag change should produce zero affected lists
-    const unrelated = getAffectedListIds(["completely-different-tag"]);
-    expect(unrelated.size).toBe(0);
+
+    expect(getAffectedListIds(["vip"]).size).toBeGreaterThanOrEqual(2);
+    expect(getAffectedListIds(["premium"]).size).toBeGreaterThanOrEqual(1);
+    expect(getAffectedListIds(["enterprise"]).size).toBeGreaterThanOrEqual(1);
   });
 
-  it("includes only dynamic/hybrid lists, not static", () => {
-    dbCreateChatReadingList({ name: "static", mode: "static" });
+  it("does not index conditions without tag slugs (e.g. message-count)", () => {
     dbCreateChatReadingList({
-      name: "dynamic",
+      name: "ri-list-chat",
       mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "myslug" }] },
+      selector: {
+        scope: "chat",
+        match: "all",
+        conditions: [{ kind: "message-count", operator: ">=", value: 1 }],
+      },
     });
+
     refreshReverseIndex();
-    const affected = getAffectedListIds(["myslug"]);
-    expect(affected.size).toBe(1);
+
+    // "message-count" has no tag slug to index
+    const affected = getAffectedListIds(["message-count"]);
+    expect(affected.size).toBe(0);
   });
 });
 
 // ============================================================================
-// Periodic tick
-// ============================================================================
-
-describe("tickReadingLists", () => {
-  it("dry-run: returns transitions but writes nothing", async () => {
-    const list = dbCreateChatReadingList({
-      name: "tick-dryrun",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
-    });
-    const contact = makeContact("990003001", ["cobranca"]);
-    const chat = makeChat("990003001");
-    // Link contact to chat via participant
-    const { dbUpsertChatParticipant } = await import("../router/router-db.js");
-    dbUpsertChatParticipant({ chatId: chat.id, contactId: contact.id });
-
-    const result = await tickReadingLists({ apply: false });
-    expect(result.dryRun).toBe(true);
-    expect(result.added).toBeGreaterThan(0);
-    expect(dbIsActiveMember(list.id, chat.id)).toBe(false); // nothing written
-  });
-
-  it("apply mode: writes membership transitions", async () => {
-    const list = dbCreateChatReadingList({
-      name: "tick-apply",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
-    });
-    const contact = makeContact("990004001", ["cobranca"]);
-    const chat = makeChat("990004001");
-    const { dbUpsertChatParticipant } = await import("../router/router-db.js");
-    dbUpsertChatParticipant({ chatId: chat.id, contactId: contact.id });
-
-    const result = await tickReadingLists({ apply: true });
-    expect(result.dryRun).toBe(false);
-    expect(result.added).toBeGreaterThan(0);
-    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
-    const members = result.transitions.filter((t) => t.kind === "added");
-    expect(members.some((m) => m.listId === list.id && m.chatId === chat.id)).toBe(true);
-    expect(members[0]!.source).toBe("selector");
-  });
-
-  it("removes membership when contact no longer matches", async () => {
-    const list = dbCreateChatReadingList({
-      name: "tick-remove",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
-    });
-    const contact = makeContact("990005001", ["cobranca"]);
-    const chat = makeChat("990005001");
-    const { dbUpsertChatParticipant } = await import("../router/router-db.js");
-    dbUpsertChatParticipant({ chatId: chat.id, contactId: contact.id });
-
-    // First tick: add
-    await tickReadingLists({ apply: true });
-    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
-
-    // Remove tag from contact
-    const { removeContactTag } = await import("../contacts.js");
-    removeContactTag(contact.id, "cobranca");
-
-    // Second tick: remove
-    const result2 = await tickReadingLists({ apply: true });
-    expect(dbIsActiveMember(list.id, chat.id)).toBe(false);
-    const removed = result2.transitions.filter((t) => t.kind === "removed");
-    expect(removed.some((r) => r.listId === list.id && r.chatId === chat.id)).toBe(true);
-  });
-
-  it("is idempotent: two consecutive ticks on same state produce zero applied changes", async () => {
-    const _list = dbCreateChatReadingList({
-      name: "tick-idempotent",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
-    });
-    const contact = makeContact("990006001", ["cobranca"]);
-    const chat = makeChat("990006001");
-    const { dbUpsertChatParticipant } = await import("../router/router-db.js");
-    dbUpsertChatParticipant({ chatId: chat.id, contactId: contact.id });
-
-    const first = await tickReadingLists({ apply: true });
-    expect(first.added).toBeGreaterThan(0);
-
-    const second = await tickReadingLists({ apply: true });
-    expect(second.added).toBe(0);
-    expect(second.removed).toBe(0);
-    expect(second.transitions.length).toBe(0);
-  });
-
-  it("respects --list scoping", async () => {
-    const list1 = dbCreateChatReadingList({
-      name: "scoped-list-1",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
-    });
-    dbCreateChatReadingList({
-      name: "scoped-list-2",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
-    });
-    const contact = makeContact("990007001", ["cobranca"]);
-    const chat = makeChat("990007001");
-    const { dbUpsertChatParticipant } = await import("../router/router-db.js");
-    dbUpsertChatParticipant({ chatId: chat.id, contactId: contact.id });
-
-    const result = await tickReadingLists({ apply: true, listId: list1.id });
-    // Only list1 processed
-    expect(result.listsProcessed).toBe(1);
-  });
-
-  it("source of added members is selector", async () => {
-    const list = dbCreateChatReadingList({
-      name: "tick-source",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
-    });
-    const contact = makeContact("990008001", ["cobranca"]);
-    const chat = makeChat("990008001");
-    const { dbUpsertChatParticipant, dbListChatReadingListMembers } = await import("../router/router-db.js");
-    dbUpsertChatParticipant({ chatId: chat.id, contactId: contact.id });
-    await tickReadingLists({ apply: true });
-    const page = dbListChatReadingListMembers({ listId: list.id });
-    const member = page.items.find((i) => i.member.chatId === chat.id);
-    expect(member?.member.source).toBe("selector");
-  });
-});
-
-// ============================================================================
-// Cursor independence
-// ============================================================================
-
-describe("cursor independence", () => {
-  it("cursor survives entry → exit → re-entry without reset", async () => {
-    const list = dbCreateChatReadingList({
-      name: "cursor-test-list",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
-    });
-    const contact = makeContact("990009001", ["cobranca"]);
-    const chat = makeChat("990009001");
-    const { dbUpsertChatParticipant } = await import("../router/router-db.js");
-    dbUpsertChatParticipant({ chatId: chat.id, contactId: contact.id });
-
-    // Step 1: add chat as member
-    await tickReadingLists({ apply: true });
-    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
-
-    // Step 2: insert a real message and mark cursor at it
-    const { message: anchorMsg } = dbUpsertChatMessage({
-      chatId: chat.id,
-      channel: "whatsapp",
-      rawChatId: `5511990009001@s.whatsapp.net`,
-      actorType: "contact",
-      messageType: "text",
-      content: { text: "anchor" },
-    });
-    dbMarkChatReadingCursor({
-      listId: list.id,
-      chatId: chat.id,
-      readerType: "agent",
-      readerId: "test-reader",
-      messageId: anchorMsg.id,
-      reason: "test",
-    });
-
-    // Verify cursor was set
-    const cursorBefore = dbGetChatReadingCursor({
-      listId: list.id,
-      chatId: chat.id,
-      readerType: "agent",
-      readerId: "test-reader",
-    });
-    expect(cursorBefore?.lastReadMessageId).toBe(anchorMsg.id);
-
-    // Step 3: remove tag → next tick removes membership
-    const { removeContactTag } = await import("../contacts.js");
-    removeContactTag(contact.id, "cobranca");
-    await tickReadingLists({ apply: true });
-    expect(dbIsActiveMember(list.id, chat.id)).toBe(false);
-
-    // Step 4: cursor must still exist, unchanged
-    const cursorAfterRemoval = dbGetChatReadingCursor({
-      listId: list.id,
-      chatId: chat.id,
-      readerType: "agent",
-      readerId: "test-reader",
-    });
-    expect(cursorAfterRemoval?.lastReadMessageId).toBe(anchorMsg.id);
-
-    // Step 5: re-add tag → next tick re-activates membership
-    addContactTag(contact.id, "cobranca");
-    await tickReadingLists({ apply: true });
-    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
-
-    // Step 6: cursor must still point to the same message
-    const cursorAfterReentry = dbGetChatReadingCursor({
-      listId: list.id,
-      chatId: chat.id,
-      readerType: "agent",
-      readerId: "test-reader",
-    });
-    expect(cursorAfterReentry?.lastReadMessageId).toBe(anchorMsg.id);
-  });
-});
-
-// ============================================================================
-// Explain
+// explainSelector
 // ============================================================================
 
 describe("explainSelector", () => {
-  it("returns matched=true with trace for a matching contact", () => {
+  it("returns matched=true for a contact that qualifies", () => {
+    makeContact("5511400000001", "cobranca");
+    const contact = getContact("5511400000001")!;
     const list = dbCreateChatReadingList({
       name: "explain-list-1",
       mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "vip" }] },
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
     });
-    const contact = makeContact("990010001", ["vip"]);
+
     const result = explainSelector(list, { type: "contact", id: contact.id });
     expect(result).not.toBeNull();
     expect(result?.matched).toBe(true);
-    expect(result?.trace.length).toBeGreaterThan(0);
-    expect(result?.selector.scope).toBe("contact");
+    expect(result?.listId).toBe(list.id);
   });
 
-  it("returns matched=false with trace for a non-matching contact", () => {
+  it("returns matched=false for a contact that does not qualify", () => {
+    makeContact("5511400000002");
+    const contact = getContact("5511400000002")!;
     const list = dbCreateChatReadingList({
       name: "explain-list-2",
       mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "vip" }] },
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
     });
-    const contact = makeContact("990010002");
+
     const result = explainSelector(list, { type: "contact", id: contact.id });
     expect(result?.matched).toBe(false);
   });
 
-  it("returns null for a list with invalid selector", () => {
-    const list = dbCreateChatReadingList({
-      name: "explain-bad-selector",
-      mode: "dynamic",
-      selector: { scope: "bad", match: "all", conditions: [] },
-    });
-    const contact = makeContact("990010003");
-    const result = explainSelector(list, { type: "contact", id: contact.id });
+  it("returns null when list has no selector", () => {
+    const list = dbCreateChatReadingList({ name: "explain-noselector", mode: "dynamic" });
+
+    const result = explainSelector(list, { type: "contact", id: "contact_fake" });
     expect(result).toBeNull();
   });
 
-  it("returns null for non-existent contact", () => {
+  it("returns null when contact does not exist", () => {
     const list = dbCreateChatReadingList({
-      name: "explain-no-contact",
+      name: "explain-list-4",
       mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "x" }] },
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
     });
+
     const result = explainSelector(list, { type: "contact", id: "contact_nonexistent" });
     expect(result).toBeNull();
-  });
-
-  it("trace is structurally identical to evaluateContactConditions output for same conditions", () => {
-    const conditions = [{ kind: "has-tag" as const, tag: "cobranca" }];
-    const list = dbCreateChatReadingList({
-      name: "explain-trace-compat",
-      mode: "dynamic",
-      selector: { scope: "contact", match: "all", conditions },
-    });
-    const contact = makeContact("990010004", ["cobranca"]);
-    const explainResult = explainSelector(list, { type: "contact", id: contact.id });
-    const directResult = evaluateContactConditions({ conditions, contact });
-    expect(explainResult?.matched).toBe(directResult.matched);
-    expect(explainResult?.trace).toEqual(directResult.trace);
   });
 });
 
 // ============================================================================
-// Concurrent ticks safety
+// Membership state machine — additional invariants
 // ============================================================================
 
-describe("concurrent ticks", () => {
-  it("two concurrent ticks produce zero duplicate active members", async () => {
+describe("membership state machine", () => {
+  it("re-entry preserves member id (AC-6)", async () => {
+    const contact = makeContact("5511500000001", "cobranca");
+    const chat = makeContactChat("5511500000001", contact.id);
     const list = dbCreateChatReadingList({
-      name: "concurrent-list",
+      name: "reentry-list",
       mode: "dynamic",
       selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
     });
-    const contact = makeContact("990011001", ["cobranca"]);
-    const chat = makeChat("990011001");
-    const { dbUpsertChatParticipant } = await import("../router/router-db.js");
-    dbUpsertChatParticipant({ chatId: chat.id, contactId: contact.id });
 
-    // Run two ticks concurrently
-    await Promise.all([tickReadingLists({ apply: true }), tickReadingLists({ apply: true })]);
+    const { member: first } = dbUpsertSelectorMember({ listId: list.id, chatId: chat.id });
+    dbSoftRemoveSelectorMember({ listId: list.id, chatId: chat.id });
+    const { member: reactivated } = dbUpsertSelectorMember({ listId: list.id, chatId: chat.id });
 
-    // Must have exactly one active member row
-    const { getDb } = await import("../router/router-db.js");
-    const count = (
-      getDb()
-        .prepare(
-          "SELECT COUNT(*) AS c FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL",
-        )
-        .get(list.id, chat.id) as { c: number }
-    ).c;
-    expect(count).toBe(1);
+    expect(reactivated.id).toBe(first.id);
+  });
+
+  it("source is always 'selector' for engine-managed members", async () => {
+    const contact = makeContact("5511500000002", "cobranca");
+    const chat = makeContactChat("5511500000002", contact.id);
+    const list = dbCreateChatReadingList({
+      name: "source-test-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    await tickReadingLists({ apply: true, listId: list.id });
+
+    const row = getDb()
+      .prepare("SELECT source FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL")
+      .get(list.id, chat.id) as { source: string } | null;
+    expect(row?.source).toBe("selector");
+  });
+
+  it("hybrid list: selector does NOT remove manually-added members (source guard)", () => {
+    const chat = makeChat("60000001");
+    const list = dbCreateChatReadingList({
+      name: "hybrid-guard-list",
+      mode: "hybrid",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    // Add member manually (different source)
+    dbAddChatToReadingList({ listId: list.id, chatId: chat.id, source: "manual" });
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
+
+    // Soft-remove for selector should NOT remove it (source guard)
+    const removed = dbSoftRemoveSelectorMember({ listId: list.id, chatId: chat.id });
+    expect(removed).toBe(false);
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
   });
 });

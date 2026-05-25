@@ -37,6 +37,11 @@ import {
   watchForLeadershipVacancy,
   releaseLeadership,
 } from "./leader/index.js";
+import {
+  startReadingListsReactiveEngine,
+  stopReadingListsReactiveEngine,
+  tickReadingLists,
+} from "./reading-lists/index.js";
 
 const log = logger.child("daemon");
 
@@ -92,6 +97,7 @@ let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
 let webhookHttpServer: WebhookHttpServerHandle | null = null;
+let readingListsTickInterval: ReturnType<typeof setInterval> | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
 export function getBotInstance(): RaviBot | null {
@@ -119,6 +125,11 @@ async function shutdown(signal: string) {
     }
 
     // Stop runners and release leadership so another daemon can take over
+    stopReadingListsReactiveEngine();
+    if (readingListsTickInterval) {
+      clearInterval(readingListsTickInterval);
+      readingListsTickInterval = null;
+    }
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
@@ -258,6 +269,16 @@ export async function startDaemon() {
       canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
     });
     log.info("Task checkpoint runner started (leader)");
+    // Periodic safety-net tick every 15 minutes (leader-only to avoid redundant full scans)
+    readingListsTickInterval = setInterval(
+      () => {
+        tickReadingLists({ apply: true }).catch((err) =>
+          log.error("Reading lists periodic tick error", { error: err }),
+        );
+      },
+      15 * 60 * 1_000,
+    );
+    log.info("Reading lists periodic tick registered (leader)");
   } else {
     log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
     watchForLeadershipVacancy("runners", async () => {
@@ -279,6 +300,10 @@ export async function startDaemon() {
 
   await startEphemeralRunner();
   log.info("Ephemeral runner started");
+
+  // Reactive NATS subscriber: runs on all daemons, bounded by reverse index
+  await startReadingListsReactiveEngine();
+  log.info("Reading lists reactive engine started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
