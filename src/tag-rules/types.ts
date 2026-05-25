@@ -12,7 +12,7 @@ const DurationSchema = z
 
 const ChatTypeSchema = z.enum(["dm", "group", "channel", "thread"]);
 
-const ChatConditionSchema = z.discriminatedUnion("kind", [
+export const ChatConditionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("any-message-text-matches"),
     pattern: z.string().min(1),
@@ -44,7 +44,7 @@ const ChatConditionSchema = z.discriminatedUnion("kind", [
 ]);
 export type ChatCondition = z.infer<typeof ChatConditionSchema>;
 
-const ContactConditionSchema = z.discriminatedUnion("kind", [
+export const ContactConditionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("has-tag"),
     tag: z.string().min(1),
