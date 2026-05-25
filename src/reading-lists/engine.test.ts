@@ -603,6 +603,31 @@ describe("membership state machine", () => {
     expect(row?.removed_at).not.toBeNull();
   });
 
+  it("L-1: tick returns kind=reactivated when member re-enters after removal", async () => {
+    const contact = makeContact("5511500000020", "cobranca");
+    const chat = makeContactChat("5511500000020", contact.id);
+    const list = dbCreateChatReadingList({
+      name: "reactivated-kind-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    // First tick: member added (kind="added")
+    const first = await tickReadingLists({ apply: true, listId: list.id });
+    expect(first.transitions[0]?.kind).toBe("added");
+
+    // Remove tag → tick removes member
+    removeContactTag("5511500000020", "cobranca");
+    await tickReadingLists({ apply: true, listId: list.id });
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(false);
+
+    // Re-add tag → tick should produce kind="reactivated"
+    addContactTag("5511500000020", "cobranca");
+    const reentry = await tickReadingLists({ apply: true, listId: list.id });
+    expect(reentry.transitions[0]?.kind).toBe("reactivated");
+    expect(dbIsActiveMember(list.id, chat.id)).toBe(true);
+  });
+
   it("hybrid list: selector does NOT remove manually-added members (source guard)", () => {
     const chat = makeChat("60000001");
     const list = dbCreateChatReadingList({
