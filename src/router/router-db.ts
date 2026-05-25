@@ -7,7 +7,7 @@
  * Uses lazy initialization - database is only created when first accessed.
  */
 
-import { Database, type Statement } from "bun:sqlite";
+import { Database, type SQLQueryBindings, type Statement } from "bun:sqlite";
 import { z } from "zod";
 import { join } from "node:path";
 import { mkdirSync, existsSync, renameSync } from "node:fs";
@@ -278,6 +278,8 @@ interface ChatMessageRow {
   content_json: string | null;
   raw_provenance_json: string | null;
   provider_timestamp: number | null;
+  edited_at: number | null;
+  deleted_at: number | null;
   ingested_at: number;
   created_at: number;
   updated_at: number;
@@ -559,6 +561,8 @@ export interface ChatMessageRecord {
   content?: Record<string, unknown>;
   rawProvenance?: Record<string, unknown>;
   providerTimestamp?: number;
+  editedAt?: number;
+  deletedAt?: number;
   ingestedAt: number;
   createdAt: number;
   updatedAt: number;
@@ -587,6 +591,13 @@ export interface ChatMessageWithSortKey extends ChatMessageRecord {
   sortKey: string;
 }
 
+export interface ChatMessageContactIdentityRef {
+  id?: string | null;
+  channel?: string | null;
+  instanceId?: string | null;
+  normalizedPlatformUserId?: string | null;
+}
+
 export interface ChatListItem {
   chat: ChatRecord;
   messageCount: number;
@@ -610,6 +621,8 @@ export interface UpsertChatMessageInput {
   content?: Record<string, unknown> | null;
   rawProvenance?: Record<string, unknown> | null;
   providerTimestamp?: number | null;
+  editedAt?: number | null;
+  deletedAt?: number | null;
   ingestedAt?: number;
 }
 
@@ -1147,6 +1160,8 @@ function getDb(): Database {
       content_json TEXT,
       raw_provenance_json TEXT,
       provider_timestamp INTEGER,
+      edited_at INTEGER,
+      deleted_at INTEGER,
       ingested_at INTEGER NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
@@ -2360,6 +2375,8 @@ function ensureIdentityChatMigrations(database: Database): void {
   ensureColumn(database, "session_events", "normalized_sender_id", "TEXT");
   ensureColumn(database, "session_events", "identity_confidence", "REAL");
   ensureColumn(database, "session_events", "identity_provenance_json", "TEXT");
+  ensureColumn(database, "chat_messages", "edited_at", "INTEGER");
+  ensureColumn(database, "chat_messages", "deleted_at", "INTEGER");
 
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_message_metadata_canonical_chat ON message_metadata(canonical_chat_id)",
@@ -2722,6 +2739,8 @@ function rowToChatMessage(row: ChatMessageRow): ChatMessageRecord {
     content: parseJsonRecord(row.content_json),
     rawProvenance: parseJsonRecord(row.raw_provenance_json),
     providerTimestamp: row.provider_timestamp ?? undefined,
+    editedAt: row.edited_at ?? undefined,
+    deletedAt: row.deleted_at ?? undefined,
     ingestedAt: row.ingested_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -3502,9 +3521,9 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
         id, chat_id, channel, instance_id, provider_message_id, raw_chat_id,
         raw_sender_id, normalized_sender_id, actor_type, contact_id, agent_id, platform_identity_id,
         message_type, content_json, raw_provenance_json, provider_timestamp,
-        ingested_at, created_at, updated_at
+        edited_at, deleted_at, ingested_at, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(channel, instance_id, chat_id, provider_message_id) DO UPDATE SET
         raw_sender_id = COALESCE(excluded.raw_sender_id, chat_messages.raw_sender_id),
         normalized_sender_id = COALESCE(excluded.normalized_sender_id, chat_messages.normalized_sender_id),
@@ -3519,6 +3538,8 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
         content_json = COALESCE(excluded.content_json, chat_messages.content_json),
         raw_provenance_json = COALESCE(excluded.raw_provenance_json, chat_messages.raw_provenance_json),
         provider_timestamp = COALESCE(excluded.provider_timestamp, chat_messages.provider_timestamp),
+        edited_at = COALESCE(excluded.edited_at, chat_messages.edited_at),
+        deleted_at = COALESCE(excluded.deleted_at, chat_messages.deleted_at),
         updated_at = excluded.updated_at
     `,
     )
@@ -3539,6 +3560,8 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
       cleanJsonRecord(input.content),
       cleanJsonRecord(input.rawProvenance),
       input.providerTimestamp ?? null,
+      input.editedAt ?? null,
+      input.deletedAt ?? null,
       now,
       now,
       now,
@@ -4866,6 +4889,150 @@ export function dbFindChatMessage(input: {
   return row ? rowToChatMessage(row) : null;
 }
 
+function normalizeChatMessageScopeIds(chatIds?: string[] | null): string[] {
+  return Array.from(new Set((chatIds ?? []).map((chatId) => chatId.trim()).filter(Boolean)));
+}
+
+export function dbFindAgentChatMessageByRef(input: {
+  agentId: string;
+  messageRef: string;
+  chatIds?: string[] | null;
+  includeDeleted?: boolean;
+}): ChatMessageRecord | null {
+  const agentId = input.agentId.trim();
+  const messageRef = input.messageRef.trim();
+  if (!agentId || !messageRef) return null;
+
+  const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?", "(m.id = ? OR m.provider_message_id = ?)"];
+  const params: SQLQueryBindings[] = [agentId, messageRef, messageRef];
+  const chatIds = normalizeChatMessageScopeIds(input.chatIds);
+  if (chatIds.length > 0) {
+    whereClauses.push(`m.chat_id IN (${chatIds.map(() => "?").join(", ")})`);
+    params.push(...chatIds);
+  }
+  if (!input.includeDeleted) {
+    whereClauses.push("m.deleted_at IS NULL");
+  }
+
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM chat_messages m
+      WHERE ${whereClauses.join(" AND ")}
+      ORDER BY COALESCE(m.provider_timestamp, m.ingested_at) DESC, m.ingested_at DESC, m.id DESC
+      LIMIT 1
+    `,
+    )
+    .get(...params) as ChatMessageRow | undefined;
+  return row ? rowToChatMessage(row) : null;
+}
+
+export function dbListAgentChatMessagesPage(input: {
+  agentId: string;
+  chatIds?: string[] | null;
+  limit?: number | string | null;
+  offset?: number | string | null;
+  order?: "asc" | "desc";
+  includeDeleted?: boolean;
+}): ListPage<ChatMessageWithSortKey> {
+  const agentId = input.agentId.trim();
+  if (!agentId) {
+    return { total: 0, limit: 0, offset: 0, items: [] };
+  }
+
+  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 10, maxLimit: 100, minLimit: 1 });
+  const order = input.order === "asc" ? "ASC" : "DESC";
+  const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?"];
+  const params: SQLQueryBindings[] = [agentId];
+  const chatIds = normalizeChatMessageScopeIds(input.chatIds);
+  if (chatIds.length > 0) {
+    whereClauses.push(`m.chat_id IN (${chatIds.map(() => "?").join(", ")})`);
+    params.push(...chatIds);
+  }
+  if (!input.includeDeleted) {
+    whereClauses.push("m.deleted_at IS NULL");
+  }
+
+  const whereSql = whereClauses.join(" AND ");
+  const database = getDb();
+  const count = database.prepare(`SELECT COUNT(*) AS total FROM chat_messages m WHERE ${whereSql}`).get(...params) as
+    | { total: number }
+    | undefined;
+  const rows = database
+    .prepare(
+      `
+      SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id) AS message_sort_key
+      FROM chat_messages m
+      WHERE ${whereSql}
+      ORDER BY message_sort_key ${order}
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as ChatMessageWithSortKeyRow[];
+  return {
+    total: count?.total ?? 0,
+    limit,
+    offset,
+    items: rows.map(rowToChatMessageWithSortKey),
+  };
+}
+
+export function dbMarkChatMessageDeleted(id: string, deletedAt = Date.now()): ChatMessageRecord | null {
+  const messageId = id.trim();
+  if (!messageId) return null;
+  const database = getDb();
+  database
+    .prepare("UPDATE chat_messages SET deleted_at = ?, updated_at = ? WHERE id = ?")
+    .run(deletedAt, deletedAt, messageId);
+  return dbGetChatMessage(messageId);
+}
+
+export function dbMarkChatMessageEdited(id: string, text: string, editedAt = Date.now()): ChatMessageRecord | null {
+  const messageId = id.trim();
+  const nextText = text.trim();
+  if (!messageId || !nextText) return null;
+  const current = dbGetChatMessage(messageId);
+  if (!current) return null;
+
+  const previousContent = current.content ?? {};
+  const previousText = typeof previousContent.text === "string" ? previousContent.text : undefined;
+  const nextContent = {
+    ...previousContent,
+    type: previousContent.type ?? current.messageType ?? "text",
+    text: nextText,
+    editedAt,
+  };
+  const previousProvenance = current.rawProvenance ?? {};
+  const previousHistory = Array.isArray(previousProvenance.raviEditHistory) ? previousProvenance.raviEditHistory : [];
+  const nextProvenance = {
+    ...previousProvenance,
+    lastRaviEditAt: editedAt,
+    raviEditHistory: [
+      ...previousHistory,
+      {
+        editedAt,
+        previousText: previousText ?? null,
+        text: nextText,
+      },
+    ],
+  };
+
+  getDb()
+    .prepare(
+      `
+      UPDATE chat_messages
+      SET content_json = ?,
+          raw_provenance_json = ?,
+          edited_at = ?,
+          updated_at = ?
+      WHERE id = ?
+    `,
+    )
+    .run(cleanJsonRecord(nextContent), cleanJsonRecord(nextProvenance), editedAt, editedAt, messageId);
+  return dbGetChatMessage(messageId);
+}
+
 export function dbListChatMessagesPage(input: {
   chatId: string;
   limit?: number | string | null;
@@ -4890,6 +5057,82 @@ export function dbListChatMessagesPage(input: {
     )
     .all(input.chatId, limit, offset) as ChatMessageWithSortKeyRow[];
   return {
+    total: count?.total ?? 0,
+    limit,
+    offset,
+    items: rows.map(rowToChatMessageWithSortKey),
+  };
+}
+
+export function dbListChatMessagesPageByContactId(input: {
+  contactId: string;
+  identityRefs?: ChatMessageContactIdentityRef[] | null;
+  limit?: number | string | null;
+  offset?: number | string | null;
+  order?: "asc" | "desc";
+}): ListPage<ChatMessageWithSortKey> & { contactId: string } {
+  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const order = input.order === "asc" ? "ASC" : "DESC";
+  const database = getDb();
+  const whereClauses = ["m.contact_id = ?"];
+  const whereParams: SQLQueryBindings[] = [input.contactId];
+
+  const identityRefs = input.identityRefs ?? [];
+  const platformIdentityIds = Array.from(
+    new Set(
+      identityRefs
+        .map((identity) => (typeof identity.id === "string" ? identity.id.trim() : ""))
+        .filter((id) => id.length > 0),
+    ),
+  );
+  if (platformIdentityIds.length > 0) {
+    whereClauses.push(`m.platform_identity_id IN (${platformIdentityIds.map(() => "?").join(", ")})`);
+    whereParams.push(...platformIdentityIds);
+  }
+
+  const senderIdentityClauses: string[] = [];
+  const senderIdentityParams: SQLQueryBindings[] = [];
+  for (const identity of identityRefs) {
+    const normalizedSenderId =
+      typeof identity.normalizedPlatformUserId === "string" ? identity.normalizedPlatformUserId.trim() : "";
+    const channel = typeof identity.channel === "string" ? normalizeChannelId(identity.channel) : "";
+    const instanceId = typeof identity.instanceId === "string" ? identity.instanceId.trim() : "";
+    if (!normalizedSenderId || !channel) continue;
+    if (channel === "phone") {
+      senderIdentityClauses.push("(m.normalized_sender_id = ? AND m.channel LIKE 'whatsapp%')");
+      senderIdentityParams.push(normalizedSenderId);
+      continue;
+    }
+    if (channel === "whatsapp") {
+      senderIdentityClauses.push("(m.normalized_sender_id = ? AND m.channel LIKE 'whatsapp%' AND m.instance_id = ?)");
+      senderIdentityParams.push(normalizedSenderId, instanceId);
+      continue;
+    }
+    senderIdentityClauses.push("(m.normalized_sender_id = ? AND m.channel = ? AND m.instance_id = ?)");
+    senderIdentityParams.push(normalizedSenderId, channel, instanceId);
+  }
+  if (senderIdentityClauses.length > 0) {
+    whereClauses.push(senderIdentityClauses.join(" OR "));
+    whereParams.push(...senderIdentityParams);
+  }
+
+  const whereSql = whereClauses.map((clause) => `(${clause})`).join(" OR ");
+  const count = database
+    .prepare(`SELECT COUNT(*) AS total FROM chat_messages m WHERE ${whereSql}`)
+    .get(...whereParams) as { total: number } | undefined;
+  const rows = database
+    .prepare(
+      `
+      SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id) AS message_sort_key
+      FROM chat_messages m
+      WHERE ${whereSql}
+      ORDER BY message_sort_key ${order}
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...whereParams, limit, offset) as ChatMessageWithSortKeyRow[];
+  return {
+    contactId: input.contactId,
     total: count?.total ?? 0,
     limit,
     offset,

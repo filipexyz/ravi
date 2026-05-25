@@ -431,6 +431,8 @@ function createStubSender(): OmniSender {
     },
     sendTyping: async () => {},
     sendReaction: async () => {},
+    deleteMessage: async () => {},
+    editMessage: async () => {},
     sendMedia: async () => {
       return {};
     },

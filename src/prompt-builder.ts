@@ -149,6 +149,21 @@ function sessionAttachText(): string {
 - ❌ Esperar attach trocar o agent. Attach decide sessão; agent vem da route ou default da instance.`;
 }
 
+function sessionActionsText(sessionName?: string): string {
+  const sessionRef = sessionName ?? "<session>";
+  return `Use \`ravi sessions actions --json\` para inspecionar as ações disponíveis nesta sessão, as superfícies atuais e os IDs recentes das mensagens que você mesmo enviou.
+
+Essa é a fonte canônica para descobrir operações conversacionais do chat, como apagar ou editar suas próprias mensagens, reagir, responder, enviar stickers e novas capacidades expostas pelo runtime. Não assuma que uma ação existe: consulte esta superfície quando precisar trabalhar sobre uma mensagem ou canal.
+
+O CLI infere a sessão pelo contexto de execução do agent. Não passe o nome da sessão quando estiver rodando dentro do Ravi; use \`ravi sessions actions ${sessionRef} --json\` apenas para depuração fora do runtime.
+
+Para apagar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions delete-message <message-id>\`.
+
+Para editar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions edit-message <message-id> "novo texto"\`.
+
+Só apague ou edite mensagens próprias quando estiver corrigindo ou removendo uma saída acidental. Não exponha IDs internos ao usuário a menos que isso seja útil para depuração.`;
+}
+
 /**
  * Build group context section for system prompt
  */
@@ -230,7 +245,7 @@ function sessionBoundaryText(sessionName?: string): string {
   return [
     `Treat the ${sessionRef} as the only conversational context for this reply.`,
     `DMs, groups, channels, and threads are separate contexts even when the same people participate.`,
-    `If local context looks incomplete, use same-session history tools such as \`ravi sessions read ${sessionName ?? "<session>"}\` or \`ravi sessions trace ${sessionName ?? "<session>"}\`.`,
+    `If local context looks incomplete, use same-session history tools such as \`ravi sessions read --json\` or \`ravi sessions trace ${sessionName ?? "<session>"}\`.`,
     `Never recover missing context from another DM/group/session or from unrelated filesystem notes.`,
     `If same-session durable history is unavailable, ask the user for the missing context instead of guessing.`,
   ].join("\n");
@@ -336,6 +351,7 @@ export function buildSystemPromptSections(
   // Sessions attach/detach CLI surface. Added for all agents so the
   // multi-input primitive is discoverable. See sessions/attach spec.
   add("session.attach", "Session Attach", sessionAttachText(), 25);
+  add("session.actions", "Session Actions", sessionActionsText(sessionName), 30);
 
   // Sentinel: add explicit channel messaging instructions
   if (isSentinel) {
@@ -351,7 +367,7 @@ When instructed via [System] Execute or [System] Ask, you CAN send messages expl
 
 The env var $RAVI_ACCOUNT_ID is set automatically with your WhatsApp account. Always use it.
 Your text output is NOT sent to the channel. Use these tools to send explicitly.`,
-      30,
+      35,
     );
   }
 

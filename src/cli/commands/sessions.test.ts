@@ -218,9 +218,18 @@ mock.module("../../tags/service.js", () => ({
 }));
 
 const { SessionCommands } = await import("./sessions.js");
-const { buildSessionDetachCommand, buildSessionUnmuteCommand, extractNormalizedTranscriptMessages } = await import(
-  "./sessions.js"
-);
+const {
+  buildCurrentSessionActionsCommand,
+  buildCurrentSessionDeleteMessageCommand,
+  buildCurrentSessionEditMessageCommand,
+  buildCurrentSessionReadCommand,
+  buildSessionActionsCommand,
+  buildSessionDeleteMessageCommand,
+  buildSessionEditMessageCommand,
+  buildSessionDetachCommand,
+  buildSessionUnmuteCommand,
+  extractNormalizedTranscriptMessages,
+} = await import("./sessions.js");
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -428,6 +437,16 @@ describe("SessionCommands attach hints", () => {
 
   it("builds the unmute command used by muted source hints", () => {
     expect(buildSessionUnmuteCommand("dev", "chat_123")).toBe("ravi sessions unmute dev --chat chat_123");
+  });
+
+  it("builds action discovery and own-message deletion commands", () => {
+    expect(buildCurrentSessionActionsCommand()).toBe("ravi sessions actions --json");
+    expect(buildCurrentSessionDeleteMessageCommand("cm_123")).toBe("ravi sessions delete-message cm_123");
+    expect(buildCurrentSessionEditMessageCommand("cm_123")).toBe('ravi sessions edit-message cm_123 "<new-text>"');
+    expect(buildCurrentSessionReadCommand()).toBe("ravi sessions read --json");
+    expect(buildSessionActionsCommand("dev")).toBe("ravi sessions actions dev --json");
+    expect(buildSessionDeleteMessageCommand("dev", "cm_123")).toBe("ravi sessions delete-message dev cm_123");
+    expect(buildSessionEditMessageCommand("dev", "cm_123")).toBe('ravi sessions edit-message dev cm_123 "<new-text>"');
   });
 });
 

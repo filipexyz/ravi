@@ -7,9 +7,11 @@ import {
   dbFindChat,
   dbFindChatByRef,
   dbFindChatReadingList,
+  dbFindAgentChatMessageByRef,
   dbContactDmNormalizedChatId,
   dbGetSessionChatBinding,
   dbGetChatReadingDelta,
+  dbListAgentChatMessagesPage,
   dbListChats,
   dbListChatParticipants,
   dbListChatReadingListMembers,
@@ -20,6 +22,9 @@ import {
   dbFindChatMessage,
   dbListChatMessages,
   dbListChatMessagesPage,
+  dbListChatMessagesPageByContactId,
+  dbMarkChatMessageDeleted,
+  dbMarkChatMessageEdited,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
@@ -213,6 +218,95 @@ describe("identity chat schema", () => {
     expect(dbListChatMessages(chat.id)).toHaveLength(1);
   });
 
+  it("lists and marks an agent's own messages for session actions", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999999@s.whatsapp.net",
+      chatType: "dm",
+    });
+    const own = dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "outbound-1",
+      rawChatId: "5511999999999@s.whatsapp.net",
+      rawSenderId: "5511000000000@s.whatsapp.net",
+      normalizedSenderId: "5511000000000",
+      actorType: "agent",
+      agentId: "dev",
+      platformIdentityId: "pi_agent_dev",
+      messageType: "text",
+      content: { type: "text", text: "vou corrigir" },
+      providerTimestamp: 1_700_000_000_000,
+      ingestedAt: 1_700_000_000_100,
+    }).message;
+    dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "contact-1",
+      rawChatId: "5511999999999@s.whatsapp.net",
+      rawSenderId: "5511999999999@s.whatsapp.net",
+      actorType: "contact",
+      contactId: "contact_1",
+      content: { type: "text", text: "humano" },
+    });
+
+    expect(
+      dbFindAgentChatMessageByRef({
+        agentId: "dev",
+        messageRef: "outbound-1",
+        chatIds: [chat.id],
+      })?.id,
+    ).toBe(own.id);
+    expect(dbListAgentChatMessagesPage({ agentId: "dev", chatIds: [chat.id] }).items.map((m) => m.id)).toEqual([
+      own.id,
+    ]);
+
+    const deleted = dbMarkChatMessageDeleted(own.id, 1_700_000_001_000);
+    expect(deleted?.deletedAt).toBe(1_700_000_001_000);
+    expect(dbFindAgentChatMessageByRef({ agentId: "dev", messageRef: own.id, chatIds: [chat.id] })).toBeNull();
+    expect(
+      dbFindAgentChatMessageByRef({ agentId: "dev", messageRef: own.id, chatIds: [chat.id], includeDeleted: true })?.id,
+    ).toBe(own.id);
+  });
+
+  it("marks an agent's own message as edited for session actions", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999999@s.whatsapp.net",
+      chatType: "dm",
+    });
+    const own = dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "outbound-edit-1",
+      rawChatId: "5511999999999@s.whatsapp.net",
+      rawSenderId: "5511000000000@s.whatsapp.net",
+      normalizedSenderId: "5511000000000",
+      actorType: "agent",
+      agentId: "dev",
+      messageType: "text",
+      content: { type: "text", text: "texto antigo" },
+      providerTimestamp: 1_700_000_000_000,
+      ingestedAt: 1_700_000_000_100,
+    }).message;
+
+    const edited = dbMarkChatMessageEdited(own.id, "texto novo", 1_700_000_002_000);
+
+    expect(edited?.editedAt).toBe(1_700_000_002_000);
+    expect(edited?.content).toMatchObject({ type: "text", text: "texto novo", editedAt: 1_700_000_002_000 });
+    expect(edited?.rawProvenance?.raviEditHistory).toEqual([
+      { editedAt: 1_700_000_002_000, previousText: "texto antigo", text: "texto novo" },
+    ]);
+    expect(
+      dbFindAgentChatMessageByRef({ agentId: "dev", messageRef: "outbound-edit-1", chatIds: [chat.id] })?.content,
+    ).toMatchObject({ text: "texto novo" });
+  });
+
   it("lists chats and reads messages through the durable ledger", () => {
     const chat = dbUpsertChat({
       channel: "whatsapp",
@@ -259,6 +353,10 @@ describe("identity chat schema", () => {
     expect(messages.total).toBe(2);
     expect(messages.items.map((message) => message.content?.text)).toEqual(["primeira", "segunda"]);
     expect(messages.items[0]?.sortKey).toMatch(/cm_/);
+
+    const contactMessages = dbListChatMessagesPageByContactId({ contactId: "contact_1" });
+    expect(contactMessages.total).toBe(2);
+    expect(contactMessages.items.map((message) => message.content?.text)).toEqual(["segunda", "primeira"]);
   });
 
   it("canonicalizes WhatsApp DM LID and phone chats for the same contact", () => {
