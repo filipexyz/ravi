@@ -233,6 +233,29 @@ describe("tickReadingLists", () => {
     expect(dbIsActiveMember(list.id, chat.id)).toBe(false);
   });
 
+  it("AC-9: concurrent ticks produce zero duplicate active members", async () => {
+    const contact = makeContact("5511200000020", "cobranca");
+    const chat = makeContactChat("5511200000020", contact.id);
+    const list = dbCreateChatReadingList({
+      name: "concurrent-tick-list",
+      mode: "dynamic",
+      selector: { scope: "contact", match: "all", conditions: [{ kind: "has-tag", tag: "cobranca" }] },
+    });
+
+    // Run two ticks in parallel against the same state
+    await Promise.all([
+      tickReadingLists({ apply: true, listId: list.id }),
+      tickReadingLists({ apply: true, listId: list.id }),
+    ]);
+
+    const count = getDb()
+      .prepare(
+        "SELECT COUNT(*) AS n FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL",
+      )
+      .get(list.id, chat.id) as { n: number };
+    expect(count.n).toBe(1);
+  });
+
   it("AC-8: idempotent — re-tick on matched contact does not duplicate member", async () => {
     const contact = makeContact("5511200000004", "cobranca");
     const chat = makeContactChat("5511200000004", contact.id);
