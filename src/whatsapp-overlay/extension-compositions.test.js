@@ -41,9 +41,14 @@ function installChromeStorageMock() {
 
 const chromeStorage = installChromeStorageMock();
 
-const { buildCrmSnapshot, buildSnapshot, buildTasksSnapshot, executeOmniRoute, resolveChatList } = await import(
-  "../../extensions/whatsapp-overlay/lib/compositions.js"
-);
+const {
+  buildCrmSnapshot,
+  buildOmniPanelSnapshot,
+  buildSnapshot,
+  buildTasksSnapshot,
+  executeOmniRoute,
+  resolveChatList,
+} = await import("../../extensions/whatsapp-overlay/lib/compositions.js");
 const { setBindings } = await import("../../extensions/whatsapp-overlay/lib/storage.js");
 const { RaviClient: ExtensionRaviClient } = await import("../../extensions/whatsapp-overlay/lib/sdk/client.js");
 
@@ -308,6 +313,177 @@ describe("whatsapp overlay extension compositions", () => {
       "new-session",
       { allowRuntimeMismatch: true, asJson: true },
     ]);
+  });
+
+  it("honors the editable session name when creating a route-backed session", async () => {
+    const calls = [];
+    const client = {
+      instances: {
+        routes: {
+          show: async (name, pattern) => {
+            calls.push(["show", name, pattern]);
+            throw new Error("not found");
+          },
+          add: async (name, pattern, agent, options) => {
+            calls.push(["add", name, pattern, agent, options]);
+            return { route: { accountId: name, pattern, agent, session: options.session } };
+          },
+        },
+      },
+    };
+
+    const result = await executeOmniRoute(client, {
+      action: "create-session",
+      sessionName: "custom-session",
+      agentId: "dev",
+      chatId: "120363410237809091@g.us",
+      title: "ravi - extension",
+      instance: "main",
+      channel: "whatsapp",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      createdSession: true,
+      binding: {
+        session: "custom-session",
+        agentId: "dev",
+      },
+      snapshot: {
+        session: {
+          sessionName: "custom-session",
+          agentId: "dev",
+        },
+      },
+    });
+    expect(calls[1]).toEqual([
+      "add",
+      "main",
+      "group:120363410237809091",
+      "dev",
+      {
+        allowRuntimeMismatch: true,
+        asJson: true,
+        session: "custom-session",
+        priority: "100",
+        channel: "whatsapp",
+      },
+    ]);
+  });
+
+  it("supports migrating a chat route to a new agent session", async () => {
+    const calls = [];
+    let route = {
+      accountId: "main",
+      pattern: "group:120363410237809091",
+      agent: "dev",
+      session: "old-session",
+      priority: 100,
+      channel: "whatsapp",
+    };
+    const client = {
+      instances: {
+        routes: {
+          show: async (name, pattern) => {
+            calls.push(["show", name, pattern]);
+            return { route };
+          },
+          set: async (name, pattern, key, value, options) => {
+            calls.push(["set", name, pattern, key, value, options]);
+            route = { ...route, [key]: key === "priority" ? Number(value) : value };
+            return { route };
+          },
+        },
+      },
+    };
+
+    const result = await executeOmniRoute(client, {
+      action: "migrate-session",
+      fromSession: "old-session",
+      session: "support-session",
+      agentId: "support",
+      chatId: "120363410237809091@g.us",
+      title: "ravi - extension",
+      instance: "main",
+      channel: "whatsapp",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      migratedSession: true,
+      fromSession: "old-session",
+      binding: {
+        session: "support-session",
+        agentId: "support",
+      },
+      runtimeRoute: {
+        ok: true,
+        action: "updated",
+        route: {
+          agent: "support",
+          session: "support-session",
+        },
+      },
+    });
+    expect(calls).toContainEqual([
+      "set",
+      "main",
+      "group:120363410237809091",
+      "agent",
+      "support",
+      { allowRuntimeMismatch: true, asJson: true },
+    ]);
+  });
+
+  it("loads configured Ravi instances for the overlay profile selector", async () => {
+    const client = {
+      sessions: {
+        list: async () => ({ sessions: [] }),
+      },
+      agents: {
+        list: async () => ({ agents: [] }),
+      },
+      routes: {
+        list: async () => ({ routes: [] }),
+      },
+      instances: {
+        list: async (options) => ({
+          options,
+          instances: [
+            {
+              name: "main",
+              instanceId: "wa-main",
+              channel: "whatsapp",
+              enabled: true,
+              live: { isConnected: true, profileName: "Luis" },
+            },
+            {
+              name: "ops",
+              instanceId: "wa-ops",
+              channel: "whatsapp",
+              enabled: true,
+              live: { isConnected: false, profileName: "Ops" },
+            },
+          ],
+        }),
+      },
+    };
+
+    const snapshot = await buildOmniPanelSnapshot(client, { instance: "ops" });
+
+    expect(snapshot.instances.map((instance) => instance.id)).toEqual(["main", "ops"]);
+    expect(snapshot.instances[0]).toMatchObject({
+      id: "main",
+      name: "main",
+      instanceId: "wa-main",
+      profileName: "Luis",
+      isConnected: true,
+      isActive: true,
+    });
+    expect(snapshot.preferredInstance).toMatchObject({
+      id: "ops",
+      profileName: "Ops",
+    });
   });
 
   it("loads all visible tasks for the workspace and reports status counts", async () => {

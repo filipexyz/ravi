@@ -309,10 +309,11 @@ function buildDispatchState(item, actorSession, dispatchSessions) {
 }
 
 export async function buildOmniPanelSnapshot(client, query) {
-  const [sessionsResult, agentsResult, routesResult, allBindings] = await Promise.all([
+  const [sessionsResult, agentsResult, routesResult, instancesResult, allBindings] = await Promise.all([
     client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
     listAgents(client),
     client.routes.list().catch(() => ({ routes: [] })),
+    listInstances(client),
     getBindings(),
     ensureLiveStateStream().catch(() => false),
   ]);
@@ -320,6 +321,8 @@ export async function buildOmniPanelSnapshot(client, query) {
   const sessions = normalizeSessions(sessionsResult);
   const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), sessions);
   const routes = Array.isArray(routesResult?.routes) ? routesResult.routes : [];
+  const instances = normalizeInstances(instancesResult);
+  const preferredInstance = resolvePreferredInstance(instances, query?.instance);
   const binding = await findBinding({ chatId: query?.chatId, title: query?.title });
 
   return {
@@ -336,7 +339,8 @@ export async function buildOmniPanelSnapshot(client, query) {
     routes,
     sessions: sessions.map(toListEntry),
     agents,
-    instances: [],
+    instances,
+    preferredInstance,
   };
 }
 
@@ -344,7 +348,7 @@ export async function executeOmniRoute(client, body) {
   const action = clean(body?.action);
   if (!action) return { ok: false, error: "Missing action", code: "invalid_action" };
 
-  const session = clean(body?.session);
+  const session = clean(body?.session ?? body?.sessionName);
   const chatId = clean(body?.chatId);
   const title = clean(body?.title);
   const instance = clean(body?.instance);
@@ -373,6 +377,24 @@ export async function executeOmniRoute(client, body) {
       const binding = await upsertBinding({ session: sessionName, agentId, chatId, title, instance, chatType, chatName });
       const snapshot = toSessionSnapshot(createSyntheticBindingSession(binding), binding);
       return { ok: true, createdSession: true, binding, runtimeRoute, snapshot: { session: snapshot } };
+    }
+    case "migrate-session": {
+      if (!agentId || !chatId || !instance) {
+        return { ok: false, error: "agentId, chatId and instance required", code: "invalid_args" };
+      }
+      const sessionName = session || buildSyntheticSessionName(agentId, chatName || title || chatId);
+      const runtimeRoute = await upsertRuntimeChatRoute(client, { session: sessionName, agentId, chatId, instance, channel });
+      if (runtimeRoute?.ok === false) return runtimeRoute;
+      const binding = await upsertBinding({ session: sessionName, agentId, chatId, title, instance, chatType, chatName });
+      const snapshot = toSessionSnapshot(createSyntheticBindingSession(binding), binding);
+      return {
+        ok: true,
+        migratedSession: true,
+        fromSession: clean(body?.fromSession) ?? null,
+        binding,
+        runtimeRoute,
+        snapshot: { session: snapshot },
+      };
     }
     case "unbind": {
       if (!chatId && !title) return { ok: false, error: "chatId or title required", code: "invalid_args" };
@@ -538,6 +560,12 @@ function listAgents(client) {
     : Promise.resolve({ agents: [] });
 }
 
+function listInstances(client) {
+  return client?.instances?.list
+    ? client.instances.list({ asJson: true, limit: "100" }).catch(() => ({ instances: [] }))
+    : Promise.resolve({ instances: [] });
+}
+
 function normalizeAgents(result) {
   const list = Array.isArray(result?.agents)
     ? result.agents
@@ -575,6 +603,69 @@ function mergeAgentsWithSessions(agents, sessions) {
     byId.set(id, { id, name: id, displayName: id, inferred: true });
   }
   return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function normalizeInstances(result) {
+  const list = Array.isArray(result?.instances)
+    ? result.instances
+    : Array.isArray(result?.items)
+      ? result.items
+      : Array.isArray(result)
+        ? result
+        : [];
+  return list
+    .map((instance) => {
+      if (!instance || typeof instance !== "object") return null;
+      const live = instance.live && typeof instance.live === "object" ? instance.live : {};
+      const name = clean(instance.name ?? instance.id);
+      const id = name ?? clean(instance.id ?? instance.instanceId);
+      if (!id) return null;
+      const profileName = clean(instance.profileName ?? live.profileName ?? instance.profile?.name);
+      const instanceId = clean(instance.instanceId);
+      const channel = clean(instance.channel) ?? "whatsapp";
+      const ownerIdentifier = clean(instance.ownerIdentifier ?? instanceId ?? instance.externalId);
+      const phone = clean(instance.phone ?? live.phone ?? instance.defaults?.phone);
+      const enabled = instance.enabled !== false && instance.raviStatus !== "disabled";
+      const isConnected = Boolean(instance.isConnected ?? live.isConnected);
+      const isActive = enabled && Boolean(instance.isActive ?? live.isActive ?? isConnected);
+      return {
+        ...instance,
+        id,
+        name: name ?? id,
+        instanceId,
+        channel,
+        profileName,
+        phone,
+        ownerIdentifier,
+        isConnected,
+        isActive,
+        raviStatus: instance.raviStatus ?? (enabled ? "enabled" : "disabled"),
+        updatedAt: instance.updatedAt ?? live.updatedAt ?? null,
+        lastSeenAt: instance.lastSeenAt ?? live.lastSeenAt ?? null,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (left.isConnected !== right.isConnected) return left.isConnected ? -1 : 1;
+      if (left.isActive !== right.isActive) return left.isActive ? -1 : 1;
+      return left.name.localeCompare(right.name);
+    });
+}
+
+function resolvePreferredInstance(instances, requested) {
+  const preferred = clean(requested);
+  if (preferred) {
+    const exact = instances.find((instance) =>
+      [instance.id, instance.name, instance.instanceId].filter(Boolean).includes(preferred),
+    );
+    if (exact) return exact;
+  }
+  return (
+    instances.find((instance) => instance.isConnected) ??
+    instances.find((instance) => instance.isActive) ??
+    instances[0] ??
+    null
+  );
 }
 
 function normalizeTasks(result) {
