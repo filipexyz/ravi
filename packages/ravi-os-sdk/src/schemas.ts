@@ -2738,6 +2738,10 @@ export const CrmOpportunityCreateInputSchema = {
       "description": "Owner, e.g. agent:main",
       "type": "string"
     },
+    "pipeline": {
+      "description": "Pipeline ID or name (overrides default)",
+      "type": "string"
+    },
     "stage": {
       "description": "Pipeline stage key or ID",
       "type": "string"

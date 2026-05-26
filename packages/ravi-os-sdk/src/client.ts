@@ -1257,6 +1257,7 @@ export class RaviClient {
         currency?: string;
         idempotencyKey?: string;
         owner?: string;
+        pipeline?: string;
         stage?: string;
         value?: string;
       }): Promise<CrmOpportunityCreateReturn> => {

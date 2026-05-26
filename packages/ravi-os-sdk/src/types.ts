@@ -1147,6 +1147,7 @@ export type CrmOpportunityCreateInput = {
   currency?: string;
   idempotencyKey?: string;
   owner?: string;
+  pipeline?: string;
   stage?: string;
   title: string;
   value?: string;
