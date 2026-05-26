@@ -96,7 +96,17 @@ mock.module("../../contacts.js", () => ({
       : null,
   createCrmOpportunity: (input: Record<string, unknown>) => {
     lastOpportunityCreateInput = input;
-    return { id: "crm_opp_1", title: input.title, accountId: input.accountId ?? null };
+    if (input.pipelineRef === "archived-pipeline") throw new Error("CRM pipeline is archived: archived-pipeline");
+    if (input.pipelineRef === "ambiguous-pipeline")
+      throw new Error("Ambiguous pipeline name: ambiguous-pipeline — use pipeline ID to disambiguate");
+    if (input.pipelineRef === "sde-cobranca" && input.stageKey === "stage-other-pipeline")
+      throw new Error("Stage stage-other-pipeline does not belong to pipeline sde-cobranca");
+    return {
+      id: "crm_opp_1",
+      title: input.title,
+      accountId: input.accountId ?? null,
+      pipelineRef: input.pipelineRef ?? null,
+    };
   },
   moveCrmOpportunityStage: (input: Record<string, unknown>) => ({
     id: input.opportunityId,
@@ -407,5 +417,124 @@ describe("CRM commands", () => {
     expect(() => {
       new CrmContactCommands().show("missing-contact", true);
     }).toThrow(/Contact not found: missing-contact/);
+  });
+
+  // AC1: --pipeline without --stage uses pipeline's first stage
+  it("AC1: --pipeline sde-cobranca without --stage passes pipelineRef to service", () => {
+    silenceLogs(() => {
+      new CrmOpportunityCommands().create(
+        "X",
+        undefined,
+        "contact-1",
+        undefined,
+        "100000",
+        undefined,
+        undefined,
+        true,
+        undefined,
+        "sde-cobranca",
+      );
+    });
+    expect(lastOpportunityCreateInput).toMatchObject({ pipelineRef: "sde-cobranca", stageKey: undefined });
+  });
+
+  // AC2: --pipeline + --stage both forwarded to service
+  it("AC2: --pipeline sde-cobranca --stage 1-a-contactar passes both to service", () => {
+    silenceLogs(() => {
+      new CrmOpportunityCommands().create(
+        "X",
+        undefined,
+        "contact-1",
+        "1-a-contactar",
+        "100000",
+        undefined,
+        undefined,
+        true,
+        undefined,
+        "sde-cobranca",
+      );
+    });
+    expect(lastOpportunityCreateInput).toMatchObject({ pipelineRef: "sde-cobranca", stageKey: "1-a-contactar" });
+  });
+
+  // AC3: --stage without --pipeline preserves backward compat (no pipelineRef)
+  it("AC3: --stage without --pipeline sends no pipelineRef (backward compat)", () => {
+    silenceLogs(() => {
+      new CrmOpportunityCommands().create(
+        "X",
+        undefined,
+        "contact-1",
+        "1-a-contactar",
+        "100000",
+        undefined,
+        undefined,
+        true,
+      );
+    });
+    expect(lastOpportunityCreateInput).toMatchObject({ stageKey: "1-a-contactar" });
+    expect(lastOpportunityCreateInput?.pipelineRef).toBeUndefined();
+  });
+
+  // AC4: no --pipeline no --stage still works (backward compat)
+  it("AC4: no --pipeline no --stage creates on default pipeline (backward compat)", () => {
+    silenceLogs(() => {
+      new CrmOpportunityCommands().create("X", undefined, "contact-1", undefined, "100000", undefined, undefined, true);
+    });
+    expect(lastOpportunityCreateInput?.pipelineRef).toBeUndefined();
+    expect(lastOpportunityCreateInput?.stageKey).toBeUndefined();
+  });
+
+  // AC5: archived pipeline rejected by service
+  it("AC5: --pipeline archived-pipeline throws archived error", () => {
+    expect(() => {
+      new CrmOpportunityCommands().create(
+        "X",
+        undefined,
+        "contact-1",
+        undefined,
+        "100000",
+        undefined,
+        undefined,
+        true,
+        undefined,
+        "archived-pipeline",
+      );
+    }).toThrow(/CRM pipeline is archived/);
+  });
+
+  // AC6: stage from wrong pipeline rejected by service
+  it("AC6: --pipeline sde-cobranca --stage from other pipeline throws mismatch error", () => {
+    expect(() => {
+      new CrmOpportunityCommands().create(
+        "X",
+        undefined,
+        "contact-1",
+        "stage-other-pipeline",
+        "100000",
+        undefined,
+        undefined,
+        true,
+        undefined,
+        "sde-cobranca",
+      );
+    }).toThrow(/does not belong to pipeline/);
+  });
+
+  // AC7: ambiguous pipeline name rejected by service
+  it("AC7: --pipeline ambiguous-pipeline throws disambiguation error", () => {
+    expect(() => {
+      new CrmOpportunityCommands().create(
+        "X",
+        undefined,
+        "contact-1",
+        undefined,
+        "100000",
+        undefined,
+        undefined,
+        true,
+        undefined,
+        "ambiguous-pipeline",
+      );
+    }).toThrow(/Ambiguous pipeline name/);
   });
 });

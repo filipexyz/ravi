@@ -468,11 +468,14 @@ export class CrmOpportunityCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated opportunity creation" })
     idempotencyKey?: string,
+    @Option({ flags: "--pipeline <pipeline>", description: "Pipeline ID or name (overrides default)" })
+    pipeline?: string,
   ) {
     const opportunity = createCrmOpportunity({
       title,
       accountId,
       contactRef,
+      pipelineRef: pipeline,
       stageKey: stage,
       valueCents: parseOptionalNumber(value, "value") ?? undefined,
       currency,

@@ -1685,6 +1685,7 @@ export interface CreateCrmOpportunityInput extends CrmMutationOptions {
   title: string;
   accountId?: string | null;
   contactRef?: string | null;
+  pipelineRef?: string | null;
   pipelineId?: string | null;
   stageId?: string | null;
   stageKey?: string | null;
@@ -4421,8 +4422,36 @@ function resolveCrmStage(database: Database, stageRef?: string | null, pipelineI
     : (database
         .prepare("SELECT * FROM crm_pipeline_stages WHERE pipeline_id = ? ORDER BY sort_order LIMIT 1")
         .get(resolvedPipelineId) as CrmPipelineStageRow | undefined);
-  if (!row) throw new Error(`CRM pipeline stage not found: ${ref ?? "default"}`);
+  if (!row) {
+    if (ref && pipelineId) {
+      const inOther = database
+        .prepare("SELECT pipeline_id FROM crm_pipeline_stages WHERE id = ? OR key = ? LIMIT 1")
+        .get(ref, ref) as { pipeline_id: string } | undefined;
+      if (inOther) throw new Error(`Stage ${ref} does not belong to pipeline ${pipelineId}`);
+    }
+    throw new Error(`CRM pipeline stage not found: ${ref ?? "default"}`);
+  }
   return rowToCrmPipelineStage(row);
+}
+
+function resolveCrmPipelineRef(database: Database, ref: string): string {
+  const trimmed = ref.trim();
+  const byId = database.prepare("SELECT id, status FROM crm_pipelines WHERE id = ?").get(trimmed) as
+    | { id: string; status: string }
+    | undefined;
+  if (byId) {
+    if (byId.status === "archived") throw new Error(`CRM pipeline is archived: ${trimmed}`);
+    return byId.id;
+  }
+  const byName = database.prepare("SELECT id, status FROM crm_pipelines WHERE name = ?").all(trimmed) as Array<{
+    id: string;
+    status: string;
+  }>;
+  if (byName.length === 0) throw new Error(`CRM pipeline not found: ${trimmed}`);
+  const active = byName.filter((p) => p.status !== "archived");
+  if (active.length === 0) throw new Error(`CRM pipeline is archived: ${trimmed}`);
+  if (active.length > 1) throw new Error(`Ambiguous pipeline name: ${trimmed} — use pipeline ID to disambiguate`);
+  return active[0].id;
 }
 
 function opportunityStatusForStage(stage: CrmPipelineStage, currentStatus: CrmOpportunityStatus): CrmOpportunityStatus {
@@ -4439,7 +4468,10 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
   const contactId = input.contactRef ? resolveRequiredCanonicalContactId(database, input.contactRef) : null;
   if (!accountId && !contactId) throw new Error("CRM opportunity requires an account or contact target");
   if (accountId) requireCrmAccount(database, accountId);
-  const stage = resolveCrmStage(database, input.stageId ?? input.stageKey, input.pipelineId);
+  const pipelineId = input.pipelineRef
+    ? resolveCrmPipelineRef(database, input.pipelineRef)
+    : (input.pipelineId ?? null);
+  const stage = resolveCrmStage(database, input.stageId ?? input.stageKey, pipelineId);
   const owner = normalizeOptionalCrmOwner({ ownerType: input.ownerType, ownerId: input.ownerId });
   const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
   if (idempotencyKey) {
