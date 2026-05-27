@@ -119,11 +119,13 @@ export function parseRaviCommandInvocation(text: string): RaviCommandInvocationP
     return { kind: "none" };
   }
 
+  const afterHash = trimmedStart.slice(1);
+  if (afterHash.length === 0 || /^\s/.test(afterHash)) {
+    return { kind: "none" };
+  }
+
   const tokenMatch = /^#(\S*)/.exec(trimmedStart);
   const rawName = tokenMatch?.[1] ?? "";
-  if (!rawName) {
-    return { kind: "invalid", originalText, message: "Command name is required after #." };
-  }
   if (!RAVI_COMMAND_NAME_PATTERN.test(rawName)) {
     return {
       kind: "invalid",

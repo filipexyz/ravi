@@ -119,6 +119,36 @@ export class OmniSender {
   }
 
   /**
+   * Delete a channel message sent by the current instance.
+   */
+  async deleteMessage(instanceId: string, to: string, messageId: string): Promise<void> {
+    try {
+      await this.withRetry(
+        () => this.client.messages.deleteChannel({ instanceId, channelId: to, messageId }),
+        `deleteMessage(${instanceId})`,
+      );
+    } catch (err) {
+      log.error("Failed to delete message", { instanceId, to, messageId, error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Edit a channel message sent by the current instance.
+   */
+  async editMessage(instanceId: string, to: string, messageId: string, text: string): Promise<void> {
+    try {
+      await this.withRetry(
+        () => this.client.messages.editChannel({ instanceId, channelId: to, messageId, text }),
+        `editMessage(${instanceId})`,
+      );
+    } catch (err) {
+      log.error("Failed to edit message", { instanceId, to, messageId, error: err });
+      throw err;
+    }
+  }
+
+  /**
    * Send a media file (image, video, document, audio).
    * Reads the file as base64 and sends via omni.
    */

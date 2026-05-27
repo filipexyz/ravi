@@ -48,12 +48,14 @@ import {
   dbBindSessionToChat,
   dbCanonicalizeDmChatForContact,
   dbContactDmNormalizedChatId,
+  dbGetChat,
   dbGetMessageMeta,
   dbSaveMessageMeta,
   dbUpsertChat,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
+  type SessionChatSubscriptionRecord,
 } from "../router/router-db.js";
 import { resetSession } from "../router/sessions.js";
 import {
@@ -1321,18 +1323,40 @@ export class OmniConsumer {
     // on re-routing the same chat.
     // See .ravi/specs/sessions/attach/SPEC.md
     try {
-      const existingPrimaries = listSessionSubscriptions(resolved.sessionKey).filter((s) => s.role === "primary");
-      const role = existingPrimaries.length === 0 ? "primary" : "input";
+      const existingSubscriptions = listSessionSubscriptions(resolved.sessionKey);
+      const existingSubscription = existingSubscriptions.find((s) => s.chatId === canonicalChat.id);
+      const hasPrimary = existingSubscriptions.some((s) => s.role === "primary");
+      const hasOutputTarget = existingSubscriptions.some((s) => s.outputAttachedAt !== undefined);
+      const role = existingSubscription?.role ?? (hasPrimary ? "input" : "primary");
+      const setOutputTarget =
+        existingSubscription?.outputAttachedAt !== undefined ||
+        (!existingSubscription && role === "primary") ||
+        (!hasOutputTarget && role === "primary");
+      const shouldEnableSpeech = setOutputTarget || (!existingSubscription && role === "primary");
       attachChatToSession({
         sessionKey: resolved.sessionKey,
         chatId: canonicalChat.id,
         role,
         attachedByType: "system",
         attachedReason: "inbound-route",
+        speechMode: existingSubscription
+          ? shouldEnableSpeech
+            ? "speak"
+            : undefined
+          : role === "primary"
+            ? "speak"
+            : "muted",
+        speechReason: existingSubscription
+          ? shouldEnableSpeech
+            ? "primary-inbound-route"
+            : undefined
+          : role === "primary"
+            ? "primary-inbound-route"
+            : "listen-only-inbound-route",
         // Inbound routing keeps the subscription index warm, but it must not
         // steal the session's output attachment after an operator attached a
         // different chat as the output surface.
-        setOutputTarget: role === "primary",
+        setOutputTarget,
       });
     } catch (error) {
       // Conflict means the chat is currently attached to another session;
@@ -1534,6 +1558,7 @@ export class OmniConsumer {
       accountId: effectiveAccountId,
       instanceId,
       chatId: chatJid,
+      canonicalChatId: canonicalChat.id,
       ...(threadId ? { threadId } : {}),
       ...(payload.externalId ? { sourceMessageId: payload.externalId } : {}),
       ...effectiveActorMetadata,
@@ -1551,25 +1576,16 @@ export class OmniConsumer {
       return;
     }
 
-    // Origin hint: when the inbound chat is NOT the session's primary
-    // subscription, prepend a line telling the agent whether the chat is
-    // already attached or should be attached for future turns. Silent for
-    // the primary chat so normal turns stay clean. See
-    // .ravi/specs/sessions/attach/SPEC.md (Origin Hint).
+    // Session surface hint: attach makes one session listen to multiple
+    // chats. Every inbound prompt carries source/default/speech state so
+    // the agent can adjust speech internally without exposing routing
+    // mechanics to users. See .ravi/specs/sessions/attach/SPEC.md.
     const subs = listSessionSubscriptions(resolved.sessionKey);
-    const primarySub = subs.find((s) => s.role === "primary");
-    const outputSub = subs.find((s) => s.outputAttachedAt !== undefined);
-    let originHint: string | undefined;
-    if (!primarySub || primarySub.chatId !== canonicalChat.id || outputSub?.chatId !== canonicalChat.id) {
-      const sessionRef = resolved.sessionName ?? resolved.sessionKey;
-      const isAttached = subs.some((s) => s.chatId === canonicalChat.id);
-      const outputPart = outputSub
-        ? `A sessão responde no chat atachado como output (${outputSub.chatId}).`
-        : "A sessão não tem chat de output atachado; resposta externa fica desligada.";
-      originHint = isAttached
-        ? `[origin] inbound veio de ${canonicalChat.id} (subscription da sessão "${sessionRef}"). Este chat já está atachado como input. ${outputPart} Para fazer respostas saírem neste chat: \`ravi sessions attach ${sessionRef} --chat ${canonicalChat.id}\`.`
-        : `[origin] inbound veio de ${canonicalChat.id}, NÃO atachado a "${sessionRef}". ${outputPart} Para atachar esta sessão neste chat e fazer respostas saírem aqui: \`ravi sessions attach ${sessionRef} --chat ${canonicalChat.id}\`.`;
-    }
+    const originHint = this.formatSessionSurfaceHint({
+      sessionRef: resolved.sessionName ?? resolved.sessionKey,
+      sourceChatId: canonicalChat.id,
+      subscriptions: subs,
+    });
 
     const envelope = this.formatEnvelope(
       channelType,
@@ -2349,6 +2365,42 @@ export class OmniConsumer {
     }
 
     return parts.join("\n");
+  }
+
+  private formatSessionSurfaceHint(input: {
+    sessionRef: string;
+    sourceChatId: string;
+    subscriptions: SessionChatSubscriptionRecord[];
+  }): string | undefined {
+    if (input.subscriptions.length === 0) return undefined;
+
+    const sourceSub = input.subscriptions.find((sub) => sub.chatId === input.sourceChatId);
+    const defaultOutputSub = input.subscriptions.find((sub) => sub.outputAttachedAt !== undefined);
+    const sourceSpeech = sourceSub?.speechMode ?? "unattached";
+    const defaultSpeakOutput = defaultOutputSub?.speechMode === "speak";
+    const defaultOutput = defaultSpeakOutput
+      ? `${defaultOutputSub.chatId} speech=${defaultOutputSub.speechMode}`
+      : "none";
+    const surfaces = input.subscriptions
+      .map((sub) => {
+        const chat = dbGetChat(sub.chatId);
+        const title = chat?.title ? ` title=${JSON.stringify(chat.title)}` : "";
+        const output = sub.outputAttachedAt !== undefined ? " defaultOutput=true" : "";
+        return `${sub.chatId} role=${sub.role} speech=${sub.speechMode}${output}${title}`;
+      })
+      .join("; ");
+    const instruction =
+      sourceSub?.speechMode === "muted"
+        ? defaultSpeakOutput
+          ? `source_chat is muted/listen-only. If a public reply must go to source_chat, internally run \`ravi sessions unmute ${input.sessionRef} --chat ${input.sourceChatId}\` before your final response. Otherwise answer normally and Ravi will use the default speak chat.`
+          : `source_chat is muted/listen-only and there is no default speak chat. If a public reply must go to source_chat, internally run \`ravi sessions unmute ${input.sessionRef} --chat ${input.sourceChatId}\` before your final response.`
+        : "source_chat is speak-enabled; a normal response can be emitted there.";
+
+    return [
+      `[session surfaces] session=${input.sessionRef} source_chat=${input.sourceChatId} source_speech=${sourceSpeech} default_speak_chat=${defaultOutput}`,
+      `[session surfaces] ${surfaces}`,
+      `[session surfaces] ${instruction} Do not mention mute, unmute, attach, subscriptions, routing, or output mechanics to users.`,
+    ].join("\n");
   }
 
   private formatEnvelope(

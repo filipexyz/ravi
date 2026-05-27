@@ -4,9 +4,12 @@ import { createContact, getContact, upsertAgentPlatformIdentity } from "./contac
 import { Gateway, SILENT_TOKEN } from "./gateway.js";
 import {
   dbBindSessionToChat,
+  dbFindChatMessage,
+  dbGetChatMessage,
   dbGetMessageMeta,
   dbSaveMessageMeta,
   dbUpsertChat,
+  dbUpsertChatMessage,
   dbUpsertInstance,
 } from "./router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
@@ -35,6 +38,17 @@ type GatewaySend = (
   text: string,
   optionsOrThreadId?: GatewaySendOptions,
 ) => Promise<unknown>;
+type MessageDeleteEventData = {
+  channel?: string;
+  accountId: string;
+  chatId: string;
+  messageId: string;
+  canonicalMessageId?: string;
+  replyTopic?: string;
+};
+type MessageEditEventData = MessageDeleteEventData & {
+  text: string;
+};
 
 let stateDir: string | null = null;
 
@@ -70,6 +84,8 @@ function makeGateway(
     clearActiveTarget?: () => void;
     renewActiveTarget?: () => Promise<boolean>;
     sendTyping?: (instanceId: string, chatId: string, active?: boolean) => Promise<void>;
+    deleteMessage?: (instanceId: string, chatId: string, messageId: string) => Promise<void>;
+    editMessage?: (instanceId: string, chatId: string, messageId: string, text: string) => Promise<void>;
   } = {},
 ) {
   const gateway = new Gateway({
@@ -77,6 +93,8 @@ function makeGateway(
       send,
       sendTyping: overrides.sendTyping ?? mock(async () => {}),
       sendReaction: mock(async () => {}),
+      deleteMessage: overrides.deleteMessage ?? mock(async () => {}),
+      editMessage: overrides.editMessage ?? mock(async () => {}),
       sendMedia: mock(async () => ({})),
       markRead: mock(async () => {}),
     } as never,
@@ -109,6 +127,22 @@ async function handleResponse(gateway: unknown, sessionName: string, response: R
       handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void>;
     }
   ).handleResponseEvent(sessionName, response);
+}
+
+async function handleMessageDelete(gateway: unknown, data: MessageDeleteEventData): Promise<void> {
+  await (
+    gateway as {
+      handleMessageDeleteEvent(data: MessageDeleteEventData): Promise<void>;
+    }
+  ).handleMessageDeleteEvent(data);
+}
+
+async function handleMessageEdit(gateway: unknown, data: MessageEditEventData): Promise<void> {
+  await (
+    gateway as {
+      handleMessageEditEvent(data: MessageEditEventData): Promise<void>;
+    }
+  ).handleMessageEditEvent(data);
 }
 
 async function wait(ms: number): Promise<void> {
@@ -217,6 +251,140 @@ describe("Gateway session trace instrumentation", () => {
       agentId: "main",
       platformIdentityId: agentIdentity.id,
     });
+    expect(
+      dbFindChatMessage({
+        channel: "whatsapp-baileys",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: chat.id,
+        providerMessageId: "outbound-1",
+      }),
+    ).toMatchObject({
+      chatId: chat.id,
+      actorType: "agent",
+      agentId: "main",
+      platformIdentityId: agentIdentity.id,
+      providerMessageId: "outbound-1",
+      content: { type: "text", text: "hello back" },
+    });
+  });
+
+  it("deletes an own outbound message through omni and marks the canonical message row", async () => {
+    const { sessionKey } = seedSession();
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      platformChatId: "120363000000000000@g.us",
+      chatType: "group",
+    });
+    dbBindSessionToChat({
+      sessionKey,
+      chatId: chat.id,
+      agentId: "main",
+      bindingReason: "test_delete_own_outbound",
+    });
+    const own = dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      providerMessageId: "outbound-delete-1",
+      rawChatId: "120363000000000000@g.us",
+      rawSenderId: "5511000000000@s.whatsapp.net",
+      normalizedSenderId: "5511000000000",
+      actorType: "agent",
+      agentId: "main",
+      messageType: "text",
+      content: { type: "text", text: "mensagem errada" },
+    }).message;
+    const deleteMessage = mock(async () => {});
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "unused" })),
+      { deleteMessage },
+    );
+
+    await handleMessageDelete(gateway, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:120363000000000000",
+      messageId: "outbound-delete-1",
+      canonicalMessageId: own.id,
+      replyTopic: "ravi._reply.test-delete",
+    });
+
+    expect(deleteMessage).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363000000000000@g.us",
+      "outbound-delete-1",
+    );
+    expect(dbGetChatMessage(own.id)?.deletedAt).toBeTruthy();
+    expect(emitted).toContainEqual([
+      "ravi._reply.test-delete",
+      expect.objectContaining({
+        success: true,
+        messageId: "outbound-delete-1",
+        canonicalMessageId: own.id,
+      }),
+    ]);
+  });
+
+  it("edits an own outbound message through omni and updates the canonical message row", async () => {
+    const { sessionKey } = seedSession();
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      platformChatId: "120363000000000000@g.us",
+      chatType: "group",
+    });
+    dbBindSessionToChat({
+      sessionKey,
+      chatId: chat.id,
+      agentId: "main",
+      bindingReason: "test_edit_own_outbound",
+    });
+    const own = dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      providerMessageId: "outbound-edit-1",
+      rawChatId: "120363000000000000@g.us",
+      rawSenderId: "5511000000000@s.whatsapp.net",
+      normalizedSenderId: "5511000000000",
+      actorType: "agent",
+      agentId: "main",
+      messageType: "text",
+      content: { type: "text", text: "mensagem errada" },
+    }).message;
+    const editMessage = mock(async () => {});
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "unused" })),
+      { editMessage },
+    );
+
+    await handleMessageEdit(gateway, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:120363000000000000",
+      messageId: "outbound-edit-1",
+      canonicalMessageId: own.id,
+      text: "mensagem corrigida",
+      replyTopic: "ravi._reply.test-edit",
+    });
+
+    expect(editMessage).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363000000000000@g.us",
+      "outbound-edit-1",
+      "mensagem corrigida",
+    );
+    expect(dbGetChatMessage(own.id)?.content).toMatchObject({ text: "mensagem corrigida" });
+    expect(dbGetChatMessage(own.id)?.editedAt).toBeTruthy();
+    expect(emitted).toContainEqual([
+      "ravi._reply.test-edit",
+      expect.objectContaining({
+        success: true,
+        messageId: "outbound-edit-1",
+        canonicalMessageId: own.id,
+      }),
+    ]);
   });
 
   it("updates outbound interaction projection only for resolved DM contact targets", async () => {
