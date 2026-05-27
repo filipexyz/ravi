@@ -7033,6 +7033,295 @@ export const RulesSourcesInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `runtime.credentials.add`. */
+export const RuntimeCredentialsAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Comma-separated agent allowlist",
+      "type": "string"
+    },
+    "authMethod": {
+      "description": "Auth method, e.g. claude-oauth, api-key, codex-profile",
+      "type": "string"
+    },
+    "authProfile": {
+      "description": "Provider-native auth profile path",
+      "type": "string"
+    },
+    "label": {
+      "description": "Human label that does not contain secrets",
+      "type": "string"
+    },
+    "models": {
+      "description": "Comma-separated model allowlist",
+      "type": "string"
+    },
+    "notes": {
+      "description": "Operator notes, without secrets",
+      "type": "string"
+    },
+    "priority": {
+      "description": "Selection priority (higher first)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id, e.g. claude, codex, pi",
+      "type": "string"
+    },
+    "readOnly": {
+      "description": "Mark the source as external/read-only in notes",
+      "type": "boolean"
+    },
+    "remoteForward": {
+      "description": "Allow selected target env vars to be forwarded to remote workers",
+      "type": "boolean"
+    },
+    "secretEnv": {
+      "description": "Comma-separated source env vars holding secrets",
+      "type": "string"
+    },
+    "targetEnv": {
+      "description": "Comma-separated provider-facing env vars",
+      "type": "string"
+    },
+    "taskProfiles": {
+      "description": "Comma-separated task profile allowlist",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Upstream provider id, e.g. anthropic, openai",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.classify`. */
+export const RuntimeCredentialsClassifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credential": {
+      "description": "Credential id to update",
+      "type": "string"
+    },
+    "headers": {
+      "description": "Provider response headers as JSON object",
+      "type": "string"
+    },
+    "message": {
+      "description": "Provider error message",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id",
+      "type": "string"
+    },
+    "providerCode": {
+      "description": "Provider error code",
+      "type": "string"
+    },
+    "providerType": {
+      "description": "Provider error type",
+      "type": "string"
+    },
+    "record": {
+      "description": "Record the failure against --credential",
+      "type": "boolean"
+    },
+    "status": {
+      "description": "HTTP status code",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Upstream provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.disable`. */
+export const RuntimeCredentialsDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.enable`. */
+export const RuntimeCredentialsEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.import`. */
+export const RuntimeCredentialsImportInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fromClaudeCode": {
+      "description": "Reference the default Claude Code OAuth profile",
+      "type": "boolean"
+    },
+    "fromCodexHome": {
+      "description": "Reference a Codex CODEX_HOME profile",
+      "type": "string"
+    },
+    "label": {
+      "description": "Human label that does not contain secrets",
+      "type": "string"
+    },
+    "managedRefresh": {
+      "description": "Allow future provider-specific refresh/write-back",
+      "type": "boolean"
+    },
+    "provider": {
+      "description": "Runtime provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.list`. */
+export const RuntimeCredentialsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include disabled credentials",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching credentials to skip (default: 0)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by runtime provider",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by credential status",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Filter by upstream provider",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.refresh`. */
+export const RuntimeCredentialsRefreshInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id for pool refresh",
+      "type": "string"
+    },
+    "force": {
+      "description": "Attempt provider hook even when health does not require it",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model selector for pool refresh",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id for pool refresh",
+      "type": "string"
+    },
+    "taskProfile": {
+      "description": "Task profile id for pool refresh",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Upstream provider id for pool refresh",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.reset-health`. */
+export const RuntimeCredentialsResetHealthInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.select`. */
+export const RuntimeCredentialsSelectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model selector",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id",
+      "type": "string"
+    },
+    "taskProfile": {
+      "description": "Task profile id",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Upstream provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.status`. */
+export const RuntimeCredentialsStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sdk.client.check`. */
 export const SdkClientCheckInputSchema = {
   "additionalProperties": false,

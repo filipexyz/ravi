@@ -1,5 +1,6 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
+import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
 import type {
   RuntimeEventMetadata,
@@ -96,6 +97,8 @@ export interface RuntimeHostStreamingSession {
   traceRunId?: string;
   /** Pending message ids yielded to the currently active provider turn. */
   currentTurnPendingIds?: string[];
+  /** Whether the current provider turn has started at least one tool. Used to block unsafe replay. */
+  currentTurnToolStarted?: boolean;
   /** Current Session Trace turn ID while a provider turn is active. */
   currentTraceTurnId?: string;
   currentTraceTurnStartedAt?: number;
@@ -103,6 +106,8 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
+  /** Managed runtime credential selected for this provider process, if any. */
+  currentRuntimeCredential?: RuntimeCredentialAttemptBinding;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
 }
@@ -130,6 +135,28 @@ export function stashPendingRuntimeMessages(
     sessionName,
     session.pendingMessages.map((message) => ({ ...message })),
   );
+}
+
+export function stashCurrentTurnRuntimeMessages(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+  stashedMessages: Map<string, RuntimeUserMessage[]>,
+): number {
+  const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
+  if (currentTurnPendingIds.size === 0) {
+    return 0;
+  }
+
+  const messages = session.pendingMessages
+    .filter((message) => message.pendingId && currentTurnPendingIds.has(message.pendingId))
+    .map((message) => ({ ...message }));
+
+  if (messages.length === 0) {
+    return 0;
+  }
+
+  stashedMessages.set(sessionName, messages);
+  return messages.length;
 }
 
 export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSession, reason?: string): void {

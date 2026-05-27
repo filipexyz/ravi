@@ -22,12 +22,18 @@ applies_to:
   - src/runtime/runtime-request-builder.ts
   - src/runtime/runtime-request-context.ts
   - src/runtime/runtime-provider-bootstrap.ts
+  - src/runtime/credential-pool.ts
+  - src/runtime/credential-refresh.ts
+  - src/runtime/credential-resolver.ts
+  - src/runtime/credential-classifier.ts
+  - src/runtime/credential-store.ts
   - src/runtime/host-env.ts
   - src/runtime/host-event-loop.ts
   - src/runtime/claude-provider.ts
   - src/runtime/codex-provider.ts
   - src/runtime/pi-provider.ts
   - src/router/router-db.ts
+  - src/cli/commands/runtime-credentials.ts
   - src/cli/commands/settings.ts
 owners:
   - ravi-dev
@@ -48,8 +54,8 @@ Credential fallback is a runtime/provider concern. Routes, sessions, tasks, chan
 - `claude` passes a provider env into the Claude Code SDK query. Ravi primarily uses Claude Code subscription/OAuth credentials through `CLAUDE_CODE_OAUTH_TOKEN`. `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, cloud-provider env, and `apiKeyHelper` are secondary/specialized auth methods for Anthropic API, enterprise/cloud, or explicit operator configuration.
 - `codex` runs a subprocess app-server. Codex authentication can be cached under `CODEX_HOME` or OS credential storage. Custom Codex model providers may also rely on an `env_key`, but Ravi's current app-server env signature only treats `RAVI_*`, `CODEX_HOME`, and `PATH` as process-restart inputs.
 - `pi` runs a subprocess RPC and passes `input.env` into the Pi process. Pi model selectors are `provider/model`, with a default upstream provider from `RAVI_PI_PROVIDER`, `PI_PROVIDER`, or `openai`.
-- No provider currently emits a canonical credential failure shape. Failures become generic `turn.failed` strings plus optional raw provider payloads.
-- No runtime table exists for provider credential pools, health, cooldowns, or attempt history.
+- Provider adapters still do not all emit a rich canonical credential failure shape. The host classifies available `turn.failed` strings plus optional raw provider payloads.
+- Runtime credential metadata, secret bindings, health, attempts, and provider health now have first-class SQLite tables. Pool policy is currently represented on credential records; a separate pool table remains optional future normalization.
 
 ## Terminology
 
@@ -61,6 +67,10 @@ Credential fallback is a runtime/provider concern. Routes, sessions, tasks, chan
 - **Secret binding**: A mapping from one secret reference to the provider-facing destination that will receive it during an attempt.
 - **Attempt binding**: The in-memory, redacted runtime binding produced by resolving a credential slot for one provider attempt.
 - **Attempt**: One model turn using one credential slot.
+- **Provider-native profile**: A credential profile owned by an upstream tool or SDK, such as Claude Code OAuth storage or Codex `CODEX_HOME`.
+- **External credential source**: A readable source that Ravi does not own, such as process env, OS keychain, provider profile files, or a helper command.
+- **Active provider**: The runtime/upstream provider selected by agent/task policy. This is not the same thing as the currently selected credential slot.
+- **Selected credential**: The concrete credential slot resolved for one attempt.
 
 ## Credential Metadata
 
@@ -79,13 +89,19 @@ interface RuntimeCredential {
   priority: number;
   weight?: number;
   enabled: boolean;
-  status: "healthy" | "cooldown" | "exhausted" | "invalid" | "disabled" | "unknown";
+  status: "healthy" | "cooldown" | "exhausted" | "invalid" | "needs_reauth" | "disabled" | "unknown";
   authMethod?: string;
   sessionCompatibilityKey?: string;
+  sourceKind?: "env" | "provider-profile" | "os-keychain" | "helper" | "ravi-secret" | "plaintext-file";
+  strategyHint?: "fill_first" | "round_robin" | "random" | "least_used";
   secretBindings: RuntimeCredentialSecretBinding[];
   authProfileRef?: string;
   sensitiveEnvKeys?: string[];
   remoteForwardEnvKeys?: string[];
+  lastErrorCode?: string;
+  lastErrorReason?: string;
+  lastErrorMessageRedacted?: string;
+  resetAt?: number;
   notes?: string;
   createdAt: number;
   updatedAt: number;
@@ -93,6 +109,7 @@ interface RuntimeCredential {
 
 interface RuntimeCredentialSecretBinding {
   id?: string;
+  sourceKind: "env" | "provider-profile" | "provider-config" | "keychain" | "helper" | "ravi-secret" | "plaintext-file";
   targetKind: "env" | "auth-profile" | "provider-config";
   targetName: string;
   secretRef: RuntimeSecretRef;
@@ -116,6 +133,10 @@ Credentials that require multiple secret values MUST use multiple `secretBinding
 
 If a CLI accepts a raw secret value, it MUST store it in a secret backend and write only secret binding/ref metadata to the router database. A plaintext local file fallback MUST require explicit operator opt-in, file mode `0600`, and redacted CLI output.
 
+Ravi MAY import or reference provider-native auth stores, but it MUST model them as explicit credential slots. Importing `~/.codex/auth.json`, Claude Code OAuth storage, OS keychain credentials, or another external profile MUST NOT become invisible process-env magic. The imported or referenced slot needs a credential id, source kind, redacted fingerprint, health state, and session compatibility key.
+
+When an external provider-native store has fresher OAuth state than Ravi's recorded metadata, the resolver MAY adopt or sync that state before spending a stale refresh token. That sync MUST be provider-specific, locked, atomic, redacted, and traceable. A refresh side effect MUST NOT silently change the agent's active provider or select a different account than the selected credential slot.
+
 ## Storage
 
 The implementation SHOULD add first-class storage instead of overloading `settings`:
@@ -125,8 +146,19 @@ The implementation SHOULD add first-class storage instead of overloading `settin
 - `runtime_credential_secret_bindings`: credential id, target kind/name, secret ref, source hint, redaction/sensitivity metadata.
 - `runtime_credential_health`: credential id, last success/failure, last limit signal, cooldown until, reset at, consecutive failures, counters.
 - `runtime_credential_attempts`: attempt id, session key/name, run id, turn id, provider, model, credential id, status, classifier result, started/completed timestamps.
+- `runtime_provider_health`: runtime provider, upstream provider, optional project/org/model scope, unhealthy kind, cooldown until, last request id, redacted reason.
 
 `settings` MAY keep feature flags or default policy knobs, but credential records MUST be queryable without parsing unrelated setting keys.
+
+Credential metadata storage MUST distinguish:
+
+- selected credential health from provider health;
+- active provider configuration from the selected credential slot;
+- Ravi-owned secrets from provider-native profiles;
+- source secret locations from provider-facing target names;
+- persistent state from per-attempt resolved env.
+
+The metadata store MUST support atomic updates under concurrent attempts. If two turns fail around the same time, Ravi MUST mark the credential id or fingerprint that actually failed, not whichever slot happens to be active when the failure handler runs.
 
 ## Selection
 
@@ -143,6 +175,7 @@ Before a provider attempt starts, the runtime host MUST call a credential resolv
 
 The resolver MUST:
 
+- prefer an explicit attempt/session/task credential binding over all implicit discovery paths;
 - filter disabled, invalid, exhausted, or cooldown credentials unless an explicit force option is used;
 - filter by runtime provider, upstream provider, model allow/deny lists, agent allow lists, and task profile allow lists;
 - prefer higher priority, then lower active concurrency, then older `lastUsedAt`, then deterministic id order;
@@ -155,6 +188,45 @@ The resolver MUST:
 The resolver MAY implement weighted round-robin after priority filtering. It MUST be deterministic enough for tests and incident review.
 
 If no credential is configured for a provider, Ravi MUST keep current behavior and use the process/provider default auth path. Fallback becomes active only when a pool exists or an agent/session explicitly opts into credential management.
+
+Implicit process env fallback MUST be compatibility behavior, not pool behavior. Once a managed pool exists for a provider scope, env/profile fallback is eligible only if it is represented as a managed read-only credential slot or the pool policy explicitly allows legacy fallback. This prevents an untracked `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or provider profile from overriding the credential selected by Ravi.
+
+Provider-native discovered credentials MAY be selected only when the runtime provider is explicitly selected or the pool policy explicitly includes that provider. Cross-provider auto-discovery MUST NOT pick an installed tool's credential just because it exists on disk.
+
+The resolver SHOULD support these pool strategies after filtering: `fill_first`, `round_robin`, `random`, and `least_used`. The first implementation MAY ship only `fill_first` and `least_used`, but the persisted policy shape must leave room for the others.
+
+## Refresh And Rotation
+
+Ravi MUST try recovery inside the selected runtime/upstream provider before crossing provider boundaries:
+
+1. Use the selected credential for the first attempt.
+2. If the failure is auth-related and the credential has a refresh hook, attempt provider-specific refresh for that credential.
+3. If refresh succeeds, retry the same provider with the refreshed credential and a new attempt boundary.
+4. If refresh fails terminally, mark that credential `needs_reauth` or `invalid`.
+5. If the failure is retryable by credential, rotate to the next eligible credential in the same provider pool.
+6. Only after same-provider candidates are exhausted should Ravi evaluate a configured cross-provider fallback chain.
+
+Refresh hooks MUST be provider-local and explicit. Claude Code OAuth, Codex auth profiles, API-key providers, and Pi upstream providers do not share one refresh algorithm. A provider hook may read or update provider-native auth storage only when that storage is the selected credential's source of truth or the credential explicitly allows managed sync.
+
+The generic refresh layer MUST run before pool selection. It MAY recover expired `cooldown` or reset-window `exhausted` credentials without a provider hook by clearing health after the provider reset window has elapsed. It MUST return `unsupported` for credentials that require provider-specific refresh when no hook is registered, rather than silently marking them healthy.
+
+When a retryable credential failure happens before any unsafe side effect is committed, Ravi SHOULD stash the materialized turn input, refresh or recover the failed slot when possible, close the current runtime process, and restart the same session so pool selection can choose the refreshed credential or the next eligible same-provider credential. This retry path MUST NOT emit a user-visible intermediate provider error before the replay attempt.
+
+OAuth refresh operations MUST be protected by a lock at the credential/profile boundary because refresh tokens may be single-use. If a concurrent process refreshes first and the external store now contains fresher tokens, Ravi SHOULD adopt the fresher state instead of retrying with the stale refresh token.
+
+A refresh failure MUST NOT reseed the same dead token into the pool. The slot must carry `lastErrorCode`, `lastErrorReason`, `lastErrorMessageRedacted`, and a terminal or cooldown status so later attempts skip it until recovery.
+
+The failed credential MUST be identified by the attempt binding's credential id, redacted fingerprint, or provider-reported key hint. Ravi MUST NOT mark "current credential" after the fact without proving it is the same slot that produced the failure.
+
+## Limit Pressure
+
+Ravi SHOULD classify near-limit signals before a hard failure when provider headers or events expose remaining quota. The classifier should preserve provider limiter dimensions such as requests, tokens, input tokens, output tokens, daily quota, monthly spend, or upstream-specific windows.
+
+When a credential is near a configured threshold, Ravi MAY rotate the next attempt to another eligible same-provider credential without marking the current credential invalid. If provider reset data exists, Ravi SHOULD set a soft cooldown or `resetAt` so the credential can re-enter the pool automatically. This is a pool health decision, not a cross-provider fallback decision.
+
+Near-limit signals that are not hard failures SHOULD be recorded as soft cooldown/pressure, not as authentication or quota failure. Hard 429/402/401 failures still use failure classification and health transitions.
+
+Near-limit rotation MUST still respect session compatibility. If changing credentials would make provider session resume unsafe, the runtime must either start a fresh provider attempt/session or keep the current credential until the active turn ends.
 
 ## Provider Session Continuity
 
@@ -170,6 +242,8 @@ When a managed credential is selected, Ravi MUST persist redacted credential con
 - `upstreamProvider`
 - `model`
 - timestamp of last successful turn
+
+The persisted shape is `runtimeSessionParams.runtimeCredential`. It MUST contain only redacted/non-secret metadata. `resolvedEnv`, source secret refs, raw API keys, OAuth tokens, and provider profile contents MUST NOT be stored there.
 
 `authMethod` and `sessionCompatibilityKey` MAY be persisted operator metadata or derived by provider-local credential binding code. When derived, the derivation MUST be deterministic from non-secret metadata such as credential id, auth profile ref, target provider, or an operator-defined account id.
 
@@ -396,8 +470,19 @@ Default limits:
 - `defaultRateLimitCooldownMs`: from `Retry-After` or reset header when present, otherwise 60 seconds
 - `quotaExhaustedCooldownMs`: operator configured, default until next day boundary or manual reset
 - `authInvalidCooldownMs`: no automatic retry for same credential until manual re-enable or successful preflight
+- `providerUnhealthyCooldownMs`: from provider retry/reset data when present, otherwise 60 seconds for transient overload and operator-configured duration for billing/project failures
 
 Retry attempts MUST NOT duplicate durable user messages. They are trace attempts for one Ravi turn, not new chat messages.
+
+## Cross-Provider Fallback
+
+Cross-provider fallback MUST be explicit policy. A provider pool may define a `fallbackChain` of runtime/upstream/model targets, but Ravi MUST NOT infer a global chain from installed credentials alone.
+
+For automatic mode, Ravi MAY evaluate a default provider chain only when the agent/session has opted into automatic cross-provider fallback. For explicit provider mode, Ravi MAY use only the configured fallback chain for that provider/task, and MAY fall back to the agent's main runtime model only when that policy says so.
+
+Ravi MUST skip provider targets that are in `runtime_provider_health` cooldown. Provider-level `billing_blocked`, `quota_exhausted`, shared capacity exhaustion, or repeated overload should prevent repeated doomed RTTs during the cooldown window, without disabling individual credentials unless provider data identifies the credential/account as the failing resource.
+
+Ravi MUST NOT cross-provider fallback for `invalid_request`, `context_limit`, safety refusal, unsupported tool schema, or other request-shape errors unless a future policy explicitly says a different provider can satisfy the same request shape.
 
 ## Health State Transitions
 
@@ -418,10 +503,15 @@ Ravi MUST emit and trace credential fallback events with redacted metadata:
 - `runtime.credential.selected`
 - `runtime.credential.failure_classified`
 - `runtime.credential.cooldown_started`
+- `runtime.credential.refreshed`
+- `runtime.credential.refresh_failed`
+- `runtime.credential.rotated`
 - `runtime.credential.retry_scheduled`
 - `runtime.credential.exhausted`
 - `runtime.credential.recovered`
 - `runtime.credential.pool_empty`
+- `runtime.provider.unhealthy`
+- `runtime.provider.fallback_attempted`
 
 Event payloads MUST include credential id, label, fingerprint, provider, upstream provider, model, attempt number, classifier kind, confidence, cooldown/reset timestamps, and request id when available. Event payloads MUST NOT include raw secret values.
 
@@ -470,15 +560,16 @@ JSON output MUST redact secrets and include enough health data for automation.
 
 ## Implementation Plan
 
-1. Add canonical types for credential bindings, failure signals, classifier results, health transitions, session compatibility, dynamic sensitive env keys, and redacted trace payloads.
+1. Add canonical types for credential bindings, pool policy, failure signals, classifier results, health transitions, session compatibility, dynamic sensitive env keys, provider health, and redacted trace payloads.
 2. Add provider failure classifiers with fixture tests for OpenAI, Anthropic, Google/Vertex, OpenRouter, Groq, Codex app-server, and Pi RPC.
 3. Add SQLite metadata tables and CLI management commands under `ravi runtime credentials`.
-4. Add credential secret binding resolution, env/profile injection, and dynamic secret sanitizer inputs into `buildRuntimeStartRequest`.
-5. Add provider session continuity checks before `resume`, `resumeSession`, or `forkSession`.
-6. Extend provider adapters to attach selected credential metadata to events and expose structured failure signals.
-7. Add safe credential attempt orchestration before user-visible terminal failure emission, with no automatic replay after tool start.
-8. Add Claude remote-spawn credential forwarding rules and Codex app-server respawn rules.
-9. Add status/preflight checks and operational runbook.
+4. Add credential secret binding resolution, env/profile injection, provider-native discovery/import, and dynamic secret sanitizer inputs into `buildRuntimeStartRequest`.
+5. Add same-provider refresh/rotation orchestration before cross-provider fallback.
+6. Add provider session continuity checks before `resume`, `resumeSession`, or `forkSession`.
+7. Extend provider adapters to attach selected credential metadata to events and expose structured failure signals.
+8. Add safe credential attempt orchestration before user-visible terminal failure emission, with no automatic replay after tool start.
+9. Add Claude remote-spawn credential forwarding rules and Codex app-server respawn rules.
+10. Add status/preflight checks and operational runbook.
 
 ## Validation
 
@@ -492,6 +583,8 @@ JSON output MUST redact secrets and include enough health data for automation.
 - Claude remote-spawn tests MUST prove only selected `remoteForwardEnvKeys` are forwarded and unsupported auth methods are rejected for remote agents.
 - Pi tests MUST prove upstream provider/model metadata is preserved in failure classification.
 - Dynamic sanitizer tests MUST prove provider secret env names not present in the built-in sanitizer list are removed from shell/tool env and redacted from events/traces.
+- Pool tests MUST prove same-provider refresh/rotation happens before cross-provider fallback.
+- Provider health tests MUST prove unhealthy provider cooldown skips provider attempts without disabling individual credentials.
 - CLI tests MUST prove JSON redaction and admin-only mutation behavior.
 
 ## Known Failure Modes
@@ -506,3 +599,7 @@ JSON output MUST redact secrets and include enough health data for automation.
 - Retrying by reading the next prompt from the live async generator instead of replaying the failed attempt input.
 - Hiding credential exhaustion behind generic `turn.failed`, making operators unable to fix pools.
 - String-matching localized or provider-changed error messages without confidence metadata.
+- Marking the wrong slot because failure handling looks at the pool's current selection instead of the attempt binding.
+- Letting implicit process env override a managed credential slot.
+- Refreshing an external provider-native token without locking or without syncing fresher external state first.
+- Switching active provider as a side effect of refreshing or rotating a credential.
