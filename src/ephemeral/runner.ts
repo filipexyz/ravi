@@ -10,8 +10,10 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
-import { dbCleanupMessageMeta, dbCleanupExpiredSessions, dbPruneStaleRows } from "../router/router-db.js";
+import { dbCleanupMessageMeta, dbCleanupExpiredSessions, dbPruneStaleRows, getDb } from "../router/router-db.js";
 import { rollupDailyMetrics } from "../metrics/rollup.js";
+import { isTaskSessionName } from "../runtime/session-pool.js";
+import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 
 const log = logger.child("ephemeral");
 
@@ -96,6 +98,38 @@ Sem ação = sessão será excluída automaticamente.`;
     const cleaned = dbCleanupMessageMeta();
     if (cleaned > 0) {
       log.info("Cleaned up old message metadata", { count: cleaned });
+    }
+
+    // 4. Reap orphaned task sessions: pool zombies whose tasks are terminal.
+    // Covers NATS-miss window after daemon restart (RC1/RC2 from Issue #71).
+    try {
+      const db = getDb();
+      const sessionRows = db.prepare("SELECT name FROM sessions WHERE ephemeral = 1 AND name IS NOT NULL").all() as {
+        name: string;
+      }[];
+      const orphanedSlots: string[] = [];
+      for (const { name: sessionName } of sessionRows) {
+        if (!isTaskSessionName(sessionName)) continue;
+        if (!dbHasActiveTaskForSession(sessionName, undefined)) {
+          orphanedSlots.push(sessionName);
+        }
+      }
+      for (const sessionName of orphanedSlots) {
+        await nats.emit("ravi.session.abort", {
+          sessionKey: sessionName,
+          sessionName,
+          source: "ephemeral-runner",
+          action: "orphan-reap",
+          reason: "task_terminal_no_active_task",
+          actor: "system",
+        });
+        log.info("Reaped orphaned task session", { sessionName });
+      }
+      if (orphanedSlots.length > 0) {
+        log.info("Task session orphan reap complete", { count: orphanedSlots.length });
+      }
+    } catch (err) {
+      log.error("Task session orphan reap failed", err);
     }
   } catch (err) {
     log.error("Ephemeral cleanup tick failed", err);

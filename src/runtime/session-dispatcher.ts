@@ -37,6 +37,7 @@ import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-ru
 import {
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
+  isTaskSessionName,
   resolveRuntimeStreamingSession,
   type RuntimeSessionPoolSnapshot,
   type RuntimeStreamingSessionIdentity,
@@ -1361,6 +1362,30 @@ export class RuntimeSessionDispatcher {
       });
 
     return "accepted";
+  }
+
+  /** Post-restart audit: abort pool slots whose tasks completed during the NATS reconnection
+   * window after daemon restart. Call once ~30s after startup to catch zombies (Issue #71 RC2). */
+  async auditTaskSessionsPostRestart(): Promise<void> {
+    const orphaned: string[] = [];
+    for (const [sessionName] of this.streamingSessions) {
+      if (!isTaskSessionName(sessionName)) continue;
+      if (!dbHasActiveTaskForSession(sessionName, undefined)) {
+        orphaned.push(sessionName);
+      }
+    }
+    log.info("Post-restart task session audit", {
+      checked: this.streamingSessions.size,
+      zombies: orphaned.length,
+    });
+    for (const sessionName of orphaned) {
+      this.abortSession(sessionName, {
+        source: "session-dispatcher",
+        action: "post-restart-audit",
+        reason: "task_terminal_no_active_task",
+        actor: "system",
+      });
+    }
   }
 }
 

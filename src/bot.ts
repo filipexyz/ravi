@@ -102,15 +102,22 @@ export class RaviBot {
     try {
       const { recoverActiveTasksAfterRestart } = await import("./tasks/service.js");
       const recovery = await recoverActiveTasksAfterRestart();
-      if (recovery.recoveredTaskIds.length === 0 && recovery.skipped.length === 0) {
-        return;
+      if (recovery.recoveredTaskIds.length > 0 || recovery.skipped.length > 0) {
+        log.info("Recovered active tasks after restart", {
+          recovered: recovery.recoveredTaskIds,
+          skipped: recovery.skipped,
+        });
       }
-      log.info("Recovered active tasks after restart", {
-        recovered: recovery.recoveredTaskIds,
-        skipped: recovery.skipped,
-      });
     } catch (error) {
       log.error("Failed to recover active tasks after restart", { error });
+    }
+    // Post-restart audit: abort sessions whose tasks completed during the NATS reconnection
+    // window (~0-5min after restart). Delayed to let re-resumed sessions enter the pool first.
+    await new Promise<void>((resolve) => setTimeout(resolve, 30_000));
+    try {
+      await this.sessionDispatcher.auditTaskSessionsPostRestart();
+    } catch (error) {
+      log.error("Post-restart task session audit failed", { error });
     }
   }
 
