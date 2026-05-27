@@ -258,6 +258,11 @@ export async function tickReadingLists(options: TickReadingListsOptions = {}): P
       const allContacts = getAllContacts();
       const contacts = options.limit ? allContacts.slice(0, options.limit) : allContacts;
 
+      // Cooperative yield: each dbListChats({contactId}) runs 2 synchronous better-sqlite3
+      // queries with 2× EXISTS + 3 correlated subqueries. With N contacts × M lists this N+1
+      // pattern blocked the event loop for ~2min in production (Issue: NATS consumer starved
+      // while tick ran). Yielding every batch lets the consumer drain inbound MESSAGE events.
+      let processedInBatch = 0;
       for (const contact of contacts) {
         result.targetsProcessed += 1;
         try {
@@ -287,9 +292,15 @@ export async function tickReadingLists(options: TickReadingListsOptions = {}): P
             })
             .catch(() => {});
         }
+        if (++processedInBatch >= 50) {
+          processedInBatch = 0;
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
       }
     } else if (selector.scope === "chat") {
       const allChats = dbListChats({ limit: options.limit ?? 1000 });
+      // Same cooperative yield rationale as scope === "contact" above.
+      let processedInBatch = 0;
       for (const item of allChats.items) {
         result.targetsProcessed += 1;
         try {
@@ -307,6 +318,10 @@ export async function tickReadingLists(options: TickReadingListsOptions = {}): P
         } catch (err) {
           log.error("Error evaluating chat in tick", { listId: list.id, chatId: item.chat.id, error: err });
           result.errors += 1;
+        }
+        if (++processedInBatch >= 50) {
+          processedInBatch = 0;
+          await new Promise<void>((resolve) => setImmediate(resolve));
         }
       }
     }

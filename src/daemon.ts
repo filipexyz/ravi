@@ -269,16 +269,22 @@ export async function startDaemon() {
       canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
     });
     log.info("Task checkpoint runner started (leader)");
-    // Periodic safety-net tick every 15 minutes (leader-only to avoid redundant full scans)
-    readingListsTickInterval = setInterval(
-      () => {
-        tickReadingLists({ apply: true }).catch((err) =>
-          log.error("Reading lists periodic tick error", { error: err }),
-        );
-      },
-      15 * 60 * 1_000,
-    );
-    log.info("Reading lists periodic tick registered (leader)");
+    // Periodic safety-net tick every 15 minutes (leader-only to avoid redundant full scans).
+    // Disable via RAVI_DISABLE_READING_LISTS_TICK=1 — reactive engine (NATS subscriber) keeps
+    // membership fresh in real-time; periodic tick is only the safety-net.
+    if (process.env.RAVI_DISABLE_READING_LISTS_TICK === "1") {
+      log.warn("Reading lists periodic tick DISABLED via RAVI_DISABLE_READING_LISTS_TICK=1");
+    } else {
+      readingListsTickInterval = setInterval(
+        () => {
+          tickReadingLists({ apply: true }).catch((err) =>
+            log.error("Reading lists periodic tick error", { error: err }),
+          );
+        },
+        15 * 60 * 1_000,
+      );
+      log.info("Reading lists periodic tick registered (leader)");
+    }
   } else {
     log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
     watchForLeadershipVacancy("runners", async () => {
