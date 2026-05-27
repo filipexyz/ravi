@@ -192,7 +192,11 @@ async function runPromptAndWait(sessionName: string, prompt: string, timeoutMs: 
     }
   })();
 
-  await publishSessionPrompt(sessionName, { prompt });
+  await publishSessionPrompt(sessionName, {
+    prompt,
+    deliveryBarrier: "after_response",
+    deliveryBarrierSource: "default",
+  });
   const completionState = await completion;
   cleanup();
   await Promise.race([collectResponse, new Promise((resolve) => setTimeout(resolve, 100))]);

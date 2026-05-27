@@ -1,6 +1,11 @@
 import { configStore } from "../config-store.js";
 import { saveMessage } from "../db.js";
-import { chooseMoreUrgentBarrier, describeDeliveryBarrier, type DeliveryBarrier } from "../delivery-barriers.js";
+import {
+  chooseMoreUrgentBarrier,
+  describeDeliveryBarrier,
+  type DeliveryBarrier,
+  type DeliveryBarrierSource,
+} from "../delivery-barriers.js";
 import { nats } from "../nats.js";
 import { getSession, getSessionByName, type SessionEntry } from "../router/index.js";
 import { dbGetDaemonRestartPendingMessages, dbRecordDaemonRestartSessionSnapshot } from "../router/router-db.js";
@@ -791,6 +796,7 @@ export class RuntimeSessionDispatcher {
           payloadJson: {
             queueSize: existing.pendingMessages.length,
             barrier: describeDeliveryBarrier(barrier),
+            barrierSource: prompt.deliveryBarrierSource ?? null,
             taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
           },
         });
@@ -828,6 +834,7 @@ export class RuntimeSessionDispatcher {
               payloadJson: {
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 reason: "waiting_for_barrier",
               },
             });
@@ -837,6 +844,7 @@ export class RuntimeSessionDispatcher {
                 provider: existing.queryHandle.provider,
                 reason: "waiting_for_barrier",
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 queueSize: existing.pendingMessages.length,
                 sessionState: describeSessionState(existing),
                 timestamp: new Date().toISOString(),
@@ -871,6 +879,7 @@ export class RuntimeSessionDispatcher {
               payloadJson: {
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 reason: decision.reason,
                 tool: existing.currentToolName ?? null,
               },
@@ -881,6 +890,7 @@ export class RuntimeSessionDispatcher {
                 provider: existing.queryHandle.provider,
                 reason: decision.reason,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 queueSize: existing.pendingMessages.length,
                 tool: existing.currentToolName ?? null,
                 sessionState: describeSessionState(existing),
@@ -900,6 +910,7 @@ export class RuntimeSessionDispatcher {
                 sessionName,
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 reason: decision.reason,
                 source: prompt.source,
                 context: prompt.context,
@@ -931,6 +942,7 @@ export class RuntimeSessionDispatcher {
               payloadJson: {
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 reason: decision.reason,
                 taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
               },
@@ -984,6 +996,7 @@ export class RuntimeSessionDispatcher {
           interactiveReserved: this.options.interactiveReservedSessions,
           backgroundLimit: this.getBackgroundStartLimit(),
           deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
         },
       });
@@ -1034,6 +1047,7 @@ export class RuntimeSessionDispatcher {
           queueSize: queued.length,
           reason: "cold_start_inflight",
           deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
         },
       });
@@ -1074,6 +1088,8 @@ export class RuntimeSessionDispatcher {
         messageId: prompt.context?.messageId,
         payloadJson: {
           queued: queued.length,
+          deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
         },
       });
@@ -1094,6 +1110,7 @@ export class RuntimeSessionDispatcher {
         provider: requestedProvider,
         taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
         deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+        deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
       },
     });
     await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
@@ -1280,6 +1297,7 @@ export class RuntimeSessionDispatcher {
           lane,
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
           deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
         },
       });
       this.options
@@ -1527,6 +1545,7 @@ export class RuntimeSessionDispatcher {
         messageId: prompt.context?.messageId,
         payloadJson: {
           barrier: describeDeliveryBarrier(barrier),
+          barrierSource: prompt.deliveryBarrierSource ?? null,
           error: result?.error ?? "runtime control did not return a result",
         },
       });
@@ -1548,6 +1567,7 @@ export class RuntimeSessionDispatcher {
       messageId: prompt.context?.messageId,
       payloadJson: {
         barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
         operation: "turn.steer",
       },
     });
@@ -1619,16 +1639,18 @@ function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeL
 
 function combineDebounceBatch(batch: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt {
   const last = batch[batch.length - 1];
-  const [first, ...rest] = batch;
-  const deliveryBarrier = rest.reduce<DeliveryBarrier>(
-    (current, prompt) => chooseMoreUrgentBarrier(current, getRuntimePromptDeliveryBarrier(prompt)),
-    getRuntimePromptDeliveryBarrier(first),
+  const delivery = combineDeliveryBarrierMetadata(
+    batch.map((prompt) => ({
+      barrier: getRuntimePromptDeliveryBarrier(prompt),
+      source: prompt.deliveryBarrierSource,
+    })),
   );
 
   return {
     ...last,
     prompt: batch.map((entry) => entry.prompt).join("\n\n"),
-    deliveryBarrier,
+    deliveryBarrier: delivery.barrier,
+    deliveryBarrierSource: delivery.source,
     commands: batch.flatMap((entry) => entry.commands ?? []),
   };
 }
@@ -1676,9 +1698,11 @@ function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunc
     return null;
   }
 
-  const deliveryBarrier = messages.reduce<DeliveryBarrier>(
-    (current, message) => chooseMoreUrgentBarrier(current, message.deliveryBarrier ?? "after_tool"),
-    first.deliveryBarrier ?? "after_tool",
+  const delivery = combineDeliveryBarrierMetadata(
+    messages.map((message) => ({
+      barrier: message.deliveryBarrier ?? "after_tool",
+      source: message.deliveryBarrierSource ?? message.launchPrompt?.deliveryBarrierSource,
+    })),
   );
   const combinedPrompt = messages
     .map((message) => message.message.content)
@@ -1688,18 +1712,58 @@ function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunc
   return {
     ...(newestLaunchPrompt ?? {
       prompt: combinedPrompt,
-      deliveryBarrier,
+      deliveryBarrier: delivery.barrier,
+      deliveryBarrierSource: delivery.source,
       taskBarrierTaskId: first.taskBarrierTaskId,
       commands: messages.flatMap((message) => message.commands ?? []),
     }),
     prompt: combinedPrompt || newestLaunchPrompt?.prompt || first.message.content,
-    deliveryBarrier,
+    deliveryBarrier: delivery.barrier,
+    deliveryBarrierSource: delivery.source,
     commands:
       launchPrompts.length > 0
         ? messages.flatMap((message) => message.commands ?? message.launchPrompt?.commands ?? [])
         : messages.flatMap((message) => message.commands ?? []),
     _resumeStashedMessages: true,
   };
+}
+
+function combineDeliveryBarrierMetadata(entries: Array<{ barrier: DeliveryBarrier; source?: DeliveryBarrierSource }>): {
+  barrier: DeliveryBarrier;
+  source?: DeliveryBarrierSource;
+} {
+  const [first, ...rest] = entries;
+  let selected: { barrier: DeliveryBarrier; source?: DeliveryBarrierSource } = first ?? { barrier: "after_tool" };
+
+  for (const entry of rest) {
+    const chosenBarrier = chooseMoreUrgentBarrier(selected.barrier, entry.barrier);
+    if (chosenBarrier !== selected.barrier) {
+      selected = entry;
+      continue;
+    }
+    if (chosenBarrier === entry.barrier && compareDeliveryBarrierSource(entry.source, selected.source) < 0) {
+      selected = entry;
+    }
+  }
+
+  return selected;
+}
+
+function compareDeliveryBarrierSource(left?: DeliveryBarrierSource, right?: DeliveryBarrierSource): number {
+  return deliveryBarrierSourceRank(left) - deliveryBarrierSourceRank(right);
+}
+
+function deliveryBarrierSourceRank(source?: DeliveryBarrierSource): number {
+  switch (source) {
+    case "explicit":
+      return 0;
+    case "default":
+      return 1;
+    case "inferred":
+      return 2;
+    default:
+      return 3;
+  }
 }
 
 function isDaemonRestartNonIdleSession(session: RuntimeHostStreamingSession): boolean {

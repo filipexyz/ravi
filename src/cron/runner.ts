@@ -255,6 +255,8 @@ export class CronRunner {
 
     await publishSessionPrompt(sessionName, {
       prompt,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
       _cronOnError: true,
@@ -438,6 +440,8 @@ export class CronRunner {
     await publishSessionPrompt(sessionName, {
       prompt,
       source,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
     });
@@ -492,6 +496,8 @@ export class CronRunner {
     await publishSessionPrompt(sessionName, {
       prompt,
       source,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
     });

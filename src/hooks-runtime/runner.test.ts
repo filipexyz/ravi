@@ -67,6 +67,8 @@ describe("hooks-runtime runner", () => {
       sessionName: "hook-session",
       payload: expect.objectContaining({
         prompt: "[System] Inform: workspace ready for hook-session",
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
         _hook: true,
         _hookId: created.id,
       }),
@@ -75,6 +77,34 @@ describe("hooks-runtime runner", () => {
     const stored = dbGetHook(created.id);
     expect(stored?.fireCount).toBe(1);
     expect(typeof stored?.lastFiredAt).toBe("number");
+  });
+
+  it("rejects invalid hook delivery barriers instead of falling back to steer", async () => {
+    const created = dbCreateHook({
+      name: "bad barrier",
+      eventName: "SessionStart",
+      scopeType: "session",
+      scopeValue: "hook-session",
+      actionType: "send_session_event",
+      actionPayload: {
+        message: "workspace ready",
+        deliveryBarrier: "folowup" as never,
+      },
+    });
+    createdHookIds.push(created.id);
+
+    await expect(
+      runHookById(created.id, {
+        eventName: "SessionStart",
+        source: "test",
+        sessionName: "hook-session",
+        agentId: "dev",
+        cwd: process.cwd(),
+      }),
+    ).rejects.toThrow("Unknown hook deliveryBarrier");
+
+    expect(promptCalls).toHaveLength(0);
+    expect(dbGetHook(created.id)?.fireCount).toBe(0);
   });
 
   it("dedupes append_history hooks with the same resolved key", async () => {

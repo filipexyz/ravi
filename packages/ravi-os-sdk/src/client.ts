@@ -3578,6 +3578,8 @@ export class RaviClient {
     answer: async (target: string, message: string, sender?: string, options?: {
       barrier?: string;
       channel?: string;
+      immediate?: boolean;
+      steer?: boolean;
       to?: string;
     }): Promise<SessionsAnswerReturn> => {
       return this.transport.call({
@@ -3590,6 +3592,8 @@ export class RaviClient {
     ask: async (target: string, message: string, sender?: string, options?: {
       barrier?: string;
       channel?: string;
+      immediate?: boolean;
+      steer?: boolean;
       to?: string;
     }): Promise<SessionsAskReturn> => {
       return this.transport.call({
@@ -3649,6 +3653,8 @@ export class RaviClient {
     execute: async (target: string, message: string, options?: {
       barrier?: string;
       channel?: string;
+      immediate?: boolean;
+      steer?: boolean;
       to?: string;
     }): Promise<SessionsExecuteReturn> => {
       return this.transport.call({
@@ -3691,6 +3697,8 @@ export class RaviClient {
     inform: async (target: string, message: string, options?: {
       barrier?: string;
       channel?: string;
+      immediate?: boolean;
+      steer?: boolean;
       to?: string;
     }): Promise<SessionsInformReturn> => {
       return this.transport.call({
@@ -3861,7 +3869,9 @@ export class RaviClient {
       agent?: string;
       barrier?: string;
       channel?: string;
+      immediate?: boolean;
       interactive?: boolean;
+      steer?: boolean;
       thread?: string;
       threadOwner?: string;
       threadScope?: string;

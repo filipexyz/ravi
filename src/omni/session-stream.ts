@@ -16,7 +16,7 @@
 
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
 import { getNats, ensureConnected } from "../nats.js";
-import { inferDeliveryBarrier } from "../delivery-barriers.js";
+import { inferDeliveryBarrier, requireDeliveryBarrier, type DeliveryBarrierSource } from "../delivery-barriers.js";
 import { recordPromptPublishedTrace } from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
 
@@ -132,9 +132,21 @@ export async function publishSessionPrompt(sessionName: string, payload: Record<
   const nc = await ensureConnected();
   await ensureSessionPromptsStream();
   const js = nc.jetstream();
+  const explicitDeliveryBarrier = typeof payload.deliveryBarrier === "string" ? payload.deliveryBarrier : undefined;
+  const hasExplicitBarrier = Boolean(explicitDeliveryBarrier?.trim());
+  const deliveryBarrier = hasExplicitBarrier
+    ? requireDeliveryBarrier(explicitDeliveryBarrier, "deliveryBarrier")
+    : inferDeliveryBarrier(payload);
+  const deliveryBarrierSource =
+    typeof payload.deliveryBarrierSource === "string" && isDeliveryBarrierSource(payload.deliveryBarrierSource)
+      ? payload.deliveryBarrierSource
+      : hasExplicitBarrier
+        ? "explicit"
+        : "inferred";
   const enrichedPayload = {
     ...payload,
-    deliveryBarrier: inferDeliveryBarrier(payload),
+    deliveryBarrier,
+    deliveryBarrierSource,
   };
   await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
   try {
@@ -142,4 +154,8 @@ export async function publishSessionPrompt(sessionName: string, payload: Record<
   } catch (error) {
     log.warn("Failed to record prompt published trace", { sessionName, error });
   }
+}
+
+function isDeliveryBarrierSource(value: string): value is DeliveryBarrierSource {
+  return value === "explicit" || value === "default" || value === "inferred";
 }

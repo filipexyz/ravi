@@ -7540,12 +7540,16 @@ export const SessionsAnswerInputSchema = {
   "additionalProperties": false,
   "properties": {
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
+    },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
     },
     "message": {
       "description": "Answer to send back",
@@ -7554,6 +7558,10 @@ export const SessionsAnswerInputSchema = {
     "sender": {
       "description": "Who is answering (for attribution)",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "target": {
       "description": "Target session name (the one that asked)",
@@ -7576,12 +7584,16 @@ export const SessionsAskInputSchema = {
   "additionalProperties": false,
   "properties": {
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
+    },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
     },
     "message": {
       "description": "Question to ask",
@@ -7590,6 +7602,10 @@ export const SessionsAskInputSchema = {
     "sender": {
       "description": "Who originally asked (for attribution)",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "target": {
       "description": "Target session name",
@@ -7715,16 +7731,24 @@ export const SessionsExecuteInputSchema = {
   "additionalProperties": false,
   "properties": {
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
     },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
+    },
     "message": {
       "description": "Task to execute",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "target": {
       "description": "Target session name",
@@ -7825,16 +7849,24 @@ export const SessionsInformInputSchema = {
   "additionalProperties": false,
   "properties": {
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
     },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
+    },
     "message": {
       "description": "Information to send",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "target": {
       "description": "Target session name",
@@ -8209,12 +8241,16 @@ export const SessionsSendInputSchema = {
       "type": "string"
     },
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
+    },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
     },
     "interactive": {
       "description": "Interactive mode",
@@ -8227,6 +8263,10 @@ export const SessionsSendInputSchema = {
     "prompt": {
       "description": "Prompt to send (omit for interactive mode)",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "thread": {
       "description": "Attach or auto-create a Ravi thread",

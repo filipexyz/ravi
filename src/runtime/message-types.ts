@@ -1,4 +1,4 @@
-import type { DeliveryBarrier } from "../delivery-barriers.js";
+import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -103,6 +103,8 @@ export interface PromptMessage {
    * - after_task: wait until the session has no active task assignment
    */
   deliveryBarrier?: DeliveryBarrier;
+  /** Whether the barrier came from caller intent, a producer default, or runtime inference. */
+  deliveryBarrierSource?: DeliveryBarrierSource;
   /** Task ID exempted from after_task blocking (used by task dispatch to avoid self-deadlock) */
   taskBarrierTaskId?: string;
   source?: MessageTarget;

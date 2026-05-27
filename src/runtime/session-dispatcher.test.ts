@@ -48,6 +48,8 @@ describe("RuntimeSessionDispatcher debounce", () => {
         prompt: "primeira",
         source,
         _agentId: "agent-a",
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
         context: {
           channelId: "whatsapp",
           channelName: "WhatsApp",
@@ -67,6 +69,8 @@ describe("RuntimeSessionDispatcher debounce", () => {
         prompt: "segunda",
         source,
         _agentId: "agent-a",
+        deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "inferred",
         context: {
           channelId: "whatsapp",
           channelName: "WhatsApp",
@@ -87,6 +91,8 @@ describe("RuntimeSessionDispatcher debounce", () => {
     expect(prompts[0].prompt).toBe("primeira\n\nsegunda");
     expect(prompts[0]._agentId).toBe("agent-a");
     expect(prompts[0].source).toEqual(source);
+    expect(prompts[0].deliveryBarrier).toBe("after_tool");
+    expect(prompts[0].deliveryBarrierSource).toBe("inferred");
     expect(prompts[0].context?.messageId).toBe("m2");
     expect(prompts[0].context?.senderId).toBe("u2");
   });

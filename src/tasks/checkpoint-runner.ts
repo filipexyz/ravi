@@ -89,6 +89,7 @@ export class TaskCheckpointRunner {
               checkpointOverdueCount: missed.assignment.checkpointOverdueCount ?? missed.missedCount,
             }),
             deliveryBarrier: "after_response",
+            deliveryBarrierSource: "default",
           });
         } catch (error) {
           log.error("Task checkpoint reminder failed", { taskId: task.id, error });

@@ -9,7 +9,12 @@ import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
-import { DEFAULT_DELIVERY_BARRIER, normalizeDeliveryBarrier, type DeliveryBarrier } from "../../delivery-barriers.js";
+import {
+  DEFAULT_DELIVERY_BARRIER,
+  normalizeDeliveryBarrier,
+  type DeliveryBarrier,
+  type DeliveryBarrierSource,
+} from "../../delivery-barriers.js";
 import {
   getSessionAdapterDebugSnapshot,
   listSessionAdapters,
@@ -626,11 +631,13 @@ function readMessageMetadataFallback(session: SessionEntry, limit: number): Norm
 function buildDeliveryJson(
   session: SessionEntry,
   deliveryBarrier: DeliveryBarrier,
+  deliveryBarrierSource: DeliveryBarrierSource,
   source: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined,
   context: ChannelContext | undefined,
 ): Record<string, unknown> {
   return {
     barrier: deliveryBarrier,
+    barrierSource: deliveryBarrierSource,
     source: source ?? null,
     context: context ?? null,
     target: {
@@ -920,15 +927,31 @@ function formatWaitTimeoutError(sessionName: string): string {
 function resolveDeliveryBarrierOptionWithDefault(
   value: string | undefined,
   fallback: DeliveryBarrier,
-): DeliveryBarrier {
+  options: { steer?: boolean; immediate?: boolean } = {},
+): { barrier: DeliveryBarrier; source: DeliveryBarrierSource } {
   const barrier = normalizeDeliveryBarrier(value);
+  if (options.immediate && options.steer) {
+    throw new Error("--immediate cannot be combined with --steer.");
+  }
+  if (options.immediate) {
+    if (value && barrier !== "immediate_interrupt") {
+      throw new Error("--immediate cannot be combined with a non-immediate --barrier value.");
+    }
+    return { barrier: "immediate_interrupt", source: "explicit" };
+  }
+  if (options.steer) {
+    if (value && barrier !== "after_tool") {
+      throw new Error("--steer cannot be combined with a non-steer --barrier value.");
+    }
+    return { barrier: "after_tool", source: "explicit" };
+  }
   if (!value) {
-    return fallback;
+    return { barrier: fallback, source: "default" };
   }
   if (!barrier) {
     throw new Error(`Unknown delivery barrier: ${value}. Use p0, p1, p2, p3 or the named aliases.`);
   }
-  return barrier;
+  return { barrier, source: "explicit" };
 }
 
 function trimDebugText(value: string, max = 160): string {
@@ -2769,7 +2792,11 @@ export class SessionCommands {
     threadSummary?: string,
     @Option({ flags: "--thread-scope <type:id>", description: "Scope for thread lookup/create" }) threadScope?: string,
     @Option({ flags: "--thread-owner <type:id>", description: "Owner for thread auto-create" }) threadOwner?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     let createdSession = false;
@@ -2790,7 +2817,11 @@ export class SessionCommands {
       return;
     }
 
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_tool");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
 
     if (asJson && (interactive || !prompt)) {
       fail("sessions send --json requires a prompt and cannot be combined with --interactive.");
@@ -2813,7 +2844,7 @@ export class SessionCommands {
 
     const origin = getContext()?.sessionKey ?? "unknown";
     const { source, context } = this.resolveSource(session, channel, to);
-    const delivery = buildDeliveryJson(session, deliveryBarrier, source, context);
+    const deliveryJson = buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context);
     let fullPrompt = `[System] Inform: [from: ${origin}] ${prompt}`;
     let preparedThread: PreparedThreadHandoff | undefined;
     let promptPayload: Record<string, unknown> | undefined;
@@ -2853,13 +2884,22 @@ export class SessionCommands {
         let responseText = "";
         let chars = 0;
         try {
-          chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, {
-            silent: true,
-            promptPayload,
-            onResponse: (chunk) => {
-              responseText += chunk;
+          chars = await this.streamToSession(
+            sessionName,
+            fullPrompt,
+            session,
+            channel,
+            to,
+            deliveryBarrier,
+            delivery.source,
+            {
+              silent: true,
+              promptPayload,
+              onResponse: (chunk) => {
+                responseText += chunk;
+              },
             },
-          });
+          );
           if (preparedThread) {
             preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
           }
@@ -2874,7 +2914,7 @@ export class SessionCommands {
           createdSession,
           session: buildSessionJson(session),
           promptLength: prompt.length,
-          delivery,
+          delivery: deliveryJson,
           thread: preparedThread ? buildSendThreadJson(preparedThread) : null,
           response: {
             length: chars,
@@ -2890,9 +2930,18 @@ export class SessionCommands {
       console.log("─".repeat(50));
       let chars = 0;
       try {
-        chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, {
-          promptPayload,
-        });
+        chars = await this.streamToSession(
+          sessionName,
+          fullPrompt,
+          session,
+          channel,
+          to,
+          deliveryBarrier,
+          delivery.source,
+          {
+            promptPayload,
+          },
+        );
         if (preparedThread) {
           preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
         }
@@ -2904,7 +2953,16 @@ export class SessionCommands {
       console.log(`\n✅ Done (${chars} chars)`);
     } else {
       try {
-        await this.emitToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, promptPayload);
+        await this.emitToSession(
+          sessionName,
+          fullPrompt,
+          session,
+          channel,
+          to,
+          deliveryBarrier,
+          delivery.source,
+          promptPayload,
+        );
         if (preparedThread) {
           preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
         }
@@ -2920,7 +2978,7 @@ export class SessionCommands {
           createdSession,
           session: buildSessionJson(session),
           promptLength: prompt.length,
-          delivery,
+          delivery: deliveryJson,
           thread: preparedThread ? buildSendThreadJson(preparedThread) : null,
         };
         printJson(payload);
@@ -2937,7 +2995,11 @@ export class SessionCommands {
     @Arg("sender", { required: false, description: "Who originally asked (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
@@ -2946,10 +3008,14 @@ export class SessionCommands {
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Ask: [from: ${origin}${senderTag}] ${message}\n(If you already know the answer, send it back immediately with: ravi sessions answer ${origin} "answer" "${sender ?? ""}" — no need to ask in the chat. Otherwise, your text output IS the message sent to the chat — just write the question directly, don't describe what you're doing. When you get answers, send each one back with: ravi sessions answer ${origin} "answer" "${sender ?? ""}". You can call answer multiple times as new info comes in. IMPORTANT: Don't consider the ask "done" after the first reply — if the person keeps adding details, context, or follow-ups, send another answer with the new info each time. Only forward messages related to this question — ignore unrelated conversation.)`;
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
     if (asJson) {
       const payload = {
         action: "ask",
@@ -2957,7 +3023,7 @@ export class SessionCommands {
         session: buildSessionJson(session),
         messageLength: message.length,
         sender: sender ?? null,
-        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       printJson(payload);
       return payload;
@@ -2972,7 +3038,11 @@ export class SessionCommands {
     @Arg("sender", { required: false, description: "Who is answering (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
@@ -2981,10 +3051,14 @@ export class SessionCommands {
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Answer: [from: ${origin}${senderTag}] ${message}`;
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "immediate_interrupt");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
     if (asJson) {
       const payload = {
         action: "answer",
@@ -2992,7 +3066,7 @@ export class SessionCommands {
         session: buildSessionJson(session),
         messageLength: message.length,
         sender: sender ?? null,
-        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       printJson(payload);
       return payload;
@@ -3006,24 +3080,32 @@ export class SessionCommands {
     @Arg("message", { description: "Task to execute" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Execute: ${message}`;
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_task");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_task", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
     if (asJson) {
       const payload = {
         action: "execute",
         published: true,
         session: buildSessionJson(session),
         messageLength: message.length,
-        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       printJson(payload);
       return payload;
@@ -3037,24 +3119,32 @@ export class SessionCommands {
     @Arg("message", { description: "Information to send" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Inform: ${message}`;
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
     if (asJson) {
       const payload = {
         action: "inform",
         published: true,
         session: buildSessionJson(session),
         messageLength: message.length,
-        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       printJson(payload);
       return payload;
@@ -3720,6 +3810,7 @@ export class SessionCommands {
     channelOverride?: string,
     toOverride?: string,
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
+    deliveryBarrierSource: DeliveryBarrierSource = "default",
     promptPayload?: Record<string, unknown>,
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
@@ -3733,6 +3824,7 @@ export class SessionCommands {
       context,
       _approvalSource,
       deliveryBarrier,
+      deliveryBarrierSource,
       ...(promptPayload ?? {}),
     } as Record<string, unknown>);
   }
@@ -3747,6 +3839,7 @@ export class SessionCommands {
     channelOverride?: string,
     toOverride?: string,
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
+    deliveryBarrierSource: DeliveryBarrierSource = "default",
     options: { silent?: boolean; onResponse?: (chunk: string) => void; promptPayload?: Record<string, unknown> } = {},
   ): Promise<number> {
     let responseLength = 0;
@@ -3853,6 +3946,7 @@ export class SessionCommands {
       context,
       _approvalSource,
       deliveryBarrier,
+      deliveryBarrierSource,
       ...(options.promptPayload ?? {}),
     } as Record<string, unknown>);
 
