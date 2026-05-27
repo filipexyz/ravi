@@ -46,6 +46,12 @@ normative: false
 ## Host Retry Tests
 
 - A pre-tool `rate_limited` failure retries with the next eligible credential and emits only one user-visible response.
+- An auth failure on an OAuth credential tries provider-specific refresh before rotating away.
+- A retryable credential failure does not emit a user-visible intermediate provider error before replay.
+- A terminal refresh failure marks the slot `needs_reauth` or `invalid` and does not reseed the same token.
+- Same-provider credential rotation happens before configured cross-provider fallback.
+- Cross-provider fallback runs only when policy defines a fallback chain or explicit automatic mode.
+- `invalid_request`, `context_limit`, unsupported tool schema, and safety/request-shape errors do not trigger credential or cross-provider fallback.
 - A post-`tool.started` `rate_limited` failure does not auto-replay and surfaces an actionable blocked state.
 - Retry uses the materialized failed attempt input and does not consume the next item from the live prompt generator.
 - Retry attempts do not duplicate durable user messages.
@@ -53,8 +59,25 @@ normative: false
 - Pool exhaustion produces `runtime.credential.pool_empty` and one user-facing failure.
 - Manual disable prevents selection immediately.
 - Cooldown expiry makes a credential eligible again.
+- Expired cooldown recovery clears health before pool selection.
+- Near-limit pressure records a soft cooldown and rotates to the next same-provider credential.
+- Provider-unhealthy cooldown skips provider attempts without disabling individual credentials.
+- Concurrent failures mark the credential id/fingerprint from each attempt binding, not the pool's latest selected credential.
 - Resume/fork is allowed when the selected credential compatibility key matches the stored provider session.
 - Resume/fork is suppressed when fallback selects a different credential compatibility key.
+
+## Credential Store Tests
+
+- Explicit attempt/session/task credential binding wins over process env.
+- When a managed pool exists, process env fallback is ignored unless represented as a tracked read-only slot or allowed by policy.
+- Provider-native discovered credentials are not selected unless that runtime provider or fallback policy allows them.
+- Imported Codex auth can be read-only and does not write to `~/.codex/auth.json` by default.
+- Managed provider-native refresh writes back only to the selected credential's allowed source.
+- A fresher external provider-native token is adopted before Ravi spends a stale refresh token.
+- OAuth refresh is locked per credential/profile boundary.
+- Refresh and rotation do not change the active provider metadata.
+- `runtimeSessionParams.runtimeCredential` stores only redacted credential continuity metadata.
+- Redacted fingerprints are stable across restarts and do not reveal secret values.
 
 ## Provider Adapter Tests
 
@@ -64,6 +87,7 @@ normative: false
 - Claude API key credential slots are opt-in or explicitly scoped, not the default Claude Code pool shape.
 - Claude remote spawn rejects credentials whose selected auth method cannot be forwarded safely.
 - Codex selected credential/profile changes the app-server env signature and triggers respawn before retry.
+- Codex imported profile state is represented as a credential slot with source kind, health state, and session compatibility key.
 - Codex selected credential/profile mismatch prevents existing thread/session resume.
 - Codex shell env allowlist excludes selected credential env keys.
 - Pi selected upstream provider/model matches `provider/model` selectors and default provider env.
@@ -79,6 +103,11 @@ normative: false
 - `--secret-env <source> --target-env <provider-env>` stores source/target mapping explicitly and injects only the target key into `resolvedEnv`.
 - Repeated `--secret-env/--target-env` pairs create one credential with multiple secret bindings.
 - Unmatched, duplicated, or order-ambiguous `--secret-env/--target-env` pairs fail validation before storage.
+- Provider-native import commands create explicit slots and show whether the source is read-only or managed-refresh.
+- `status --json` distinguishes credential health from provider health.
+- `refresh <id> --json` reports recovered/refreshed/unsupported without printing secrets.
+- `refresh --provider <id> --upstream <id> --json` recovers expired pool entries before selection.
+- CLI output never prints provider-native profile token contents, even in debug mode.
 
 ## Manual Smoke
 
