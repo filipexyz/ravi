@@ -333,9 +333,46 @@ export class PermissionsCommands {
         return count;
       },
       "full-access": () => {
-        grantRelation(subjectType, subjectId, "use", "tool", "*", "manual");
-        grantRelation(subjectType, subjectId, "execute", "executable", "*", "manual");
-        return 2;
+        // Wildcards across every (relation, objectType) pair the REBAC engine recognises.
+        // Covers SDK tools, system executables, tool groups, AND the in-process REBAC types
+        // used by command/scope checks (agent, contact, cron, group, session, system, team,
+        // toolgroup, trigger). Prior versions of this template only granted use:tool:* and
+        // execute:executable:*, which left agents unable to operate against the runtime even
+        // though the template name promised "full". Pairs listed here mirror what
+        // `ravi permissions list` shows in production.
+        const wildcards: Array<[string, string]> = [
+          ["use", "tool"],
+          ["execute", "executable"],
+          ["use", "toolgroup"],
+          ["access", "toolgroup"],
+          ["admin", "toolgroup"],
+          ["access", "agent"],
+          ["admin", "agent"],
+          ["access", "contact"],
+          ["admin", "contact"],
+          ["write_contacts", "contact"],
+          ["access", "cron"],
+          ["admin", "cron"],
+          ["access", "group"],
+          ["admin", "group"],
+          ["execute", "group"],
+          ["access", "session"],
+          ["modify", "session"],
+          ["use", "session"],
+          ["access", "system"],
+          ["admin", "system"],
+          ["read_own_contacts", "system"],
+          ["read_tagged_contacts", "system"],
+          ["write_contacts", "system"],
+          ["access", "team"],
+          ["admin", "team"],
+          ["access", "trigger"],
+          ["admin", "trigger"],
+        ];
+        for (const [relation, objectType] of wildcards) {
+          grantRelation(subjectType, subjectId, relation, objectType, "*", "manual");
+        }
+        return wildcards.length;
       },
       "tool-groups": () => {
         let count = 0;
