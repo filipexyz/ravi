@@ -245,9 +245,14 @@ ravi permissions init agent:dev tool-groups
 # Executáveis seguros (git, node, bun, ravi, etc.)
 ravi permissions init agent:dev safe-executables
 
-# Tudo: todas tools + todos executáveis
+# Cobertura completa: wildcards em TODOS os object types reconhecidos pelo engine
+# (tool, executable, toolgroup, agent, contact, cron, group, session, system, team, trigger).
+# Use quando o agent precisa operar livremente em todas as superfícies (sessions, contatos,
+# triggers, crons, agents, system admin), não só rodar tools SDK + binários do sistema.
 ravi permissions init agent:dev full-access
 ```
+
+> **Nota histórica:** antes deste PR, `full-access` aplicava apenas `use tool:*` + `execute executable:*` (2 grants) — o nome prometia "tudo" mas deixava de fora as superfícies in-process do REBAC (sessions, contacts, agents, etc), forçando o operador a aplicar 24 wildcards adicionais via `permissions grant`. Agora `full-access` cobre os 27 pares (relation, objectType) válidos em um único comando.
 
 ## Comandos
 
