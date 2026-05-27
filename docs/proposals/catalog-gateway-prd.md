@@ -1,11 +1,62 @@
-# Catalog Gateway — PRD técnico v0.2
+# Catalog Gateway — PRD técnico v0.3
 
-**Status:** Aprovado pra implementação Sprint 1 · **Owner:** dev-do-ravi · **Data:** 2026-05-27 · **Cliente piloto:** setordaembalagem.com (823 SKUs Tiny) · **Spike empírico:** ✅ passou (`spike/catalog/spike.ts`)
+**Status:** Schema atualizado com base em pesquisa empírica · **Owner:** dev-do-ravi · **Data:** 2026-05-27 · **Cliente piloto:** setordaembalagem.com (823 SKUs Tiny) · **Spike empírico:** ✅ passou (`spike/catalog/spike.ts`)
 
 ## Histórico
 
 - **v0.1** (2026-05-27 16:25) — primeira versão, 5 decisões pendentes
 - **v0.2** (2026-05-27 16:40) — spike passou (11/11 checks, latência 0.110ms estruturada / 0.939ms FTS5), decisões D1-D5 resolvidas (ver §11)
+- **v0.3** (2026-05-27 19:10) — schema reajustado com base em pesquisa empírica do researcher (task-f9997eef, 734 conversas WhatsApp reais analisadas). Veredito 80/20 hot/cold/markdown aplicado. Detalhes em §13.
+
+## §13. Ajustes do schema com base em pesquisa empírica (researcher task-f9997eef)
+
+**Fonte:** 734 conversas WhatsApp reais do setordaembalagem analisadas em `vault-ravi/knowledge/catalog-gateway/arvore-decisao-cliente-sde-2026-05-27.md`.
+
+### Campos ADICIONADOS (justificativa empírica)
+
+| Campo | Justificativa | Frequência |
+|---|---|---|
+| `weight_grams_approx` | Equipe SEMPRE clarifica ml ≠ gramas. Confusão em 33% das conversas. | 33% qualitativo |
+| `shape` (enum) | Equipe pergunta "redonda/quadrada/garrafa/bowl" em use-case-first | 20% qualitativo |
+| `compartments` (int) | Equipe pergunta "com/sem divisória" proativamente | 11% quant, 33% qual |
+| `microwave_safe` (bool) | Substitui `resistencia_termica` enum por flag específico | 5.5% quant |
+| `oven_safe` (bool) | Idem | 5.5% quant |
+| `freezer_safe` (bool) | Idem | 5.5% quant |
+| `airfryer_safe` (bool) | Nicho crescente (mencionado junto a forno) | sample qualitativo |
+| `leak_resistant` (bool) | Substitui `seal_type`. "Não vaza?" é a pergunta real. | 7% qualitativo |
+| `lid_included` (bool) | Tampa é decisor binário | 21.5% quant |
+| `lid_compatible` (bool) | Variações com/sem tampa do mesmo SKU pai | 21.5% quant |
+| `customization_min_qty` (int) | Personalização aparece em 18.4% (B2B) | 18.4% quant |
+| `cor` (text) | Aparece em 10% das conversas | 10.2% quant |
+| `tiny_id` (text) | Chave forte cross-system Ravi ↔ Tiny ERP | infra |
+
+### Campos REBAIXADOS (mantidos no schema, removidos de filtros hot)
+
+| Campo | Razão | Frequência |
+|---|---|---|
+| `material` | Cliente nunca diz "PP" — sempre "Galvanotek" (marca). Manter como info técnica. | 6.9% quant, **0% qualitativo** |
+| `resistencia_termica` | Substituído por booleans específicos (`*_safe`). Coluna preservada pra back-compat. | rebrand |
+| `diametro_mm` | Cliente nunca menciona em mm. Manter pra ficha técnica. | <1% |
+
+### Campos NUNCA ADICIONADOS (atributos com baixa relevância)
+
+- `stackable` — 0.3% quant, 0% qualitativo
+- `anvisa_compliant` — 1.9% quant, só relevante B2B regulado (tag em vez de coluna)
+- `seal_type` — substituído por `leak_resistant` boolean
+
+### Os 4 arquétipos de cliente (define UX do chatbot Sprint 2)
+
+🔹 **SKU-first (~30%)** — recorrente. Tool-call simples: `validateSku → ficha → estoque`
+🔹 **Capacity-first (~25%)** — sabe volume. **Equipe clarifica ml/g** (`weight_grams_approx`)
+🔹 **Use-case-first (~25%)** — empreendedor. **Chatbot deve fazer perguntas de qualificação proativas** (divisória? quente/frio? porções?)
+🔹 **B2B-list (~10%)** — listas + cotação + frete + CNPJ. Frete é objeção #1 (33% perdem por frete caro)
+
+### Limitações declaradas pelo researcher
+
+- Sample qualitativo de 15 (universe 734) — robusto pra HOT/WARM, pode subestimar COLD
+- **Recompra mascara processo** — SKU-first oculta decisão real (já feita em primeira compra)
+- 25-30% das conversas têm <3 msgs (excluídas)
+- Áudio não transcrito
 
 ---
 

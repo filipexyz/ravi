@@ -4,6 +4,9 @@
  * Public API for catalog_products + catalog_sync_log.
  * Tool-bridge callers (chatbot) should use `searchProducts` + `validateSku`
  * in-process for <50ms latency (see PRD §6).
+ *
+ * Schema atualizado 2026-05-27 com base em pesquisa empirica
+ * (researcher task-f9997eef, 734 conversas WhatsApp).
  */
 
 import { getDb } from "../router/router-db.js";
@@ -17,7 +20,7 @@ import {
   type CreateCatalogSyncLogInput,
   type EnriquecimentoConf,
   type FinalizeCatalogSyncLogInput,
-  type ResistenciaTermica,
+  type ProductShape,
   type TipoVariacao,
   type UpsertCatalogProductInput,
 } from "./types.js";
@@ -45,13 +48,25 @@ interface CatalogProductRow {
   comprimento_mm: number | null;
   diametro_mm: number | null;
   capacidade_ml: number | null;
+  weight_grams_approx: number | null;
+  shape: string | null;
+  compartments: number | null;
   material: string | null;
-  resistencia_termica: string | null;
+  microwave_safe: number | null;
+  oven_safe: number | null;
+  freezer_safe: number | null;
+  airfryer_safe: number | null;
+  leak_resistant: number | null;
+  lid_included: number | null;
+  lid_compatible: number | null;
+  customization_min_qty: number | null;
+  cor: string | null;
   usos_json: string | null;
   tipo_variacao: string | null;
   sku_pai: string | null;
   imagem_url: string | null;
   artifact_id: string | null;
+  tiny_id: string | null;
   tiny_sync_at: number | null;
   enriquecimento_conf: string | null;
   enriquecimento_at: number | null;
@@ -85,6 +100,11 @@ interface CatalogSyncLogRow {
 // Row → Domain conversion
 // ---------------------------------------------------------------------------
 
+function boolFromInt(value: number | null): boolean | undefined {
+  if (value === null) return undefined;
+  return value === 1;
+}
+
 function rowToProduct(row: CatalogProductRow): CatalogProduct {
   const product: CatalogProduct = {
     tenantId: row.tenant_id,
@@ -110,10 +130,26 @@ function rowToProduct(row: CatalogProductRow): CatalogProduct {
   if (row.comprimento_mm !== null) product.comprimentoMm = row.comprimento_mm;
   if (row.diametro_mm !== null) product.diametroMm = row.diametro_mm;
   if (row.capacidade_ml !== null) product.capacidadeMl = row.capacidade_ml;
+  if (row.weight_grams_approx !== null) product.weightGramsApprox = row.weight_grams_approx;
+  if (row.shape !== null) product.shape = row.shape as ProductShape;
+  if (row.compartments !== null) product.compartments = row.compartments;
   if (row.material !== null) product.material = row.material;
-  if (row.resistencia_termica !== null) {
-    product.resistenciaTermica = row.resistencia_termica as ResistenciaTermica;
-  }
+  const microwave = boolFromInt(row.microwave_safe);
+  if (microwave !== undefined) product.microwaveSafe = microwave;
+  const oven = boolFromInt(row.oven_safe);
+  if (oven !== undefined) product.ovenSafe = oven;
+  const freezer = boolFromInt(row.freezer_safe);
+  if (freezer !== undefined) product.freezerSafe = freezer;
+  const airfryer = boolFromInt(row.airfryer_safe);
+  if (airfryer !== undefined) product.airfryerSafe = airfryer;
+  const leak = boolFromInt(row.leak_resistant);
+  if (leak !== undefined) product.leakResistant = leak;
+  const lid = boolFromInt(row.lid_included);
+  if (lid !== undefined) product.lidIncluded = lid;
+  const lidCompat = boolFromInt(row.lid_compatible);
+  if (lidCompat !== undefined) product.lidCompatible = lidCompat;
+  if (row.customization_min_qty !== null) product.customizationMinQty = row.customization_min_qty;
+  if (row.cor !== null) product.cor = row.cor;
   if (row.usos_json !== null) {
     try {
       const parsed = JSON.parse(row.usos_json);
@@ -126,6 +162,7 @@ function rowToProduct(row: CatalogProductRow): CatalogProduct {
   if (row.sku_pai !== null) product.skuPai = row.sku_pai;
   if (row.imagem_url !== null) product.imagemUrl = row.imagem_url;
   if (row.artifact_id !== null) product.artifactId = row.artifact_id;
+  if (row.tiny_id !== null) product.tinyId = row.tiny_id;
   if (row.tiny_sync_at !== null) product.tinySyncAt = row.tiny_sync_at;
   if (row.enriquecimento_conf !== null) {
     product.enriquecimentoConf = row.enriquecimento_conf as EnriquecimentoConf;
@@ -149,6 +186,11 @@ function rowToSyncLog(row: CatalogSyncLogRow): CatalogSyncLogEntry {
   if (row.payload_json !== null) entry.payloadJson = row.payload_json;
   if (row.finished_at !== null) entry.finishedAt = row.finished_at;
   return entry;
+}
+
+function boolToInt(value: boolean | undefined): number | null {
+  if (value === undefined) return null;
+  return value ? 1 : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,10 +221,13 @@ export function upsertProduct(input: UpsertCatalogProductInput): CatalogProduct 
     `INSERT INTO catalog_products (
       tenant_id, sku, nome, marca, categoria_path, preco, preco_promo, estoque, ativo,
       gtin, ncm, peso_liquido_g, peso_bruto_g, altura_mm, largura_mm, comprimento_mm,
-      diametro_mm, capacidade_ml, material, resistencia_termica, usos_json, tipo_variacao,
-      sku_pai, imagem_url, artifact_id, tiny_sync_at, enriquecimento_conf, enriquecimento_at,
+      diametro_mm, capacidade_ml, weight_grams_approx, shape, compartments, material,
+      microwave_safe, oven_safe, freezer_safe, airfryer_safe, leak_resistant,
+      lid_included, lid_compatible, customization_min_qty, cor,
+      usos_json, tipo_variacao, sku_pai, imagem_url, artifact_id, tiny_id,
+      tiny_sync_at, enriquecimento_conf, enriquecimento_at,
       vendavel, mostrar_chatbot, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(tenant_id, sku) DO UPDATE SET
       nome = excluded.nome,
       marca = excluded.marca,
@@ -200,13 +245,25 @@ export function upsertProduct(input: UpsertCatalogProductInput): CatalogProduct 
       comprimento_mm = excluded.comprimento_mm,
       diametro_mm = excluded.diametro_mm,
       capacidade_ml = excluded.capacidade_ml,
+      weight_grams_approx = excluded.weight_grams_approx,
+      shape = excluded.shape,
+      compartments = excluded.compartments,
       material = excluded.material,
-      resistencia_termica = excluded.resistencia_termica,
+      microwave_safe = excluded.microwave_safe,
+      oven_safe = excluded.oven_safe,
+      freezer_safe = excluded.freezer_safe,
+      airfryer_safe = excluded.airfryer_safe,
+      leak_resistant = excluded.leak_resistant,
+      lid_included = excluded.lid_included,
+      lid_compatible = excluded.lid_compatible,
+      customization_min_qty = excluded.customization_min_qty,
+      cor = excluded.cor,
       usos_json = excluded.usos_json,
       tipo_variacao = excluded.tipo_variacao,
       sku_pai = excluded.sku_pai,
       imagem_url = excluded.imagem_url,
       artifact_id = excluded.artifact_id,
+      tiny_id = excluded.tiny_id,
       tiny_sync_at = excluded.tiny_sync_at,
       enriquecimento_conf = excluded.enriquecimento_conf,
       enriquecimento_at = excluded.enriquecimento_at,
@@ -232,13 +289,25 @@ export function upsertProduct(input: UpsertCatalogProductInput): CatalogProduct 
     input.comprimentoMm ?? null,
     input.diametroMm ?? null,
     input.capacidadeMl ?? null,
+    input.weightGramsApprox ?? null,
+    input.shape ?? null,
+    input.compartments ?? null,
     input.material ?? null,
-    input.resistenciaTermica ?? null,
+    boolToInt(input.microwaveSafe),
+    boolToInt(input.ovenSafe),
+    boolToInt(input.freezerSafe),
+    boolToInt(input.airfryerSafe),
+    boolToInt(input.leakResistant),
+    boolToInt(input.lidIncluded),
+    boolToInt(input.lidCompatible),
+    input.customizationMinQty ?? null,
+    input.cor ?? null,
     usosJson,
     input.tipoVariacao ?? null,
     input.skuPai ?? null,
     input.imagemUrl ?? null,
     input.artifactId ?? null,
+    input.tinyId ?? null,
     input.tinySyncAt ?? null,
     input.enriquecimentoConf ?? null,
     input.enriquecimentoAt ?? null,
@@ -255,9 +324,9 @@ export function upsertProduct(input: UpsertCatalogProductInput): CatalogProduct 
 
 export function getProduct(tenantId: string, sku: string): CatalogProduct | undefined {
   ensureCatalogSchema();
-  const row = getDb().prepare("SELECT * FROM catalog_products WHERE tenant_id = ? AND sku = ?").get(tenantId, sku) as
-    | CatalogProductRow
-    | undefined;
+  const row = getDb()
+    .prepare("SELECT * FROM catalog_products WHERE tenant_id = ? AND sku = ?")
+    .get(tenantId, sku) as CatalogProductRow | null;
   return row ? rowToProduct(row) : undefined;
 }
 
@@ -292,7 +361,7 @@ export function validateSku(tenantId: string, sku: string): boolean {
   ensureCatalogSchema();
   const row = getDb()
     .prepare("SELECT 1 AS hit FROM catalog_products WHERE tenant_id = ? AND sku = ? AND ativo = 1")
-    .get(tenantId, sku) as { hit: number } | undefined;
+    .get(tenantId, sku) as { hit: number } | null;
   return !!row;
 }
 
@@ -332,13 +401,49 @@ export function searchProducts(filter: CatalogSearchFilter): CatalogSearchResult
     where.push("p.capacidade_ml <= ?");
     params.push(filter.capacidadeMaxMl);
   }
+  if (filter.weightGramsMin !== undefined) {
+    where.push("p.weight_grams_approx >= ?");
+    params.push(filter.weightGramsMin);
+  }
+  if (filter.weightGramsMax !== undefined) {
+    where.push("p.weight_grams_approx <= ?");
+    params.push(filter.weightGramsMax);
+  }
+  if (filter.shape) {
+    where.push("p.shape = ?");
+    params.push(filter.shape);
+  }
+  if (filter.compartmentsMin !== undefined) {
+    where.push("p.compartments >= ?");
+    params.push(filter.compartmentsMin);
+  }
+  if (filter.microwaveSafe !== undefined) {
+    where.push("p.microwave_safe = ?");
+    params.push(filter.microwaveSafe ? 1 : 0);
+  }
+  if (filter.ovenSafe !== undefined) {
+    where.push("p.oven_safe = ?");
+    params.push(filter.ovenSafe ? 1 : 0);
+  }
+  if (filter.freezerSafe !== undefined) {
+    where.push("p.freezer_safe = ?");
+    params.push(filter.freezerSafe ? 1 : 0);
+  }
+  if (filter.airfryerSafe !== undefined) {
+    where.push("p.airfryer_safe = ?");
+    params.push(filter.airfryerSafe ? 1 : 0);
+  }
+  if (filter.leakResistant !== undefined) {
+    where.push("p.leak_resistant = ?");
+    params.push(filter.leakResistant ? 1 : 0);
+  }
+  if (filter.lidIncluded !== undefined) {
+    where.push("p.lid_included = ?");
+    params.push(filter.lidIncluded ? 1 : 0);
+  }
   if (filter.material) {
     where.push("p.material = ?");
     params.push(filter.material);
-  }
-  if (filter.resistenciaTermica) {
-    where.push("p.resistencia_termica = ?");
-    params.push(filter.resistenciaTermica);
   }
   if (filter.categoriaPath) {
     where.push("p.categoria_path LIKE ?");
@@ -348,13 +453,20 @@ export function searchProducts(filter: CatalogSearchFilter): CatalogSearchResult
     where.push("p.marca = ?");
     params.push(filter.marca);
   }
+  if (filter.cor) {
+    where.push("p.cor = ?");
+    params.push(filter.cor);
+  }
+
+  const selectColumns = `p.sku, p.nome, p.marca, p.categoria_path, p.preco,
+             p.capacidade_ml, p.weight_grams_approx, p.shape, p.compartments,
+             p.microwave_safe, p.oven_safe, p.freezer_safe, p.lid_included,
+             p.material, p.estoque`;
 
   let sql: string;
   if (useFts) {
     sql = `
-      SELECT p.sku, p.nome, p.marca, p.categoria_path, p.preco,
-             p.capacidade_ml, p.material, p.resistencia_termica, p.estoque,
-             bm25(catalog_products_fts) AS rank
+      SELECT ${selectColumns}, bm25(catalog_products_fts) AS rank
       FROM catalog_products_fts
       JOIN catalog_products p
         ON p.tenant_id = catalog_products_fts.tenant_id
@@ -368,8 +480,7 @@ export function searchProducts(filter: CatalogSearchFilter): CatalogSearchResult
     params.push(limit);
   } else {
     sql = `
-      SELECT p.sku, p.nome, p.marca, p.categoria_path, p.preco,
-             p.capacidade_ml, p.material, p.resistencia_termica, p.estoque
+      SELECT ${selectColumns}
       FROM catalog_products p
       WHERE ${where.join(" AND ")}
       ORDER BY p.estoque DESC NULLS LAST, p.updated_at DESC
@@ -394,21 +505,26 @@ export function searchProducts(filter: CatalogSearchFilter): CatalogSearchResult
     if (row.capacidade_ml !== null && row.capacidade_ml !== undefined) {
       result.capacidadeMl = row.capacidade_ml;
     }
-    if (row.material !== null && row.material !== undefined) result.material = row.material;
-    if (row.resistencia_termica !== null && row.resistencia_termica !== undefined) {
-      result.resistenciaTermica = row.resistencia_termica as ResistenciaTermica;
+    if (row.weight_grams_approx !== null && row.weight_grams_approx !== undefined) {
+      result.weightGramsApprox = row.weight_grams_approx;
     }
+    if (row.shape !== null && row.shape !== undefined) result.shape = row.shape as ProductShape;
+    if (row.compartments !== null && row.compartments !== undefined) result.compartments = row.compartments;
+    const microwave = boolFromInt(row.microwave_safe ?? null);
+    if (microwave !== undefined) result.microwaveSafe = microwave;
+    const oven = boolFromInt(row.oven_safe ?? null);
+    if (oven !== undefined) result.ovenSafe = oven;
+    const freezer = boolFromInt(row.freezer_safe ?? null);
+    if (freezer !== undefined) result.freezerSafe = freezer;
+    const lid = boolFromInt(row.lid_included ?? null);
+    if (lid !== undefined) result.lidIncluded = lid;
+    if (row.material !== null && row.material !== undefined) result.material = row.material;
     if (row.estoque !== null && row.estoque !== undefined) result.estoque = row.estoque;
     if (row.rank !== undefined) result.rank = row.rank;
     return result;
   });
 }
 
-/**
- * FTS5 has a small DSL (AND/OR/NOT/quotes/etc). For agent-facing search we
- * treat the query as plain words and escape anything that could break the
- * parser. Each word becomes a prefix-match token so partial words still hit.
- */
 function escapeFtsQuery(raw: string): string {
   const tokens = raw
     .split(/\s+/)
@@ -418,10 +534,6 @@ function escapeFtsQuery(raw: string): string {
   return tokens.length > 0 ? tokens.join(" ") : '""';
 }
 
-/**
- * Update only the editorial-text field of the FTS5 row. Called by
- * the artifact sync path when `artifact_versions` for a SKU change.
- */
 export function updateFtsTextoCompleto(tenantId: string, sku: string, texto: string): void {
   ensureCatalogSchema();
   getDb()
@@ -467,7 +579,7 @@ export function finalizeCatalogSyncLog(input: FinalizeCatalogSyncLogInput): Cata
 
 export function getSyncLog(id: number): CatalogSyncLogEntry | undefined {
   ensureCatalogSchema();
-  const row = getDb().prepare("SELECT * FROM catalog_sync_log WHERE id = ?").get(id) as CatalogSyncLogRow | undefined;
+  const row = getDb().prepare("SELECT * FROM catalog_sync_log WHERE id = ?").get(id) as CatalogSyncLogRow | null;
   return row ? rowToSyncLog(row) : undefined;
 }
 

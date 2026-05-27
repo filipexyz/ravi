@@ -4,7 +4,10 @@
  * Follows Ravi's CREATE TABLE IF NOT EXISTS + lazy migration pattern.
  * Tables live in `~/.ravi/ravi.db` (same file, dedicated `catalog_*` namespace).
  *
- * See docs/proposals/catalog-gateway-prd.md §3 (schema) and §5 (FTS5).
+ * Schema atualizado 2026-05-27 com base em pesquisa empirica
+ * (researcher task-f9997eef, 734 conversas WhatsApp).
+ *
+ * See docs/proposals/catalog-gateway-prd.md §3 (schema) e §5 (FTS5).
  */
 
 import { getDb, getRaviDbPath } from "../router/router-db.js";
@@ -15,6 +18,34 @@ let schemaDbPath: string | null = null;
 export function resetCatalogSchemaFlag(): void {
   schemaReady = false;
   schemaDbPath = null;
+}
+
+const CATALOG_PRODUCT_COLUMNS: Array<{ name: string; ddl: string }> = [
+  { name: "weight_grams_approx", ddl: "weight_grams_approx REAL" },
+  { name: "shape", ddl: "shape TEXT" },
+  { name: "compartments", ddl: "compartments INTEGER" },
+  { name: "microwave_safe", ddl: "microwave_safe INTEGER" },
+  { name: "oven_safe", ddl: "oven_safe INTEGER" },
+  { name: "freezer_safe", ddl: "freezer_safe INTEGER" },
+  { name: "airfryer_safe", ddl: "airfryer_safe INTEGER" },
+  { name: "leak_resistant", ddl: "leak_resistant INTEGER" },
+  { name: "lid_included", ddl: "lid_included INTEGER" },
+  { name: "lid_compatible", ddl: "lid_compatible INTEGER" },
+  { name: "customization_min_qty", ddl: "customization_min_qty INTEGER" },
+  { name: "cor", ddl: "cor TEXT" },
+  { name: "tiny_id", ddl: "tiny_id TEXT" },
+];
+
+function applyCatalogSchemaMigrations(): void {
+  const db = getDb();
+  const existing = new Set(
+    (db.prepare("PRAGMA table_info(catalog_products)").all() as Array<{ name: string }>).map((row) => row.name),
+  );
+  for (const column of CATALOG_PRODUCT_COLUMNS) {
+    if (!existing.has(column.name)) {
+      db.exec(`ALTER TABLE catalog_products ADD COLUMN ${column.ddl}`);
+    }
+  }
 }
 
 export function ensureCatalogSchema(): void {
@@ -127,6 +158,23 @@ export function ensureCatalogSchema(): void {
 
     CREATE INDEX IF NOT EXISTS idx_catalog_sync_log_tenant_started
       ON catalog_sync_log(tenant_id, started_at DESC);
+  `);
+  applyCatalogSchemaMigrations();
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_catalog_products_shape
+      ON catalog_products(tenant_id, shape);
+    CREATE INDEX IF NOT EXISTS idx_catalog_products_weight
+      ON catalog_products(tenant_id, weight_grams_approx);
+    CREATE INDEX IF NOT EXISTS idx_catalog_products_microwave
+      ON catalog_products(tenant_id, microwave_safe);
+    CREATE INDEX IF NOT EXISTS idx_catalog_products_oven
+      ON catalog_products(tenant_id, oven_safe);
+    CREATE INDEX IF NOT EXISTS idx_catalog_products_freezer
+      ON catalog_products(tenant_id, freezer_safe);
+    CREATE INDEX IF NOT EXISTS idx_catalog_products_lid
+      ON catalog_products(tenant_id, lid_included);
+    CREATE INDEX IF NOT EXISTS idx_catalog_products_tiny
+      ON catalog_products(tenant_id, tiny_id);
   `);
   schemaReady = true;
   schemaDbPath = dbPath;

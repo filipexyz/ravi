@@ -2,12 +2,15 @@
  * Catalog Gateway — Domain Types
  *
  * Product catalog mirrored from external ERPs (Tiny initially).
- * See docs/proposals/catalog-gateway-prd.md
+ * Campos alinhados com pesquisa empirica (researcher task-f9997eef,
+ * 734 conversas WhatsApp reais analisadas em 2026-05-27).
+ *
+ * See docs/proposals/catalog-gateway-prd.md.
  */
 
-export type ResistenciaTermica = "alta" | "media" | "baixa";
 export type EnriquecimentoConf = "high" | "med" | "low";
 export type TipoVariacao = "P" | "V" | "N";
+export type ProductShape = "round" | "square" | "rectangular" | "bottle" | "bowl" | "bag" | "tray" | "other";
 
 export interface CatalogProduct {
   tenantId: string;
@@ -28,13 +31,36 @@ export interface CatalogProduct {
   comprimentoMm?: number;
   diametroMm?: number;
   capacidadeMl?: number;
+  // ADDED 2026-05-27 (researcher task-f9997eef): ml ≠ gramas é confusão
+  // presente em 33% das conversas. Equipe SEMPRE clarifica.
+  weightGramsApprox?: number;
+  // ADDED 2026-05-27: equipe pergunta forma em 20% das conversas
+  // (use-case-first arquetipo)
+  shape?: ProductShape;
+  // ADDED 2026-05-27: equipe SEMPRE pergunta divisória em conversas
+  // use-case-first (33% qualitativo)
+  compartments?: number;
   material?: string;
-  resistenciaTermica?: ResistenciaTermica;
+  // ADDED 2026-05-27 (researcher): substitui resistencia_termica enum
+  // por booleans separados — equipe pergunta cada um especificamente
+  microwaveSafe?: boolean;
+  ovenSafe?: boolean;
+  freezerSafe?: boolean;
+  airfryerSafe?: boolean;
+  // ADDED 2026-05-27: substitui seal_type. "Não vaza?" é a pergunta real.
+  leakResistant?: boolean;
+  // ADDED 2026-05-27: tampa é decisor binário (21.5% das conversas)
+  lidIncluded?: boolean;
+  lidCompatible?: boolean;
+  // ADDED 2026-05-27: nicho mas relevante (use_case_tags 13.6%)
+  customizationMinQty?: number;
   usos?: string[];
+  cor?: string;
   tipoVariacao?: TipoVariacao;
   skuPai?: string;
   imagemUrl?: string;
   artifactId?: string;
+  tinyId?: string;
   tinySyncAt?: number;
   enriquecimentoConf?: EnriquecimentoConf;
   enriquecimentoAt?: number;
@@ -63,13 +89,25 @@ export interface UpsertCatalogProductInput {
   comprimentoMm?: number;
   diametroMm?: number;
   capacidadeMl?: number;
+  weightGramsApprox?: number;
+  shape?: ProductShape;
+  compartments?: number;
   material?: string;
-  resistenciaTermica?: ResistenciaTermica;
+  microwaveSafe?: boolean;
+  ovenSafe?: boolean;
+  freezerSafe?: boolean;
+  airfryerSafe?: boolean;
+  leakResistant?: boolean;
+  lidIncluded?: boolean;
+  lidCompatible?: boolean;
+  customizationMinQty?: number;
   usos?: string[];
+  cor?: string;
   tipoVariacao?: TipoVariacao;
   skuPai?: string;
   imagemUrl?: string;
   artifactId?: string;
+  tinyId?: string;
   tinySyncAt?: number;
   enriquecimentoConf?: EnriquecimentoConf;
   enriquecimentoAt?: number;
@@ -81,10 +119,20 @@ export interface CatalogSearchFilter {
   tenantId?: string;
   capacidadeMinMl?: number;
   capacidadeMaxMl?: number;
+  weightGramsMin?: number;
+  weightGramsMax?: number;
+  shape?: ProductShape;
+  compartmentsMin?: number;
+  microwaveSafe?: boolean;
+  ovenSafe?: boolean;
+  freezerSafe?: boolean;
+  airfryerSafe?: boolean;
+  leakResistant?: boolean;
+  lidIncluded?: boolean;
   material?: string;
-  resistenciaTermica?: ResistenciaTermica;
   categoriaPath?: string;
   marca?: string;
+  cor?: string;
   ativo?: boolean;
   vendavel?: boolean;
   mostrarChatbot?: boolean;
@@ -99,8 +147,14 @@ export interface CatalogSearchResult {
   categoriaPath?: string;
   preco?: number;
   capacidadeMl?: number;
+  weightGramsApprox?: number;
+  shape?: ProductShape;
+  compartments?: number;
+  microwaveSafe?: boolean;
+  ovenSafe?: boolean;
+  freezerSafe?: boolean;
+  lidIncluded?: boolean;
   material?: string;
-  resistenciaTermica?: ResistenciaTermica;
   estoque?: number;
   rank?: number;
 }
@@ -135,3 +189,14 @@ export interface FinalizeCatalogSyncLogInput {
 }
 
 export const DEFAULT_TENANT_ID = "default";
+
+export const PRODUCT_SHAPES: readonly ProductShape[] = [
+  "round",
+  "square",
+  "rectangular",
+  "bottle",
+  "bowl",
+  "bag",
+  "tray",
+  "other",
+] as const;

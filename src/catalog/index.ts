@@ -15,14 +15,14 @@ export type {
   CreateCatalogSyncLogInput,
   EnriquecimentoConf,
   FinalizeCatalogSyncLogInput,
-  ResistenciaTermica,
+  ProductShape,
   TipoVariacao,
   UpsertCatalogProductInput,
 } from "./types.js";
 
-export { DEFAULT_TENANT_ID } from "./types.js";
+export { DEFAULT_TENANT_ID, PRODUCT_SHAPES } from "./types.js";
 
-export { ensureCatalogSchema, resetCatalogSchemaFlag } from "./db.js";
+export { ensureCatalogSchema } from "./db.js";
 
 export {
   upsertProduct,

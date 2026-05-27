@@ -51,8 +51,13 @@ describe("catalog_products CRUD", () => {
       nome: "Embalagem para Caldo Quente 500ml",
       marca: "Galvanotek",
       capacidadeMl: 500,
+      weightGramsApprox: 400,
+      shape: "rectangular",
       material: "PP",
-      resistenciaTermica: "alta",
+      microwaveSafe: true,
+      ovenSafe: false,
+      freezerSafe: true,
+      lidIncluded: true,
       usos: ["caldo quente", "sopa"],
     });
     expect(product.sku).toBe("G312");
@@ -62,17 +67,24 @@ describe("catalog_products CRUD", () => {
     expect(product.mostrarChatbot).toBe(true);
     expect(product.usos).toEqual(["caldo quente", "sopa"]);
     expect(product.capacidadeMl).toBe(500);
+    expect(product.weightGramsApprox).toBe(400);
+    expect(product.shape).toBe("rectangular");
+    expect(product.microwaveSafe).toBe(true);
+    expect(product.ovenSafe).toBe(false);
+    expect(product.freezerSafe).toBe(true);
+    expect(product.lidIncluded).toBe(true);
     expect(product.createdAt).toBe(product.updatedAt);
   });
 
   it("upsertProduct updates existing row and preserves created_at", async () => {
     const first = upsertProduct({ sku: "G312", nome: "Old name" });
     await new Promise((r) => setTimeout(r, 5));
-    const second = upsertProduct({ sku: "G312", nome: "New name", preco: 1.85 });
+    const second = upsertProduct({ sku: "G312", nome: "New name", preco: 1.85, shape: "round" });
     expect(second.createdAt).toBe(first.createdAt);
     expect(second.updatedAt).toBeGreaterThan(first.updatedAt);
     expect(second.nome).toBe("New name");
     expect(second.preco).toBe(1.85);
+    expect(second.shape).toBe("round");
   });
 
   it("upsertProduct rejects empty sku and empty nome", () => {
@@ -119,6 +131,37 @@ describe("catalog_products CRUD", () => {
     expect(validateSku("tenant-b", "G312")).toBe(true);
     expect(validateSku("tenant-c", "G312")).toBe(false);
   });
+
+  it("preserves new empirical fields through round-trip", () => {
+    upsertProduct({
+      sku: "G240",
+      nome: "Embalagem Forneavel 800ml",
+      capacidadeMl: 800,
+      weightGramsApprox: 700,
+      shape: "rectangular",
+      compartments: 1,
+      microwaveSafe: true,
+      ovenSafe: true,
+      freezerSafe: true,
+      airfryerSafe: true,
+      leakResistant: false,
+      lidIncluded: true,
+      lidCompatible: true,
+      customizationMinQty: 1000,
+      cor: "preto",
+      tinyId: "566764298",
+    });
+    const product = getProduct("default", "G240")!;
+    expect(product.weightGramsApprox).toBe(700);
+    expect(product.shape).toBe("rectangular");
+    expect(product.compartments).toBe(1);
+    expect(product.airfryerSafe).toBe(true);
+    expect(product.leakResistant).toBe(false);
+    expect(product.lidCompatible).toBe(true);
+    expect(product.customizationMinQty).toBe(1000);
+    expect(product.cor).toBe("preto");
+    expect(product.tinyId).toBe("566764298");
+  });
 });
 
 describe("searchProducts", () => {
@@ -131,8 +174,13 @@ describe("searchProducts", () => {
       preco: 1.85,
       estoque: 1200,
       capacidadeMl: 500,
+      weightGramsApprox: 400,
+      shape: "round",
       material: "PP",
-      resistenciaTermica: "alta",
+      microwaveSafe: true,
+      ovenSafe: false,
+      freezerSafe: true,
+      lidIncluded: true,
       usos: ["caldo quente", "sopa"],
     });
     upsertProduct({
@@ -143,8 +191,13 @@ describe("searchProducts", () => {
       preco: 1.45,
       estoque: 950,
       capacidadeMl: 500,
+      weightGramsApprox: 400,
+      shape: "round",
       material: "PET",
-      resistenciaTermica: "baixa",
+      microwaveSafe: false,
+      ovenSafe: false,
+      freezerSafe: true,
+      lidIncluded: false,
       usos: ["caldo frio"],
     });
     upsertProduct({
@@ -155,9 +208,29 @@ describe("searchProducts", () => {
       preco: 0.35,
       estoque: 5000,
       capacidadeMl: 100,
+      weightGramsApprox: 80,
+      shape: "round",
       material: "PP",
-      resistenciaTermica: "alta",
+      microwaveSafe: true,
+      leakResistant: true,
+      lidIncluded: true,
+      cor: "transparente",
       usos: ["molho"],
+    });
+    upsertProduct({
+      sku: "M250",
+      nome: "Marmita 750ml com Divisória",
+      marca: "Prafesta",
+      categoriaPath: "EMBALAGEM/Marmita/Divisoria",
+      preco: 2.95,
+      estoque: 480,
+      capacidadeMl: 750,
+      weightGramsApprox: 600,
+      shape: "rectangular",
+      compartments: 3,
+      material: "PP",
+      microwaveSafe: true,
+      usos: ["marmita executiva"],
     });
     upsertProduct({
       sku: "DROP",
@@ -165,22 +238,51 @@ describe("searchProducts", () => {
       ativo: false,
       material: "PP",
       capacidadeMl: 500,
-      resistenciaTermica: "alta",
     });
   });
 
-  it("structured filter narrows by capacity, material and resistencia", () => {
+  it("structured filter narrows by capacidade and microwave_safe", () => {
     const results = searchProducts({
       capacidadeMinMl: 450,
       capacidadeMaxMl: 550,
-      resistenciaTermica: "alta",
+      microwaveSafe: true,
     });
     expect(results.map((r) => r.sku)).toEqual(["G312"]);
   });
 
+  it("filter by shape returns rectangular only", () => {
+    const results = searchProducts({ shape: "rectangular" });
+    expect(results.map((r) => r.sku)).toEqual(["M250"]);
+  });
+
+  it("filter by compartments minimum returns marmitas with divisória", () => {
+    const results = searchProducts({ compartmentsMin: 2 });
+    expect(results.map((r) => r.sku)).toEqual(["M250"]);
+  });
+
+  it("filter by lid_included narrows correctly", () => {
+    const results = searchProducts({ lidIncluded: true, material: "PP" });
+    expect(results.map((r) => r.sku).sort()).toEqual(["G312", "PT100"]);
+  });
+
+  it("filter by leak_resistant returns only PT100", () => {
+    const results = searchProducts({ leakResistant: true });
+    expect(results.map((r) => r.sku)).toEqual(["PT100"]);
+  });
+
+  it("filter by cor returns transparente only", () => {
+    const results = searchProducts({ cor: "transparente" });
+    expect(results.map((r) => r.sku)).toEqual(["PT100"]);
+  });
+
+  it("weight range filter narrows by approximate grams", () => {
+    const results = searchProducts({ weightGramsMin: 500, weightGramsMax: 700 });
+    expect(results.map((r) => r.sku)).toEqual(["M250"]);
+  });
+
   it("excludes ativo=0 by default", () => {
     const results = searchProducts({ material: "PP" });
-    expect(results.map((r) => r.sku).sort()).toEqual(["G312", "PT100"]);
+    expect(results.map((r) => r.sku).sort()).toEqual(["G312", "M250", "PT100"]);
   });
 
   it("can opt-in to inactive rows", () => {
@@ -221,7 +323,6 @@ describe("searchProducts", () => {
       nome: "Outra coisa",
       material: "PET",
       capacidadeMl: 500,
-      resistenciaTermica: "baixa",
     });
     const a = searchProducts({ tenantId: "default", query: "caldo quente" });
     const b = searchProducts({ tenantId: "tenant-b", query: "caldo quente" });
@@ -232,6 +333,15 @@ describe("searchProducts", () => {
   it("limit caps result count", () => {
     const results = searchProducts({ material: "PP", limit: 1 });
     expect(results).toHaveLength(1);
+  });
+
+  it("search result exposes shape, compartments and *_safe booleans", () => {
+    const results = searchProducts({ material: "PP", microwaveSafe: true });
+    expect(results.length).toBeGreaterThan(0);
+    const m250 = results.find((r) => r.sku === "M250")!;
+    expect(m250.shape).toBe("rectangular");
+    expect(m250.compartments).toBe(3);
+    expect(m250.microwaveSafe).toBe(true);
   });
 });
 
