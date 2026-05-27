@@ -10,6 +10,10 @@ import type {
   NumericOperator,
 } from "./types.js";
 
+export interface TagRuleEvaluationContext {
+  chatIdsByContactId?: Map<string, string[]>;
+}
+
 function durationToMs(value: string): number {
   const match = /^(\d+)\s*([smhdw])$/i.exec(value.trim());
   if (!match) throw new Error(`Invalid duration: ${value}`);
@@ -164,12 +168,19 @@ function chatHasTag(chatId: string, slug: string): boolean {
   return slugs.includes(slug);
 }
 
-function listChatsForContact(contact: Contact): string[] {
+function listChatsForContact(contact: Contact, context?: TagRuleEvaluationContext): string[] {
+  const cached = context?.chatIdsByContactId?.get(contact.id);
+  if (cached) return cached;
   const chats = dbListChats({ limit: 1_000, contactId: contact.id });
   return chats.items.map((item) => item.chat.id);
 }
 
-function evaluateContactCondition(condition: ContactCondition, contact: Contact, now: number): ConditionEvaluation {
+function evaluateContactCondition(
+  condition: ContactCondition,
+  contact: Contact,
+  now: number,
+  context?: TagRuleEvaluationContext,
+): ConditionEvaluation {
   if (condition.kind === "has-tag") {
     const slug = tryNormalizeTagSlug(condition.tag);
     const slugs = tagsForContact(contact);
@@ -216,7 +227,7 @@ function evaluateContactCondition(condition: ContactCondition, contact: Contact,
     };
   }
   if (condition.kind === "has-chat-with") {
-    const chatIds = listChatsForContact(contact);
+    const chatIds = listChatsForContact(contact, context);
     const subTraces: Array<Record<string, unknown>> = [];
     for (const chatId of chatIds) {
       const subEvaluations = condition.conditions.map((sub) => evaluateChatCondition(sub, chatId, now));
@@ -236,6 +247,7 @@ export interface EvaluateContactRuleInput {
   conditions: ContactCondition[];
   contact: Contact;
   now?: number;
+  context?: TagRuleEvaluationContext;
 }
 
 export interface EvaluateContactRuleResult {
@@ -247,7 +259,7 @@ export function evaluateContactConditions(input: EvaluateContactRuleInput): Eval
   const now = input.now ?? Date.now();
   const trace: Array<Record<string, unknown>> = [];
   for (const condition of input.conditions) {
-    const result = evaluateContactCondition(condition, input.contact, now);
+    const result = evaluateContactCondition(condition, input.contact, now, input.context);
     trace.push({ ...result.cause, matched: result.matched });
     if (!result.matched) {
       return { matched: false, trace };
