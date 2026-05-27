@@ -9,6 +9,7 @@ import {
   getRuntimeCredentialHealth,
   recordRuntimeCredentialFailure,
   recordRuntimeCredentialLimitPressure,
+  recordRuntimeCredentialSuccess,
   serializeRuntimeCredential,
 } from "./credential-store.js";
 import type { RuntimeCredentialInput } from "./credential-types.js";
@@ -121,6 +122,34 @@ describe("runtime credential store and pool", () => {
     expect(getRuntimeCredential("rcred_failed")?.status).toBe("invalid");
     expect(getRuntimeCredential("rcred_healthy")?.status).toBe("healthy");
     expect(getRuntimeCredentialHealth("rcred_healthy")?.lastFailureKind).toBeUndefined();
+  });
+
+  it("clears stale credential error fields after a successful turn", () => {
+    createRuntimeCredential(credentialInput("rcred_recovered", "Recovered slot", 10));
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "codex",
+      upstreamProvider: "openai",
+      credentialId: "rcred_recovered",
+      httpStatus: 401,
+      message: "Invalid API key",
+    });
+    recordRuntimeCredentialFailure("rcred_recovered", signal, 5_000);
+
+    const failed = getRuntimeCredential("rcred_recovered");
+    expect(failed?.status).toBe("invalid");
+    expect(failed?.lastErrorReason).toBe("auth_invalid");
+    expect(failed?.lastErrorMessageRedacted).toBe("Invalid API key");
+
+    const transition = recordRuntimeCredentialSuccess("rcred_recovered", 10_000);
+    const serialized = serializeRuntimeCredential(transition.credential);
+
+    expect(transition.credential.status).toBe("healthy");
+    expect(transition.credential.lastErrorCode).toBeUndefined();
+    expect(transition.credential.lastErrorReason).toBeUndefined();
+    expect(transition.credential.lastErrorMessageRedacted).toBeUndefined();
+    expect(serialized.lastErrorCode).toBeNull();
+    expect(serialized.lastErrorReason).toBeNull();
+    expect(serialized.lastErrorMessageRedacted).toBeNull();
   });
 
   it("records near-limit pressure without preserving stale hard-failure health", () => {

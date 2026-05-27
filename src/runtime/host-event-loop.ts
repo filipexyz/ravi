@@ -1526,32 +1526,27 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             rawEvent: event.rawEvent,
             metadata: event.metadata,
           });
-        } else {
-          await emitRuntimeEvent({
-            ...event,
-            provider: runtimeSession.provider,
+          recordTerminalTraceOnce({
+            status: "interrupted",
+            eventType: "turn.interrupted",
+            abortReason: internalAbortReason ?? "recoverable_interrupt_failure",
+            error: null,
+            payloadJson: {
+              recoverable: event.recoverable ?? true,
+              suppressedRecoverable,
+              failureDetails: formatRuntimeFailureDetails(event) ?? null,
+              rawEvent: rawEventSummary ?? null,
+              metadata: event.metadata ?? null,
+            },
           });
-        }
-        recordTerminalTraceOnce({
-          status: suppressedRecoverable ? "interrupted" : "failed",
-          eventType: suppressedRecoverable ? "turn.interrupted" : "turn.failed",
-          abortReason: suppressedRecoverable ? (internalAbortReason ?? "recoverable_interrupt_failure") : null,
-          error: suppressedRecoverable ? null : event.error,
-          payloadJson: {
+          flushObservationEvents("turn.interrupt", {
+            provider: runtimeSession.provider,
             recoverable: event.recoverable ?? true,
             suppressedRecoverable,
-            failureDetails: formatRuntimeFailureDetails(event) ?? null,
-            rawEvent: rawEventSummary ?? null,
-            metadata: event.metadata ?? null,
-          },
-        });
-        flushObservationEvents(suppressedRecoverable ? "turn.interrupt" : "turn.failed", {
-          provider: runtimeSession.provider,
-          recoverable: event.recoverable ?? true,
-          suppressedRecoverable,
-          error: suppressedRecoverable ? null : event.error,
-          abortReason: suppressedRecoverable ? (internalAbortReason ?? "recoverable_interrupt_failure") : null,
-        });
+            error: null,
+            abortReason: internalAbortReason ?? "recoverable_interrupt_failure",
+          });
+        }
 
         responseText = "";
         clearActiveToolState();
@@ -1560,7 +1555,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.pendingAbort = false;
         streaming.turnActive = false;
         streaming.internalAbortReason = undefined;
-        clearTraceTurnState();
 
         if (suppressedRecoverable) {
           const restartReason = internalAbortReason ?? "recoverable_interrupt_failure";
@@ -1580,6 +1574,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
           restartStashedReason = restartReason;
           signalTurnComplete();
+          clearTraceTurnState();
           streaming.done = true;
           break;
         }
@@ -1619,6 +1614,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               });
               streaming.currentTurnToolStarted = false;
               signalTurnComplete();
+              clearTraceTurnState();
               streaming.done = true;
               break;
             }
@@ -1630,6 +1626,32 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             });
           }
         }
+
+        await emitRuntimeEvent({
+          ...event,
+          provider: runtimeSession.provider,
+        });
+        recordTerminalTraceOnce({
+          status: "failed",
+          eventType: "turn.failed",
+          abortReason: null,
+          error: event.error,
+          payloadJson: {
+            recoverable: event.recoverable ?? true,
+            suppressedRecoverable,
+            failureDetails: formatRuntimeFailureDetails(event) ?? null,
+            rawEvent: rawEventSummary ?? null,
+            metadata: event.metadata ?? null,
+          },
+        });
+        flushObservationEvents("turn.failed", {
+          provider: runtimeSession.provider,
+          recoverable: event.recoverable ?? true,
+          suppressedRecoverable,
+          error: event.error,
+          abortReason: null,
+        });
+        clearTraceTurnState();
 
         streaming.currentTurnToolStarted = false;
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);

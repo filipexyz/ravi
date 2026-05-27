@@ -1024,6 +1024,7 @@ describe("runtime session trace instrumentation", () => {
     seedAdapterTrace(streaming, "turn-credential-retry");
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
     const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
     const before = Date.now();
 
     await runTraceLoop(
@@ -1048,9 +1049,14 @@ describe("runtime session trace instrumentation", () => {
         restartStashedSession: async (input) => {
           restartRequests.push(input);
         },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
       },
     );
 
+    expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
     expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
       "retry this credential turn",
     ]);

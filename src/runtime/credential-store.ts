@@ -595,6 +595,9 @@ export function recordRuntimeCredentialSuccess(
         `
         UPDATE runtime_credentials
         SET status = CASE WHEN enabled = 1 THEN 'healthy' ELSE 'disabled' END,
+            last_error_code = NULL,
+            last_error_reason = NULL,
+            last_error_message_redacted = NULL,
             reset_at = NULL,
             updated_at = ?
         WHERE id = ?
