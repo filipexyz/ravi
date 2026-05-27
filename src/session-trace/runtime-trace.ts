@@ -66,6 +66,7 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   queuedMessageCount?: number;
   pendingIds?: string[];
   commands?: unknown[];
+  runtimeCredential?: Record<string, unknown> | null;
 }
 
 export interface RuntimeTraceTerminalTurnInput extends RuntimeTraceIdentity {
@@ -219,6 +220,7 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       queued_message_count: input.queuedMessageCount ?? null,
       pending_ids: input.pendingIds ?? [],
       commands: input.commands ?? [],
+      runtime_credential: input.runtimeCredential ?? null,
     };
     const request = recordSessionBlob({
       kind: "adapter_request",

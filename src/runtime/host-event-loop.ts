@@ -19,7 +19,17 @@ import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-tra
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
+import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
+import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
+import { refreshRuntimeCredential } from "./credential-refresh.js";
 import {
+  completeRuntimeCredentialAttempt,
+  recordRuntimeCredentialFailure,
+  recordRuntimeCredentialSuccess,
+} from "./credential-store.js";
+import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
+import {
+  stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
@@ -118,6 +128,141 @@ function firstString(...values: unknown[]): string | undefined {
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
   }
   return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function headerValue(value: unknown): string | number | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const resolved = headerValue(item);
+      if (resolved !== undefined) return resolved;
+    }
+  }
+  return undefined;
+}
+
+function readHeaderSource(value: unknown): Record<string, string | number | undefined> | undefined {
+  if (!value) return undefined;
+  const out: Record<string, string | number | undefined> = {};
+  const maybeIterable = value as { entries?: unknown };
+  if (typeof maybeIterable.entries === "function") {
+    for (const [key, raw] of maybeIterable.entries() as Iterable<[unknown, unknown]>) {
+      if (typeof key !== "string") continue;
+      const resolved = headerValue(raw);
+      if (resolved !== undefined) out[key] = resolved;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+  const maybeForEach = value as { forEach?: unknown };
+  if (typeof maybeForEach.forEach === "function") {
+    (maybeForEach.forEach as (callback: (raw: unknown, key: unknown) => void) => void)((raw, key) => {
+      if (typeof key !== "string") return;
+      const resolved = headerValue(raw);
+      if (resolved !== undefined) out[key] = resolved;
+    });
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+  const record = asRecord(value);
+  if (!record) return undefined;
+  for (const [key, raw] of Object.entries(record)) {
+    const resolved = headerValue(raw);
+    if (resolved !== undefined) out[key] = resolved;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function extractRuntimeFailureHeaders(
+  rawEvent?: Record<string, unknown>,
+): Record<string, string | number | undefined> | undefined {
+  if (!rawEvent) return undefined;
+  const rawError = asRecord(rawEvent.error);
+  const rawResponse = asRecord(rawEvent.response);
+  const rawErrorResponse = asRecord(rawError?.response);
+  const merged: Record<string, string | number | undefined> = {};
+  for (const source of [
+    readHeaderSource(rawEvent.headers),
+    readHeaderSource(rawResponse?.headers),
+    readHeaderSource(rawError?.headers),
+    readHeaderSource(rawErrorResponse?.headers),
+  ]) {
+    if (!source) continue;
+    Object.assign(merged, source);
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function recordRuntimeCredentialTurnSuccess(streaming: RuntimeHostStreamingSession): void {
+  const credential = streaming.currentRuntimeCredential;
+  const credentialId = credential?.credentialId;
+  if (!credentialId) return;
+  try {
+    recordRuntimeCredentialSuccess(credentialId);
+    completeRuntimeCredentialAttempt(credential?.attemptId, { status: "succeeded" });
+  } catch (error) {
+    log.warn("Failed to record runtime credential success", { credentialId, error });
+  }
+}
+
+function clearRuntimeCredentialAttempt(streaming: RuntimeHostStreamingSession, attemptId: string | undefined): void {
+  if (!attemptId) return;
+  if (streaming.currentRuntimeCredential?.attemptId === attemptId) {
+    streaming.currentRuntimeCredential.attemptId = undefined;
+  }
+}
+
+function recordRuntimeCredentialTurnFailure(input: {
+  streaming: RuntimeHostStreamingSession;
+  provider: RuntimeProviderId;
+  model: string;
+  error: string;
+  rawEvent?: Record<string, unknown>;
+}): RuntimeCredentialFailureSignal | undefined {
+  const credential = input.streaming.currentRuntimeCredential;
+  if (!credential) return undefined;
+  const rawError = asRecord(input.rawEvent?.error);
+  const headers = extractRuntimeFailureHeaders(input.rawEvent);
+  const signal = classifyRuntimeCredentialFailure({
+    runtimeProvider: input.provider,
+    upstreamProvider: credential.upstreamProvider,
+    model: input.model,
+    credentialId: credential.credentialId,
+    httpStatus: firstNumber(input.rawEvent?.status, input.rawEvent?.statusCode, rawError?.status, rawError?.statusCode),
+    providerCode: firstString(input.rawEvent?.code, rawError?.code),
+    providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
+    message: input.error,
+    ...(headers ? { headers } : {}),
+    requestId: firstString(
+      input.rawEvent?.requestId,
+      input.rawEvent?.request_id,
+      rawError?.requestId,
+      rawError?.request_id,
+    ),
+    source: "sdk-error",
+  });
+
+  try {
+    recordRuntimeCredentialFailure(credential.credentialId, signal);
+    completeRuntimeCredentialAttempt(credential.attemptId, { status: "failed", signal });
+  } catch (error) {
+    log.warn("Failed to record runtime credential failure", {
+      credentialId: credential.credentialId,
+      kind: signal.kind,
+      error,
+    });
+  }
+  return signal;
 }
 
 function buildProviderRawRuntimeEvent(
@@ -769,6 +914,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       if (event.type === "tool.started") {
         streaming.lastToolFailure = undefined;
+        streaming.currentTurnToolStarted = true;
         streaming.toolRunning = true;
         streaming.currentToolId = event.toolUse.id;
         streaming.currentToolName = event.toolUse.name;
@@ -1155,12 +1301,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           output: outputTokens,
           sessionId: event.session?.displayId ?? event.providerSessionId,
         });
+        const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
+        recordRuntimeCredentialTurnSuccess(streaming);
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
         // Skill gates can be persisted by the Codex Bash hook in a separate process.
         // Refresh before merging the provider's terminal snapshot so those marks survive turn.complete.
         refreshRuntimeSessionParamsFromDb();
-        const runtimeSessionParams = mergeRuntimeSessionParams(event.session?.params ?? undefined);
+        const runtimeSessionParams = mergeRuntimeCredentialSessionMetadata(
+          mergeRuntimeSessionParams(event.session?.params ?? undefined),
+          streaming.currentRuntimeCredential,
+        );
         const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
         const persistedSessionId =
           runtimeSessionDisplayId ??
@@ -1178,6 +1329,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.sdkSessionId = runtimeSessionDisplayId ?? persistedSessionId;
           session.runtimeProvider = runtimeSession.provider;
         }
+        clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
         updateTokens(session.sessionKey, inputTokens, outputTokens);
 
         const executionModel = resolveCostTrackingModel(
@@ -1286,6 +1438,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.pendingAbort = false;
+        streaming.currentTurnToolStarted = false;
         streaming.turnActive = false;
         clearTraceTurnState();
         patchLiveState(
@@ -1327,6 +1480,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
+        streaming.currentTurnToolStarted = false;
         streaming.turnActive = false;
         clearTraceTurnState();
         markRuntimeLiveIdle(sessionName, "turn interrupted");
@@ -1340,6 +1494,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
         const suppressedRecoverable = interruptedRecoverable || internalRecoverable;
         const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
+        const currentTurnHadToolStarted = streaming.currentTurnToolStarted === true;
+        const credentialFailureSignal = !suppressedRecoverable
+          ? recordRuntimeCredentialTurnFailure({
+              streaming,
+              provider: runtimeSession.provider,
+              model,
+              error: event.error,
+              rawEvent: event.rawEvent,
+            })
+          : undefined;
+        const failedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
         log[suppressedRecoverable ? "info" : "warn"](
           suppressedRecoverable ? "Turn interrupted by recoverable runtime failure" : "Turn failed",
           {
@@ -1419,6 +1584,56 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           break;
         }
 
+        if (credentialFailureSignal?.retryableByCredential) {
+          const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
+          if (currentTurnHadToolStarted) {
+            log.info("Skipping runtime credential retry after tool activity", {
+              runId,
+              sessionName,
+              credentialId: streaming.currentRuntimeCredential?.credentialId,
+              kind: credentialFailureSignal.kind,
+            });
+          } else {
+            const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
+            if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
+              try {
+                await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
+                  reason: "retryable_failure",
+                });
+              } catch (error) {
+                log.warn("Runtime credential refresh after failure failed", {
+                  runId,
+                  sessionName,
+                  credentialId: streaming.currentRuntimeCredential.credentialId,
+                  error,
+                });
+              }
+              restartStashedReason = restartReason;
+              log.info("Closing runtime after retryable credential failure", {
+                runId,
+                sessionName,
+                credentialId: streaming.currentRuntimeCredential.credentialId,
+                kind: credentialFailureSignal.kind,
+                pendingMessages: streaming.pendingMessages.length,
+                stashedMessages: stashedCount,
+              });
+              streaming.currentTurnToolStarted = false;
+              signalTurnComplete();
+              streaming.done = true;
+              break;
+            }
+            log.warn("Skipping runtime credential retry because current turn messages are unavailable", {
+              runId,
+              sessionName,
+              credentialId: streaming.currentRuntimeCredential?.credentialId,
+              kind: credentialFailureSignal.kind,
+            });
+          }
+        }
+
+        streaming.currentTurnToolStarted = false;
+        clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+
         if (streaming.agentMode !== "sentinel") {
           await emitResponse(formatUserFacingTurnFailure(event.error));
         }
@@ -1458,6 +1673,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
 
     if (streamingSessions.delete(sessionName)) {
+      completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
+        status: "abandoned",
+        metadata: { phase: "runtime.event_loop.finally" },
+      });
       if (restartStashedReason && restartStashedSession) {
         await restartStashedSession({ sessionName, reason: restartStashedReason });
       }

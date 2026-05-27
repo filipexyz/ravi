@@ -2956,6 +2956,126 @@ export type RulesSourcesInput = {
 /** Return shape for `rules.sources`. (no @Returns declared) */
 export type RulesSourcesReturn = unknown;
 
+/** Input shape for `runtime.credentials.add`. */
+export type RuntimeCredentialsAddInput = {
+  agents?: string;
+  authMethod?: string;
+  authProfile?: string;
+  label?: string;
+  models?: string;
+  notes?: string;
+  priority?: string;
+  provider?: string;
+  readOnly?: boolean;
+  remoteForward?: boolean;
+  secretEnv?: string;
+  targetEnv?: string;
+  taskProfiles?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.add`. (no @Returns declared) */
+export type RuntimeCredentialsAddReturn = unknown;
+
+/** Input shape for `runtime.credentials.classify`. */
+export type RuntimeCredentialsClassifyInput = {
+  credential?: string;
+  headers?: string;
+  message?: string;
+  provider?: string;
+  providerCode?: string;
+  providerType?: string;
+  record?: boolean;
+  status?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.classify`. (no @Returns declared) */
+export type RuntimeCredentialsClassifyReturn = unknown;
+
+/** Input shape for `runtime.credentials.disable`. */
+export type RuntimeCredentialsDisableInput = {
+  id: string;
+};
+
+/** Return shape for `runtime.credentials.disable`. (no @Returns declared) */
+export type RuntimeCredentialsDisableReturn = unknown;
+
+/** Input shape for `runtime.credentials.enable`. */
+export type RuntimeCredentialsEnableInput = {
+  id: string;
+};
+
+/** Return shape for `runtime.credentials.enable`. (no @Returns declared) */
+export type RuntimeCredentialsEnableReturn = unknown;
+
+/** Input shape for `runtime.credentials.import`. */
+export type RuntimeCredentialsImportInput = {
+  fromClaudeCode?: boolean;
+  fromCodexHome?: string;
+  label?: string;
+  managedRefresh?: boolean;
+  provider?: string;
+};
+
+/** Return shape for `runtime.credentials.import`. (no @Returns declared) */
+export type RuntimeCredentialsImportReturn = unknown;
+
+/** Input shape for `runtime.credentials.list`. */
+export type RuntimeCredentialsListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+  provider?: string;
+  status?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.list`. (no @Returns declared) */
+export type RuntimeCredentialsListReturn = unknown;
+
+/** Input shape for `runtime.credentials.refresh`. */
+export type RuntimeCredentialsRefreshInput = {
+  agent?: string;
+  force?: boolean;
+  id?: string;
+  model?: string;
+  provider?: string;
+  taskProfile?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.refresh`. (no @Returns declared) */
+export type RuntimeCredentialsRefreshReturn = unknown;
+
+/** Input shape for `runtime.credentials.reset-health`. */
+export type RuntimeCredentialsResetHealthInput = {
+  id: string;
+};
+
+/** Return shape for `runtime.credentials.reset-health`. (no @Returns declared) */
+export type RuntimeCredentialsResetHealthReturn = unknown;
+
+/** Input shape for `runtime.credentials.select`. */
+export type RuntimeCredentialsSelectInput = {
+  agent?: string;
+  model?: string;
+  provider?: string;
+  taskProfile?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.select`. (no @Returns declared) */
+export type RuntimeCredentialsSelectReturn = unknown;
+
+/** Input shape for `runtime.credentials.status`. */
+export type RuntimeCredentialsStatusInput = {
+  id?: string;
+};
+
+/** Return shape for `runtime.credentials.status`. (no @Returns declared) */
+export type RuntimeCredentialsStatusReturn = unknown;
+
 /** Input shape for `sdk.client.check`. */
 export type SdkClientCheckInput = {
   out?: string;

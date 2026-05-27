@@ -215,6 +215,7 @@ export async function* createRuntimeMessageGenerator({
       session.onTurnComplete = resolve;
     });
     session.turnActive = true;
+    session.currentTurnToolStarted = false;
     if (session.idleGapRecoveryTimer) {
       clearTimeout(session.idleGapRecoveryTimer);
       session.idleGapRecoveryTimer = undefined;

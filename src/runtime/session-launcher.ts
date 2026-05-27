@@ -10,6 +10,7 @@ import {
 import { createSessionTraceRunId, recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID, assertRuntimeCompatibility } from "./provider-registry.js";
+import { completeRuntimeCredentialAttempt, markRuntimeCredentialAttemptStarted } from "./credential-store.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { formatUserFacingTurnFailure, runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
@@ -168,6 +169,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     log.warn("Failed to ensure observer bindings", { sessionName, error });
   }
   const abortController = new AbortController();
+  let runtimeCredentialAttempt: Awaited<ReturnType<typeof buildRuntimeStartRequest>>["runtimeCredentialAttempt"];
 
   const streamingSession: RuntimeHostStreamingSession = {
     agentId: agent.id,
@@ -251,7 +253,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       resuming: !!resumableProviderSessionId,
     });
 
-    const { runtimeRequest, toolContext } = await buildRuntimeStartRequest({
+    const builtRuntimeRequest = await buildRuntimeStartRequest({
       runId,
       sessionName,
       prompt,
@@ -273,8 +275,12 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       stashedMessages,
       defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
     });
+    runtimeCredentialAttempt = builtRuntimeRequest.runtimeCredentialAttempt;
+    const { runtimeRequest, toolContext } = builtRuntimeRequest;
 
     const runtimeSession = runtimeProvider.startSession(runtimeRequest);
+    markRuntimeCredentialAttemptStarted(runtimeCredentialAttempt?.attemptId);
+    streamingSession.currentRuntimeCredential = runtimeCredentialAttempt;
     const persistedRuntimeProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
     updateRuntimeProviderState(session.sessionKey, runtimeProviderId, {
       ...(persistedRuntimeProviderSessionId ? { providerSessionId: persistedRuntimeProviderSessionId } : {}),
@@ -328,6 +334,10 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
+    completeRuntimeCredentialAttempt(runtimeCredentialAttempt?.attemptId, {
+      status: "abandoned",
+      metadata: { phase: "runtime.start", error: errorMessage },
+    });
 
     log.error("Failed to start streaming session", {
       sessionName,

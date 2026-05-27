@@ -39,6 +39,8 @@ OpenRouter documents 401 invalid credentials, 402 insufficient credits, 429 rate
 
 Groq documents 429 rate limit responses plus `retry-after` and `x-ratelimit-*` headers: https://console.groq.com/docs/rate-limits
 
+Hermes Agent was studied as an implementation reference for credential fallback and storage behavior, specifically `hermes_cli/auth.py`, `agent/credential_pool.py`, `agent/auxiliary_client.py`, and provider adapters at NousResearch/hermes-agent commit `2517917de34eeb6a40f5a17a2e59d9746803dfa5`: https://github.com/NousResearch/hermes-agent
+
 ## Why Not Just Retry
 
 Blind retries make limit problems worse. A failed attempt might be:
@@ -50,6 +52,22 @@ Blind retries make limit problems worse. A failed attempt might be:
 - a post-tool failure where replaying the prompt may duplicate side effects.
 
 The system needs classification, health state, and replay safety before it can be automatic.
+
+## Lessons From Hermes
+
+Hermes keeps provider auth metadata separate from `.env` and provider-native stores. Its canonical auth JSON owns provider records, active provider metadata, and same-provider credential pool state, while `.env` remains a simple source for API keys. Ravi should copy the separation, not the exact file shape: SQLite owns queryable credential metadata and health, while secrets stay in env, keychain, helper commands, provider profiles, or a future Ravi secret store.
+
+Hermes rotates inside a provider pool before crossing provider boundaries. A 401/402/429 can refresh or mark the exact credential as exhausted and then select another credential for the same provider. Ravi needs the same ordering because changing upstream provider is a behavior change, while changing a credential within the selected provider is a recovery step.
+
+Hermes records exhaustion on the credential that actually failed, using the selected key hint when available. Ravi needs attempt-bound credential ids and fingerprints for the same reason. Marking "the current pool slot" after a failure is unsafe under concurrency because another turn may already have selected a different slot.
+
+Hermes synchronizes with provider-native auth stores when those stores are the source of truth. For Claude Code it can read macOS Keychain and Claude credentials files; for Codex it can import Codex auth without blindly writing back to Codex's shared file. Ravi should follow that boundary: provider-native credentials are explicit slots, reads and writes are provider-specific, and refresh writes back only when Ravi owns or is allowed to manage that profile.
+
+Hermes has unhealthy-provider cooldowns in addition to exhausted credentials. Ravi needs both levels. A provider-wide billing/quota/capacity state should skip doomed provider attempts temporarily without disabling unrelated credential rows.
+
+Hermes prefers explicit credentials over env fallback in tested paths. Ravi should make that a hard rule for managed pools: process env is compatibility fallback unless represented as a tracked read-only slot or explicitly allowed by policy.
+
+What Ravi should not copy blindly: hidden fallback from any installed tool credential, opaque auth JSON as the only operational database, or provider-local retry behavior that the host cannot observe. Ravi needs central events, traces, permissions, and deterministic tests.
 
 ## Why Session Continuity Must Be Credential-Aware
 
