@@ -36,6 +36,7 @@ const agentPlatformIdentityByUser = new Map<string, Record<string, unknown>>();
 const contactByRef = new Map<string, Record<string, unknown>>();
 const messageMetaById = new Map<string, MessageMetadata>();
 const recordInboundCalls: string[] = [];
+const channelMessageTraceCalls: Array<Record<string, unknown>> = [];
 let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
 let contactIntakeMode: "off" | "discovered" | "pending" = "off";
@@ -224,7 +225,10 @@ mock.module("../router/router-db.js", () => ({
 }));
 
 mock.module("../session-trace/channel-trace.js", () => ({
-  recordChannelMessageReceivedTrace: mock(() => ({})),
+  recordChannelMessageReceivedTrace: mock((input: Record<string, unknown>) => {
+    channelMessageTraceCalls.push(input);
+    return {};
+  }),
   recordRouteRejectedTrace: mock(() => ({})),
   recordRouteResolvedTrace: mock(() => ({})),
 }));
@@ -280,6 +284,7 @@ describe("OmniConsumer channel context", () => {
     contactByRef.clear();
     messageMetaById.clear();
     recordInboundCalls.length = 0;
+    channelMessageTraceCalls.length = 0;
   });
 
   afterEach(async () => {
@@ -402,6 +407,53 @@ describe("OmniConsumer channel context", () => {
     expect(subscriptions[0].outputAttachedAt).toBeDefined();
     expect(promptCalls).toHaveLength(2);
     expect(promptCalls[1][1].prompt).toContain("source_speech=speak");
+  });
+
+  it("records consumer lag from plugin received timestamps in channel traces", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+    const pluginReceivedAt = Date.now() - 2_000;
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-consumer-lag",
+      type: "message.received",
+      payload: {
+        externalId: "msg-consumer-lag",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "lag trace",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          pluginReceivedAt,
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(channelMessageTraceCalls).toHaveLength(1);
+    expect(channelMessageTraceCalls[0].payloadJson).toMatchObject({
+      pluginReceivedAtMs: pluginReceivedAt,
+    });
+    expect(
+      (channelMessageTraceCalls[0].payloadJson as { consumerLagMs?: number }).consumerLagMs,
+    ).toBeGreaterThanOrEqual(0);
   });
 
   it("renders inbound WhatsApp numeric mention placeholders as mentioned contact names", async () => {

@@ -612,6 +612,78 @@ describe("tag-rules apply", () => {
     expect(getContact("5511990010101")!.tags).not.toContain("lifecycle:qualified");
   });
 
+  it("tick reuses preloaded contact chat ids for has-chat-with rules", async () => {
+    upsertContact("5511990011111", "Interested", "allowed", "manual");
+    const interested = getContact("5511990011111")!;
+    upsertContact("5511990022222", "Quiet", "allowed", "manual");
+    const quiet = getContact("5511990022222")!;
+
+    const interestedChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformChatId: "5511990011111@s.whatsapp.net",
+      chatType: "dm",
+      title: "Interested",
+    });
+    dbUpsertChatMessage({
+      chatId: interestedChat.id,
+      channel: "whatsapp",
+      instanceId: "sde",
+      providerMessageId: "wamid-tick-chat-match",
+      rawChatId: "5511990011111@s.whatsapp.net",
+      rawSenderId: "5511990011111",
+      normalizedSenderId: "5511990011111",
+      actorType: "contact",
+      contactId: interested.id,
+      messageType: "text",
+      content: { type: "text", text: "quero comprar" },
+      providerTimestamp: Date.now(),
+      ingestedAt: Date.now(),
+    });
+    const quietChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "sde",
+      platformChatId: "5511990022222@s.whatsapp.net",
+      chatType: "dm",
+      title: "Quiet",
+    });
+    dbUpsertChatMessage({
+      chatId: quietChat.id,
+      channel: "whatsapp",
+      instanceId: "sde",
+      providerMessageId: "wamid-tick-chat-miss",
+      rawChatId: "5511990022222@s.whatsapp.net",
+      rawSenderId: "5511990022222",
+      normalizedSenderId: "5511990022222",
+      actorType: "contact",
+      contactId: quiet.id,
+      messageType: "text",
+      content: { type: "text", text: "sem interesse agora" },
+      providerTimestamp: Date.now(),
+      ingestedAt: Date.now(),
+    });
+
+    writeRule({
+      id: "intent-from-chat-via-tick",
+      scope: "contact",
+      enabled: true,
+      priority: 0,
+      conditions: [
+        {
+          kind: "has-chat-with",
+          conditions: [{ kind: "any-message-text-matches", pattern: "comprar" }],
+        },
+      ],
+      apply: [{ target: "contact", tag: "intent:purchase", when: "matched" }],
+      evaluation: { reactive: false, cron: null },
+    } as TagRule);
+
+    const summary = await tickTagRules({ apply: true, yieldEvery: 1 });
+    expect(summary.appliedActions).toBe(1);
+    expect(getContactById(interested.id)?.tags).toContain("intent:purchase");
+    expect(getContactById(quiet.id)?.tags).not.toContain("intent:purchase");
+  });
+
   it("when:not-matched applies removals when conditions fail", () => {
     upsertContact("5511990004444", "Reverse", "allowed", "manual");
     addContactTag("5511990004444", "temperature:hot");

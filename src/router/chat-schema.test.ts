@@ -12,6 +12,7 @@ import {
   dbGetSessionChatBinding,
   dbGetChatReadingDelta,
   dbListAgentChatMessagesPage,
+  dbListChatIdsByContactIds,
   dbListChats,
   dbListChatParticipants,
   dbListChatReadingListMembers,
@@ -357,6 +358,50 @@ describe("identity chat schema", () => {
     const contactMessages = dbListChatMessagesPageByContactId({ contactId: "contact_1" });
     expect(contactMessages.total).toBe(2);
     expect(contactMessages.items.map((message) => message.content?.text)).toEqual(["segunda", "primeira"]);
+  });
+
+  it("lists related chat ids for contacts in one batched indexed query shape", () => {
+    const first = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511991111111@s.whatsapp.net",
+      chatType: "dm",
+      title: "First",
+    });
+    const second = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511992222222@s.whatsapp.net",
+      chatType: "dm",
+      title: "Second",
+    });
+    const shared = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+      title: "Shared",
+    });
+
+    dbUpsertChatParticipant({ chatId: first.id, contactId: "contact_a", source: "test" });
+    dbUpsertChatParticipant({ chatId: shared.id, contactId: "contact_a", source: "test" });
+    dbUpsertChatMessage({
+      chatId: second.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "wamid-batch-contact-b",
+      rawChatId: "5511992222222@s.whatsapp.net",
+      actorType: "contact",
+      contactId: "contact_b",
+      content: { type: "text", text: "hello" },
+      providerTimestamp: 1_700_000_010_000,
+      ingestedAt: 1_700_000_010_100,
+    });
+
+    const byContact = dbListChatIdsByContactIds({ contactIds: ["contact_a", "contact_b", "contact_empty"] });
+    expect(byContact.get("contact_a")?.sort()).toEqual([first.id, shared.id].sort());
+    expect(byContact.get("contact_b")).toEqual([second.id]);
+    expect(byContact.get("contact_empty")).toEqual([]);
   });
 
   it("canonicalizes WhatsApp DM LID and phone chats for the same contact", () => {

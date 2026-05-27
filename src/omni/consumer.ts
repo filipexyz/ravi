@@ -19,6 +19,7 @@ import { promisify } from "node:util";
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
 const CONSUMER_RETRY_DELAY_MS = 2_000;
 const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
+const CONSUMER_LAG_WARN_MS = 10_000;
 const unregisteredCooldowns = new Map<string, number>();
 import {
   attachChatToSession,
@@ -86,7 +87,7 @@ import { normalizeInboundMentionText } from "./mentions.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
 import { runTagRulesForContact } from "../tag-rules/index.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
-import { firstProviderTimestampMs } from "../utils/provider-timestamp.js";
+import { firstProviderTimestampMs, timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
 import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
@@ -145,6 +146,8 @@ interface OmniEvent {
     personId?: string;
     source?: string;
     ingestMode?: "realtime" | "history-sync";
+    pluginReceivedAt?: number | string;
+    receivedAt?: number | string;
   };
   timestamp: number;
 }
@@ -252,6 +255,18 @@ function resolveMessageProviderTimestampMs(payload: MessageReceivedPayload, enve
   return (
     firstProviderTimestampMs(payload.platformTimestamp, payload.rawPayload?.messageTimestamp, envelopeTimestamp) ??
     Date.now()
+  );
+}
+
+function resolvePluginReceivedAtMs(event: OmniEvent, payload: MessageReceivedPayload): number | null {
+  return (
+    timestampLikeToMs(payload.rawPayload?.pluginReceivedAt) ??
+    timestampLikeToMs(payload.rawPayload?.plugin_received_at) ??
+    timestampLikeToMs(payload.rawPayload?.receivedAt) ??
+    timestampLikeToMs(payload.rawPayload?.received_at) ??
+    timestampLikeToMs(event.metadata?.pluginReceivedAt) ??
+    timestampLikeToMs(event.metadata?.receivedAt) ??
+    null
   );
 }
 
@@ -574,6 +589,23 @@ export class OmniConsumer {
 
     // Skip reaction messages — these are handled by the REACTION stream consumer
     if (payload.content.type === "reaction") return;
+
+    const handlerStartedAt = Date.now();
+    const pluginReceivedAtMs = resolvePluginReceivedAtMs(event, payload);
+    const consumerLagMs = pluginReceivedAtMs === null ? null : Math.max(0, handlerStartedAt - pluginReceivedAtMs);
+    if (
+      consumerLagMs !== null &&
+      consumerLagMs >= CONSUMER_LAG_WARN_MS &&
+      event.metadata?.ingestMode !== "history-sync"
+    ) {
+      log.warn("Omni consumer lag detected", {
+        eventId: event.id,
+        subject,
+        consumerLagMs,
+        pluginReceivedAtMs,
+        handlerStartedAt,
+      });
+    }
 
     // Provider timestamps are the source of truth for message ordering.
     // History-sync batches can share one envelope timestamp while each message
@@ -1116,6 +1148,9 @@ export class OmniConsumer {
           contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
           actorAgentId: effectiveActorAgentId ?? null,
           platformIdentityId: effectivePlatformIdentityId ?? null,
+          pluginReceivedAtMs,
+          consumerHandlerStartedAt: handlerStartedAt,
+          consumerLagMs,
           chatName: rawPayloadString(rawPayload, "chatName") ?? null,
           routePhone,
         },

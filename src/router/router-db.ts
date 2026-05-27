@@ -1142,6 +1142,12 @@ function getDb(): Database {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_participants_raw_identity
       ON chat_participants(chat_id, normalized_platform_user_id)
       WHERE platform_identity_id IS NULL AND contact_id IS NULL AND agent_id IS NULL AND normalized_platform_user_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_participants_contact_lookup
+      ON chat_participants(contact_id, chat_id)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_participants_agent_lookup
+      ON chat_participants(agent_id, chat_id)
+      WHERE agent_id IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS chat_messages (
       id TEXT PRIMARY KEY,
@@ -1172,6 +1178,12 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_chat_messages_contact_time
       ON chat_messages(contact_id, provider_timestamp, ingested_at)
       WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_contact_chat_time
+      ON chat_messages(contact_id, chat_id, provider_timestamp, ingested_at)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_agent_chat_time
+      ON chat_messages(agent_id, chat_id, provider_timestamp, ingested_at)
+      WHERE agent_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_chat_messages_platform_identity
       ON chat_messages(platform_identity_id, provider_timestamp)
       WHERE platform_identity_id IS NOT NULL;
@@ -4842,6 +4854,77 @@ export function dbListChats(
       lastMessage: row.last_message_id ? dbGetChatMessageWithSortKey(row.last_message_id) : null,
     })),
   };
+}
+
+function normalizePositiveInteger(value: number | string | null | undefined, fallback: number, max: number): number {
+  if (value === null || value === undefined || value === "") return fallback;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
+export function dbListChatIdsByContactIds(input: {
+  contactIds: string[];
+  limitPerContact?: number | string | null;
+}): Map<string, string[]> {
+  const contactIds = Array.from(new Set(input.contactIds.map((id) => id.trim()).filter(Boolean)));
+  const result = new Map<string, string[]>(contactIds.map((id) => [id, []]));
+  if (contactIds.length === 0) return result;
+
+  const limitPerContact = normalizePositiveInteger(input.limitPerContact, 500, 5_000);
+  const database = getDb();
+  const chunkSize = 250;
+
+  for (let index = 0; index < contactIds.length; index += chunkSize) {
+    const chunk = contactIds.slice(index, index + chunkSize);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = database
+      .prepare(
+        `
+        WITH related_raw AS (
+          SELECT cp.contact_id AS contact_id, cp.chat_id AS chat_id, c.last_seen_at AS last_seen_at
+          FROM chat_participants cp
+          JOIN chats c ON c.id = cp.chat_id
+          WHERE cp.contact_id IN (${placeholders})
+
+          UNION ALL
+
+          SELECT cm.contact_id AS contact_id, cm.chat_id AS chat_id, c.last_seen_at AS last_seen_at
+          FROM chat_messages cm
+          JOIN chats c ON c.id = cm.chat_id
+          WHERE cm.contact_id IN (${placeholders})
+        ),
+        related AS (
+          SELECT contact_id, chat_id, MAX(last_seen_at) AS last_seen_at
+          FROM related_raw
+          WHERE contact_id IS NOT NULL AND chat_id IS NOT NULL
+          GROUP BY contact_id, chat_id
+        ),
+        ranked AS (
+          SELECT
+            contact_id,
+            chat_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY contact_id
+              ORDER BY last_seen_at DESC, chat_id ASC
+            ) AS rank
+          FROM related
+        )
+        SELECT contact_id, chat_id
+        FROM ranked
+        WHERE rank <= ?
+        ORDER BY contact_id ASC, rank ASC
+      `,
+      )
+      .all(...chunk, ...chunk, limitPerContact) as Array<{ contact_id: string; chat_id: string }>;
+
+    for (const row of rows) {
+      const chats = result.get(row.contact_id);
+      if (chats) chats.push(row.chat_id);
+    }
+  }
+
+  return result;
 }
 
 export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): ChatParticipantRecord {

@@ -8,6 +8,10 @@ const VIEW_STATE_REPUBLISH_MS = 2500;
 const HUMAN_CHAT_NAV_INTENT_TTL_MS = 4000;
 const ROOT_ID = "ravi-wa-overlay-root";
 const DRAWER_ID = "ravi-wa-overlay-drawer";
+const PROFILE_BUTTON_ID = "ravi-wa-profile-toggle";
+const PROFILE_MENU_ID = "ravi-wa-profile-menu";
+const PANEL_TOGGLE_ID = "ravi-wa-panel-toggle";
+const PANEL_RAIL_TOGGLE_ID = "ravi-wa-panel-rail-toggle";
 const SESSION_MAIN_HOST_ID = "ravi-wa-session-main-host";
 const LAYOUT_CLASS = "ravi-wa-layout-active";
 const LAYOUT_HOST_CLASS = "ravi-wa-layout-host";
@@ -36,6 +40,7 @@ const CLIENT_ID_KEY = "ravi-wa-overlay-client-id";
 const ACTIVE_WORKSPACE_KEY_STORAGE = "ravi-wa-overlay-workspace";
 const WORKSPACE_SESSION_KEY_STORAGE = "ravi-wa-overlay-workspace-session";
 const OMNI_INSTANCE_KEY_STORAGE = "ravi-wa-overlay-instance";
+const OVERLAY_PANEL_VISIBLE_KEY_STORAGE = "ravi-wa-overlay-panel-visible";
 const V3_PLACEHOLDERS_KEY_STORAGE = "ravi-wa-overlay-v3-placeholders";
 const OMNI_POLL_INTERVAL_MS = 6000;
 const V3_PLACEHOLDER_POLL_INTERVAL_MS = 5000;
@@ -148,7 +153,9 @@ let chatSessionEditorDraftSessionName = null;
 let chatSessionEditorNotice = null;
 let chatSessionEditorInFlight = false;
 let preferredOmniInstance = loadPreferredOmniInstance();
-let v3PlaceholdersEnabled = loadV3PlaceholdersEnabled();
+let profileMenuOpen = false;
+let overlayPanelVisible = loadOverlayPanelVisible();
+let v3PlaceholdersEnabled = false;
 let selectedOmniChatId = null;
 let selectedOmniSessionKey = null;
 let selectedOmniRouteAgentId = null;
@@ -232,6 +239,8 @@ function boot() {
   document.addEventListener("keydown", handleHumanChatListKeydown, true);
   document.addEventListener("pointerdown", handleChatSessionEditorOutsidePointerDown, true);
   document.addEventListener("keydown", handleChatSessionEditorKeydown, true);
+  document.addEventListener("pointerdown", handleProfileMenuOutsidePointerDown, true);
+  document.addEventListener("keydown", handleProfileMenuKeydown, true);
   ensureShell();
   syncLayoutChrome();
   syncWorkspaceLauncher();
@@ -448,6 +457,8 @@ async function refreshOmniPanel(force = false) {
         shouldRenderSnapshot("workspace:omni", panel, force)
       ) {
         requestRender();
+      } else {
+        syncHeaderConfigControls();
       }
     } else {
       setBridgeErrorFromResponse(panel, "não consegui carregar o painel Omni");
@@ -461,6 +472,11 @@ async function refreshOmniPanel(force = false) {
 
 async function refreshV3Placeholders(force = false) {
   if (pollingStopped || v3PlaceholderInFlight) return;
+  if (!v3PlaceholdersEnabled) {
+    latestV3Placeholders = null;
+    scheduleV3PlaceholderRender();
+    return;
+  }
   if (!force && activeWorkspace !== "ravi") {
     latestV3Placeholders = null;
     scheduleV3PlaceholderRender();
@@ -676,6 +692,7 @@ function refreshAll() {
   refreshTasks(true);
   refreshArtifacts(true);
   refreshCrm(true);
+  refreshOmniPanel(true);
   refreshChatListOverlay();
   refreshMessageChips();
   refreshV3Placeholders();
@@ -3146,11 +3163,8 @@ function createMessageChip() {
   root.setAttribute(MESSAGE_CHIP_ATTR, "true");
   root.className = "ravi-wa-message-chip ravi-wa-message-chip--author";
   root.innerHTML = `
-    <button class="ravi-wa-message-chip__button" type="button">
+    <button class="ravi-wa-message-chip__button" type="button" aria-label="Detalhes Ravi da mensagem">
       <span class="ravi-wa-message-chip__dot ravi-wa-message-chip__dot--idle" data-role="dot"></span>
-      <span class="ravi-wa-message-chip__time" data-role="time-inline"></span>
-      <span class="ravi-wa-message-chip__separator" data-role="separator">•</span>
-      <span class="ravi-wa-message-chip__label">ravi</span>
     </button>
   `;
 
@@ -3179,10 +3193,7 @@ function updateMessageChip(root, message) {
   const session = latestSnapshot?.session;
   const live = session?.live;
   const activity = chipActivityClass(live?.activity);
-  const label = root.querySelector(".ravi-wa-message-chip__label");
   const dot = root.querySelector("[data-role='dot']");
-  const inlineTime = root.querySelector("[data-role='time-inline']");
-  const separator = root.querySelector("[data-role='separator']");
   const variant = message.chipVariant || "author";
   const open = openMessageId === message.id;
   const cacheKey =
@@ -3219,16 +3230,8 @@ function updateMessageChip(root, message) {
     copyState: preservedCopyState,
   };
 
-  if (label) label.textContent = "ravi";
   if (dot) {
     dot.className = `ravi-wa-message-chip__dot ravi-wa-message-chip__dot--${activity}`;
-  }
-  if (inlineTime) {
-    inlineTime.textContent = "";
-    inlineTime.hidden = true;
-  }
-  if (separator) {
-    separator.hidden = true;
   }
 
   if (open) {
@@ -3768,28 +3771,57 @@ function handlePageChatEvent(event) {
 
 function ensureShell() {
   const existingRoot = document.getElementById(ROOT_ID);
-  if (existingRoot?.querySelector?.(`#${DRAWER_ID}`)) return;
+  const shellReady =
+    existingRoot?.querySelector?.(`#${DRAWER_ID}`) &&
+    existingRoot?.querySelector?.(`#${PANEL_TOGGLE_ID}`) &&
+    existingRoot?.querySelector?.(`#${PANEL_RAIL_TOGGLE_ID}`) &&
+    existingRoot?.querySelector?.(`#${PROFILE_BUTTON_ID}`);
+  if (shellReady) return;
   existingRoot?.remove();
 
   const root = document.createElement("div");
   root.id = ROOT_ID;
   root.innerHTML = `
     <div id="${RECENT_STACK_ID}" class="ravi-hidden"></div>
+    <button
+      id="${PANEL_RAIL_TOGGLE_ID}"
+      class="ravi-wa-panel-rail-toggle"
+      type="button"
+      aria-label="Mostrar painel Ravi"
+      title="Mostrar painel Ravi"
+    >
+      R
+    </button>
     <aside id="${DRAWER_ID}">
       <div class="ravi-wa-drawer-header">
         <div class="ravi-wa-drawer-heading">
-          <strong id="ravi-wa-overlay-panel-title">Ravi</strong>
+          <strong id="ravi-wa-overlay-panel-title">Sessões</strong>
           <span id="ravi-wa-overlay-panel-subtitle">cockpit</span>
         </div>
-        <button
-          id="ravi-wa-v3-toggle"
-          class="ravi-wa-toggle${v3PlaceholdersEnabled ? " ravi-wa-toggle--active" : ""}"
-          type="button"
-          aria-pressed="${v3PlaceholdersEnabled ? "true" : "false"}"
-          title="ativar/desativar placeholders do mapa v3"
-        >
-          mapa v3
-        </button>
+        <div class="ravi-wa-drawer-actions">
+          <button
+            id="${PROFILE_BUTTON_ID}"
+            class="ravi-wa-profile-toggle"
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            title="selecionar profile do Ravi"
+          >
+            <span class="ravi-wa-profile-toggle__avatar" aria-hidden="true">R</span>
+            <span class="ravi-wa-profile-toggle__dot" aria-hidden="true"></span>
+          </button>
+          <button
+            id="${PANEL_TOGGLE_ID}"
+            class="ravi-wa-panel-toggle"
+            type="button"
+            aria-pressed="true"
+            aria-label="Ocultar painel Ravi"
+            title="Ocultar painel Ravi"
+          >
+            ×
+          </button>
+          <div id="${PROFILE_MENU_ID}" class="ravi-wa-profile-menu ravi-hidden" role="menu"></div>
+        </div>
       </div>
       <div id="ravi-wa-overlay-body"></div>
     </aside>
@@ -3815,13 +3847,230 @@ function ensureShell() {
     shellKeydownListenerAttached = true;
   }
 
-  const toggle = document.getElementById("ravi-wa-v3-toggle");
-  toggle?.addEventListener("click", () => {
-    v3PlaceholdersEnabled = !v3PlaceholdersEnabled;
-    persistV3PlaceholdersEnabled(v3PlaceholdersEnabled);
-    render();
-    scheduleV3PlaceholderRender();
+  document.getElementById(PANEL_TOGGLE_ID)?.addEventListener("click", () => {
+    setOverlayPanelVisible(false);
   });
+  document.getElementById(PANEL_RAIL_TOGGLE_ID)?.addEventListener("click", () => {
+    setOverlayPanelVisible(true);
+  });
+  const profileToggle = document.getElementById(PROFILE_BUTTON_ID);
+  profileToggle?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    profileMenuOpen = !profileMenuOpen;
+    syncHeaderConfigControls();
+    if (profileMenuOpen) {
+      await refreshOmniPanel(true);
+      syncHeaderConfigControls();
+    }
+  });
+  syncHeaderConfigControls();
+}
+
+function handleProfileMenuOutsidePointerDown(event) {
+  if (!profileMenuOpen) return;
+  const element = resolveEventElement(event.target);
+  if (!(element instanceof Element)) return;
+  if (element.closest(`#${PROFILE_MENU_ID}, #${PROFILE_BUTTON_ID}`)) return;
+  closeProfileMenu();
+}
+
+function handleProfileMenuKeydown(event) {
+  if (!profileMenuOpen || event.key !== "Escape") return;
+  closeProfileMenu();
+}
+
+function closeProfileMenu() {
+  profileMenuOpen = false;
+  syncHeaderConfigControls();
+}
+
+function syncHeaderConfigControls() {
+  syncOverlayPanelChrome();
+  syncHeaderProfileButton();
+  renderProfileMenu();
+}
+
+function syncOverlayPanelChrome() {
+  const root = document.getElementById(ROOT_ID);
+  const drawer = document.getElementById(DRAWER_ID);
+  const railToggle = document.getElementById(PANEL_RAIL_TOGGLE_ID);
+  const headerToggle = document.getElementById(PANEL_TOGGLE_ID);
+  root?.classList.toggle("ravi-wa-overlay-root--collapsed", !overlayPanelVisible);
+  root?.setAttribute("data-panel-visible", overlayPanelVisible ? "true" : "false");
+  drawer?.classList.toggle("ravi-hidden", !overlayPanelVisible);
+  railToggle?.classList.toggle("ravi-hidden", overlayPanelVisible);
+  if (headerToggle) {
+    headerToggle.setAttribute("aria-pressed", overlayPanelVisible ? "true" : "false");
+    headerToggle.textContent = "×";
+    headerToggle.title = "Ocultar painel Ravi";
+  }
+}
+
+function setOverlayPanelVisible(visible) {
+  overlayPanelVisible = Boolean(visible);
+  if (!overlayPanelVisible) {
+    profileMenuOpen = false;
+    closeMessagePopover();
+  }
+  persistOverlayPanelVisible(overlayPanelVisible);
+  syncOverlayPanelChrome();
+  syncLayoutChrome();
+}
+
+function syncHeaderProfileButton() {
+  const button = document.getElementById(PROFILE_BUTTON_ID);
+  if (!(button instanceof HTMLElement)) return;
+  const instance = getHeaderPreferredInstance();
+  const status = instance ? formatOmniInstanceStatus(instance) : "offline";
+  const label = instance?.profileName || instance?.name || "R";
+  button.setAttribute("aria-expanded", profileMenuOpen ? "true" : "false");
+  button.setAttribute("title", instance ? buildProfileInstanceTitle(instance) : "selecionar profile do Ravi");
+  button.classList.toggle("ravi-wa-profile-toggle--open", profileMenuOpen);
+  button.classList.toggle("ravi-wa-profile-toggle--connected", Boolean(instance?.isConnected));
+  button.classList.toggle("ravi-wa-profile-toggle--active", Boolean(instance?.isActive && !instance?.isConnected));
+  const avatar = button.querySelector(".ravi-wa-profile-toggle__avatar");
+  if (avatar) avatar.textContent = buildProfileAvatarText(label);
+  const dot = button.querySelector(".ravi-wa-profile-toggle__dot");
+  if (dot instanceof HTMLElement) {
+    dot.className = `ravi-wa-profile-toggle__dot ravi-wa-profile-toggle__dot--${status}`;
+  }
+}
+
+function renderProfileMenu() {
+  const menu = document.getElementById(PROFILE_MENU_ID);
+  if (!(menu instanceof HTMLElement)) return;
+  menu.classList.toggle("ravi-hidden", !profileMenuOpen);
+  if (!profileMenuOpen) {
+    menu.innerHTML = "";
+    return;
+  }
+
+  const instances = Array.isArray(latestOmniPanel?.instances)
+    ? latestOmniPanel.instances
+    : [];
+  const preferred = getHeaderPreferredInstance();
+  const rows = instances.length
+    ? instances.map((instance) => renderProfileInstanceRow(instance, preferred)).join("")
+    : `<p class="ravi-wa-profile-menu__empty">${escapeHtml(omniPanelInFlight ? "carregando profiles..." : "nenhuma instância configurada")}</p>`;
+
+  menu.innerHTML = `
+    <div class="ravi-wa-profile-menu__head">
+      <div>
+        <strong>profile</strong>
+        <span>${escapeHtml(preferred ? formatProfileInstanceSummary(preferred) : "sem profile selecionado")}</span>
+      </div>
+      <button type="button" data-ravi-profile-refresh title="Atualizar profiles">atualizar</button>
+    </div>
+    <div class="ravi-wa-profile-menu__rows">
+      ${rows}
+    </div>
+  `;
+
+  menu.querySelector("[data-ravi-profile-refresh]")?.addEventListener("click", async () => {
+    await refreshOmniPanel(true);
+    syncHeaderConfigControls();
+  });
+  menu.querySelectorAll("[data-ravi-profile-instance]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const instanceId = button.getAttribute("data-ravi-profile-instance");
+      if (!instanceId) return;
+      await selectPreferredProfileInstance(instanceId);
+    });
+  });
+}
+
+function renderProfileInstanceRow(instance, preferred) {
+  const id = instance?.id || instance?.name || instance?.instanceId;
+  if (!id) return "";
+  const selected = preferred && [preferred.id, preferred.name, preferred.instanceId].includes(id);
+  const status = formatOmniInstanceStatus(instance);
+  const title = buildProfileInstanceTitle(instance);
+  return `
+    <button
+      type="button"
+      class="ravi-wa-profile-row${selected ? " ravi-wa-profile-row--selected" : ""}"
+      data-ravi-profile-instance="${escapeAttribute(id)}"
+      aria-pressed="${selected ? "true" : "false"}"
+      title="${escapeAttribute(title)}"
+    >
+      <span class="ravi-wa-profile-row__dot ravi-wa-profile-row__dot--${escapeAttribute(status)}" aria-hidden="true"></span>
+      <span class="ravi-wa-profile-row__body">
+        <strong>${escapeHtml(shorten(instance.profileName || instance.name || id, 24))}</strong>
+        <small>${escapeHtml(formatProfileInstanceSummary(instance))}</small>
+      </span>
+      <span class="ravi-wa-profile-row__state">${escapeHtml(status)}</span>
+    </button>
+  `;
+}
+
+async function selectPreferredProfileInstance(instanceId) {
+  preferredOmniInstance = instanceId;
+  persistPreferredOmniInstance(instanceId);
+  selectedOmniChatId = null;
+  selectedOmniSessionKey = null;
+  selectedOmniRouteAgentId = null;
+  syncHeaderConfigControls();
+  await refreshOmniPanel(true);
+  if (activeWorkspace === "omni") {
+    render();
+  } else {
+    syncHeaderConfigControls();
+  }
+}
+
+function getHeaderPreferredInstance() {
+  const instances = Array.isArray(latestOmniPanel?.instances)
+    ? latestOmniPanel.instances
+    : [];
+  const panelPreferred = latestOmniPanel?.preferredInstance || null;
+  const stored = preferredOmniInstance;
+  return (
+    (panelPreferred && matchProfileInstance(panelPreferred, stored)
+      ? panelPreferred
+      : null) ||
+    instances.find((instance) => matchProfileInstance(instance, stored)) ||
+    panelPreferred ||
+    null
+  );
+}
+
+function matchProfileInstance(instance, value) {
+  if (!instance || !value) return false;
+  return [instance.id, instance.name, instance.instanceId].filter(Boolean).includes(value);
+}
+
+function buildProfileInstanceTitle(instance) {
+  if (!instance) return "";
+  return [
+    instance.profileName,
+    instance.name,
+    instance.phone || instance.ownerIdentifier,
+    instance.channel,
+    formatOmniInstanceStatus(instance),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function formatProfileInstanceSummary(instance) {
+  if (!instance) return "-";
+  return [
+    instance.name,
+    instance.phone || shorten(instance.ownerIdentifier || "", 18),
+    instance.channel,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function buildProfileAvatarText(value) {
+  const raw = String(value || "R").trim();
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  const initials = tokens.length > 1
+    ? `${tokens[0][0] || ""}${tokens[1][0] || ""}`
+    : raw.slice(0, 2);
+  return initials.toUpperCase();
 }
 
 function syncLayoutChrome() {
@@ -3856,19 +4105,23 @@ function syncLayoutChrome() {
   }
 
   root.classList.add(LAYOUT_CLASS);
+  root.classList.toggle("ravi-wa-overlay-root--collapsed", !overlayPanelVisible);
   host.classList.add(LAYOUT_HOST_CLASS);
   mainPane.classList.add(MAIN_PANE_CLASS);
   root.setAttribute("data-workspace", activeWorkspace);
-  host.setAttribute("data-ravi-workspace", activeWorkspace);
-  const fullWorkspace =
+  root.setAttribute("data-panel-visible", overlayPanelVisible ? "true" : "false");
+  host.setAttribute("data-ravi-workspace", overlayPanelVisible ? activeWorkspace : "ravi");
+  const fullWorkspace = overlayPanelVisible && (
     activeWorkspace === "omni" ||
     activeWorkspace === "crm" ||
     activeWorkspace === "tasks" ||
-    activeWorkspace === "insights";
+    activeWorkspace === "insights"
+  );
   mainPane.classList.toggle(MAIN_PANE_HIDDEN_CLASS, fullWorkspace);
   sideBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
   mainBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
-  drawer.classList.remove("ravi-hidden");
+  drawer.classList.toggle("ravi-hidden", !overlayPanelVisible);
+  document.getElementById(PANEL_RAIL_TOGGLE_ID)?.classList.toggle("ravi-hidden", overlayPanelVisible);
 
   currentLayoutHost = host;
   currentLayoutMain = mainPane;
@@ -4018,17 +4271,10 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     "ravi-wa-overlay-panel-subtitle",
   );
   const recentStack = document.getElementById(RECENT_STACK_ID);
-  const v3Toggle = document.getElementById("ravi-wa-v3-toggle");
   const preservedScrollState = captureWorkspaceScrollState("ravi");
   scheduleV3PlaceholderRender();
   if (!body || !panelTitle || !panelSubtitle || !recentStack) return;
-  if (v3Toggle) {
-    v3Toggle.setAttribute(
-      "aria-pressed",
-      v3PlaceholdersEnabled ? "true" : "false",
-    );
-    v3Toggle.classList.toggle("ravi-wa-toggle--active", v3PlaceholdersEnabled);
-  }
+  syncHeaderConfigControls();
 
   const session = snapshot?.session;
   const view = latestViewState;
@@ -4086,7 +4332,7 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     return;
   }
 
-  panelTitle.textContent = "Ravi";
+  panelTitle.textContent = "Sessões";
   panelSubtitle.textContent = title;
 
   const recentSessions = filterCockpitSessions(
@@ -4588,10 +4834,7 @@ function renderOmniWorkspace(body, context) {
     button.addEventListener("click", async () => {
       const instanceId = button.getAttribute("data-ravi-omni-instance");
       if (!instanceId) return;
-      preferredOmniInstance = instanceId;
-      persistPreferredOmniInstance(instanceId);
-      await refreshOmniPanel(true);
-      render();
+      await selectPreferredProfileInstance(instanceId);
     });
   });
 
@@ -4746,7 +4989,7 @@ function renderOmniWorkspace(body, context) {
               action: "create-session",
               actorSession: getCurrentOmniActorSession(),
               agentId: formState.selectedRouteAgentId,
-              sessionName: formState.draftSessionName || undefined,
+              session: formState.draftSessionName || undefined,
               title: formState.selectedChat.name,
               chatId:
                 formState.selectedChat.externalId ||
@@ -4812,9 +5055,9 @@ function renderOmniWorkspace(body, context) {
               payload: {
                 action: "migrate-session",
                 actorSession: getCurrentOmniActorSession(),
-                session: formState.currentLinkedSession.sessionName,
+                fromSession: formState.currentLinkedSession.sessionName,
                 agentId: formState.selectedRouteAgentId,
-                sessionName: formState.draftSessionName || undefined,
+                session: formState.draftSessionName || undefined,
                 title: formState.selectedChat.name,
                 chatId:
                   formState.selectedChat.externalId ||
@@ -4894,7 +5137,7 @@ function renderOmniWorkspace(body, context) {
                 actorSession: getCurrentOmniActorSession(),
                 createAgent: true,
                 agentId: nextAgentId,
-                sessionName: formState.draftNewAgentSessionName || undefined,
+                session: formState.draftNewAgentSessionName || undefined,
                 title: formState.selectedChat.name,
                 chatId:
                   formState.selectedChat.externalId ||
@@ -14791,6 +15034,14 @@ function loadPreferredOmniInstance() {
   }
 }
 
+function loadOverlayPanelVisible() {
+  try {
+    return window.localStorage.getItem(OVERLAY_PANEL_VISIBLE_KEY_STORAGE) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 function loadV3PlaceholdersEnabled() {
   try {
     return window.localStorage.getItem(V3_PLACEHOLDERS_KEY_STORAGE) === "true";
@@ -14805,6 +15056,18 @@ function persistPreferredOmniInstance(value) {
       window.localStorage.setItem(OMNI_INSTANCE_KEY_STORAGE, value);
     } else {
       window.localStorage.removeItem(OMNI_INSTANCE_KEY_STORAGE);
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function persistOverlayPanelVisible(value) {
+  try {
+    if (value) {
+      window.localStorage.removeItem(OVERLAY_PANEL_VISIBLE_KEY_STORAGE);
+    } else {
+      window.localStorage.setItem(OVERLAY_PANEL_VISIBLE_KEY_STORAGE, "false");
     }
   } catch {
     // ignore localStorage failures inside WhatsApp Web

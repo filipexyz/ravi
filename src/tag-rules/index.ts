@@ -3,9 +3,11 @@ export * from "./conditions.js";
 export * from "./engine.js";
 export * from "./loader.js";
 
+import { setImmediate as yieldImmediate } from "node:timers/promises";
+import { dbListChatIdsByContactIds } from "../router/router-db.js";
 import { evaluateRulesForContact, type ApplyRuleResult } from "./engine.js";
 import { loadTagRulesFromDirectory, type LoadTagRulesResult } from "./loader.js";
-import type { TagRule } from "./types.js";
+import type { ContactCondition, TagRule } from "./types.js";
 
 export interface RunTagRulesForContactOptions {
   contactRef: string;
@@ -48,6 +50,7 @@ export function runTagRulesForContact(options: RunTagRulesForContactOptions): Ru
 export interface TickTagRulesOptions {
   apply?: boolean;
   limit?: number;
+  yieldEvery?: number;
   cause?: { evaluation: "periodic" | "manual"; triggerType?: string };
   directory?: string;
   now?: number;
@@ -66,14 +69,23 @@ export interface TickTagRulesResult {
   }>;
 }
 
+function ruleNeedsContactChats(rule: TagRule): boolean {
+  if (rule.scope !== "contact") return false;
+  return (rule.conditions as ContactCondition[]).some((condition) => condition.kind === "has-chat-with");
+}
+
 export async function tickTagRules(options: TickTagRulesOptions = {}): Promise<TickTagRulesResult> {
   const { getAllContacts } = await import("../contacts.js");
   const loaded = loadTagRulesFromDirectory(options.directory);
   const rules: TagRule[] = loaded.rules.map((entry) => entry.rule);
   const cause = options.cause ?? { evaluation: "periodic" as const, triggerType: "tick" };
   const limit = options.limit && options.limit > 0 ? options.limit : undefined;
+  const yieldEvery = options.yieldEvery && options.yieldEvery > 0 ? Math.floor(options.yieldEvery) : 50;
   const allContacts = getAllContacts();
   const contactsSlice = limit ? allContacts.slice(0, limit) : allContacts;
+  const evaluationContext = rules.some(ruleNeedsContactChats)
+    ? { chatIdsByContactId: dbListChatIdsByContactIds({ contactIds: contactsSlice.map((contact) => contact.id) }) }
+    : undefined;
   const summary: TickTagRulesResult = {
     rulesLoaded: rules.length,
     loadErrors: loaded.errors,
@@ -89,6 +101,7 @@ export async function tickTagRules(options: TickTagRulesOptions = {}): Promise<T
       cause,
       apply: options.apply,
       now: options.now,
+      evaluationContext,
     });
     const matchedForContact = outcomes.filter((outcome) => outcome.matched).length;
     const appliedForContact = outcomes.reduce(
@@ -104,6 +117,9 @@ export async function tickTagRules(options: TickTagRulesOptions = {}): Promise<T
         matched: matchedForContact,
         appliedActions: appliedForContact,
       });
+    }
+    if (summary.contactsProcessed % yieldEvery === 0) {
+      await yieldImmediate();
     }
   }
   return summary;
