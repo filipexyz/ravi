@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createAntigigravityRuntimeProvider } from "./antigravity-provider.js";
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
 import { createPiRuntimeProvider } from "./pi-provider.js";
@@ -80,6 +81,7 @@ function expectPrepareSessionShape(result: RuntimePrepareSessionResult | undefin
 
 describe("runtime provider contract", () => {
   const builtInProviders = [
+    { providerId: "antigravity", createProvider: createAntigigravityRuntimeProvider },
     { providerId: "claude", createProvider: createClaudeRuntimeProvider },
     { providerId: "codex", createProvider: createCodexRuntimeProvider },
     { providerId: "pi", createProvider: createPiRuntimeProvider },
