@@ -1,3 +1,4 @@
+import { createAntigigravityRuntimeProvider } from "./antigravity-provider.js";
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
 import { createPiRuntimeProvider } from "./pi-provider.js";
@@ -15,6 +16,7 @@ export const DEFAULT_RUNTIME_PROVIDER_ID: RuntimeProviderId = "claude";
 
 const runtimeProviderFactories = new Map<RuntimeProviderId, RuntimeProviderFactory>([
   [DEFAULT_RUNTIME_PROVIDER_ID, createClaudeRuntimeProvider],
+  ["antigravity", createAntigigravityRuntimeProvider],
   ["codex", createCodexRuntimeProvider],
   ["pi", createPiRuntimeProvider],
 ]);
