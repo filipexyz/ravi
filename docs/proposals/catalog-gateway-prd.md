@@ -58,6 +58,70 @@
 - 25-30% das conversas têm <3 msgs (excluídas)
 - Áudio não transcrito
 
+## §14. Matriz origem-justificativa por coluna
+
+**Regra de inclusão:** toda coluna deve ter ao menos 1 das 3 fontes legítimas:
+- **🔬 Cliente** — researcher confirmou em conversa real (freq % ou qual)
+- **📋 Negócio** — exigência fiscal/regulatório/operacional do domínio
+- **🔧 Infra Ravi** — padrão de subsistema (PK, tenant, audit, integração)
+
+### Tabela completa (45 colunas)
+
+| Coluna | Origem | Justificativa | Auditável |
+|---|---|---|---|
+| `tenant_id`, `sku` | 🔧 Infra | PK composto multi-tenant ready | ✅ |
+| `nome` | 📋 Negócio | Catálogo precisa de nome legível | ✅ |
+| `marca` | 🔬 + 📋 | Researcher: cliente diz "Galvanotek" (>> material); Tiny entrega | ✅ |
+| `categoria_path` | 📋 | Navegação hierárquica Tiny | ✅ |
+| `preco` | 🔬 + 📋 | Researcher: 77.3% mencionam | ✅ |
+| `preco_promo` | 📋 | Variação comercial Tiny | ⚠️ não validado pelo researcher |
+| `estoque` | 🔬 + 📋 | Researcher: 41.4% perguntam disponibilidade | ✅ |
+| `ativo` | 🔧 + 📋 | Status comercial padrão | ✅ |
+| `gtin` | 📋 | NF-e exige EAN. Cliente nunca pergunta. | ✅ (negócio) |
+| `ncm` | 📋 | NF-e/regulação fiscal | ✅ (negócio) |
+| `peso_liquido_g` | 📋 | Cotação de frete + NF-e | ⚠️ ambiguidade unidade vs caixa |
+| `peso_bruto_g` | 📋 | Cotação de frete | ⚠️ ambiguidade unidade vs caixa |
+| `altura_mm`, `largura_mm`, `comprimento_mm`, `diametro_mm` | 📋 | Cotação frete. Cliente quase nunca pergunta em mm. | ⚠️ ambiguidade unidade vs caixa |
+| `capacidade_ml` | 🔬 + 📋 | Researcher: 39.9% quant, 60% qual — decisor #1 | ✅ |
+| `weight_grams_approx` ⭐ | 🔬 | Researcher v0.3: ml≠g em 33% qual | ✅ |
+| `shape` ⭐ | 🔬 | Researcher v0.3: equipe pergunta em 20% qual | ✅ |
+| `compartments` ⭐ | 🔬 | Researcher v0.3: 11% quant, 33% qual | ✅ |
+| `material` | 🔬 (rebaixado) | Researcher: 6.9% quant, **0% qualitativo**. Mantém como info técnica. | ⚠️ COLD |
+| `resistencia_termica` | (legacy) | Substituído por `*_safe`. Mantém pra back-compat. | ⚠️ deprecate na próxima major |
+| `microwave_safe` ⭐ | 🔬 | Researcher v0.3: substitui enum por flag específico | ✅ |
+| `oven_safe` ⭐ | 🔬 | Researcher v0.3 | ✅ |
+| `freezer_safe` ⭐ | 🔬 | Researcher v0.3 | ✅ |
+| `airfryer_safe` ⭐ | 🔬 | Researcher v0.3: nicho crescente, mencionado junto a forno | ✅ |
+| `leak_resistant` ⭐ | 🔬 | Researcher v0.3: "não vaza?" em 7% qual; substitui `seal_type` | ✅ |
+| `lid_included` ⭐ | 🔬 | Researcher v0.3: tampa é decisor binário em 21.5% quant | ✅ |
+| `lid_compatible` ⭐ | 🔬 | Researcher v0.3: variações com/sem tampa | ✅ |
+| `customization_min_qty` ⭐ | 🔬 | Researcher v0.3: 18.4% quant (B2B) | ✅ |
+| `cor` ⭐ | 🔬 | Researcher v0.3: 10.2% quant | ✅ |
+| `usos_json` | 🔬 + 📋 | Researcher: 13.6% quant, equipe usa pra qualificar | ✅ |
+| `tipo_variacao`, `sku_pai` | 📋 + 🔧 | Modelagem produto pai/filho do Tiny | ✅ |
+| `imagem_url` | 🔬 + 📋 | Cliente envia imagem em 30% (SKU-first); Tiny entrega | ✅ |
+| `artifact_id` | 🔧 | Link pra texto editorial versionado | ✅ |
+| `tiny_id` ⭐ | 🔧 | Chave forte cross-system Ravi↔Tiny | ✅ |
+| `tiny_sync_at` | 🔧 | Audit do último sync | ✅ |
+| `enriquecimento_conf`, `enriquecimento_at` | 🔧 | Confiança do enriquecimento + timestamp | ✅ |
+| `vendavel`, `mostrar_chatbot` | 📋 + 🔧 | Flags operacionais (humano edita) | ✅ |
+| `created_at`, `updated_at` | 🔧 | Audit padrão Ravi | ✅ |
+
+### Resumo
+
+- ✅ **30 colunas (67%)** validadas por researcher OU por exigência clara de negócio/infra
+- ⚠️ **9 colunas (20%)** com caveat:
+  - `preco_promo` (não validado pelo researcher)
+  - 6 colunas físicas (pesos + dimensões) com ambiguidade unidade vs caixa
+  - `material`, `resistencia_termica` (rebaixados / legacy)
+- 🟢 **6 colunas (13%)** infra Ravi pura (sem necessidade de validação cliente)
+
+### Próximos passos de auditoria
+
+🔹 **Resolver ambiguidade unidade vs caixa** — adicionar colunas `caixa_peso_g`, `caixa_altura_mm`, etc, OU documentar explicitamente que campos `peso_*`/`*_mm` são da CAIXA (default Tiny)
+🔹 **Validar `preco_promo` em sample** — verificar quantos SKUs do setordaembalagem usam promo ativa
+🔹 **Sunset `resistencia_termica`** quando todos os SKUs forem migrados pra `*_safe`
+
 ---
 
 ## 1. Resumo executivo
