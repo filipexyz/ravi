@@ -49,7 +49,8 @@ This is the hybrid model the market converged on (see
 "compartilhado entre instâncias" and "isolar para não misturar" at once: pure
 per-instance silos cannot share, and a single global CRM cannot isolate.
 
-**See:** [[contacts/crm]] (canonical CRM schema),
+**See:** docs/crm-business-unit-isolation-prd.md (human-readable PRD / briefing),
+[[contacts/crm]] (canonical CRM schema),
 [[contacts/crm/pipelines]] (pipeline/stage model this scopes),
 [[contacts/identity-graph/unified-model]] (why identity stays global),
 [[self/omni]] (instance resolution boundary),
