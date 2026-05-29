@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS crm_business_units (
   slug TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active',
-  is_default INTEGER NOT NULL DEFAULT 0,
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
   metadata_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -137,13 +137,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_business_units_default
   WHERE is_default = 1;
 ```
 
-Instances reference their business unit:
+Instances point at their business unit via a plain, unenforced column:
 
 ```sql
+-- NO foreign key — not in Phase 1, not in Phase 3, ever. See note below.
 ALTER TABLE instances
-  ADD COLUMN crm_business_unit_id TEXT
-  REFERENCES crm_business_units(id) ON DELETE SET NULL;
+  ADD COLUMN crm_business_unit_id TEXT;
 ```
+
+> **Why no foreign key on `instances`.** This is a *cross-database* pointer, not a
+> SQLite FK. The `instances` table lives in `ravi.db` (the router, `src/router/
+> router-db.ts`), while `crm_business_units` lives in `chat.db` (contacts,
+> `src/contacts.ts`). SQLite foreign keys cannot span separate database files, so
+> no `REFERENCES` is possible regardless of phase. Worse, an inline `REFERENCES
+> crm_business_units` would name a table absent from `ravi.db`: under
+> `PRAGMA foreign_keys = ON` SQLite resolves a FK's parent at **prepare time**, so
+> every prepared `INSERT`/`UPDATE` on `instances` would fail with *"no such table:
+> main.crm_business_units"* — a hard router crash on boot (the seed-instances
+> migration prepares exactly such a statement). The pointer stays a nullable `TEXT`
+> column; its referential integrity is enforced at the application layer by the
+> Phase 2 resolver, which already performs the cross-DB lookup. Unmapped instances
+> stay `NULL` and resolve to the default business unit.
 
 Rules:
 
@@ -351,17 +365,23 @@ what is safe (the same boundary `reconcileColumns()` documents):
 - It **cannot** add a `PRIMARY KEY` or `UNIQUE` constraint, recreate an index,
   drop a column, or run a data rebuild.
 - Under `foreign_keys = ON`, it **cannot** add a column that is both `NOT NULL`
-  (with a non-null default) **and** carries a `REFERENCES` clause. A *nullable*
-  added column with `REFERENCES` is fine — the FK resolves lazily and is enforced
-  at write time, even when the target table is created later in the same boot.
+  (with a non-null default) **and** carries a `REFERENCES` clause.
+- Under `foreign_keys = ON`, a `REFERENCES` clause is only viable when its parent
+  table lives in the **same** database file. SQLite resolves a FK's parent at
+  *prepare time*, so naming a parent that is absent from the current file makes
+  every prepared `INSERT`/`UPDATE` on the child table fail with *"no such table"* —
+  it does not "resolve lazily at write time". This is why `instances`
+  (in `ravi.db`) carries **no** FK to `crm_business_units` (in `chat.db`): a
+  cross-file FK is impossible, and an inline `REFERENCES` would crash the router on
+  boot. See [Business Unit Model](#business-unit-model).
 
 Splitting the deltas against that boundary:
 
 - **Additive (auto on boot, non-breaking):** the `crm_business_units` table + its
   partial-unique default index, the default-business-unit seed row,
   `business_unit_id TEXT NOT NULL DEFAULT '<default-id>'` (**no inline FK**) on
-  each scoped commercial table, `instances.crm_business_unit_id` (nullable, with
-  `REFERENCES ... ON DELETE SET NULL`), and the
+  each scoped commercial table, `instances.crm_business_unit_id` (nullable plain
+  `TEXT` pointer, **no FK** — cross-file, see above), and the
   `crm_contact_business_unit_profiles` overlay table. All applied in
   `initializeCrmSchema()` / `ensureRouterDb()` with zero behavioral change.
 - **Non-additive (explicit, deferred to Phase 3):** the per-business-unit
@@ -391,11 +411,11 @@ change ships without RM approval of the concrete diff.**
      `REFERENCES` — see Migration Mechanism). SQLite's `ADD COLUMN … NOT NULL
      DEFAULT` backfills every existing row to `'default'` atomically; no separate
      backfill pass.
-   - Add `instances.crm_business_unit_id` as a nullable `REFERENCES
-     crm_business_units(id) ON DELETE SET NULL` column in `ensureRouterDb()`
-     (`src/router/router-db.ts`). Existing instances keep a `NULL` pointer, which
-     the Phase 2 resolver reads as "the default business unit" — no per-instance
-     remap pass needed in Phase 1.
+   - Add `instances.crm_business_unit_id` as a nullable plain `TEXT` column (no
+     FK — `instances` is in `ravi.db`, `crm_business_units` in `chat.db`; SQLite
+     FKs cannot cross files) in `ensureRouterDb()` (`src/router/router-db.ts`).
+     Existing instances keep a `NULL` pointer, which the Phase 2 resolver reads as
+     "the default business unit" — no per-instance remap pass needed in Phase 1.
    - Create the `crm_contact_business_unit_profiles` overlay (composite PK in the
      `CREATE TABLE` body). The legacy `crm_contact_profiles` table and its
      `ON CONFLICT(contact_id)` upserts stay untouched; the overlay is read lazily
