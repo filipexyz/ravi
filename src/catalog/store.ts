@@ -209,7 +209,7 @@ export function upsertProduct(input: UpsertCatalogProductInput): CatalogProduct 
 
   const existing = db
     .prepare("SELECT created_at FROM catalog_products WHERE tenant_id = ? AND sku = ?")
-    .get(tenantId, sku) as { created_at: number } | undefined;
+    .get(tenantId, sku) as { created_at: number } | null;
 
   const createdAt = existing?.created_at ?? now;
   const usosJson = input.usos !== undefined ? JSON.stringify(input.usos) : null;
