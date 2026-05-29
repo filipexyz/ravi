@@ -158,15 +158,32 @@ Rules:
 
 ### Current-state commercial tables get a concrete column
 
-Each scoped current-state table gains a non-null `business_unit_id` FK. Example
-for the pipeline table (the same delta applies to opportunities, tasks, accounts,
-profiles, activities, segments, playbooks):
+Each scoped current-state table gains a non-null `business_unit_id` column. The
+directly scoped tables are `crm_pipelines`, `crm_opportunities`, `crm_tasks`,
+`crm_accounts`, and `crm_activities`. Child/join tables
+(`crm_account_contacts`, `crm_pipeline_stages`, `crm_pipeline_stage_topics`,
+`crm_opportunity_contacts`, `crm_activity_participants`) inherit scope through
+their parent FK and get no column. Per-contact lifecycle is handled by the
+overlay table below, not a column on `crm_contact_profiles`.
+
+In Phase 1 the column is added **without** an inline foreign key:
 
 ```sql
+-- Phase 1 (additive, FK-on-safe): NO inline REFERENCES
 ALTER TABLE crm_pipelines
-  ADD COLUMN business_unit_id TEXT NOT NULL DEFAULT '<default-business-unit-id>'
-  REFERENCES crm_business_units(id) ON DELETE CASCADE;
+  ADD COLUMN business_unit_id TEXT NOT NULL DEFAULT '<default-business-unit-id>';
 ```
+
+> **Why no inline FK here.** Under `PRAGMA foreign_keys = ON` (set in
+> `src/contacts.ts` before the CRM schema is built), SQLite rejects
+> `ADD COLUMN ... NOT NULL DEFAULT '<x>' REFERENCES ...` with *"Cannot add a
+> REFERENCES column with non-NULL default value"*: a `NOT NULL` added column needs
+> a non-null default, but an added `REFERENCES` column requires a `NULL` default —
+> the two cannot coexist in a single `ALTER`. The FK + `ON DELETE CASCADE` are
+> therefore deferred to Phase 3, folded into the same table rebuild that performs
+> the default-pipeline index swap (see [Migration Plan](#migration-plan)). Until
+> then, business-unit integrity on these columns is guaranteed by the application
+> layer (Phase 2 resolver).
 
 The default-pipeline uniqueness constraint becomes **per business unit**:
 
@@ -195,8 +212,9 @@ model it, and the choice is dictated by what the boot-time migrator can safely d
 **Recommended (non-breaking): a new overlay table.** `crm_contact_profiles`
 stays exactly as it is today (`PRIMARY KEY (contact_id)`), and per-business-unit
 lifecycle lives in a brand-new table whose composite primary key is declared in
-its own `CREATE TABLE` — which the additive reconciler handles, because creating
-a new table is safe even though `ALTER`-ing a primary key is not:
+its own `CREATE TABLE IF NOT EXISTS` — which the boot migrator handles directly,
+because creating a new table is safe even though `ALTER`-ing a primary key onto an
+existing one is not:
 
 ```sql
 CREATE TABLE IF NOT EXISTS crm_contact_business_unit_profiles (
@@ -231,7 +249,8 @@ path changes in Phase 1.
 
 **Rejected (breaking): re-key `crm_contact_profiles` to
 `(contact_id, business_unit_id)`.** SQLite cannot `ALTER` a primary key, so this
-needs a full table rebuild (the reconciler refuses it), and it breaks every
+needs a full table rebuild (outside the additive `ADD COLUMN`-only boundary the
+boot migrator obeys), and it breaks every
 `ON CONFLICT(contact_id)` upsert (`src/contacts.ts`), the single-row getter
 `getCrmContactProfileRow(contactId)`, and the merge delete. This path is not
 chosen precisely because it cannot ship without breakage.
@@ -312,28 +331,45 @@ the same vocabulary as the model it copies (see Open Decision #1).
 
 ## Migration Mechanism
 
-Schema evolves on boot via `reconcileColumns()` (`src/db/reconcile-columns.ts`):
-it diffs the live SQLite database against the declarative schema and runs
-`ALTER TABLE ADD COLUMN` for any declared column missing in the live table. Its
-documented limits decide what is safe:
+The CRM schema evolves on boot inside `initializeCrmSchema()` (`src/contacts.ts`),
+**not** through `reconcileColumns()` (that declarative reconciler exists in
+`src/db/reconcile-columns.ts` but is currently wired only to `insights-db`). The
+CRM path is:
+
+- New tables and indexes: plain `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF
+  NOT EXISTS` (no-op once they already exist).
+- New columns on existing tables: the guarded helper `ensureTableColumn()`
+  (`src/contacts.ts`) — a `PRAGMA table_info` check followed by `ALTER TABLE ADD
+  COLUMN`. The `instances` pointer evolves the same way inside `ensureRouterDb()`
+  (`src/router/router-db.ts`), since `instances` is owned by the router schema.
+
+Both paths bottom out at SQLite's `ALTER TABLE ADD COLUMN`, whose limits decide
+what is safe (the same boundary `reconcileColumns()` documents):
 
 - It **can** add a column, including `NOT NULL` **with a constant `DEFAULT`** —
   which backfills existing rows in place.
 - It **cannot** add a `PRIMARY KEY` or `UNIQUE` constraint, recreate an index,
   drop a column, or run a data rebuild.
+- Under `foreign_keys = ON`, it **cannot** add a column that is both `NOT NULL`
+  (with a non-null default) **and** carries a `REFERENCES` clause. A *nullable*
+  added column with `REFERENCES` is fine — the FK resolves lazily and is enforced
+  at write time, even when the target table is created later in the same boot.
 
 Splitting the deltas against that boundary:
 
-- **Additive (auto on boot, non-breaking):** the `crm_business_units` table,
-  `business_unit_id TEXT NOT NULL DEFAULT '<default-id>'` on each scoped
-  commercial table, `instances.crm_business_unit_id`, and the
-  `crm_contact_business_unit_profiles` overlay table. All ship through the
-  reconciler with zero code-path changes.
-- **Non-additive (explicit, deferred):** the per-business-unit default-pipeline
-  index swap (`UNIQUE(business_unit_id, entity_type, is_default)`) needs a
-  drop/recreate index step the reconciler will not perform. It only matters once
-  a second business unit exists, so it is deferred to Phase 3 and gated behind an
-  explicit migration step, not boot reconciliation.
+- **Additive (auto on boot, non-breaking):** the `crm_business_units` table + its
+  partial-unique default index, the default-business-unit seed row,
+  `business_unit_id TEXT NOT NULL DEFAULT '<default-id>'` (**no inline FK**) on
+  each scoped commercial table, `instances.crm_business_unit_id` (nullable, with
+  `REFERENCES ... ON DELETE SET NULL`), and the
+  `crm_contact_business_unit_profiles` overlay table. All applied in
+  `initializeCrmSchema()` / `ensureRouterDb()` with zero behavioral change.
+- **Non-additive (explicit, deferred to Phase 3):** the per-business-unit
+  default-pipeline index swap (`UNIQUE(business_unit_id, entity_type, is_default)`)
+  **and** the deferred `business_unit_id` FK + `ON DELETE CASCADE` on the five
+  scoped commercial tables. Both need a drop/recreate or table rebuild that `ADD
+  COLUMN` will not perform; both only matter once a second business unit exists;
+  both are gated behind an explicit migration step rather than boot.
 - **Avoided (would force a rebuild):** re-keying `crm_contact_profiles`. The
   overlay table exists specifically to keep this delta out of the migration.
 
@@ -347,16 +383,26 @@ change ships without RM approval of the concrete diff.**
 1. **Phase 0 — today.** Everything global. No business-unit concept.
 2. **Phase 1 — introduce default business unit (no behavior change, additive
    only).**
-   - Create `crm_business_units`; seed one row `slug='default'`, `is_default=1`.
-   - Add `business_unit_id` to scoped tables with `DEFAULT '<default-id>'`; the
-     reconciler backfills all existing rows to the default business unit.
-   - Add `instances.crm_business_unit_id`; map every existing instance to
-     default.
-   - Create the `crm_contact_business_unit_profiles` overlay; project existing
-     `crm_contact_profiles` rows into the default business unit. The legacy table
-     and its `ON CONFLICT(contact_id)` upserts stay untouched.
-   - Result: one shared business unit = identical behavior to today, applied
-     entirely through `reconcileColumns()` on boot.
+   - Create `crm_business_units` (via `CREATE TABLE IF NOT EXISTS` in
+     `initializeCrmSchema()`); seed one row `slug='default'`, `is_default=1` with
+     `INSERT OR IGNORE`.
+   - Add `business_unit_id` to the five scoped tables via
+     `ensureTableColumn(..., "TEXT NOT NULL DEFAULT 'default'")` (no inline
+     `REFERENCES` — see Migration Mechanism). SQLite's `ADD COLUMN … NOT NULL
+     DEFAULT` backfills every existing row to `'default'` atomically; no separate
+     backfill pass.
+   - Add `instances.crm_business_unit_id` as a nullable `REFERENCES
+     crm_business_units(id) ON DELETE SET NULL` column in `ensureRouterDb()`
+     (`src/router/router-db.ts`). Existing instances keep a `NULL` pointer, which
+     the Phase 2 resolver reads as "the default business unit" — no per-instance
+     remap pass needed in Phase 1.
+   - Create the `crm_contact_business_unit_profiles` overlay (composite PK in the
+     `CREATE TABLE` body). The legacy `crm_contact_profiles` table and its
+     `ON CONFLICT(contact_id)` upserts stay untouched; the overlay is read lazily
+     and rows materialize on first per-business-unit write.
+   - Result: one shared business unit = identical behavior to today. The column
+     adds and table creates are all `ADD COLUMN`-safe / `CREATE … IF NOT EXISTS`,
+     so they apply on the existing `~/.ravi/ravi.db` with no rebuild.
 3. **Phase 2 — enforce scope in resolvers.**
    - Route all scoped CRM access through the business-unit guard (fail-closed).
    - Update CLI/SDK to resolve business unit from instance context.
@@ -364,6 +410,11 @@ change ships without RM approval of the concrete diff.**
 4. **Phase 3 — operators split business units.**
    - Apply the non-additive default-pipeline index swap via an explicit migration
      step (drop/recreate), since a second default pipeline now needs to coexist.
+   - In the same table-rebuild step, upgrade the five `business_unit_id` columns
+     from bare `NOT NULL DEFAULT 'default'` to full `REFERENCES
+     crm_business_units(id) ON DELETE CASCADE`. SQLite cannot add a `REFERENCES`
+     clause to an existing column via `ALTER`, so this rides the rebuild that the
+     index swap already forces — zero extra rebuild cost.
    - `ravi crm business-unit create <slug>` and remap an instance
      (`ravi crm business-unit assign <instance> <business-unit>`).
    - First real isolation boundary appears (e.g. Galvanotek → own business unit).
@@ -482,9 +533,10 @@ ratification and remain reversible until code ships.
    `business_unit`, CLI `ravi crm business-unit` (alias `bu`).
 2. **Per-business-unit lifecycle storage — resolved (overlay).** Use the additive
    `crm_contact_business_unit_profiles` overlay table, not a `crm_contact_profiles`
-   re-key. Verified against `src/db/reconcile-columns.ts`: the re-key forces a
-   table rebuild the boot reconciler refuses and breaks the existing
-   `ON CONFLICT(contact_id)` upserts in `src/contacts.ts`.
+   re-key. Re-keying the primary key from `(contact_id)` to
+   `(contact_id, business_unit_id)` falls outside the `ADD COLUMN`-only boundary
+   `initializeCrmSchema()` obeys — it forces a full table rebuild and breaks the
+   existing `ON CONFLICT(contact_id)` upserts in `src/contacts.ts`.
 3. **Account scope — resolved (business-unit-scoped).** `crm_accounts` carries
    `business_unit_id` like every other commercial table. Rationale: `crm_accounts`
    is the *commercial wrapper*, not an identity object — the organization's
