@@ -235,12 +235,15 @@ CREATE TABLE IF NOT EXISTS crm_contact_business_unit_profiles (
   contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
   business_unit_id TEXT NOT NULL REFERENCES crm_business_units(id) ON DELETE CASCADE,
 
-  lifecycle TEXT NOT NULL DEFAULT 'unknown',
-  relationship_health TEXT NOT NULL DEFAULT 'unknown',
-  priority TEXT NOT NULL DEFAULT 'normal',
+  lifecycle TEXT NOT NULL DEFAULT 'unknown'
+    CHECK(lifecycle IN ('unknown', 'lead', 'qualified', 'active', 'onboarding', 'waiting', 'at_risk', 'dormant', 'churned', 'partner', 'vendor', 'internal')),
+  relationship_health TEXT NOT NULL DEFAULT 'unknown'
+    CHECK(relationship_health IN ('unknown', 'good', 'neutral', 'needs_attention', 'at_risk')),
+  priority TEXT NOT NULL DEFAULT 'normal'
+    CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
   score REAL,
   health_score REAL,
-  owner_type TEXT,
+  owner_type TEXT CHECK(owner_type IS NULL OR owner_type IN ('user', 'agent', 'team', 'system')),
   owner_id TEXT,
   primary_account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
   primary_opportunity_id TEXT REFERENCES crm_opportunities(id) ON DELETE SET NULL,
@@ -252,7 +255,8 @@ CREATE TABLE IF NOT EXISTS crm_contact_business_unit_profiles (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 
-  PRIMARY KEY (contact_id, business_unit_id)
+  PRIMARY KEY (contact_id, business_unit_id),
+  CHECK((owner_type IS NULL AND owner_id IS NULL) OR (owner_type IS NOT NULL AND owner_id IS NOT NULL))
 );
 ```
 

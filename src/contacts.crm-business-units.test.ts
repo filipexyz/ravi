@@ -135,6 +135,39 @@ describe("CRM business-unit Phase 1 migration", () => {
     expect(pkCols).toEqual(["contact_id", "business_unit_id"]);
   });
 
+  it("enforces the same domain and owner-pairing CHECKs as the base profile table", () => {
+    triggerCrmSchemaInit();
+    closeContacts();
+
+    const db = openChatDb();
+    const insertWith = (cols: string, vals: string) =>
+      db
+        .prepare(
+          `INSERT INTO crm_contact_business_unit_profiles (contact_id, business_unit_id, ${cols}) VALUES ('c1', 'default', ${vals})`,
+        )
+        .run();
+
+    // Control: a row with only the NOT NULL keys (defaults fill the rest) is valid.
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO crm_contact_business_unit_profiles (contact_id, business_unit_id) VALUES ('c-ok', 'default')",
+        )
+        .run(),
+    ).not.toThrow();
+
+    // Each enum domain rejects an out-of-set value.
+    expect(() => insertWith("lifecycle", "'bogus'")).toThrow();
+    expect(() => insertWith("relationship_health", "'bogus'")).toThrow();
+    expect(() => insertWith("priority", "'bogus'")).toThrow();
+    expect(() => insertWith("owner_type", "'bogus'")).toThrow();
+
+    // owner_type set without owner_id violates the pairing CHECK.
+    expect(() => insertWith("owner_type, owner_id", "'user', NULL")).toThrow();
+
+    db.close();
+  });
+
   it("is idempotent across re-open", () => {
     triggerCrmSchemaInit();
     closeContacts();
