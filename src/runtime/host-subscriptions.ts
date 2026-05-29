@@ -157,13 +157,15 @@ export class RuntimeHostSubscriptions {
           };
           const type = data.event?.type ?? data.type;
           const sessionName =
-            type === "task.done" || type === "task.failed"
+            type === "task.done" || type === "task.failed" || type === "task.deleted"
               ? (data.assigneeSessionName ?? data.event?.sessionName ?? undefined)
               : (data.event?.sessionName ?? data.assigneeSessionName ?? undefined);
 
           if ((type === "task.done" || type === "task.failed") && sessionName) {
             await this.options.dispatcher.startDeferredAfterTaskSessionIfDeliverable(sessionName);
             this.options.dispatcher.wakeStreamingSessionIfDeliverable(sessionName);
+          } else if (type === "task.deleted" && sessionName) {
+            await this.options.dispatcher.abortSession(sessionName, { reason: "task_deleted" });
           }
         }
       } catch (err) {

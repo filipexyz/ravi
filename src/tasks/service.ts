@@ -3041,3 +3041,25 @@ export async function completeTask(
       : [...buildChildStateRelatedEvents(result.task, result.event), ...dependencyRelatedEvents],
   };
 }
+
+export async function deleteTask(taskId: string): Promise<boolean> {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) return false;
+
+  const deleted = dbDeleteTask(taskId);
+  if (deleted) {
+    const sessionName = `task-${taskId}-work`;
+    try {
+      await nats.emit(`${TASK_EVENT_PREFIX}.${taskId}.event`, {
+        type: "task.deleted",
+        taskId,
+        assigneeSessionName: sessionName,
+        timestamp: new Date().toISOString(),
+      } as unknown as Record<string, unknown>);
+    } catch (err) {
+      log.warn("Failed to emit task.deleted event", { taskId, error: err });
+    }
+  }
+
+  return deleted;
+}

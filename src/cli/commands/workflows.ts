@@ -20,7 +20,7 @@ import {
 } from "../../workflows/index.js";
 import {
   createTask,
-  dbDeleteTask,
+  deleteTask,
   emitTaskEvent,
   getDefaultTaskSessionNameForTask,
   getCanonicalTaskDir,
@@ -409,7 +409,7 @@ export class WorkflowRunCommands {
     try {
       attached = attachTaskToWorkflowNodeRun(runId, nodeKey, created.task.id);
     } catch (error) {
-      dbDeleteTask(created.task.id);
+      await deleteTask(created.task.id);
       rmSync(getCanonicalTaskDir(created.task.id), { recursive: true, force: true });
       fail(error instanceof Error ? error.message : String(error));
     }
