@@ -185,28 +185,61 @@ CREATE INDEX IF NOT EXISTS idx_crm_opportunities_ws_stage
   ON crm_opportunities(workspace_id, pipeline_id, stage_id, status, updated_at DESC);
 ```
 
-### `crm_contact_profiles` becomes per-workspace
+### Per-workspace contact lifecycle (additive overlay)
 
-The most invasive change. Today the profile is one row per contact:
+A contact may be a `lead` in one workspace and `active` in another. That requires
+per-workspace lifecycle without overwriting. There are two ways to model it, and
+the choice is dictated by what the boot-time migrator can safely do (see
+[Migration Mechanism](#migration-mechanism)).
+
+**Recommended (non-breaking): a new overlay table.** `crm_contact_profiles`
+stays exactly as it is today (`PRIMARY KEY (contact_id)`), and per-workspace
+lifecycle lives in a brand-new table whose composite primary key is declared in
+its own `CREATE TABLE` — which the additive reconciler handles, because creating
+a new table is safe even though `ALTER`-ing a primary key is not:
 
 ```sql
--- today
-PRIMARY KEY (contact_id)
+CREATE TABLE IF NOT EXISTS crm_contact_workspace_profiles (
+  contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+
+  lifecycle TEXT NOT NULL DEFAULT 'unknown',
+  relationship_health TEXT NOT NULL DEFAULT 'unknown',
+  priority TEXT NOT NULL DEFAULT 'normal',
+  score REAL,
+  health_score REAL,
+  owner_type TEXT,
+  owner_id TEXT,
+  primary_account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+  primary_opportunity_id TEXT REFERENCES crm_opportunities(id) ON DELETE SET NULL,
+  last_meaningful_interaction_at TEXT,
+  next_action_at TEXT,
+  next_action_summary TEXT,
+  next_task_id TEXT REFERENCES crm_tasks(id) ON DELETE SET NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+  PRIMARY KEY (contact_id, workspace_id)
+);
 ```
 
-To let one contact be a `lead` in one workspace and `active` in another without
-overwriting, the profile becomes keyed by `(contact_id, workspace_id)`:
+Existing `crm_contact_profiles` rows project into the default workspace's overlay
+row during Phase 1. The legacy table MAY remain as the default-workspace
+read-model or be deprecated in place later; either way no existing upsert path
+changes in Phase 1.
 
-```sql
--- proposed
-workspace_id TEXT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
-PRIMARY KEY (contact_id, workspace_id)
-```
+**Rejected (breaking): re-key `crm_contact_profiles` to
+`(contact_id, workspace_id)`.** SQLite cannot `ALTER` a primary key, so this
+needs a full table rebuild (the reconciler refuses it), and it breaks every
+`ON CONFLICT(contact_id)` upsert (`src/contacts.ts`), the single-row getter
+`getCrmContactProfileRow(contactId)`, and the merge delete. This path is not
+chosen precisely because it cannot ship without breakage.
 
-This is consistent with [[contacts/identity-graph/unified-model]], which already
-requires that "a contact may be allowed operationally, a lead in CRM, an admin
-in one chat ... without those statuses overwriting each other." CRM lifecycle is
-one such scoped status.
+This overlay is consistent with [[contacts/identity-graph/unified-model]], which
+already requires that "a contact may be allowed operationally, a lead in CRM, an
+admin in one chat ... without those statuses overwriting each other." CRM
+lifecycle is one such scoped status.
 
 ### Ledger and fact tables reuse the existing scope vocabulary
 
@@ -274,27 +307,57 @@ commercial layer, enforced at the application layer because the store is SQLite.
 This mirrors HubSpot Business Units (shared contacts, business-unit-scoped deals)
 rather than Salesforce-style separate orgs.
 
+## Migration Mechanism
+
+Schema evolves on boot via `reconcileColumns()` (`src/db/reconcile-columns.ts`):
+it diffs the live SQLite database against the declarative schema and runs
+`ALTER TABLE ADD COLUMN` for any declared column missing in the live table. Its
+documented limits decide what is safe:
+
+- It **can** add a column, including `NOT NULL` **with a constant `DEFAULT`** —
+  which backfills existing rows in place.
+- It **cannot** add a `PRIMARY KEY` or `UNIQUE` constraint, recreate an index,
+  drop a column, or run a data rebuild.
+
+Splitting the deltas against that boundary:
+
+- **Additive (auto on boot, non-breaking):** the `crm_workspaces` table,
+  `workspace_id TEXT NOT NULL DEFAULT '<default-id>'` on each scoped commercial
+  table, `instances.crm_workspace_id`, and the `crm_contact_workspace_profiles`
+  overlay table. All ship through the reconciler with zero code-path changes.
+- **Non-additive (explicit, deferred):** the per-workspace default-pipeline
+  index swap (`UNIQUE(workspace_id, entity_type, is_default)`) needs a
+  drop/recreate index step the reconciler will not perform. It only matters once
+  a second workspace exists, so it is deferred to Phase 3 and gated behind an
+  explicit migration step, not boot reconciliation.
+- **Avoided (would force a rebuild):** re-keying `crm_contact_profiles`. The
+  overlay table exists specifically to keep this delta out of the migration.
+
 ## Migration Plan
 
-This feature changes `src/db.ts` and is therefore HITL-gated (AGENTS.md C.15).
+This feature changes the CRM schema and is therefore HITL-gated (AGENTS.md C.15).
 The phases below are designed so each step is behavior-preserving until an
 operator explicitly opts an instance into its own workspace. **No schema change
 ships without RM approval of the concrete diff.**
 
 1. **Phase 0 — today.** Everything global. No workspace concept.
-2. **Phase 1 — introduce default workspace (no behavior change).**
+2. **Phase 1 — introduce default workspace (no behavior change, additive only).**
    - Create `crm_workspaces`; seed one row `slug='default'`, `is_default=1`.
-   - Add `workspace_id` to scoped tables with `DEFAULT '<default-id>'`; backfill
-     all existing rows to the default workspace.
+   - Add `workspace_id` to scoped tables with `DEFAULT '<default-id>'`; the
+     reconciler backfills all existing rows to the default workspace.
    - Add `instances.crm_workspace_id`; map every existing instance to default.
-   - Migrate `crm_contact_profiles` to the `(contact_id, workspace_id)` key with
-     all rows under default.
-   - Result: one shared workspace = identical behavior to today.
+   - Create the `crm_contact_workspace_profiles` overlay; project existing
+     `crm_contact_profiles` rows into the default workspace. The legacy table and
+     its `ON CONFLICT(contact_id)` upserts stay untouched.
+   - Result: one shared workspace = identical behavior to today, applied entirely
+     through `reconcileColumns()` on boot.
 3. **Phase 2 — enforce scope in resolvers.**
    - Route all scoped CRM access through the workspace guard (fail-closed).
    - Update CLI/SDK to resolve workspace from instance context.
    - Still one workspace, so still no visible change.
 4. **Phase 3 — operators split workspaces.**
+   - Apply the non-additive default-pipeline index swap via an explicit migration
+     step (drop/recreate), since a second default pipeline now needs to coexist.
    - `ravi crm workspace create <slug>` and remap an instance
      (`ravi crm workspace assign <instance> <workspace>`).
    - First real isolation boundary appears (e.g. Galvanotek → own workspace).
@@ -373,8 +436,9 @@ belongs to.
 - **`account_id` overload.** Reusing `routes.account_id` or `crm_accounts.id` as
   the tenancy key. Prevented by the dedicated `workspace_id` / `crm_workspace_id`
   names.
-- **Lifecycle clobber.** Keeping `crm_contact_profiles` keyed by `contact_id`
-  alone forces one global lifecycle and overwrites per-workspace state.
+- **Lifecycle clobber.** Writing per-workspace lifecycle into the single global
+  `crm_contact_profiles` row overwrites another workspace's state. Prevented by
+  the `crm_contact_workspace_profiles` overlay keyed by `(contact_id, workspace_id)`.
 - **Default-workspace drift.** More than one `is_default=1`, or an unmapped
   instance silently resolving to a non-default workspace.
 
@@ -384,8 +448,12 @@ These require RM sign-off before implementation:
 
 1. **Boundary name.** `workspace` (proposed) vs `tenant` vs `business-unit`. This
    is public CLI/SDK surface (AGENTS.md C.16) and hard to rename later.
-2. **`crm_contact_profiles` re-key.** Confirm the `(contact_id, workspace_id)`
-   primary-key migration vs a separate per-workspace overlay table.
+2. **Per-workspace lifecycle storage — resolved (overlay).** Use the additive
+   `crm_contact_workspace_profiles` overlay table, not a `crm_contact_profiles`
+   re-key. Verified against `src/db/reconcile-columns.ts`: the re-key forces a
+   table rebuild the boot reconciler refuses and breaks the existing
+   `ON CONFLICT(contact_id)` upserts in `src/contacts.ts`. Listed here for RM
+   ratification of the resolved direction.
 3. **Account scope.** Confirm `crm_accounts` is workspace-scoped (proposed) vs a
    shared org directory with per-workspace opportunity scope only.
 4. **NATS emission.** Whether workspace assignment/commercial moves emit an omni
