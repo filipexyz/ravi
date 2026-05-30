@@ -2767,6 +2767,10 @@ export const CrmOpportunityCreateInputSchema = {
       "description": "CRM account ID",
       "type": "string"
     },
+    "allowDuplicate": {
+      "description": "Override the open opportunity-per-(contact,pipeline) guard (requires --reason)",
+      "type": "boolean"
+    },
     "contact": {
       "description": "Contact ID or identity",
       "type": "string"
@@ -2781,6 +2785,10 @@ export const CrmOpportunityCreateInputSchema = {
     },
     "owner": {
       "description": "Owner, e.g. agent:main",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Justification for --allow-duplicate (min 10 chars, non-generic)",
       "type": "string"
     },
     "stage": {
