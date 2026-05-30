@@ -26,6 +26,7 @@ export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMess
     session_id: "",
     parent_tool_use_id: null,
     deliveryBarrier: getRuntimePromptDeliveryBarrier(prompt),
+    deliveryBarrierSource: prompt.deliveryBarrierSource,
     taskBarrierTaskId: prompt.taskBarrierTaskId,
     commands: prompt.commands,
     launchPrompt: cloneRuntimeLaunchPrompt(prompt),

@@ -377,6 +377,121 @@ describe("SessionCommands wait mode", () => {
   });
 });
 
+describe("SessionCommands delivery barriers", () => {
+  beforeEach(() => {
+    publishedPrompts.length = 0;
+    resolvedSession = {
+      sessionKey: "agent:dev:main",
+      name: "dev",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+  });
+
+  it("sends cross-session prompts as follow-up by default", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send("dev", "hello");
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
+    expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("default");
+  });
+
+  it("keeps explicit immediate delivery for cross-session prompts", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send(
+        "dev",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "p0",
+      );
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("immediate_interrupt");
+    expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("explicit");
+  });
+
+  it("supports steer delivery for cross-session prompts", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send(
+        "dev",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_tool");
+    expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("explicit");
+  });
+
+  it("supports followup and steer barrier aliases", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send(
+        "dev",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "steer",
+      );
+    });
+
+    expect(publishedPrompts.at(-1)?.payload.deliveryBarrier).toBe("after_tool");
+    expect(publishedPrompts.at(-1)?.payload.deliveryBarrierSource).toBe("explicit");
+  });
+
+  it("answers as follow-up by default", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.answer("dev", "answer");
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.prompt).toBe("[System] Answer: [from: unknown] answer");
+    expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
+    expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("default");
+  });
+});
+
 describe("SessionCommands list --json", () => {
   beforeEach(() => {
     listedSessions = [

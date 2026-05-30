@@ -274,6 +274,7 @@ export async function buildRuntimeStartRequest(
       contextId: runtimeContext.contextId,
       source: streamingSession.currentSource ?? resolvedSource ?? null,
       deliveryBarrier: firstMessage?.deliveryBarrier ?? null,
+      deliveryBarrierSource: firstMessage?.deliveryBarrierSource ?? null,
       taskBarrierTaskId: firstMessage?.taskBarrierTaskId ?? null,
       settingSources: agent.settingSources ?? ["project"],
       hasHooks: Boolean(hooks && Object.keys(hooks).length > 0),

@@ -1,4 +1,4 @@
-import type { DeliveryBarrier } from "../delivery-barriers.js";
+import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
@@ -24,6 +24,7 @@ export interface RuntimeMessageTarget extends MessageActorMetadata {
 
 export interface RuntimeUserMessage extends RuntimePromptMessage {
   deliveryBarrier?: DeliveryBarrier;
+  deliveryBarrierSource?: DeliveryBarrierSource;
   taskBarrierTaskId?: string;
   commands?: RaviCommandPromptMetadata[];
   /** Original launch envelope used to recreate session metadata after an interrupt restart. */

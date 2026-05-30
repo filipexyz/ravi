@@ -1,13 +1,22 @@
 import { describe, expect, it } from "bun:test";
-import { inferDeliveryBarrier } from "./delivery-barriers.js";
+import { inferDeliveryBarrier, requireDeliveryBarrier } from "./delivery-barriers.js";
 
 describe("delivery barrier inference", () => {
   it("keeps explicit barriers authoritative", () => {
     expect(inferDeliveryBarrier({ prompt: "[System] Inform: oi", deliveryBarrier: "p0" })).toBe("immediate_interrupt");
   });
 
-  it("treats system answers as immediate interrupt by default", () => {
-    expect(inferDeliveryBarrier({ prompt: "[System] Answer: [from: dev] oi" })).toBe("immediate_interrupt");
+  it("supports followup and steer aliases", () => {
+    expect(inferDeliveryBarrier({ prompt: "external", deliveryBarrier: "followup" })).toBe("after_response");
+    expect(inferDeliveryBarrier({ prompt: "external", deliveryBarrier: "steer" })).toBe("after_tool");
+  });
+
+  it("strict parsing rejects unknown barrier names instead of falling back", () => {
+    expect(() => requireDeliveryBarrier("folowup", "hook deliveryBarrier")).toThrow("Unknown hook deliveryBarrier");
+  });
+
+  it("treats system answers as follow-up by default", () => {
+    expect(inferDeliveryBarrier({ prompt: "[System] Answer: [from: dev] oi" })).toBe("after_response");
   });
 
   it("treats system execute as after_task by default", () => {
@@ -27,6 +36,14 @@ describe("delivery barrier inference", () => {
     expect(inferDeliveryBarrier({ prompt: "heartbeat", _heartbeat: true })).toBe("after_task");
     expect(inferDeliveryBarrier({ prompt: "trigger", _trigger: true })).toBe("after_task");
     expect(inferDeliveryBarrier({ prompt: "supervisor", _systemSupervisor: true })).toBe("after_task");
+  });
+
+  it("treats async external sources as after_response", () => {
+    expect(inferDeliveryBarrier({ prompt: "[Cron: daily]", _cron: true })).toBe("after_response");
+    expect(inferDeliveryBarrier({ prompt: "raw hook message", _hook: true })).toBe("after_response");
+    expect(inferDeliveryBarrier({ prompt: "resume", _daemonRestartResume: { restartEpoch: 1 } })).toBe(
+      "after_response",
+    );
   });
 
   it("treats taskBarrierTaskId as after_task", () => {

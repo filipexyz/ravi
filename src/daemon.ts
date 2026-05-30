@@ -519,6 +519,8 @@ async function publishRestartResumeEvent(
 
   const payload: Record<string, unknown> = {
     prompt: `[System] Daemon reiniciou (${restartInfo.reason}). Continue de onde parou.`,
+    deliveryBarrier: "after_response",
+    deliveryBarrierSource: "default",
     _daemonRestartResume: {
       restartEpoch: restartInfo.restartEpoch,
       sessionKey,

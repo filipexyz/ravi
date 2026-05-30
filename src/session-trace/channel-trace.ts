@@ -458,6 +458,7 @@ export function recordPromptPublishedTrace(input: RecordPromptPublishedTraceInpu
     ...sourceFields,
     payloadJson: {
       deliveryBarrier: payload.deliveryBarrier,
+      deliveryBarrierSource: payload.deliveryBarrierSource,
       taskBarrierTaskId: payload.taskBarrierTaskId,
       source: payload.source,
       context: payload.context,

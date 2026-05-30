@@ -3217,8 +3217,10 @@ export type SessionsActionsReturn = unknown;
 export type SessionsAnswerInput = {
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   message: string;
   sender?: string;
+  steer?: boolean;
   target: string;
   to?: string;
 };
@@ -3230,8 +3232,10 @@ export type SessionsAnswerReturn = unknown;
 export type SessionsAskInput = {
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   message: string;
   sender?: string;
+  steer?: boolean;
   target: string;
   to?: string;
 };
@@ -3290,7 +3294,9 @@ export type SessionsEditMessageReturn = unknown;
 export type SessionsExecuteInput = {
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   message: string;
+  steer?: boolean;
   target: string;
   to?: string;
 };
@@ -3334,7 +3340,9 @@ export type SessionsInfoReturn = unknown;
 export type SessionsInformInput = {
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   message: string;
+  steer?: boolean;
   target: string;
   to?: string;
 };
@@ -3495,9 +3503,11 @@ export type SessionsSendInput = {
   agent?: string;
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   interactive?: boolean;
   nameOrKey: string;
   prompt?: string;
+  steer?: boolean;
   thread?: string;
   threadOwner?: string;
   threadScope?: string;
