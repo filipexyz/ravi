@@ -433,3 +433,63 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 });
+
+describe("RuntimeSessionDispatcher orphaned session cleanup", () => {
+  it("identifies and removes orphaned task-work sessions", () => {
+    const dispatcher = createDispatcher();
+
+    // Mock dbHasActiveTaskForSession
+    const mockDbHasActiveTaskForSession = mock((sessionName: string) => {
+      // Simulate task-123 having an active task, task-456 not having one
+      return sessionName === "task-123-work";
+    });
+
+    // Replace the imported function with our mock
+    const taskDbModule = require("../tasks/task-db.js") as any;
+    const originalFn = taskDbModule.dbHasActiveTaskForSession;
+    taskDbModule.dbHasActiveTaskForSession = mockDbHasActiveTaskForSession;
+
+    try {
+      // Add a mix of active and orphaned task-work sessions
+      dispatcher.streamingSessions.set("task-123-work", createActiveSession());
+      dispatcher.streamingSessions.set("task-456-work", createActiveSession());
+      dispatcher.streamingSessions.set("some-other-session", createActiveSession());
+
+      const result = dispatcher.cleanupOrphanedTaskSessions();
+
+      expect(result.cleaned).toEqual(["task-456-work"]);
+      expect(dispatcher.streamingSessions.has("task-123-work")).toBe(true);
+      expect(dispatcher.streamingSessions.has("task-456-work")).toBe(false);
+      expect(dispatcher.streamingSessions.has("some-other-session")).toBe(true);
+    } finally {
+      taskDbModule.dbHasActiveTaskForSession = originalFn;
+    }
+  });
+
+  function createActiveSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
+    return {
+      agentId: "dev",
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
+      abortController: new AbortController(),
+      pendingMessages: [],
+      currentModel: "test-model",
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      compacting: false,
+      interrupted: false,
+      turnActive: false,
+      pushMessage: null,
+      pendingWake: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+      ...overrides,
+    };
+  }
+});

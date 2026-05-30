@@ -100,12 +100,17 @@ export class RaviBot {
     try {
       const { recoverActiveTasksAfterRestart } = await import("./tasks/service.js");
       const recovery = await recoverActiveTasksAfterRestart();
-      if (recovery.recoveredTaskIds.length === 0 && recovery.skipped.length === 0) {
+
+      // Clean up any orphaned task-work sessions (tasks deleted but session not aborted)
+      const cleanup = this.sessionDispatcher.cleanupOrphanedTaskSessions();
+
+      if (recovery.recoveredTaskIds.length === 0 && recovery.skipped.length === 0 && cleanup.cleaned.length === 0) {
         return;
       }
       log.info("Recovered active tasks after restart", {
         recovered: recovery.recoveredTaskIds,
         skipped: recovery.skipped,
+        orphanedTaskSessionsCleaned: cleanup.cleaned.length,
       });
     } catch (error) {
       log.error("Failed to recover active tasks after restart", { error });

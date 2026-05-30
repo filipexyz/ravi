@@ -141,6 +141,38 @@ export class RuntimeSessionDispatcher {
     this.streamingSessions.clear();
   }
 
+  cleanupOrphanedTaskSessions(): { cleaned: string[] } {
+    const cleaned: string[] = [];
+    const taskSessionPattern = /^task-[A-Za-z0-9_-]+-work(?:$|[:/])/;
+
+    for (const sessionName of this.streamingSessions.keys()) {
+      // Only check sessions matching task-*-work pattern
+      if (!taskSessionPattern.test(sessionName)) {
+        continue;
+      }
+
+      // Check if the corresponding task still exists and is active
+      const isActive = dbHasActiveTaskForSession(sessionName);
+      if (!isActive) {
+        // Task is gone or not active anymore, clean up the session
+        const session = this.streamingSessions.get(sessionName);
+        if (session) {
+          log.info("Cleaning up orphaned task session", { sessionName });
+          shutdownRuntimeStreamingSession(session, "orphaned_task_cleanup");
+          recordStreamingAbortTrace(sessionName, session, "orphaned_task_cleanup");
+        }
+        if (this.streamingSessions.delete(sessionName)) {
+          cleaned.push(sessionName);
+        }
+      }
+    }
+
+    if (cleaned.length > 0) {
+      log.info("Cleaned up orphaned task sessions", { count: cleaned.length, sessions: cleaned });
+    }
+    return { cleaned };
+  }
+
   abortSession(
     sessionNameOrIdentity: string | RuntimeStreamingSessionIdentity,
     provenance: RuntimeAbortProvenance = {},
