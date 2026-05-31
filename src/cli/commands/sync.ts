@@ -50,7 +50,11 @@ export class SyncCommands {
     let trace: Awaited<ReturnType<typeof pushTraceExportBatch>> | null = null;
     if (readCloudCredentials()) {
       enqueueTraceExportBatch();
-      trace = await pushTraceExportBatch({ bridge });
+      trace = await pushTraceExportBatch({
+        bridge,
+        limit: parseIntOption(limitRaw),
+        maxBytes: parseIntOption(maxBytesRaw),
+      });
     }
     const result = await bridge.push({
       domain: clean(domain),

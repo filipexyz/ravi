@@ -201,6 +201,49 @@ describe("cloud trace export", () => {
     expect(inspectSyncRecord(enqueued.outboxId!)?.record.status).toBe("acked");
   });
 
+  it("uploads every pending trace row in the requested batch", async () => {
+    recordSessionEvent({
+      sessionKey: "agent:one",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      provider: "codex",
+      timestamp: 2,
+    });
+    const first = enqueueTraceExportBatch();
+    recordSessionEvent({
+      sessionKey: "agent:two",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      provider: "codex",
+      timestamp: 3,
+    });
+    const second = enqueueTraceExportBatch();
+    const credentials = fakeCredentials();
+    const calls: unknown[] = [];
+    const bridge = new ConsoleSyncBridge({
+      readCredentials: () => credentials,
+      createClient: () =>
+        ({
+          consoleUrl: credentials.consoleUrl,
+          requestJson: async (_method: string, path: string, body: unknown) => {
+            expect(path).toBe("/api/cli/runtime-traces/events");
+            calls.push(body);
+            return { ok: true };
+          },
+        }) as never,
+    });
+
+    await expect(pushTraceExportBatch({ bridge, limit: 2 })).resolves.toMatchObject({
+      status: "uploaded",
+      attempted: 2,
+      acked: 2,
+      failed: 0,
+    });
+    expect(calls).toHaveLength(2);
+    expect(inspectSyncRecord(first.outboxId!)?.record.status).toBe("acked");
+    expect(inspectSyncRecord(second.outboxId!)?.record.status).toBe("acked");
+  });
+
   it("moves the export cursor before TTL pruning can delete exported event rows", () => {
     recordSessionEvent({
       sessionKey: "agent:dev",

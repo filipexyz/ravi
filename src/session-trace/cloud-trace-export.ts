@@ -206,20 +206,35 @@ export async function pushTraceExportBatch(
   });
   if (batch.items.length === 0) return { linked: true, status: "noop", attempted: 0, acked: 0, failed: 0 };
 
-  const item = batch.items[0]!;
-  try {
-    await bridge.uploadRuntimeTraceEvents(item.payload);
-    markOutboxAcked([item.id]);
-    return { linked: true, status: "uploaded", attempted: 1, acked: 1, failed: 0 };
-  } catch (error) {
-    const code = traceExportErrorCode(error);
-    markOutboxFailed({
-      ids: [item.id],
-      errorCode: code,
-      retryable: isRetryableTraceExportError(error),
-    });
-    return { linked: true, status: "failed", attempted: 1, acked: 0, failed: 1, errorCode: code };
+  let attempted = 0;
+  let acked = 0;
+  let failed = 0;
+  let firstErrorCode: string | undefined;
+
+  for (const item of batch.items) {
+    attempted += 1;
+    try {
+      await bridge.uploadRuntimeTraceEvents(item.payload);
+      markOutboxAcked([item.id]);
+      acked += 1;
+    } catch (error) {
+      const code = traceExportErrorCode(error);
+      const retryable = isRetryableTraceExportError(error);
+      firstErrorCode ??= code;
+      failed += 1;
+      markOutboxFailed({
+        ids: [item.id],
+        errorCode: code,
+        retryable,
+      });
+      if (retryable) break;
+    }
   }
+
+  if (failed > 0) {
+    return { linked: true, status: "failed", attempted, acked, failed, errorCode: firstErrorCode };
+  }
+  return { linked: true, status: "uploaded", attempted, acked, failed };
 }
 
 export function getTraceExportCursor(): number | null {
