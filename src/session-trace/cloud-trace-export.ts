@@ -155,9 +155,21 @@ export function enqueueTraceExportBatch(input: EnqueueTraceExportBatchInput = {}
   const turnIds = [...new Set(rows.map((row) => row.turn_id).filter((value): value is string => !!value))];
   const turns = loadTurns(turnIds);
   const events = coalesceTraceEvents(rows).map((row) => toExportEvent(row, turns.get(row.turn_id ?? "")));
-  const payload = buildRuntimeTracePayload(rows, turns, events);
   const first = rows[0]!.id;
   const last = rows[rows.length - 1]!.id;
+  if (events.length === 0) {
+    setTraceExportCursor(first, last, 0, now);
+    return {
+      enqueued: false,
+      sourceEvents: rows.length,
+      exportedEvents: 0,
+      firstEventId: first,
+      lastEventId: last,
+      outboxId: null,
+    };
+  }
+
+  const payload = buildRuntimeTracePayload(rows, turns, events);
   const outbox = enqueueSyncEvent({
     eventId: deterministicTraceBatchId(first, last, events.length),
     domain: TRACE_CURSOR_DOMAIN,
@@ -170,17 +182,7 @@ export function enqueueTraceExportBatch(input: EnqueueTraceExportBatchInput = {}
     occurredAt: now,
     now,
   });
-  setSyncCursor(
-    TRACE_CURSOR_DOMAIN,
-    SESSION_EVENTS_CURSOR,
-    String(last),
-    {
-      firstEventId: first,
-      lastEventId: last,
-      exportedEvents: events.length,
-    },
-    now,
-  );
+  setTraceExportCursor(first, last, events.length, now);
 
   return {
     enqueued: !!outbox,
@@ -393,7 +395,7 @@ function buildRuntimeTracePayload(
   return sanitizeSyncPayload({
     session: {
       sessionKey: first.session_key,
-      sessionName: first.session_name,
+      sessionName: exportSessionName(first),
       agentId: first.agent_id,
       runId: first.run_id,
       runtimeProvider,
@@ -417,6 +419,31 @@ function buildRuntimeTracePayload(
     // metadata-only blob rows that the Console ingest contract rejects.
     blobs: [],
   });
+}
+
+function setTraceExportCursor(firstEventId: number, lastEventId: number, exportedEvents: number, now: number): void {
+  setSyncCursor(
+    TRACE_CURSOR_DOMAIN,
+    SESSION_EVENTS_CURSOR,
+    String(lastEventId),
+    {
+      firstEventId,
+      lastEventId,
+      exportedEvents,
+    },
+    now,
+  );
+}
+
+function exportSessionName(row: SessionEventRow): string | null {
+  const name = stringValue(row.session_name);
+  if (name && name.toLowerCase() !== "generic") return name;
+  const agentId = stringValue(row.agent_id);
+  if (agentId && agentId.toLowerCase() !== "generic") return agentId;
+  const match = /^agent:([^:]+)/.exec(row.session_key);
+  const fromSessionKey = match?.[1] ? stringValue(match[1]) : null;
+  if (fromSessionKey && fromSessionKey.toLowerCase() !== "generic") return fromSessionKey;
+  return null;
 }
 
 function orderTurnsForRows(rows: SessionEventRow[], turns: Map<string, SessionTurnRow>): SessionTurnRow[] {

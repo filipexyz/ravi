@@ -128,6 +128,59 @@ describe("cloud trace export", () => {
     });
   });
 
+  it("skips non-canonical trace rows instead of creating empty Console runs", () => {
+    recordSessionEvent({
+      sessionKey: "generic",
+      sessionName: "generic",
+      eventType: "runtime.status",
+      eventGroup: "runtime",
+      provider: "claude",
+      timestamp: 1,
+    });
+
+    const skipped = enqueueTraceExportBatch({ now: 2 });
+    expect(skipped).toMatchObject({
+      enqueued: false,
+      sourceEvents: 1,
+      exportedEvents: 0,
+      firstEventId: 1,
+      lastEventId: 1,
+      outboxId: null,
+    });
+    expect(getSyncCursor("runtime_trace", "session_events_enqueued")?.cursorValue).toBe("1");
+
+    recordSessionEvent({
+      sessionKey: "agent:main:main",
+      sessionName: "main",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      provider: "codex",
+      timestamp: 3,
+    });
+
+    const exported = enqueueTraceExportBatch({ now: 4 });
+    expect(exported.enqueued).toBe(true);
+    expect(exported.firstEventId).toBe(2);
+  });
+
+  it("does not export generic placeholder names as the Console display name", () => {
+    recordSessionEvent({
+      sessionKey: "agent:khal-desktop:main",
+      sessionName: "generic",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      provider: "codex",
+      timestamp: 3,
+    });
+
+    const result = enqueueTraceExportBatch();
+    const payload = getOutboxById(result.outboxId!)!.payload as Record<string, unknown>;
+    expect(payload.session).toMatchObject({
+      sessionKey: "agent:khal-desktop:main",
+      sessionName: "khal-desktop",
+    });
+  });
+
   it("keeps local blob hashes on turns but omits blobs without remote r2Key/blobRef", () => {
     const requestBlob = recordSessionBlob({
       kind: "adapter_request",
