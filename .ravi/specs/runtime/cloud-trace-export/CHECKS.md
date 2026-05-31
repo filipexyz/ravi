@@ -21,6 +21,8 @@ normative: true
   `systemPromptSha256`, and `requestBlobSha256` without adding `blobs[]`.
 - Export payload includes event id and positive sequence on every exported
   event.
+- Export payload treats event id as the idempotency key; repeated local
+  sequence values across restarts must not require dropping distinct events.
 - Routed inbound channel messages export as canonical `message.user` events with
   safe previews.
 - Generic/rejected channel-message mirror rows are not exported as user chat

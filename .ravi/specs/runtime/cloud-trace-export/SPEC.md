@@ -107,6 +107,11 @@ Required fields:
   hash-only metadata, not remote blob references.
 - Each exported event MUST include `eventId`, `eventType`, positive `sequence`,
   and `occurredAt`.
+- Exported `eventId` MUST be stable and unique for the local event inside the
+  trace session. Remote Console deduplicates by trace session + event id.
+- Exported `sequence` is an ordering hint, not a durable id. The exporter MAY
+  reuse local `seq` values across daemon restarts or catch-up windows as long
+  as `eventId` remains unique.
 - Events and tool calls tied to a local turn SHOULD use `sourceTurnId` matching
   the exported turn.
 
