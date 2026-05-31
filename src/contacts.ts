@@ -5516,7 +5516,8 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
   // open/paused opportunity per (contact, pipeline). See docs/proposals + .ravi/specs.
   // Dedup check inside transaction to prevent TOCTOU race: check + insert are atomic
   let dedupBypass: { existing: CrmOpportunityRow; reason: string; contactId: string } | null = null;
-  let dedupRejection: { existing: CrmOpportunityRow; contactId: string } | null = null;
+  let dedupRejectionContactId: string | null = null;
+  let dedupRejectionExisting: CrmOpportunityRow | null = null;
   const opportunityId = `crm_opp_${generateId()}`;
   let opportunity: CrmOpportunity | null = null;
   executeWrite(
@@ -5530,7 +5531,8 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
             dedupBypass = { existing: existingOpen, reason: validateDuplicateReason(input.duplicateReason), contactId };
           } else {
             // Record rejection event inside transaction, then flag it for throwing after transaction
-            dedupRejection = { existing: existingOpen, contactId };
+            dedupRejectionContactId = contactId;
+            dedupRejectionExisting = existingOpen;
             recordCrmDedupEvent(database, {
               outcome: "rejected",
               existing: existingOpen,
@@ -5647,10 +5649,10 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
     { label: "contacts:createCrmOpportunity" },
   );
   // Check if dedup rejection occurred (rejection event was recorded inside transaction)
-  if (dedupRejection) {
-    const existing = dedupRejection.existing;
+  if (dedupRejectionContactId) {
+    const existing = dedupRejectionExisting!;
     throw new Error(
-      `CRM opportunity already open for contact=${dedupRejection.contactId} pipeline=${stage.pipelineId}: ` +
+      `CRM opportunity already open for contact=${dedupRejectionContactId} pipeline=${stage.pipelineId}: ` +
         `${existing.id} "${existing.title}" (stage=${existing.stage_id ?? "?"}, status=${existing.status}). ` +
         `Update it via 'ravi crm opportunity move ${existing.id} <stage>' or 'ravi crm opportunity timeline-add ${existing.id} ...', ` +
         `or pass --allow-duplicate --reason "<justificativa>" to intentionally open a parallel opportunity.`,
