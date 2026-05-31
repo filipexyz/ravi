@@ -16,6 +16,8 @@ normative: true
 - Uploads include idempotency keys.
 - Downloads are cursor-based.
 - Missing handlers keep events inspectable.
+- Automatic daemon sync is disabled unless `RAVI_SYNC_RUNNER_ENABLED=1`.
+- No legacy inverse disable flag exists.
 - Failed sync does not fail daemon startup unless explicitly configured as
   required.
 - Logs omit bearer tokens and payload secrets.

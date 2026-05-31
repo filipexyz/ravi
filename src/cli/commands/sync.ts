@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
 import { readCloudCredentials } from "../../cloud-auth/storage.js";
 import { createConsoleSyncBridge, getSyncStatusSummary, inspectSyncRecord, retryOutbox } from "../../sync/index.js";
+import { getSyncRuntimeConfig } from "../../sync/config.js";
 import { enqueueTraceExportBatch, pushTraceExportBatch } from "../../session-trace/cloud-trace-export.js";
 import type { ConsoleSyncPullResult, ConsoleSyncPushResult } from "../../sync/console-bridge.js";
 
@@ -24,6 +25,7 @@ export class SyncCommands {
       return payload;
     }
     console.log(`Sync: ${payload.linked ? "linked" : "unlinked"}`);
+    console.log(`Runner: ${payload.runner.enabled ? "enabled" : `disabled (set ${payload.runner.env}=1)`}`);
     console.log(
       `Outbox pending: ${payload.outbox.pending} | failed: ${payload.outbox.failed} | dead: ${payload.outbox.dead}`,
     );
@@ -44,11 +46,16 @@ export class SyncCommands {
     @Option({ flags: "--scope <scope>", description: "Sync scope (organization)" }) scope?: string,
     @Option({ flags: "--limit <n>", description: "Max events in batch" }) limitRaw?: string,
     @Option({ flags: "--max-bytes <n>", description: "Max payload bytes in batch" }) maxBytesRaw?: string,
+    @Option({
+      flags: "--traces",
+      description: "Also enqueue and upload runtime trace export batches",
+    })
+    includeTraces?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const bridge = createConsoleSyncBridge();
     let trace: Awaited<ReturnType<typeof pushTraceExportBatch>> | null = null;
-    if (readCloudCredentials()) {
+    if (includeTraces === true && readCloudCredentials()) {
       enqueueTraceExportBatch();
       trace = await pushTraceExportBatch({
         bridge,
@@ -140,12 +147,18 @@ export class SyncCommands {
 function buildStatusPayload() {
   const credentials = readCloudCredentials();
   const summary = getSyncStatusSummary();
+  const config = getSyncRuntimeConfig();
   const lastUpload = summary.cursors.find((cursor) => cursor.domain === "sync" && cursor.cursorKey === "last_upload");
   const lastDownload = summary.cursors.filter((cursor) => cursor.domain === "sync_remote").at(-1);
   return {
     linked: !!credentials,
     consoleUrl: credentials?.consoleUrl ?? null,
     installationId: credentials?.installationId ?? null,
+    runner: {
+      enabled: config.runnerEnabled,
+      env: config.runnerEnabledEnv,
+      pullDomains: config.pullDomains,
+    },
     outbox: summary.outbox,
     inbox: summary.inbox,
     cursors: summary.cursors,

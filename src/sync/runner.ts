@@ -2,6 +2,7 @@ import { logger } from "../utils/logger.js";
 import { readCloudCredentials } from "../cloud-auth/storage.js";
 import { enqueueTraceExportBatch, pushTraceExportBatch } from "../session-trace/cloud-trace-export.js";
 import { createConsoleSyncBridge, type ConsoleSyncBridge } from "./console-bridge.js";
+import { getSyncRuntimeConfig, numberEnv, SYNC_RUNNER_INTERVAL_ENV } from "./config.js";
 
 const log = logger.child("sync:runner");
 const DEFAULT_INTERVAL_MS = 60_000;
@@ -27,10 +28,11 @@ export class SyncRunner {
   private tracePushLimit: number;
 
   constructor(options: SyncRunnerOptions = {}) {
+    const config = getSyncRuntimeConfig();
     this.bridge = options.bridge ?? createConsoleSyncBridge();
-    this.intervalMs = options.intervalMs ?? numberEnv("RAVI_SYNC_RUNNER_INTERVAL_MS", DEFAULT_INTERVAL_MS);
-    this.enabled = options.enabled ?? process.env.RAVI_DISABLE_SYNC_RUNNER !== "1";
-    this.pullDomains = options.pullDomains ?? listEnv("RAVI_SYNC_PULL_DOMAINS");
+    this.intervalMs = options.intervalMs ?? numberEnv(SYNC_RUNNER_INTERVAL_ENV, DEFAULT_INTERVAL_MS);
+    this.enabled = options.enabled ?? config.runnerEnabled;
+    this.pullDomains = options.pullDomains ?? config.pullDomains;
     this.traceEnqueueLimit = numberEnv("RAVI_TRACE_EXPORT_ENQUEUE_LIMIT", DEFAULT_TRACE_ENQUEUE_LIMIT);
     this.tracePushLimit = numberEnv("RAVI_TRACE_EXPORT_PUSH_LIMIT", DEFAULT_TRACE_PUSH_LIMIT);
   }
@@ -46,7 +48,7 @@ export class SyncRunner {
     if (this.running) return;
     this.running = true;
     if (!this.enabled) {
-      log.info("Sync runner disabled");
+      log.info("Sync runner disabled; set RAVI_SYNC_RUNNER_ENABLED=1 to enable automatic sync");
       return;
     }
     log.info("Starting sync runner", { intervalMs: this.intervalMs });
@@ -156,18 +158,4 @@ export async function stopSyncRunner(): Promise<void> {
   if (!runner) return;
   await runner.stop();
   runner = null;
-}
-
-function numberEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-function listEnv(name: string): string[] {
-  return (process.env[name] ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
 }

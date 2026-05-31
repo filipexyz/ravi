@@ -186,6 +186,9 @@ the remote Data Plane once per token delta or once per tiny stream fragment.
 The sync runner SHOULD enqueue and upload multiple bounded batches per tick when
 catching up, because local events from different sessions may be interleaved and
 single-batch ticks can starve recent sessions behind old history.
+Because the sync runner is the daemon-side automatic export path, automatic
+trace export MUST also be disabled by default and enabled only through
+`RAVI_SYNC_RUNNER_ENABLED=1`.
 
 `assistant.delta` events SHOULD be coalesced before export unless a policy
 explicitly requests raw stream retention. Terminal events, tool lifecycle

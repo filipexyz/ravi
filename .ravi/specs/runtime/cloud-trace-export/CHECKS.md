@@ -40,3 +40,5 @@ normative: true
   past old local-only history.
 - The sync runner can enqueue and upload multiple bounded trace batches per tick
   so interleaved sessions catch up fast enough for current Console visibility.
+- Automatic trace export is disabled by default because the daemon sync runner
+  only starts when `RAVI_SYNC_RUNNER_ENABLED=1`.

@@ -105,9 +105,24 @@ projections.
 Applying a remote event MUST be idempotent. If a handler is missing, the event
 stays pending or failed instead of being dropped.
 
+## Automatic Runner
+
+The daemon-side sync runner MUST be opt-in. A local Ravi daemon MUST NOT start
+automatic Console sync or automatic trace export unless
+`RAVI_SYNC_RUNNER_ENABLED=1` is set.
+
+There is no legacy disable flag. Absence of `RAVI_SYNC_RUNNER_ENABLED=1` means
+automatic sync is disabled.
+
+Manual CLI commands such as `ravi sync status`, `ravi sync inspect`,
+`ravi sync push`, and `ravi sync pull` MAY continue to operate as explicit user
+actions even when the automatic runner is disabled.
+
 ## Acceptance Criteria
 
 - Console sync can be disabled with no effect on local Ravi behavior.
+- Automatic Console sync is disabled by default and enabled only with
+  `RAVI_SYNC_RUNNER_ENABLED=1`.
 - The bridge can upload a local CRM event with idempotent retry.
 - The bridge can download a remote event and queue it locally for application.
 - Authorization failures do not leak bearer tokens or remote policy details.
