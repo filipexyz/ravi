@@ -251,6 +251,73 @@ describe("cloud trace export", () => {
     expect(exported.firstEventId).toBe(2);
   });
 
+  it("baselines severely stale historical backlog to the recent window", () => {
+    recordSessionEvent({
+      sessionKey: "agent:old",
+      sessionName: "old",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      provider: "codex",
+      timestamp: 10,
+    });
+    recordSessionEvent({
+      sessionKey: "agent:old",
+      sessionName: "old",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      provider: "codex",
+      timestamp: 20,
+    });
+    recordSessionEvent({
+      sessionKey: "agent:ravi-console:whatsapp:main:group:120363425574381266",
+      sessionName: "ravi-console",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      provider: "codex",
+      sourceChannel: "whatsapp-baileys",
+      sourceAccountId: "main",
+      sourceChatId: "120363425574381266@g.us",
+      canonicalChatId: "chat_f297eee6a82fbd07632d251a",
+      timestamp: 950,
+    });
+
+    const result = enqueueTraceExportBatch({
+      now: 1_000,
+      recentBaselineWindowMs: 100,
+      staleBacklogEvents: 1,
+    });
+
+    expect(result).toMatchObject({
+      enqueued: true,
+      sourceEvents: 1,
+      exportedEvents: 1,
+      skippedEvents: 2,
+      firstEventId: 3,
+      lastEventId: 3,
+    });
+    const cursor = getSyncCursor("runtime_trace", "session_events_enqueued");
+    expect(cursor?.cursorValue).toBe("3");
+    expect(cursor?.meta).toMatchObject({
+      baseline: {
+        reason: "historical_backlog_baseline",
+        previousCursor: 0,
+        baselineEventId: 2,
+        skippedEvents: 2,
+      },
+    });
+    const payload = getOutboxById(result.outboxId!)!.payload as Record<string, unknown>;
+    const events = (payload.events ?? []) as Array<Record<string, unknown>>;
+    expect(events.map((event) => event.localEventId)).toEqual([3]);
+    expect(payload.session).toMatchObject({
+      sessionKey: "agent:ravi-console:whatsapp:main:group:120363425574381266",
+      sessionName: "ravi-console",
+      source: {
+        chatId: "120363425574381266@g.us",
+        canonicalChatId: "chat_f297eee6a82fbd07632d251a",
+      },
+    });
+  });
+
   it("does not export generic placeholder names as the Console display name", () => {
     recordSessionEvent({
       sessionKey: "agent:khal-desktop:main",

@@ -16,6 +16,8 @@ const TRACE_CURSOR_DOMAIN = "runtime_trace";
 const SESSION_EVENTS_CURSOR = "session_events_enqueued";
 const DEFAULT_LIMIT = 250;
 const DEFAULT_MAX_EVENTS_PER_PAYLOAD = 200;
+const DEFAULT_RECENT_BASELINE_WINDOW_MS = 15 * 60_000;
+const DEFAULT_STALE_BACKLOG_EVENTS = 5_000;
 const PREVIEW_CHARS = 500;
 
 interface SessionEventRow {
@@ -115,12 +117,15 @@ export interface CloudTraceExportEvent {
 export interface EnqueueTraceExportBatchInput {
   limit?: number;
   now?: number;
+  recentBaselineWindowMs?: number;
+  staleBacklogEvents?: number;
 }
 
 export interface EnqueueTraceExportBatchResult {
   enqueued: boolean;
   sourceEvents: number;
   exportedEvents: number;
+  skippedEvents: number;
   firstEventId: number | null;
   lastEventId: number | null;
   outboxId: string | null;
@@ -138,14 +143,15 @@ export interface PushTraceExportBatchResult {
 export function enqueueTraceExportBatch(input: EnqueueTraceExportBatchInput = {}): EnqueueTraceExportBatchResult {
   const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), DEFAULT_MAX_EVENTS_PER_PAYLOAD);
   const now = input.now ?? Date.now();
-  const cursor = Number(getSyncCursor(TRACE_CURSOR_DOMAIN, SESSION_EVENTS_CURSOR)?.cursorValue ?? 0);
-  const rows = loadNextTraceRows(Number.isFinite(cursor) ? cursor : 0, limit);
+  const cursor = resolveTraceExportCursor(input, now);
+  const rows = loadNextTraceRows(cursor.cursor, limit);
 
   if (rows.length === 0) {
     return {
       enqueued: false,
       sourceEvents: 0,
       exportedEvents: 0,
+      skippedEvents: cursor.skippedEvents,
       firstEventId: null,
       lastEventId: null,
       outboxId: null,
@@ -163,6 +169,7 @@ export function enqueueTraceExportBatch(input: EnqueueTraceExportBatchInput = {}
       enqueued: false,
       sourceEvents: rows.length,
       exportedEvents: 0,
+      skippedEvents: cursor.skippedEvents,
       firstEventId: first,
       lastEventId: last,
       outboxId: null,
@@ -188,6 +195,7 @@ export function enqueueTraceExportBatch(input: EnqueueTraceExportBatchInput = {}
     enqueued: !!outbox,
     sourceEvents: rows.length,
     exportedEvents: events.length,
+    skippedEvents: cursor.skippedEvents,
     firstEventId: first,
     lastEventId: last,
     outboxId: outbox?.id ?? null,
@@ -277,6 +285,81 @@ function loadNextTraceRows(cursor: number, limit: number): SessionEventRow[] {
     rows.push(row);
   }
   return rows;
+}
+
+interface TraceCursorResolution {
+  cursor: number;
+  skippedEvents: number;
+}
+
+interface TraceCursorBoundaryRow {
+  id: number;
+  timestamp: number;
+}
+
+function resolveTraceExportCursor(input: EnqueueTraceExportBatchInput, now: number): TraceCursorResolution {
+  const rawCursor = Number(getSyncCursor(TRACE_CURSOR_DOMAIN, SESSION_EVENTS_CURSOR)?.cursorValue ?? 0);
+  const cursor = Number.isFinite(rawCursor) && rawCursor > 0 ? rawCursor : 0;
+  if (allowHistoricalTraceBackfill()) return { cursor, skippedEvents: 0 };
+
+  const next = getDb()
+    .prepare("SELECT id, timestamp FROM session_events WHERE id > ? ORDER BY id ASC LIMIT 1")
+    .get(cursor) as TraceCursorBoundaryRow | undefined;
+  if (!next) return { cursor, skippedEvents: 0 };
+
+  const latest = getDb().prepare("SELECT id, timestamp FROM session_events ORDER BY id DESC LIMIT 1").get() as
+    | TraceCursorBoundaryRow
+    | undefined;
+  if (!latest) return { cursor, skippedEvents: 0 };
+
+  const backlogEvents = latest.id - cursor;
+  const staleBacklogEvents = positiveInteger(
+    input.staleBacklogEvents ?? numberEnv("RAVI_TRACE_EXPORT_STALE_BACKLOG_EVENTS"),
+    DEFAULT_STALE_BACKLOG_EVENTS,
+  );
+  const recentWindowMs = positiveInteger(
+    input.recentBaselineWindowMs ?? numberEnv("RAVI_TRACE_EXPORT_RECENT_WINDOW_MS"),
+    DEFAULT_RECENT_BASELINE_WINDOW_MS,
+  );
+  const cutoff = now - recentWindowMs;
+
+  if (backlogEvents <= staleBacklogEvents || next.timestamp >= cutoff) return { cursor, skippedEvents: 0 };
+
+  const baseline = getDb()
+    .prepare("SELECT id, timestamp FROM session_events WHERE timestamp < ? ORDER BY id DESC LIMIT 1")
+    .get(cutoff) as TraceCursorBoundaryRow | undefined;
+  if (!baseline || baseline.id <= cursor) return { cursor, skippedEvents: 0 };
+
+  const skipped = getDb()
+    .prepare("SELECT COUNT(*) AS count FROM session_events WHERE id > ? AND id <= ?")
+    .get(cursor, baseline.id) as { count: number } | undefined;
+  const skippedEvents = skipped?.count ?? baseline.id - cursor;
+  const baselineMeta = {
+    reason: "historical_backlog_baseline",
+    previousCursor: cursor,
+    baselineEventId: baseline.id,
+    skippedEvents,
+    cutoffAt: new Date(cutoff).toISOString(),
+    firstSkippedEventId: next.id,
+    firstSkippedEventAt: new Date(next.timestamp).toISOString(),
+    latestLocalEventId: latest.id,
+    latestLocalEventAt: new Date(latest.timestamp).toISOString(),
+  };
+  setSyncCursor(
+    TRACE_CURSOR_DOMAIN,
+    SESSION_EVENTS_CURSOR,
+    String(baseline.id),
+    {
+      firstEventId: next.id,
+      lastEventId: baseline.id,
+      exportedEvents: 0,
+      skippedEvents,
+      baseline: baselineMeta,
+    },
+    now,
+  );
+
+  return { cursor: baseline.id, skippedEvents };
 }
 
 function coalesceTraceEvents(rows: SessionEventRow[]): SessionEventRow[] {
@@ -423,6 +506,7 @@ function buildRuntimeTracePayload(
 }
 
 function setTraceExportCursor(firstEventId: number, lastEventId: number, exportedEvents: number, now: number): void {
+  const baseline = currentTraceCursorBaseline();
   setSyncCursor(
     TRACE_CURSOR_DOMAIN,
     SESSION_EVENTS_CURSOR,
@@ -431,9 +515,16 @@ function setTraceExportCursor(firstEventId: number, lastEventId: number, exporte
       firstEventId,
       lastEventId,
       exportedEvents,
+      ...(baseline ? { baseline } : {}),
     },
     now,
   );
+}
+
+function currentTraceCursorBaseline(): unknown | null {
+  const meta = getSyncCursor(TRACE_CURSOR_DOMAIN, SESSION_EVENTS_CURSOR)?.meta;
+  if (!meta || typeof meta !== "object") return null;
+  return "baseline" in meta ? ((meta as { baseline?: unknown }).baseline ?? null) : null;
 }
 
 function exportSessionName(row: SessionEventRow): string | null {
@@ -481,6 +572,21 @@ function firstNonEmptyString(values: Array<string | null | undefined>): string |
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return null;
+}
+
+function allowHistoricalTraceBackfill(): boolean {
+  return process.env.RAVI_TRACE_EXPORT_BACKFILL_HISTORY === "1";
+}
+
+function numberEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
 function buildToolCalls(events: CloudTraceExportEvent[]) {

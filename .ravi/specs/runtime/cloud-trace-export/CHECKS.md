@@ -28,3 +28,9 @@ normative: true
 - Hash-only local blob metadata may remain in safe payload fields.
 - A generated payload with local `request_blob_sha256` / `session_trace_blobs`
   still passes the Console runtime-trace normalizer.
+- Initial or severely stale export cursors baseline to a bounded recent window
+  by default instead of replaying unbounded historical `session_events`.
+- Cursor metadata records skipped historical ranges when the exporter advances
+  past old local-only history.
+- The sync runner can enqueue and upload multiple bounded trace batches per tick
+  so interleaved sessions catch up fast enough for current Console visibility.

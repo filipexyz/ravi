@@ -156,8 +156,25 @@ The exporter SHOULD maintain a local export cursor or trace-export outbox so
 local trace TTL pruning cannot delete unexported accepted events without an
 explicit policy decision.
 
+Local installations often contain historical `session_events` rows from before
+cloud trace export was enabled. The exporter MUST NOT replay an unbounded old
+SQLite backlog to Console by default. When the export cursor is absent or
+severely stale, the exporter SHOULD establish a bounded recent baseline:
+
+- skip historical rows older than the configured recent window;
+- advance the local export cursor to the baseline high-water mark;
+- keep the skipped rows in local SQLite for local-first inspection;
+- record cursor metadata with the skipped range and reason;
+- export current and future rows from that baseline.
+
+Explicit replay/backfill can be added later as an operator action. It MUST be
+opt-in and bounded.
+
 Trace export SHOULD send ordered batches per session or run. It MUST NOT call
 the remote Data Plane once per token delta or once per tiny stream fragment.
+The sync runner SHOULD enqueue and upload multiple bounded batches per tick when
+catching up, because local events from different sessions may be interleaved and
+single-batch ticks can starve recent sessions behind old history.
 
 `assistant.delta` events SHOULD be coalesced before export unless a policy
 explicitly requests raw stream retention. Terminal events, tool lifecycle

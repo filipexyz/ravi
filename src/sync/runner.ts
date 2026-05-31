@@ -5,6 +5,8 @@ import { createConsoleSyncBridge, type ConsoleSyncBridge } from "./console-bridg
 
 const log = logger.child("sync:runner");
 const DEFAULT_INTERVAL_MS = 60_000;
+const DEFAULT_TRACE_ENQUEUE_LIMIT = 25;
+const DEFAULT_TRACE_PUSH_LIMIT = 25;
 
 export interface SyncRunnerOptions {
   intervalMs?: number;
@@ -21,12 +23,16 @@ export class SyncRunner {
   private intervalMs: number;
   private enabled: boolean;
   private pullDomains: string[];
+  private traceEnqueueLimit: number;
+  private tracePushLimit: number;
 
   constructor(options: SyncRunnerOptions = {}) {
     this.bridge = options.bridge ?? createConsoleSyncBridge();
     this.intervalMs = options.intervalMs ?? numberEnv("RAVI_SYNC_RUNNER_INTERVAL_MS", DEFAULT_INTERVAL_MS);
     this.enabled = options.enabled ?? process.env.RAVI_DISABLE_SYNC_RUNNER !== "1";
     this.pullDomains = options.pullDomains ?? listEnv("RAVI_SYNC_PULL_DOMAINS");
+    this.traceEnqueueLimit = numberEnv("RAVI_TRACE_EXPORT_ENQUEUE_LIMIT", DEFAULT_TRACE_ENQUEUE_LIMIT);
+    this.tracePushLimit = numberEnv("RAVI_TRACE_EXPORT_PUSH_LIMIT", DEFAULT_TRACE_PUSH_LIMIT);
   }
 
   configure(options: SyncRunnerOptions): void {
@@ -65,16 +71,33 @@ export class SyncRunner {
     this.ticking = true;
     try {
       if (readCloudCredentials()) {
-        const trace = enqueueTraceExportBatch();
-        if (trace.enqueued) {
-          log.debug("Trace export batch enqueued", {
-            sourceEvents: trace.sourceEvents,
-            exportedEvents: trace.exportedEvents,
-            firstEventId: trace.firstEventId,
-            lastEventId: trace.lastEventId,
+        let traceBatches = 0;
+        let traceSourceEvents = 0;
+        let traceExportedEvents = 0;
+        let traceSkippedEvents = 0;
+        let traceFirstEventId: number | null = null;
+        let traceLastEventId: number | null = null;
+        for (let i = 0; i < this.traceEnqueueLimit; i += 1) {
+          const trace = enqueueTraceExportBatch();
+          traceSkippedEvents += trace.skippedEvents;
+          if (trace.sourceEvents === 0) break;
+          traceSourceEvents += trace.sourceEvents;
+          traceExportedEvents += trace.exportedEvents;
+          traceFirstEventId ??= trace.firstEventId;
+          traceLastEventId = trace.lastEventId;
+          if (trace.enqueued) traceBatches += 1;
+        }
+        if (traceBatches > 0 || traceSkippedEvents > 0) {
+          log.debug("Trace export batches enqueued", {
+            batches: traceBatches,
+            sourceEvents: traceSourceEvents,
+            exportedEvents: traceExportedEvents,
+            skippedEvents: traceSkippedEvents,
+            firstEventId: traceFirstEventId,
+            lastEventId: traceLastEventId,
           });
         }
-        const tracePush = await pushTraceExportBatch({ bridge: this.bridge });
+        const tracePush = await pushTraceExportBatch({ bridge: this.bridge, limit: this.tracePushLimit });
         if (tracePush.status === "uploaded" || tracePush.status === "failed") {
           log.info("Trace export push", {
             status: tracePush.status,
