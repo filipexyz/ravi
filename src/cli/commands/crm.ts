@@ -1253,6 +1253,16 @@ export class CrmOpportunityCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated opportunity creation" })
     idempotencyKey?: string,
+    @Option({
+      flags: "--allow-duplicate",
+      description: "Override the open opportunity-per-(contact,pipeline) guard (requires --reason)",
+    })
+    allowDuplicate?: boolean,
+    @Option({
+      flags: "--reason <text>",
+      description: "Justification for --allow-duplicate (min 10 chars, non-generic)",
+    })
+    reason?: string,
   ) {
     const opportunity = createCrmOpportunity({
       title,
@@ -1263,6 +1273,8 @@ export class CrmOpportunityCommands {
       currency,
       ...parseOwner(owner),
       idempotencyKey,
+      allowDuplicate: allowDuplicate === true,
+      duplicateReason: reason,
       source: "cli",
       actorType: "user",
     });
