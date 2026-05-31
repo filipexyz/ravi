@@ -31,7 +31,7 @@ interface RuntimeTaskEventPayload {
   };
 }
 
-const TASK_RUNTIME_RELEASE_EVENTS = new Set(["task.done", "task.failed", "task.blocked"]);
+const TASK_RUNTIME_RELEASE_EVENTS = new Set(["task.done", "task.failed", "task.blocked", "task.deleted"]);
 
 export class RuntimeHostSubscriptions {
   constructor(private readonly options: RuntimeHostSubscriptionsOptions) {}
@@ -65,7 +65,12 @@ export class RuntimeHostSubscriptions {
         : (eventSessionName ?? assigneeSessionName);
 
     if (type && TASK_RUNTIME_RELEASE_EVENTS.has(type) && releaseSessionName) {
-      const reason = type === "task.blocked" ? "task_blocked_release" : "task_terminal_release";
+      const reason =
+        type === "task.blocked"
+          ? "task_blocked_release"
+          : type === "task.deleted"
+            ? "task_deleted"
+            : "task_terminal_release";
       const aborted = this.options.dispatcher.abortSession(
         { sessionName: releaseSessionName },
         {

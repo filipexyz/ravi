@@ -5,14 +5,7 @@ import type { ProjectResourceType, ProjectStatus } from "./types.js";
 import { getAgent } from "../router/index.js";
 import { getDb } from "../router/router-db.js";
 import { deleteSessionByName, getOrCreateSession } from "../router/sessions.js";
-import {
-  blockTask,
-  completeTask,
-  createTask,
-  dbDeleteTask,
-  getCanonicalTaskDir,
-  reportTaskProgress,
-} from "../tasks/index.js";
+import { blockTask, completeTask, createTask, getCanonicalTaskDir, reportTaskProgress } from "../tasks/index.js";
 import {
   attachTaskToWorkflowNodeRun,
   createWorkflowSpec,
@@ -297,13 +290,14 @@ function collectFixtureTaskIds(): string[] {
   return [...taskIds];
 }
 
-export function clearCanonicalProjectFixtures(): void {
+export async function clearCanonicalProjectFixtures(): Promise<void> {
   getProjectDetails("__fixture-bootstrap__");
   const db = getDb();
   const taskIds = collectFixtureTaskIds();
 
+  const { deleteTask } = await import("../tasks/service.js");
   for (const taskId of taskIds) {
-    dbDeleteTask(taskId);
+    await deleteTask(taskId);
     rmSync(getCanonicalTaskDir(taskId), { recursive: true, force: true });
   }
 
@@ -355,7 +349,7 @@ async function materializeFixtureTaskState(
 export async function seedCanonicalProjectFixtures(
   options: SeedCanonicalProjectFixturesOptions = {},
 ): Promise<SeedCanonicalProjectFixturesResult> {
-  clearCanonicalProjectFixtures();
+  await clearCanonicalProjectFixtures();
 
   const ownerAgentId = options.ownerAgentId ?? "main";
   const actor = buildActor(options);

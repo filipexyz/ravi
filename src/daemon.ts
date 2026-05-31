@@ -33,6 +33,7 @@ import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js"
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
+import { dbGetTask } from "./tasks/task-db.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
@@ -486,8 +487,41 @@ async function notifyRestartReason() {
   });
 
   for (const snapshot of snapshots) {
+    if (isTaskWorkSession(snapshot.sessionName)) {
+      const taskId = extractTaskIdFromWorkSession(snapshot.sessionName);
+      if (taskId) {
+        const task = dbGetTask(taskId);
+        if (!task) {
+          log.info("Skipping zombie task session resume", {
+            sessionName: snapshot.sessionName,
+            taskId,
+            reason: "task_not_found",
+          });
+          continue;
+        }
+        const terminalStatuses = new Set(["done", "failed", "blocked"]);
+        if (terminalStatuses.has(task.status)) {
+          log.info("Skipping zombie task session resume", {
+            sessionName: snapshot.sessionName,
+            taskId,
+            taskStatus: task.status,
+            reason: "task_terminal",
+          });
+          continue;
+        }
+      }
+    }
     await publishRestartResumeEvent(snapshot.sessionName, restartInfo, { kind: "active", snapshot });
   }
+}
+
+function isTaskWorkSession(sessionName: string): boolean {
+  return sessionName.includes("-work") && sessionName.startsWith("task-");
+}
+
+function extractTaskIdFromWorkSession(sessionName: string): string | null {
+  const match = sessionName.match(/^task-(.+?)-work$/);
+  return match ? match[1] : null;
 }
 
 function resolveFallbackRestartSessionName(): string | undefined {

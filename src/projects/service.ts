@@ -648,8 +648,8 @@ function findLinkedWorkflowOrThrow(details: ProjectDetails, workflowRunId: strin
   return workflow;
 }
 
-function cleanupCreatedTask(taskId: string, taskRuntime: typeof import("../tasks/index.js")): void {
-  taskRuntime.dbDeleteTask(taskId);
+async function cleanupCreatedTask(taskId: string, taskRuntime: typeof import("../tasks/index.js")): Promise<void> {
+  await taskRuntime.deleteTask(taskId);
   rmSync(taskRuntime.getCanonicalTaskDir(taskId), { recursive: true, force: true });
 }
 
@@ -772,7 +772,7 @@ export async function createProjectTask(input: CreateProjectTaskInput): Promise<
   try {
     attached = attachTaskToWorkflowNodeRun(workflow.workflowRunId, nodeKey, created.task.id);
   } catch (error) {
-    cleanupCreatedTask(created.task.id, taskRuntime);
+    await cleanupCreatedTask(created.task.id, taskRuntime);
     throw error;
   }
 
