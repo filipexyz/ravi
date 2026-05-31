@@ -472,6 +472,24 @@ function initializeCrmSchema(database: Database): void {
         SELECT RAISE(ABORT, 'crm_events is append-only');
       END;
 
+    CREATE TABLE IF NOT EXISTS crm_business_units (
+      id TEXT PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_business_units_default
+      ON crm_business_units(is_default)
+      WHERE is_default = 1;
+
+    INSERT OR IGNORE INTO crm_business_units (id, slug, name, is_default)
+      VALUES ('default', 'default', 'Default', 1);
+
     CREATE TABLE IF NOT EXISTS crm_contact_profiles (
       contact_id TEXT PRIMARY KEY REFERENCES contacts(id) ON DELETE CASCADE,
 
@@ -512,6 +530,34 @@ function initializeCrmSchema(database: Database): void {
     CREATE INDEX IF NOT EXISTS idx_crm_contact_profiles_next_action
       ON crm_contact_profiles(next_action_at)
       WHERE next_action_at IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS crm_contact_business_unit_profiles (
+      contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+      business_unit_id TEXT NOT NULL REFERENCES crm_business_units(id) ON DELETE CASCADE,
+
+      lifecycle TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(lifecycle IN ('unknown', 'lead', 'qualified', 'active', 'onboarding', 'waiting', 'at_risk', 'dormant', 'churned', 'partner', 'vendor', 'internal')),
+      relationship_health TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(relationship_health IN ('unknown', 'good', 'neutral', 'needs_attention', 'at_risk')),
+      priority TEXT NOT NULL DEFAULT 'normal'
+        CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
+      score REAL,
+      health_score REAL,
+      owner_type TEXT CHECK(owner_type IS NULL OR owner_type IN ('user', 'agent', 'team', 'system')),
+      owner_id TEXT,
+      primary_account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+      primary_opportunity_id TEXT REFERENCES crm_opportunities(id) ON DELETE SET NULL,
+      last_meaningful_interaction_at TEXT,
+      next_action_at TEXT,
+      next_action_summary TEXT,
+      next_task_id TEXT REFERENCES crm_tasks(id) ON DELETE SET NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+      PRIMARY KEY (contact_id, business_unit_id),
+      CHECK((owner_type IS NULL AND owner_id IS NULL) OR (owner_type IS NOT NULL AND owner_id IS NOT NULL))
+    );
 
     CREATE TABLE IF NOT EXISTS crm_accounts (
       id TEXT PRIMARY KEY,
@@ -999,6 +1045,17 @@ function initializeCrmSchema(database: Database): void {
   ensureTableColumn(database, "crm_pipelines", "status", "TEXT NOT NULL DEFAULT 'active'");
   ensureTableColumn(database, "crm_pipeline_stages", "status", "TEXT NOT NULL DEFAULT 'active'");
   ensureTableColumn(database, "crm_pipeline_stages", "archived_at", "TEXT");
+
+  // Phase 1 CRM business-unit scope: additive NOT NULL DEFAULT 'default' (no
+  // inline REFERENCES — SQLite rejects a REFERENCES column with a non-null
+  // default under foreign_keys=ON; the FK + ON DELETE CASCADE land in Phase 3's
+  // table rebuild). Backfills existing rows to the default business unit.
+  ensureTableColumn(database, "crm_pipelines", "business_unit_id", "TEXT NOT NULL DEFAULT 'default'");
+  ensureTableColumn(database, "crm_opportunities", "business_unit_id", "TEXT NOT NULL DEFAULT 'default'");
+  ensureTableColumn(database, "crm_tasks", "business_unit_id", "TEXT NOT NULL DEFAULT 'default'");
+  ensureTableColumn(database, "crm_accounts", "business_unit_id", "TEXT NOT NULL DEFAULT 'default'");
+  ensureTableColumn(database, "crm_activities", "business_unit_id", "TEXT NOT NULL DEFAULT 'default'");
+
   ensureCrmEventsEntityTypeCheck(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_crm_pipeline_stages_pipeline_status
