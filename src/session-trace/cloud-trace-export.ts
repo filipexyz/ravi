@@ -387,16 +387,18 @@ function coalesceTraceEvents(rows: SessionEventRow[]): SessionEventRow[] {
       continue;
     }
     flush();
-    if (shouldExportEvent(row.event_type)) output.push(row);
+    if (shouldExportEvent(row)) output.push(row);
   }
   flush();
   return output;
 }
 
-function shouldExportEvent(eventType: string): boolean {
+function shouldExportEvent(row: SessionEventRow): boolean {
+  const eventType = row.event_type;
   return (
     eventType === "adapter.request" ||
     eventType === "message.user" ||
+    isRoutedChannelUserMessage(row) ||
     eventType === "message.assistant" ||
     eventType === "assistant.message" ||
     eventType === "tool.start" ||
@@ -408,6 +410,12 @@ function shouldExportEvent(eventType: string): boolean {
     eventType === "turn.interrupted" ||
     eventType.startsWith("approval.")
   );
+}
+
+function isRoutedChannelUserMessage(row: SessionEventRow): boolean {
+  if (row.event_type !== "channel.message.received") return false;
+  if (row.session_key === "generic" || row.session_key.startsWith("agent:generic:")) return false;
+  return Boolean(row.preview?.trim());
 }
 
 function toExportEvent(row: SessionEventRow, turn?: SessionTurnRow): CloudTraceExportEvent {
@@ -647,6 +655,18 @@ function safeTracePayload(row: SessionEventRow): unknown {
       queuedMessageCount: source.queued_message_count,
     });
   }
+  if (row.event_type === "channel.message.received") {
+    return sanitizeSyncPayload({
+      role: "user",
+      contentType: source.contentType,
+      channelType: source.channelType,
+      chatName: source.chatName,
+      isGroup: source.isGroup,
+      omniType: source.omniType,
+      instanceId: source.instanceId,
+      eventId: source.eventId,
+    });
+  }
   if (row.event_group === "tool") {
     return sanitizeSyncPayload({
       toolId:
@@ -718,6 +738,7 @@ function isRetryableTraceExportError(error: unknown): boolean {
 }
 
 function mapEventType(eventType: string): string {
+  if (eventType === "channel.message.received") return "message.user";
   if (eventType === "assistant.message") return "message.assistant";
   if (eventType === "tool.start") return "tool.started";
   if (eventType === "tool.end") return "tool.completed";
@@ -727,6 +748,7 @@ function mapEventType(eventType: string): string {
 }
 
 function mapEventGroup(eventGroup: string, eventType: string): string {
+  if (eventType === "channel.message.received") return "message";
   if (eventType === "adapter.request") return "adapter";
   if (eventType === "assistant.message" || eventType === "assistant.delta") return "response";
   return eventGroup;

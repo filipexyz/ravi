@@ -139,6 +139,7 @@ Default export SHOULD include:
 
 - `adapter.request` metadata and hashes, not full prompt by default;
 - `message.user` preview;
+- routed inbound channel messages as canonical `message.user` events;
 - `message.assistant` preview;
 - `tool.started`;
 - `tool.completed`;
@@ -149,6 +150,11 @@ Default export SHOULD include:
 - usage/cost facts.
 
 Provider raw events MUST be opt-in and redacted.
+
+Inbound channel ledgers may also write generic/rejected mirror rows for routing
+diagnostics. The exporter MUST NOT export those generic mirrors as chat
+messages. It should only map the row owned by the resolved session/run to
+`message.user`.
 
 ## Export Efficiency
 

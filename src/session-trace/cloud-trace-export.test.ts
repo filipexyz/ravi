@@ -318,6 +318,61 @@ describe("cloud trace export", () => {
     });
   });
 
+  it("exports routed channel messages as user chat messages without exporting generic mirrors", () => {
+    recordSessionEvent({
+      sessionKey: "agent:ravi-console:whatsapp:main:group:120363425574381266",
+      eventType: "channel.message.received",
+      eventGroup: "channel",
+      sourceChannel: "whatsapp",
+      sourceAccountId: "main",
+      sourceChatId: "120363425574381266@g.us",
+      canonicalChatId: "chat_f297eee6a82fbd07632d251a",
+      preview: "as mensagens que eu mando n tao aparecendo la",
+      payloadJson: {
+        channelType: "whatsapp-baileys",
+        chatName: "ravi - console",
+        contentType: "text",
+        eventId: "evt_1",
+        isGroup: true,
+        resolvedSenderPhone: "5511999999999",
+      },
+      timestamp: 1,
+    });
+    recordSessionEvent({
+      sessionKey: "agent:generic:whatsapp:luis:group:120363425574381266",
+      eventType: "channel.message.received",
+      eventGroup: "channel",
+      sourceChannel: "whatsapp",
+      sourceAccountId: "luis",
+      sourceChatId: "120363425574381266@g.us",
+      preview: "generic mirror must not export",
+      timestamp: 2,
+    });
+
+    const routed = enqueueTraceExportBatch();
+    const generic = enqueueTraceExportBatch();
+
+    expect(routed).toMatchObject({ enqueued: true, exportedEvents: 1, firstEventId: 1, lastEventId: 1 });
+    expect(generic).toMatchObject({ enqueued: false, exportedEvents: 0, firstEventId: 2, lastEventId: 2 });
+    const payload = getOutboxById(routed.outboxId!)!.payload as Record<string, unknown>;
+    const events = (payload.events ?? []) as Array<Record<string, unknown>>;
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      eventGroup: "message",
+      eventType: "message.user",
+      safePayload: {
+        channelType: "whatsapp-baileys",
+        chatName: "ravi - console",
+        contentType: "text",
+        eventId: "evt_1",
+        isGroup: true,
+        role: "user",
+      },
+      safePreview: "as mensagens que eu mando n tao aparecendo la",
+    });
+    expect(JSON.stringify(events[0]?.safePayload)).not.toContain("5511999999999");
+  });
+
   it("does not export generic placeholder names as the Console display name", () => {
     recordSessionEvent({
       sessionKey: "agent:khal-desktop:main",

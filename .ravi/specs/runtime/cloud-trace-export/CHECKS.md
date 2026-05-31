@@ -21,6 +21,10 @@ normative: true
   `systemPromptSha256`, and `requestBlobSha256` without adding `blobs[]`.
 - Export payload includes event id and positive sequence on every exported
   event.
+- Routed inbound channel messages export as canonical `message.user` events with
+  safe previews.
+- Generic/rejected channel-message mirror rows are not exported as user chat
+  messages.
 - Provider raw export is opt-in.
 - Secrets are redacted before upload.
 - Local `session_trace_blobs` without remote `r2Key` or `blobRef` are omitted
