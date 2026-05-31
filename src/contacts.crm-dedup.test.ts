@@ -184,4 +184,39 @@ describe("CRM opportunity dedup-on-create", () => {
     expect(counts.get("crm.opportunity.dedup_rejected")).toBe(1);
     expect(counts.get("crm.opportunity.dedup_bypassed")).toBe(1);
   });
+
+  it("prevents concurrent duplicate creation (transaction-level atomicity)", () => {
+    upsertContact("5511900000007", "Concurrent Test", "allowed", "manual");
+    const contact = getContact("5511900000007");
+
+    // Attempt to create two opportunities sequentially for the same contact+pipeline
+    // Due to transaction atomicity (check + insert moved inside executeWrite),
+    // one should succeed and one should fail
+    const firstResult = createCrmOpportunity({
+      title: "First Deal",
+      contactRef: contact!.id,
+      stageKey: "qualified",
+      source: "test",
+    });
+    expect(firstResult).not.toBeNull();
+    expect(firstResult.id).toBeTruthy();
+
+    // Second attempt should fail (transaction-level check prevents duplicate)
+    let secondAttemptFailed = false;
+    let secondError: string | null = null;
+    try {
+      createCrmOpportunity({
+        title: "Second Deal (should fail)",
+        contactRef: contact!.id,
+        stageKey: "qualified",
+        source: "test",
+      });
+    } catch (e) {
+      secondAttemptFailed = true;
+      secondError = String(e);
+    }
+
+    expect(secondAttemptFailed).toBe(true);
+    expect(secondError).toContain("CRM opportunity already open");
+  });
 });

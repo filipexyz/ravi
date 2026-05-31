@@ -5514,16 +5514,23 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
   }
   // Detect-and-update gate (spec crm/opportunities/dedup-on-create): at most one
   // open/paused opportunity per (contact, pipeline). See docs/proposals + .ravi/specs.
+  // Dedup check inside transaction to prevent TOCTOU race: check + insert are atomic
   let dedupBypass: { existing: CrmOpportunityRow; reason: string; contactId: string } | null = null;
-  if (contactId) {
-    const existingOpen = findOpenCrmOpportunityForPipeline(database, contactId, stage.pipelineId);
-    if (existingOpen) {
-      if (input.allowDuplicate === true) {
-        dedupBypass = { existing: existingOpen, reason: validateDuplicateReason(input.duplicateReason), contactId };
-      } else {
-        executeWrite(
-          database,
-          () =>
+  let dedupRejection: { existing: CrmOpportunityRow; contactId: string } | null = null;
+  const opportunityId = `crm_opp_${generateId()}`;
+  let opportunity: CrmOpportunity | null = null;
+  executeWrite(
+    database,
+    () => {
+      // Dedup check happens INSIDE transaction to ensure atomicity (check + insert)
+      if (contactId) {
+        const existingOpen = findOpenCrmOpportunityForPipeline(database, contactId, stage.pipelineId);
+        if (existingOpen) {
+          if (input.allowDuplicate === true) {
+            dedupBypass = { existing: existingOpen, reason: validateDuplicateReason(input.duplicateReason), contactId };
+          } else {
+            // Record rejection event inside transaction, then flag it for throwing after transaction
+            dedupRejection = { existing: existingOpen, contactId };
             recordCrmDedupEvent(database, {
               outcome: "rejected",
               existing: existingOpen,
@@ -5531,23 +5538,12 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
               input,
               reason: null,
               newOpportunityId: null,
-            }),
-          { label: "contacts:crmDedupRejected" },
-        );
-        throw new Error(
-          `CRM opportunity already open for contact=${contactId} pipeline=${stage.pipelineId}: ` +
-            `${existingOpen.id} "${existingOpen.title}" (stage=${existingOpen.stage_id ?? "?"}, status=${existingOpen.status}). ` +
-            `Update it via 'ravi crm opportunity move ${existingOpen.id} <stage>' or 'ravi crm opportunity timeline-add ${existingOpen.id} ...', ` +
-            `or pass --allow-duplicate --reason "<justificativa>" to intentionally open a parallel opportunity.`,
-        );
+            });
+            // Return false to signal we should not proceed with insert
+            return;
+          }
+        }
       }
-    }
-  }
-  const opportunityId = `crm_opp_${generateId()}`;
-  let opportunity: CrmOpportunity | null = null;
-  executeWrite(
-    database,
-    () => {
       database
         .prepare(
           `
@@ -5650,6 +5646,16 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
     },
     { label: "contacts:createCrmOpportunity" },
   );
+  // Check if dedup rejection occurred (rejection event was recorded inside transaction)
+  if (dedupRejection) {
+    const existing = dedupRejection.existing;
+    throw new Error(
+      `CRM opportunity already open for contact=${dedupRejection.contactId} pipeline=${stage.pipelineId}: ` +
+        `${existing.id} "${existing.title}" (stage=${existing.stage_id ?? "?"}, status=${existing.status}). ` +
+        `Update it via 'ravi crm opportunity move ${existing.id} <stage>' or 'ravi crm opportunity timeline-add ${existing.id} ...', ` +
+        `or pass --allow-duplicate --reason "<justificativa>" to intentionally open a parallel opportunity.`,
+    );
+  }
   if (!opportunity) throw new Error(`CRM opportunity not created: ${opportunityId}`);
   return opportunity;
 }
