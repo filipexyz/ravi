@@ -376,7 +376,7 @@ function buildRuntimeTracePayload(
   const turnList = orderedTurns.map((turn, index) => ({
     turnId: turn.turn_id,
     sourceTurnId: turn.turn_id,
-    sequence: index + 1,
+    sequence: stableTurnSequence(turn, index),
     sessionKey: turn.session_key,
     sessionName: turn.session_name,
     runId: turn.run_id,
@@ -394,6 +394,7 @@ function buildRuntimeTracePayload(
   }));
   return sanitizeSyncPayload({
     session: {
+      externalTraceId: stableTraceExternalId(first),
       sessionKey: first.session_key,
       sessionName: exportSessionName(first),
       agentId: first.agent_id,
@@ -446,6 +447,14 @@ function exportSessionName(row: SessionEventRow): string | null {
   return null;
 }
 
+function stableTraceExternalId(row: SessionEventRow): string {
+  return `local_session_${createHash("sha256").update(row.session_key).digest("hex").slice(0, 32)}`;
+}
+
+function stableTurnSequence(turn: SessionTurnRow, index: number): number {
+  return Number.isFinite(turn.started_at) && turn.started_at > 0 ? turn.started_at : index + 1;
+}
+
 function orderTurnsForRows(rows: SessionEventRow[], turns: Map<string, SessionTurnRow>): SessionTurnRow[] {
   const ids = [...new Set(rows.map((row) => row.turn_id).filter((value): value is string => !!value))];
   return ids
@@ -480,20 +489,25 @@ function buildToolCalls(events: CloudTraceExportEvent[]) {
     if (event.eventType !== "tool.started" && event.eventType !== "tool.completed") continue;
     const payload = event.safePayload as Record<string, unknown>;
     const id = stringValue(payload.toolId) ?? stringValue(payload.toolCallId) ?? event.eventId;
+    const inputPreview = stringValue(payload.inputPreview);
+    const outputPreview = stringValue(payload.outputPreview);
     const current = calls.get(id) ?? {
       id,
       sessionKey: event.sessionKey,
       turnId: event.turnId,
       toolName: stringValue(payload.toolName) ?? "tool",
       status: "started",
+      inputPreview: null,
+      outputPreview: null,
       startedAt: null,
       completedAt: null,
       durationMs: null,
       isError: false,
-      safePreview: event.safePreview,
-      safePayload: payload,
+      safePreview: event.safePreview ?? inputPreview ?? outputPreview,
       schemaVersion: 1,
     };
+    if (inputPreview && !current.inputPreview) current.inputPreview = inputPreview;
+    if (outputPreview) current.outputPreview = outputPreview;
     if (event.eventType === "tool.started") {
       current.startedAt = event.occurredAt;
     } else {
@@ -529,15 +543,41 @@ function safeTracePayload(row: SessionEventRow): unknown {
   }
   if (row.event_group === "tool") {
     return sanitizeSyncPayload({
-      toolId: source.toolId ?? source.toolCallId ?? source.tool_call_id ?? source.toolUseId,
+      toolId:
+        source.toolId ??
+        source.toolCallId ??
+        source.tool_call_id ??
+        source.toolUseId ??
+        nestedString(source, ["metadata", "item", "id"]),
       toolCallId: source.toolCallId ?? source.tool_call_id,
       toolName: source.toolName ?? source.tool_name ?? source.name,
+      inputPreview: previewFromUnknown(source.input ?? source.arguments ?? source.params),
+      outputPreview: previewFromUnknown(source.output ?? source.result),
       isError: source.isError,
       safety: source.safety,
       durationMs: row.duration_ms,
     });
   }
   return sanitizeSyncPayload(source);
+}
+
+function nestedString(source: Record<string, unknown>, path: string[]): string | null {
+  let current: unknown = source;
+  for (const part of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return null;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return stringValue(current);
+}
+
+function previewFromUnknown(value: unknown): string | null {
+  if (typeof value === "string") return safePreview(value);
+  if (!value || typeof value !== "object") return null;
+  if (!Array.isArray(value)) {
+    const command = stringValue((value as Record<string, unknown>).command);
+    if (command) return safePreview(command);
+  }
+  return safePreview(JSON.stringify(value));
 }
 
 function usageFromTurn(turn: SessionTurnRow) {

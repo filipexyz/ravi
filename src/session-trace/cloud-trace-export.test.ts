@@ -112,6 +112,7 @@ describe("cloud trace export", () => {
     const result = enqueueTraceExportBatch();
     const payload = getOutboxById(result.outboxId!)!.payload as Record<string, unknown>;
     expect(payload.session).toMatchObject({
+      externalTraceId: expect.stringContaining("local_session_"),
       sessionKey: "agent:dev",
       sessionName: "dev",
       runtimeProvider: "codex",
@@ -125,6 +126,93 @@ describe("cloud trace export", () => {
       sequence: 1,
       provider: "codex",
       model: "gpt-5.4",
+    });
+  });
+
+  it("uses one stable Console trace id for every batch of the same local session", () => {
+    recordSessionEvent({
+      sessionKey: "agent:ravi-console:whatsapp:main:group:120363425574381266",
+      sessionName: "ravi-console",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      provider: "codex",
+      timestamp: 1,
+    });
+    const first = enqueueTraceExportBatch();
+
+    recordSessionEvent({
+      sessionKey: "agent:ravi-console:whatsapp:main:group:120363425574381266",
+      sessionName: "ravi-console",
+      eventType: "assistant.message",
+      eventGroup: "response",
+      provider: "codex",
+      preview: "next batch",
+      timestamp: 2,
+    });
+    const second = enqueueTraceExportBatch();
+
+    const firstPayload = getOutboxById(first.outboxId!)!.payload as Record<string, unknown>;
+    const secondPayload = getOutboxById(second.outboxId!)!.payload as Record<string, unknown>;
+    expect((firstPayload.session as Record<string, unknown>).externalTraceId).toBe(
+      (secondPayload.session as Record<string, unknown>).externalTraceId,
+    );
+  });
+
+  it("preserves channel source metadata and useful tool previews in exported payloads", () => {
+    recordSessionEvent({
+      sessionKey: "agent:ravi-console:whatsapp:main:group:120363425574381266",
+      sessionName: "ravi-console",
+      eventType: "tool.start",
+      eventGroup: "tool",
+      provider: "codex",
+      sourceChannel: "whatsapp-baileys",
+      sourceAccountId: "main",
+      sourceChatId: "120363425574381266@g.us",
+      canonicalChatId: "chat_f297eee6a82fbd07632d251a",
+      payloadJson: {
+        input: { command: "git status --short" },
+        metadata: { item: { id: "call_1" } },
+        toolName: "shell",
+      },
+      timestamp: 1,
+    });
+    recordSessionEvent({
+      sessionKey: "agent:ravi-console:whatsapp:main:group:120363425574381266",
+      sessionName: "ravi-console",
+      eventType: "tool.end",
+      eventGroup: "tool",
+      provider: "codex",
+      sourceChannel: "whatsapp-baileys",
+      sourceAccountId: "main",
+      sourceChatId: "120363425574381266@g.us",
+      canonicalChatId: "chat_f297eee6a82fbd07632d251a",
+      payloadJson: {
+        isError: false,
+        metadata: { item: { id: "call_1" } },
+        output: "M src/session-trace/cloud-trace-export.ts",
+      },
+      timestamp: 2,
+      durationMs: 15,
+    });
+
+    const result = enqueueTraceExportBatch();
+    const payload = getOutboxById(result.outboxId!)!.payload as Record<string, unknown>;
+    expect(payload.session).toMatchObject({
+      source: {
+        accountId: "main",
+        canonicalChatId: "chat_f297eee6a82fbd07632d251a",
+        channel: "whatsapp-baileys",
+        chatId: "120363425574381266@g.us",
+      },
+    });
+    const calls = payload.toolCalls as Array<Record<string, unknown>>;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      id: "call_1",
+      inputPreview: "git status --short",
+      outputPreview: "M src/session-trace/cloud-trace-export.ts",
+      status: "completed",
+      toolName: "shell",
     });
   });
 
