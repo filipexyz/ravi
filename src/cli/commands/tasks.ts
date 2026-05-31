@@ -158,6 +158,31 @@ function requireStatus(value?: string): TaskStatus | undefined {
   return normalized;
 }
 
+async function releaseTaskSessionSlot(taskId: string): Promise<void> {
+  const ctx = getContext();
+  const sessionName = `task-${taskId}-work`;
+  const gatewayUrl = (ctx?.["RAVI_GATEWAY_URL"] as string | undefined) || "http://127.0.0.1:7777";
+  const contextKey = ctx?.["RAVI_CONTEXT_KEY"] as string | undefined;
+
+  try {
+    await fetch(`${gatewayUrl}/api/v1/sessions/reset`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(contextKey ? { "X-Ravi-Context-Key": contextKey } : {}),
+      },
+      body: JSON.stringify({ name: sessionName }),
+    });
+  } catch (err) {
+    const log = (await import("../../utils/logger.js")).logger.child("tasks.slot-release");
+    log.warn("Sync slot release failed; NATS event fallback remains active", {
+      taskId,
+      sessionName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 function resolveCreateAssignee(agentId?: string, assigneeId?: string): string | undefined {
   const normalizedAgent = agentId?.trim();
   const normalizedAssignee = assigneeId?.trim();
@@ -1873,6 +1898,7 @@ export class TaskCommands {
       message: finalSummary,
     });
     await emitMutationEvents(result);
+    await releaseTaskSessionSlot(taskId);
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
@@ -1911,6 +1937,7 @@ export class TaskCommands {
       ...(typeof progressValue === "number" ? { progress: progressValue } : {}),
     });
     await emitMutationEvents(result);
+    await releaseTaskSessionSlot(taskId);
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
@@ -1953,6 +1980,7 @@ export class TaskCommands {
       message: finalReason,
     });
     await emitMutationEvents(result);
+    await releaseTaskSessionSlot(taskId);
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
