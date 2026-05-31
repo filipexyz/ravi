@@ -33,6 +33,7 @@ import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js"
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
+import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
@@ -224,6 +225,7 @@ async function shutdown(signal: string) {
 
     // Stop runners and release leadership so another daemon can take over
     await stopInboxRunner();
+    await stopSyncRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
@@ -387,6 +389,9 @@ export async function startDaemon() {
 
   await startInboxRunner();
   log.info("Inbox runner started");
+
+  await startSyncRunner();
+  log.info("Sync runner started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();

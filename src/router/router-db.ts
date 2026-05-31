@@ -1703,6 +1703,86 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_session_trace_blobs_created
       ON session_trace_blobs(created_at);
 
+    -- Local-first sync: optional, best-effort replication ledger.
+    -- SQLite remains the local source of truth; these tables are durable queues
+    -- for remote bridge delivery and cursor-based remote intake.
+    CREATE TABLE IF NOT EXISTS sync_outbox (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL UNIQUE,
+      origin_installation_id TEXT,
+      domain TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      entity_revision INTEGER,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      payload_json TEXT NOT NULL,
+      evidence_refs_json TEXT,
+      schema_version INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL CHECK(status IN ('pending','leased','sent','acked','failed','dead')),
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER NOT NULL DEFAULT 0,
+      lease_id TEXT,
+      leased_until INTEGER,
+      last_error_code TEXT,
+      occurred_at INTEGER NOT NULL,
+      sent_at INTEGER,
+      acked_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_status_next
+      ON sync_outbox(status, next_attempt_at, created_at);
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_domain_status
+      ON sync_outbox(domain, status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_lease
+      ON sync_outbox(lease_id, leased_until);
+
+    CREATE TABLE IF NOT EXISTS sync_inbox (
+      id TEXT PRIMARY KEY,
+      remote_sequence TEXT,
+      remote_event_id TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','applied','skipped','failed','dead')),
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      last_error_code TEXT,
+      received_at INTEGER NOT NULL,
+      applied_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(remote_event_id),
+      UNIQUE(domain, remote_sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_inbox_status
+      ON sync_inbox(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_sync_inbox_domain_status
+      ON sync_inbox(domain, status, created_at);
+
+    CREATE TABLE IF NOT EXISTS sync_cursors (
+      domain TEXT NOT NULL,
+      cursor_key TEXT NOT NULL,
+      cursor_value TEXT,
+      updated_at INTEGER NOT NULL,
+      meta_json TEXT,
+      PRIMARY KEY (domain, cursor_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_dead_letters (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      domain TEXT,
+      reason_code TEXT NOT NULL,
+      payload_json TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_dead_letters_source
+      ON sync_dead_letters(source, source_id);
+
     -- Instances: central config entity (one per omni connection)
     CREATE TABLE IF NOT EXISTS instances (
       name         TEXT PRIMARY KEY,
@@ -7455,6 +7535,17 @@ const SESSION_EVENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — daily rollu
 const SESSION_TRACE_BLOBS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — keep blob TTL aligned with events
 const AUDIT_LOG_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const COST_EVENTS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+const TRACE_EXPORT_CURSOR_DOMAIN = "runtime_trace";
+const TRACE_EXPORT_SESSION_EVENTS_CURSOR = "session_events_enqueued";
+
+function getTraceExportSessionEventsCursor(db: Database): number | null {
+  const row = db
+    .prepare("SELECT cursor_value FROM sync_cursors WHERE domain = ? AND cursor_key = ?")
+    .get(TRACE_EXPORT_CURSOR_DOMAIN, TRACE_EXPORT_SESSION_EVENTS_CURSOR) as { cursor_value: string | null } | undefined;
+  if (!row?.cursor_value) return null;
+  const cursor = Number(row.cursor_value);
+  return Number.isFinite(cursor) && cursor >= 0 ? cursor : null;
+}
 
 /**
  * Delete message metadata older than 7 days.
@@ -7493,6 +7584,7 @@ export interface DbPruneOptions {
   vacuum?: boolean;
   dryRun?: boolean;
   walCheckpoint?: boolean;
+  now?: number;
 }
 
 /**
@@ -7507,7 +7599,8 @@ export interface DbPruneOptions {
  */
 export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   const db = getDb();
-  const now = Date.now();
+  const now = options.now ?? Date.now();
+  const traceExportCursor = getTraceExportSessionEventsCursor(db);
   const result: DbPruneResult = {
     messageMetadata: 0,
     sessionEvents: 0,
@@ -7522,14 +7615,23 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   if (options.dryRun) {
     const count = (sql: string, threshold: number): number =>
       Number((db.prepare(sql).get(threshold) as { c: number }).c ?? 0);
+    const countSessionEvents = (): number => {
+      if (traceExportCursor === null) {
+        return count("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+      }
+      return Number(
+        (
+          db
+            .prepare("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ? AND id <= ?")
+            .get(now - SESSION_EVENTS_TTL_MS, traceExportCursor) as { c: number }
+        ).c ?? 0,
+      );
+    };
     result.messageMetadata = count(
       "SELECT COUNT(*) AS c FROM message_metadata WHERE created_at < ?",
       now - MESSAGE_META_TTL_MS,
     );
-    result.sessionEvents = count(
-      "SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?",
-      now - SESSION_EVENTS_TTL_MS,
-    );
+    result.sessionEvents = countSessionEvents();
     result.sessionTraceBlobs = count(
       "SELECT COUNT(*) AS c FROM session_trace_blobs WHERE created_at < ?",
       now - SESSION_TRACE_BLOBS_TTL_MS,
@@ -7550,9 +7652,19 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
     db.prepare(sql).run(threshold);
     return getDbChanges();
   };
+  const deleteSessionEvents = (): number => {
+    if (traceExportCursor === null) {
+      return runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+    }
+    db.prepare("DELETE FROM session_events WHERE timestamp < ? AND id <= ?").run(
+      now - SESSION_EVENTS_TTL_MS,
+      traceExportCursor,
+    );
+    return getDbChanges();
+  };
 
   result.messageMetadata = runDelete("DELETE FROM message_metadata WHERE created_at < ?", now - MESSAGE_META_TTL_MS);
-  result.sessionEvents = runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+  result.sessionEvents = deleteSessionEvents();
   result.sessionTraceBlobs = runDelete(
     "DELETE FROM session_trace_blobs WHERE created_at < ?",
     now - SESSION_TRACE_BLOBS_TTL_MS,

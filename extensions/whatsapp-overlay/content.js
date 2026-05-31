@@ -68,6 +68,7 @@ const TASK_KANBAN_COLUMNS = [
   { id: "done", label: "done" },
   { id: "failed", label: "failed" },
 ];
+const RUNTIME_CLAUDE_ALIAS_MODELS = new Set(["sonnet", "haiku", "opus"]);
 const NATIVE_SIDEBAR_SEARCH_SELECTOR =
   "input[role='textbox'][aria-label*='Pesquisar ou começar'], input[placeholder*='Pesquisar ou começar'], input[role='textbox'][aria-label*='Search'], input[placeholder*='Search']";
 const taskDrawerStateApi = globalThis.__RAVI_WA_TASK_DRAWER_STATE__ || null;
@@ -1862,6 +1863,9 @@ function renderChatSessionEditor() {
   const currentLabel = currentSession
     ? `${currentSession.sessionName} · ${chipActivityLabel(currentSession.live?.activity)}`
     : "sem sessão";
+  const currentRuntimeLabel = currentSession
+    ? formatSessionRuntimeLabel(resolveSessionProviderProfile(currentSession))
+    : null;
   const defaultDraftSessionName = selectedAgent
     ? buildChatSessionEditorDraftSessionName(query, selectedAgent.id)
     : "";
@@ -1887,7 +1891,7 @@ function renderChatSessionEditor() {
     </div>
     <div class="ravi-wa-chat-session-editor__current">
       <span class="ravi-wa-chat-session-editor__dot ravi-wa-chat-session-editor__dot--${currentActivity}"></span>
-      <span>${escapeHtml(currentSession?.agentId ? `agent ${currentSession.agentId}` : "agent -")}</span>
+      <span>${escapeHtml([currentSession?.agentId ? `agent ${currentSession.agentId}` : "agent -", currentRuntimeLabel].filter(Boolean).join(" · "))}</span>
       <em>${escapeHtml(manualBinding ? "manual" : "auto")}</em>
     </div>
     <label class="ravi-wa-chat-session-editor__search">
@@ -2041,9 +2045,12 @@ function renderChatSessionEditorAgentOption(agent, selectedAgent, currentSession
   const selected = selectedAgent?.id === agent.id;
   const current = currentSession?.agentId === agent.id;
   const label = agent.name || agent.displayName || agent.id;
+  const profile = resolveSessionProviderProfile(null, agent);
+  const runtimeLabel = formatSessionRuntimeLabel(profile);
   const detail = [
     current ? "atual" : null,
-    agent.provider || agent.model || agent.description || null,
+    runtimeLabel,
+    agent.description || null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -2055,8 +2062,13 @@ function renderChatSessionEditorAgentOption(agent, selectedAgent, currentSession
       ${chatSessionEditorInFlight ? " disabled" : ""}
       title="${escapeAttribute(agent.id)}"
     >
-      <strong>${escapeHtml(shorten(label, 18))}</strong>
-      ${detail ? `<small>${escapeHtml(shorten(detail, 22))}</small>` : ""}
+      <span class="ravi-wa-chat-session-editor__agent-main">
+        ${renderProviderAvatar("ravi-wa-chat-session-editor__agent-avatar", profile)}
+        <span class="ravi-wa-chat-session-editor__agent-copy">
+          <strong>${escapeHtml(shorten(label, 18))}</strong>
+          ${detail ? `<small>${escapeHtml(shorten(detail, 22))}</small>` : ""}
+        </span>
+      </span>
     </button>
   `;
 }
@@ -2089,7 +2101,11 @@ function renderChatSessionEditorSessionOption(session, currentSession) {
   const activityClass = chipActivityClass(session.live?.activity);
   const activityLabel = chipActivityLabel(session.live?.activity);
   const elapsed = formatSessionElapsedCompact(session);
+  const agent = getChatSessionAgentById(session.agentId);
+  const profile = resolveSessionProviderProfile(session, agent);
+  const runtimeLabel = formatSessionRuntimeLabel(profile);
   const detail = [
+    runtimeLabel,
     session.agentId ? `agent ${session.agentId}` : null,
     session.displayName || session.chatId || session.channel || null,
   ]
@@ -2101,9 +2117,9 @@ function renderChatSessionEditorSessionOption(session, currentSession) {
       class="ravi-wa-chat-session-editor__option${selected ? " ravi-wa-chat-session-editor__option--selected" : ""}"
       data-ravi-chat-session-editor-choice="${escapeAttribute(session.sessionKey)}"
       ${selected || chatSessionEditorInFlight ? " disabled" : ""}
-      title="${escapeAttribute(session.sessionName)}"
+      title="${escapeAttribute([session.sessionName, profile.title].filter(Boolean).join(" · "))}"
     >
-      <span class="ravi-wa-chat-session-editor__avatar">${escapeHtml(shorten((session.agentId || session.sessionName || "S").slice(0, 2).toUpperCase(), 2))}</span>
+      ${renderProviderAvatar("ravi-wa-chat-session-editor__avatar", profile)}
       <span class="ravi-wa-chat-session-editor__body">
         <strong>${escapeHtml(shorten(session.sessionName, 26))}</strong>
         <small>${escapeHtml(shorten(detail || "sem detalhe", 36))}</small>
@@ -2169,15 +2185,43 @@ function getChatSessionEditorAgentOptions(sessionOptions, currentSession) {
   const byId = new Map();
   const add = (agent) => {
     const normalized = normalizeChatSessionAgentOption(agent);
-    if (!normalized || byId.has(normalized.id)) return;
+    if (!normalized) return;
+    if (byId.has(normalized.id)) {
+      const existing = byId.get(normalized.id);
+      byId.set(normalized.id, {
+        ...normalized,
+        ...existing,
+        provider: existing.provider || normalized.provider,
+        effectiveProvider: existing.effectiveProvider || normalized.effectiveProvider,
+        model: existing.model || normalized.model,
+        description: existing.description || normalized.description,
+      });
+      return;
+    }
     byId.set(normalized.id, normalized);
   };
 
   (latestChatListAgents || []).forEach(add);
   (latestOmniPanel?.agents || []).forEach(add);
-  if (currentSession?.agentId) add({ id: currentSession.agentId, name: currentSession.agentId });
+  if (currentSession?.agentId) {
+    add({
+      id: currentSession.agentId,
+      name: currentSession.agentId,
+      provider: currentSession.agentProvider || currentSession.provider || currentSession.runtimeProvider,
+      effectiveProvider: currentSession.agentEffectiveProvider || currentSession.effectiveProvider,
+      model: currentSession.agentModel || currentSession.model || currentSession.modelOverride,
+    });
+  }
   (sessionOptions || []).forEach((session) => {
-    if (session?.agentId) add({ id: session.agentId, name: session.agentId });
+    if (session?.agentId) {
+      add({
+        id: session.agentId,
+        name: session.agentId,
+        provider: session.agentProvider || session.provider || session.runtimeProvider,
+        effectiveProvider: session.agentEffectiveProvider || session.effectiveProvider,
+        model: session.agentModel || session.model || session.modelOverride,
+      });
+    }
   });
 
   const currentAgentId = currentSession?.agentId || null;
@@ -2199,8 +2243,184 @@ function normalizeChatSessionAgentOption(agent) {
     displayName: normalizeTaskAgentId(agent.displayName || agent.name || id) || id,
     description: normalizeTaskSessionName(agent.description || agent.summary),
     provider: normalizeTaskAgentId(agent.provider),
+    effectiveProvider: normalizeTaskAgentId(agent.effectiveProvider || agent.provider),
     model: normalizeTaskSessionName(agent.model),
   };
+}
+
+function getChatSessionAgentById(agentId) {
+  const id = normalizeTaskAgentId(agentId);
+  if (!id) return null;
+  const sources = [latestChatListAgents, latestOmniPanel?.agents];
+  for (const source of sources) {
+    const match = (Array.isArray(source) ? source : []).find((agent) => {
+      const candidate = normalizeTaskAgentId(agent?.id || agent?.agentId || agent?.name);
+      return candidate === id;
+    });
+    const normalized = normalizeChatSessionAgentOption(match);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function resolveSessionProviderProfile(session, agent = null) {
+  const provider = normalizeRuntimeProviderKey(
+    session?.runtimeProvider ||
+      session?.effectiveProvider ||
+      session?.provider ||
+      session?.agentProvider ||
+      session?.agentEffectiveProvider ||
+      agent?.effectiveProvider ||
+      agent?.provider ||
+      inferProviderFromModel(session?.model || session?.modelOverride || session?.agentModel || agent?.model),
+  ) || "claude";
+  const model = normalizeTaskSessionName(
+    session?.model || session?.modelOverride || session?.agentModel || agent?.model,
+  );
+  const cssKey = normalizeProviderCssKey(provider);
+  const providerLabel = formatRuntimeProviderLabel(provider);
+  const modelLabel = resolveRuntimeModelDisplayLabel(provider, model);
+  const avatarLabel = buildProviderAvatarLabel(provider, model);
+  const title = [providerLabel, modelLabel].filter(Boolean).join(" · ") || "Provider desconhecido";
+  return {
+    key: provider,
+    cssKey,
+    providerLabel,
+    model,
+    modelLabel,
+    avatarLabel,
+    title,
+  };
+}
+
+function normalizeRuntimeProviderKey(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes("codex")) return "codex";
+  if (normalized.includes("claude") || normalized.includes("anthropic")) return "claude";
+  if (normalized.includes("openai") || normalized === "gpt") return "openai";
+  if (normalized.includes("gemini") || normalized.includes("google")) return "gemini";
+  if (normalized === "pi" || normalized.includes("inflection")) return "pi";
+  return normalized.replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || null;
+}
+
+function normalizeProviderCssKey(provider) {
+  const normalized = normalizeRuntimeProviderKey(provider);
+  if (["codex", "claude", "openai", "gemini", "pi"].includes(normalized)) return normalized;
+  return "unknown";
+}
+
+function inferProviderFromModel(model) {
+  if (typeof model !== "string") return null;
+  const normalized = model.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes("claude") || normalized.includes("sonnet") || normalized.includes("opus") || normalized.includes("haiku")) {
+    return "claude";
+  }
+  if (normalized.includes("gpt") || /^o\d/.test(normalized)) return "openai";
+  if (normalized.includes("gemini")) return "gemini";
+  return null;
+}
+
+function formatRuntimeProviderLabel(provider) {
+  switch (normalizeRuntimeProviderKey(provider)) {
+    case "codex":
+      return "Codex";
+    case "claude":
+      return "Claude";
+    case "openai":
+      return "GPT";
+    case "gemini":
+      return "Gemini";
+    case "pi":
+      return "Pi";
+    default:
+      return provider ? titleCaseProvider(provider) : null;
+  }
+}
+
+function titleCaseProvider(value) {
+  return String(value)
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function resolveRuntimeModelDisplayLabel(provider, model) {
+  const normalized = normalizeTaskSessionName(model);
+  if (!normalized) return "default";
+
+  const providerKey = normalizeRuntimeProviderKey(provider);
+  const lower = normalized.toLowerCase();
+  if (
+    providerKey === "codex" &&
+    (lower.startsWith("claude") || RUNTIME_CLAUDE_ALIAS_MODELS.has(lower) || lower === "gpt-5")
+  ) {
+    return "default";
+  }
+
+  return formatRuntimeModelLabel(normalized);
+}
+
+function formatRuntimeModelLabel(model) {
+  const normalized = normalizeTaskSessionName(model);
+  if (!normalized) return null;
+  const compact = normalized.replace(/_/g, "-");
+  const lower = compact.toLowerCase();
+  if (lower.startsWith("gpt-")) {
+    return compact.replace(/^gpt/i, "GPT").replace(/-mini$/i, " mini");
+  }
+  if (/^o\d/i.test(compact)) return compact.toUpperCase();
+  if (lower.startsWith("claude-")) {
+    return titleCaseProvider(compact.replace(/^claude-/i, "")).replace(/ 4 5$/, " 4.5").replace(/ 4 6$/, " 4.6");
+  }
+  if (RUNTIME_CLAUDE_ALIAS_MODELS.has(lower)) return titleCaseProvider(compact);
+  if (lower.startsWith("gemini-")) return titleCaseProvider(compact);
+  return compact;
+}
+
+function buildProviderAvatarLabel(provider, model) {
+  switch (normalizeRuntimeProviderKey(provider)) {
+    case "codex":
+      return "Cx";
+    case "claude":
+      return "Cl";
+    case "openai":
+      return buildOpenAiModelAvatarLabel(model) || "GPT";
+    case "gemini":
+      return "Ge";
+    case "pi":
+      return "Pi";
+    default: {
+      const label = formatRuntimeProviderLabel(provider);
+      return label ? label.replace(/[^a-z0-9]/gi, "").slice(0, 3).toUpperCase() || "AI" : "AI";
+    }
+  }
+}
+
+function buildOpenAiModelAvatarLabel(model) {
+  if (typeof model !== "string") return null;
+  const normalized = model.trim().toLowerCase();
+  const gpt = normalized.match(/\bgpt[-_ ]?(\d+(?:\.\d+)?)/);
+  if (gpt?.[1]) return gpt[1];
+  const oModel = normalized.match(/\b(o\d(?:[-_ ]?mini)?)\b/);
+  if (oModel?.[1]) return oModel[1].replace(/[-_ ]+/g, "").toUpperCase();
+  return null;
+}
+
+function formatSessionRuntimeLabel(profile) {
+  if (!profile) return null;
+  return [profile.providerLabel, profile.modelLabel].filter(Boolean).join(" · ") || null;
+}
+
+function buildProviderAvatarClassName(baseClass, profile) {
+  const resolved = profile || resolveSessionProviderProfile(null, null);
+  return `${baseClass} ravi-wa-provider-avatar ravi-wa-provider-avatar--${resolved.cssKey}`;
+}
+
+function renderProviderAvatar(baseClass, profile) {
+  const resolved = profile || resolveSessionProviderProfile(null, null);
+  return `<span class="${escapeAttribute(buildProviderAvatarClassName(baseClass, resolved))}" title="${escapeAttribute(resolved.title)}" aria-label="${escapeAttribute(resolved.title)}">${escapeHtml(resolved.avatarLabel)}</span>`;
 }
 
 function filterChatSessionEditorAgentOptions(agents, filter) {
@@ -2213,6 +2433,7 @@ function filterChatSessionEditorAgentOptions(agents, filter) {
       agent.displayName,
       agent.description,
       agent.provider,
+      agent.effectiveProvider,
       agent.model,
     ]
       .filter(Boolean)
@@ -2232,6 +2453,13 @@ function filterChatSessionEditorOptions(options, filter, currentSession) {
         session.sessionName,
         session.sessionKey,
         session.agentId,
+        session.provider,
+        session.effectiveProvider,
+        session.runtimeProvider,
+        session.model,
+        session.modelOverride,
+        session.agentProvider,
+        session.agentModel,
         session.displayName,
         session.chatId,
         session.channel,
@@ -2278,6 +2506,14 @@ function normalizeChatSessionOption(session) {
     chatId: normalizeTaskSessionName(session.chatId || session.lastTo || session.boundChatId),
     channel: normalizeTaskSessionName(session.channel || session.lastChannel),
     accountId: normalizeTaskSessionName(session.accountId || session.lastAccountId || session.instance),
+    runtimeProvider: normalizeTaskAgentId(session.runtimeProvider),
+    effectiveProvider: normalizeTaskAgentId(session.effectiveProvider || session.provider || session.runtimeProvider || session.agentProvider),
+    provider: normalizeTaskAgentId(session.provider || session.runtimeProvider || session.effectiveProvider || session.agentProvider),
+    model: normalizeTaskSessionName(session.model || session.modelOverride || session.agentModel),
+    agentProvider: normalizeTaskAgentId(session.agentProvider),
+    agentEffectiveProvider: normalizeTaskAgentId(session.agentEffectiveProvider || session.agentProvider),
+    agentModel: normalizeTaskSessionName(session.agentModel),
+    modelOverride: normalizeTaskSessionName(session.modelOverride),
     updatedAt: Number(session.updatedAt || live?.updatedAt || 0),
     live,
   };
@@ -4532,13 +4768,13 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
         ? `
       <section class="ravi-wa-card">
         <dl class="ravi-wa-grid">
-          <div><dt>Sessão</dt><dd>${escapeHtml(focusedSession.sessionName)}</dd></div>
-          <div><dt>Agent</dt><dd>${escapeHtml(focusedSession.agentId)}</dd></div>
-          <div><dt>Live</dt><dd>${escapeHtml(focusedActivityLabel)}</dd></div>
-          <div><dt>Atualizado</dt><dd>${escapeHtml(formatTimestamp(focusedLive?.updatedAt))}</dd></div>
-          <div><dt>Thinking</dt><dd>${escapeHtml(focusedSession.thinkingLevel || "-")}</dd></div>
-          <div><dt>Modelo</dt><dd>${escapeHtml(focusedSession.modelOverride || focusedSession.runtimeProvider || "-")}</dd></div>
-          <div><dt>Queue</dt><dd>${escapeHtml(focusedSession.queueMode || "-")}</dd></div>
+            <div><dt>Sessão</dt><dd>${escapeHtml(focusedSession.sessionName)}</dd></div>
+            <div><dt>Agent</dt><dd>${escapeHtml(focusedSession.agentId)}</dd></div>
+            <div><dt>Live</dt><dd>${escapeHtml(focusedActivityLabel)}</dd></div>
+            <div><dt>Atualizado</dt><dd>${escapeHtml(formatTimestamp(focusedLive?.updatedAt))}</dd></div>
+            <div><dt>Thinking</dt><dd>${escapeHtml(focusedSession.thinkingLevel || "-")}</dd></div>
+            <div><dt>Modelo</dt><dd>${escapeHtml(formatSessionRuntimeLabel(resolveSessionProviderProfile(focusedSession)) || "-")}</dd></div>
+            <div><dt>Queue</dt><dd>${escapeHtml(focusedSession.queueMode || "-")}</dd></div>
           <div><dt>Heartbeat</dt><dd>${escapeHtml(focusedSession.lastHeartbeatText || "-")}</dd></div>
           <div><dt>Canal</dt><dd>${escapeHtml(focusedSession.channel || "-")}</dd></div>
           <div><dt>Instância</dt><dd>${escapeHtml(focusedSession.accountId || "-")}</dd></div>
@@ -5416,15 +5652,21 @@ function renderOmniRoutingPanel(
   const selectedRouteAgent =
     agents.find((agent) => agent.id === selectedRouteAgentId) || null;
   const migrateDisabled = !migrateAction.allowed;
-  const migrateLabel = currentLinkedSession
-    ? `Migrar para ${selectedRouteAgent?.id || "agent"}`
-    : "Migrar sessão";
-  const selectedChatOpaque = isOmniOpaque(selectedChat);
-  const currentSessionOpaque = isOmniOpaque(currentLinkedSession);
-  const routeSummaryText = selectedChatOpaque
-    ? describeOmniMissingRelations(selectedChat?.auth?.view?.missing) ||
-      "sem permissão para detalhes do chat"
-    : selectedChat.lastMessagePreview ||
+    const migrateLabel = currentLinkedSession
+      ? `Migrar para ${selectedRouteAgent?.id || "agent"}`
+      : "Migrar sessão";
+    const selectedChatOpaque = isOmniOpaque(selectedChat);
+    const currentSessionOpaque = isOmniOpaque(currentLinkedSession);
+    const currentSessionProfile = currentLinkedSession
+      ? resolveSessionProviderProfile(currentLinkedSession)
+      : null;
+    const currentSessionRuntimeLabel = currentSessionProfile
+      ? formatSessionRuntimeLabel(currentSessionProfile)
+      : null;
+    const routeSummaryText = selectedChatOpaque
+      ? describeOmniMissingRelations(selectedChat?.auth?.view?.missing) ||
+        "sem permissão para detalhes do chat"
+      : selectedChat.lastMessagePreview ||
       selectedChat.externalId ||
       "sem preview";
 
@@ -5461,13 +5703,13 @@ function renderOmniRoutingPanel(
               data-ravi-omni-select-session="${escapeAttribute(currentLinkedSession.sessionKey)}"
               title="${escapeAttribute(buildOmniItemPermissionTitle(currentLinkedSession, currentLinkedSession.sessionName))}"
             >
-              <span class="ravi-wa-nav-row__avatar">${escapeHtml(shorten(currentLinkedSession.agentId.slice(0, 2).toUpperCase(), 2))}</span>
+              ${renderProviderAvatar("ravi-wa-nav-row__avatar", currentSessionProfile)}
               <span class="ravi-wa-nav-row__body">
                 <span class="ravi-wa-nav-row__titleline">
                   <strong>${escapeHtml(currentLinkedSession.sessionName)}</strong>
-                  <span class="ravi-wa-nav-row__agent">${escapeHtml(currentLinkedSession.agentId)}</span>
+                  <span class="ravi-wa-nav-row__agent">${escapeHtml(currentSessionRuntimeLabel || currentLinkedSession.agentId)}</span>
                 </span>
-                <span class="ravi-wa-nav-row__subline">${escapeHtml(currentSessionOpaque ? describeOmniMissingRelations(currentLinkedSession?.auth?.view?.missing) || "sem permissão para detalhes da sessão" : currentLinkedSession.chatId || currentLinkedSession.displayName || "sem chat vinculado")}</span>
+                <span class="ravi-wa-nav-row__subline">${escapeHtml(currentSessionOpaque ? describeOmniMissingRelations(currentLinkedSession?.auth?.view?.missing) || "sem permissão para detalhes da sessão" : [currentLinkedSession.agentId ? `agent ${currentLinkedSession.agentId}` : null, currentLinkedSession.chatId || currentLinkedSession.displayName || "sem chat vinculado"].filter(Boolean).join(" · "))}</span>
               </span>
               <span class="ravi-wa-nav-row__aside">
                 <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatSessionElapsedCompact(currentLinkedSession) || "-")}</span>
@@ -5568,18 +5810,20 @@ function renderOmniSessionRows(items, selectedSession, emptyText) {
     <div class="ravi-wa-nav-list ravi-wa-nav-list--tall">
       ${items
         .map((session) => {
-          const selected =
-            selectedSession?.sessionKey === session.sessionKey
-              ? "true"
-              : "false";
-          const opaque = isOmniOpaque(session);
-          const activityClass = opaque
-            ? "locked"
-            : chipActivityClass(session.live?.activity);
-          const linkedChat = opaque
-            ? describeOmniMissingRelations(session?.auth?.view?.missing) ||
-              "sem permissão para detalhes da sessão"
-            : getLinkedChatLabel(session);
+            const selected =
+              selectedSession?.sessionKey === session.sessionKey
+                ? "true"
+                : "false";
+            const opaque = isOmniOpaque(session);
+            const activityClass = opaque
+              ? "locked"
+              : chipActivityClass(session.live?.activity);
+            const profile = resolveSessionProviderProfile(session);
+            const runtimeLabel = formatSessionRuntimeLabel(profile);
+            const linkedChat = opaque
+              ? describeOmniMissingRelations(session?.auth?.view?.missing) ||
+                "sem permissão para detalhes da sessão"
+              : getLinkedChatLabel(session);
           const title = buildOmniItemPermissionTitle(
             session,
             session.sessionName,
@@ -5592,13 +5836,13 @@ function renderOmniSessionRows(items, selectedSession, emptyText) {
               aria-pressed="${selected}"
               title="${escapeAttribute(title)}"
             >
-              <span class="ravi-wa-nav-row__avatar">${escapeHtml(shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2))}</span>
+              ${renderProviderAvatar("ravi-wa-nav-row__avatar", profile)}
               <span class="ravi-wa-nav-row__body">
                 <span class="ravi-wa-nav-row__titleline">
                   <strong>${escapeHtml(session.sessionName)}</strong>
-                  <span class="ravi-wa-nav-row__agent">${escapeHtml(session.agentId)}</span>
+                  <span class="ravi-wa-nav-row__agent">${escapeHtml(runtimeLabel || session.agentId)}</span>
                 </span>
-                <span class="ravi-wa-nav-row__subline">${escapeHtml(shorten(linkedChat || session.chatId || "sem chat vinculado", 46))}</span>
+                <span class="ravi-wa-nav-row__subline">${escapeHtml(shorten([session.agentId ? `agent ${session.agentId}` : null, linkedChat || session.chatId || "sem chat vinculado"].filter(Boolean).join(" · "), 54))}</span>
               </span>
               <span class="ravi-wa-nav-row__aside">
                 <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatSessionElapsedCompact(session) || "-")}</span>
@@ -6312,19 +6556,24 @@ function swUpdateHeader(host, session, workspace) {
   const stateLabel = chipActivityLabel(activity);
   const sessionName = session?.sessionName || "sessão";
   const agentId = session?.agentId || "";
+  const profile = resolveSessionProviderProfile(session);
+  const runtimeLabel = formatSessionRuntimeLabel(profile);
 
   const nameEl = host.querySelector(".sw-header__name");
   if (nameEl) nameEl.textContent = sessionName;
 
   const statusEl = host.querySelector(".sw-header__status");
   if (statusEl) {
-    statusEl.textContent = agentId ? `${agentId} · ${stateLabel}` : stateLabel;
+    statusEl.textContent = [agentId || null, runtimeLabel, stateLabel].filter(Boolean).join(" · ");
     statusEl.setAttribute("data-sw-status-class", stateClass);
   }
 
   const avatarEl = host.querySelector(".sw-header__avatar");
   if (avatarEl) {
-    avatarEl.textContent = (sessionName[0] || "S").toUpperCase();
+    avatarEl.className = buildProviderAvatarClassName("sw-header__avatar", profile);
+    avatarEl.textContent = profile.avatarLabel;
+    avatarEl.title = profile.title;
+    avatarEl.setAttribute("aria-label", profile.title);
   }
 }
 
@@ -6352,17 +6601,18 @@ function swCreateScaffold(session, workspace) {
   const stateLabel = chipActivityLabel(activity);
   const sessionName = session?.sessionName || "sessão";
   const agentId = session?.agentId || "";
-  const initial = (sessionName[0] || "S").toUpperCase();
+  const profile = resolveSessionProviderProfile(session);
+  const runtimeLabel = formatSessionRuntimeLabel(profile);
 
   return `<div class="sw-chat">
     <header class="sw-header">
       <button type="button" class="sw-header__back" data-ravi-session-workspace-close="true" aria-label="Voltar">
         <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 4l1.4 1.4L7.8 11H20v2H7.8l5.6 5.6L12 20 4 12z"/></svg>
       </button>
-      <div class="sw-header__avatar">${escapeHtml(initial)}</div>
+      <div class="${escapeAttribute(buildProviderAvatarClassName("sw-header__avatar", profile))}" title="${escapeAttribute(profile.title)}" aria-label="${escapeAttribute(profile.title)}">${escapeHtml(profile.avatarLabel)}</div>
       <div class="sw-header__info">
         <strong class="sw-header__name">${escapeHtml(sessionName)}</strong>
-        <span class="sw-header__status" data-sw-status-class="${stateClass}">${escapeHtml(agentId ? `${agentId} · ${stateLabel}` : stateLabel)}</span>
+        <span class="sw-header__status" data-sw-status-class="${stateClass}">${escapeHtml([agentId || null, runtimeLabel, stateLabel].filter(Boolean).join(" · "))}</span>
       </div>
       ${session?.chatId ? `<button type="button" class="sw-header__action" data-ravi-open-chat="${escapeAttribute(session.sessionKey)}" title="Abrir chat vinculado">
         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.2L4 17.2V4h16v12z"/></svg>
@@ -7274,32 +7524,30 @@ function renderGenericCockpitRow(session, currentSession) {
   const activityClass = chipActivityClass(session.live?.activity);
   const activityLabel = chipActivityLabel(session.live?.activity);
   const linkedChat = getLinkedChatLabel(session);
+  const profile = resolveSessionProviderProfile(session);
+  const runtimeLabel = formatSessionRuntimeLabel(profile);
   const elapsed = formatSessionElapsedCompact(session) || "now";
   const subline = linkedChat
-    ? shorten(linkedChat, 34)
+    ? shorten([session.agentId ? `agent ${session.agentId}` : null, linkedChat].filter(Boolean).join(" · "), 44)
     : session.channel
-      ? `canal ${session.channel}`
+      ? [session.agentId ? `agent ${session.agentId}` : null, `canal ${session.channel}`].filter(Boolean).join(" · ")
       : "sem chat vinculado";
   const selected =
     currentSession?.sessionKey === session.sessionKey ? "true" : "false";
-  const avatarLabel = shorten(
-    (session.agentId || "rv").slice(0, 2).toUpperCase(),
-    2,
-  );
   return `
     <button
       type="button"
-      class="ravi-wa-nav-row ravi-wa-nav-row--${activityClass}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
-      data-ravi-focus-session="${escapeAttribute(session.sessionKey)}"
-      aria-pressed="${selected}"
-      title="${escapeAttribute(`${session.sessionName} · ${linkedChat || session.chatId || "-"}`)}"
-    >
-      <span class="ravi-wa-nav-row__avatar">${escapeHtml(avatarLabel)}</span>
-      <span class="ravi-wa-nav-row__body">
-        <span class="ravi-wa-nav-row__titleline">
-          <strong>${escapeHtml(session.sessionName)}</strong>
-          <span class="ravi-wa-nav-row__agent">${escapeHtml(session.agentId)}</span>
-        </span>
+        class="ravi-wa-nav-row ravi-wa-nav-row--${activityClass}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+        data-ravi-focus-session="${escapeAttribute(session.sessionKey)}"
+        aria-pressed="${selected}"
+        title="${escapeAttribute(`${session.sessionName} · ${linkedChat || session.chatId || "-"}`)}"
+      >
+        ${renderProviderAvatar("ravi-wa-nav-row__avatar", profile)}
+        <span class="ravi-wa-nav-row__body">
+          <span class="ravi-wa-nav-row__titleline">
+            <strong>${escapeHtml(session.sessionName)}</strong>
+            <span class="ravi-wa-nav-row__agent">${escapeHtml(runtimeLabel || session.agentId)}</span>
+          </span>
         <span class="ravi-wa-nav-row__subline">${escapeHtml(subline)}</span>
       </span>
       <span class="ravi-wa-nav-row__aside">
@@ -7322,20 +7570,25 @@ function renderTaskAwareCockpitRow(
   const selected =
     currentSession?.sessionKey === session.sessionKey ? "true" : "false";
   const linkedChat = getLinkedChatLabel(session);
-  const progress = getTaskDisplayProgress(
-    task,
-    resolveTaskHierarchyNode(task?.id),
-  );
-  const shortTaskId = formatTaskShortId(task.id);
-  const grouped = Boolean(options.grouped);
-  const titleMode = options.titleMode === "session" ? "session" : "task";
-  const avatarLabel =
-    titleMode === "session"
-      ? shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2)
-      : shortTaskId
-          .replace(/[^a-z0-9]/gi, "")
-          .slice(0, 4)
-          .toUpperCase() || "TASK";
+    const progress = getTaskDisplayProgress(
+      task,
+      resolveTaskHierarchyNode(task?.id),
+    );
+    const shortTaskId = formatTaskShortId(task.id);
+    const grouped = Boolean(options.grouped);
+    const titleMode = options.titleMode === "session" ? "session" : "task";
+    const profile = resolveSessionProviderProfile(session);
+    const avatarLabel =
+      titleMode === "session"
+        ? shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2)
+        : shortTaskId
+            .replace(/[^a-z0-9]/gi, "")
+            .slice(0, 4)
+            .toUpperCase() || "TASK";
+    const avatarMarkup =
+      titleMode === "session"
+        ? renderProviderAvatar("ravi-wa-nav-row__avatar", profile)
+        : `<span class="ravi-wa-nav-row__avatar">${escapeHtml(avatarLabel)}</span>`;
   const note = shorten(match.note.text, grouped ? 96 : 108);
   const debugMeta = grouped
     ? buildGroupedTaskAwareSessionMeta(session, linkedChat, titleMode)
@@ -7371,7 +7624,7 @@ function renderTaskAwareCockpitRow(
       aria-pressed="${selected}"
       title="${escapeAttribute(`${task.title || task.id} · ${task.id} · ${session.sessionName}`)}"
     >
-      <span class="ravi-wa-nav-row__avatar">${escapeHtml(avatarLabel)}</span>
+      ${avatarMarkup}
       <span class="ravi-wa-nav-row__body">
         <span class="ravi-wa-nav-row__eyebrow">${escapeHtml(taskMeta)}</span>
         <span class="ravi-wa-nav-row__titleline">

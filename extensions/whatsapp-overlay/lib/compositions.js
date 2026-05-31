@@ -7,13 +7,16 @@ import {
 } from "./live-state.js";
 
 export async function buildSnapshot(client, query) {
-  const [sessionsResult, allBindings] = await Promise.all([
+  const [sessionsResult, agentsResult] = await Promise.all([
     client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    listAgents(client),
     getBindings(),
     ensureLiveStateStream().catch(() => false),
   ]);
 
-  const sessions = normalizeSessions(sessionsResult);
+  const baseSessions = normalizeSessions(sessionsResult);
+  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), baseSessions);
+  const sessions = enrichSessionsWithAgentRuntime(baseSessions, agents);
   const binding = await findBinding({ chatId: query?.chatId, title: query?.title });
   const requestedSessionName = clean(query?.session) ?? clean(binding?.session);
 
@@ -318,8 +321,9 @@ export async function buildOmniPanelSnapshot(client, query) {
     ensureLiveStateStream().catch(() => false),
   ]);
 
-  const sessions = normalizeSessions(sessionsResult);
-  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), sessions);
+  const baseSessions = normalizeSessions(sessionsResult);
+  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), baseSessions);
+  const sessions = enrichSessionsWithAgentRuntime(baseSessions, agents);
   const routes = Array.isArray(routesResult?.routes) ? routesResult.routes : [];
   const instances = normalizeInstances(instancesResult);
   const preferredInstance = resolvePreferredInstance(instances, query?.instance);
@@ -422,8 +426,10 @@ export async function resolveChatList(client, body) {
     listAgents(client),
     ensureLiveStateStream().catch(() => false),
   ]);
-  const sessions = normalizeSessions(sessionsResult);
-  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), sessions);
+  const baseSessions = normalizeSessions(sessionsResult);
+  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), baseSessions);
+  const sessions = enrichSessionsWithAgentRuntime(baseSessions, agents);
+  const agentsById = indexAgentsById(agents);
   const items = await Promise.all(
     entries.map(async (entry) => {
       const id = clean(entry?.id) ?? null;
@@ -435,7 +441,10 @@ export async function resolveChatList(client, body) {
         title: query.title,
         session: requestedSessionName,
       });
-      const syntheticSession = !resolved.session && binding?.session ? createSyntheticBindingSession(binding) : null;
+      const syntheticSession =
+        !resolved.session && binding?.session
+          ? enrichSessionWithAgentRuntime(createSyntheticBindingSession(binding), agentsById)
+          : null;
       const matchedSession = resolved.session ?? syntheticSession;
       return {
         id,
@@ -546,11 +555,15 @@ function normalizeSessions(result) {
     accountId: s.accountId ?? null,
     lastAccountId: s.lastAccountId ?? null,
     groupId: s.groupId ?? null,
-    thinkingLevel: s.thinkingLevel ?? null,
-    modelOverride: s.modelOverride ?? null,
     updatedAt: s.updatedAt ?? 0,
     createdAt: s.createdAt ?? 0,
     ...s,
+    runtimeProvider: s.runtimeProvider ?? null,
+    effectiveProvider: s.effectiveProvider ?? s.provider ?? s.runtimeProvider ?? null,
+    thinkingLevel: s.thinkingLevel ?? null,
+    modelOverride: s.modelOverride ?? null,
+    provider: s.provider ?? s.runtimeProvider ?? s.effectiveProvider ?? null,
+    model: s.model ?? s.modelOverride ?? null,
   }));
 }
 
@@ -578,13 +591,16 @@ function normalizeAgents(result) {
     .map((agent) => {
       const id = clean(agent?.id ?? agent?.agentId ?? agent?.name);
       if (!id) return null;
+      const provider = clean(agent?.provider);
+      const effectiveProvider = clean(agent?.effectiveProvider ?? provider);
       return {
         ...agent,
         id,
         name: clean(agent?.name ?? agent?.displayName ?? id) ?? id,
         displayName: clean(agent?.displayName ?? agent?.name ?? id) ?? id,
         cwd: clean(agent?.cwd),
-        provider: clean(agent?.provider),
+        provider,
+        effectiveProvider,
         model: clean(agent?.model),
       };
     })
@@ -600,9 +616,53 @@ function mergeAgentsWithSessions(agents, sessions) {
   for (const session of sessions) {
     const id = clean(session?.agentId);
     if (!id || byId.has(id)) continue;
-    byId.set(id, { id, name: id, displayName: id, inferred: true });
+    const provider = clean(session?.provider ?? session?.runtimeProvider ?? session?.effectiveProvider);
+    byId.set(id, {
+      id,
+      name: id,
+      displayName: id,
+      provider,
+      effectiveProvider: clean(session?.effectiveProvider ?? provider),
+      model: clean(session?.model ?? session?.modelOverride),
+      inferred: true,
+    });
   }
   return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function indexAgentsById(agents) {
+  const byId = new Map();
+  for (const agent of Array.isArray(agents) ? agents : []) {
+    const id = clean(agent?.id ?? agent?.agentId ?? agent?.name);
+    if (id && !byId.has(id)) byId.set(id, agent);
+  }
+  return byId;
+}
+
+function enrichSessionsWithAgentRuntime(sessions, agents) {
+  const agentsById = indexAgentsById(agents);
+  return sessions.map((session) => enrichSessionWithAgentRuntime(session, agentsById));
+}
+
+function enrichSessionWithAgentRuntime(session, agentsById) {
+  if (!session || typeof session !== "object") return session;
+  const agent = agentsById.get(clean(session.agentId)) ?? null;
+  const runtimeProvider = clean(session.runtimeProvider);
+  const agentProvider = clean(agent?.provider ?? agent?.effectiveProvider);
+  const agentEffectiveProvider = clean(agent?.effectiveProvider ?? agentProvider);
+  const effectiveProvider = clean(session.effectiveProvider ?? session.provider ?? runtimeProvider ?? agentEffectiveProvider);
+  const modelOverride = clean(session.modelOverride);
+  const agentModel = clean(agent?.model);
+  return {
+    ...session,
+    runtimeProvider,
+    effectiveProvider,
+    provider: clean(session.provider ?? runtimeProvider ?? effectiveProvider),
+    model: clean(session.model ?? modelOverride ?? agentModel),
+    agentProvider,
+    agentEffectiveProvider,
+    agentModel,
+  };
 }
 
 function normalizeInstances(result) {
@@ -723,6 +783,13 @@ function toListEntry(session) {
     accountId: session.accountId ?? session.lastAccountId ?? null,
     updatedAt: session.updatedAt ?? 0,
     createdAt: session.createdAt ?? 0,
+    runtimeProvider: session.runtimeProvider ?? null,
+    effectiveProvider: session.effectiveProvider ?? session.provider ?? session.runtimeProvider ?? session.agentProvider ?? null,
+    provider: session.provider ?? session.runtimeProvider ?? session.effectiveProvider ?? session.agentProvider ?? null,
+    model: session.model ?? session.modelOverride ?? session.agentModel ?? null,
+    agentProvider: session.agentProvider ?? null,
+    agentEffectiveProvider: session.agentEffectiveProvider ?? null,
+    agentModel: session.agentModel ?? null,
     thinkingLevel: session.thinkingLevel ?? null,
     modelOverride: session.modelOverride ?? null,
     live,

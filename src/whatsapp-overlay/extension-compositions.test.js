@@ -130,6 +130,11 @@ describe("whatsapp overlay extension compositions", () => {
           ],
         }),
       },
+      agents: {
+        list: async () => ({
+          agents: [{ id: "dev", name: "Dev", provider: "codex", model: "gpt-5.5" }],
+        }),
+      },
     };
 
     const result = await resolveChatList(client, {
@@ -147,11 +152,62 @@ describe("whatsapp overlay extension compositions", () => {
       resolved: true,
       session: {
         sessionName: "dev",
+        provider: "codex",
+        effectiveProvider: "codex",
+        model: "gpt-5.5",
+        agentProvider: "codex",
+        agentEffectiveProvider: "codex",
+        agentModel: "gpt-5.5",
         live: { activity: "idle", summary: "turn complete" },
       },
     });
     expect(result.sessions.map((session) => session.sessionName)).toEqual(["dev"]);
+    expect(result.sessions[0]).toMatchObject({
+      provider: "codex",
+      effectiveProvider: "codex",
+      model: "gpt-5.5",
+      agentProvider: "codex",
+      agentEffectiveProvider: "codex",
+      agentModel: "gpt-5.5",
+    });
     expect(result.agents.map((agent) => agent.id)).toEqual(["dev"]);
+  });
+
+  it("preserves agent effective provider when explicit provider is omitted", async () => {
+    const now = Date.now();
+    const client = {
+      sessions: {
+        list: async () => ({
+          sessions: [
+            {
+              sessionKey: "agent:achados-promo:main",
+              name: "achados-promo",
+              agentId: "achados-promo",
+              updatedAt: now,
+              createdAt: now - 10_000,
+              live: { activity: "idle", summary: "turn complete", updatedAt: now },
+            },
+          ],
+        }),
+      },
+      agents: {
+        list: async () => ({
+          agents: [{ id: "achados-promo", name: "Achados Promo", effectiveProvider: "claude" }],
+        }),
+      },
+    };
+
+    const snapshot = await buildSnapshot(client, {});
+
+    expect(snapshot.recentSessions[0]).toMatchObject({
+      sessionName: "achados-promo",
+      provider: "claude",
+      effectiveProvider: "claude",
+      agentProvider: "claude",
+      agentEffectiveProvider: "claude",
+      model: null,
+      agentModel: null,
+    });
   });
 
   it("keeps a local agent session binding visible before the runtime session exists", async () => {
