@@ -1954,6 +1954,8 @@ export interface CreateCrmOpportunityInput extends CrmMutationOptions {
   ownerType?: CrmOwnerType | string | null;
   ownerId?: string | null;
   metadata?: Record<string, unknown> | null;
+  allowDuplicate?: boolean | null;
+  duplicateReason?: string | null;
 }
 
 export interface CrmOpportunityContact {
@@ -5396,6 +5398,99 @@ function opportunityStatusForStage(stage: CrmPipelineStage, currentStatus: CrmOp
   return currentStatus;
 }
 
+const GENERIC_DEDUP_REASONS = new Set([
+  "duplicate",
+  "duplicada",
+  "duplicado",
+  "duplicata",
+  "dup",
+  "test",
+  "teste",
+  "manual",
+  "override",
+  "bypass",
+  "na",
+  "none",
+  "asdf",
+  "qwerty",
+]);
+
+function validateDuplicateReason(reason: string | null | undefined): string {
+  const trimmed = (reason ?? "").trim();
+  if (!trimmed) {
+    throw new Error(
+      "A reason is required when allowDuplicate is set (CLI: --reason). Explain the business justification (min 10 chars).",
+    );
+  }
+  if (trimmed.length < 10) {
+    throw new Error(
+      `Duplicate reason too short (${trimmed.length} chars). Provide a substantive justification of at least 10 characters.`,
+    );
+  }
+  const normalized = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (GENERIC_DEDUP_REASONS.has(normalized)) {
+    throw new Error(
+      `Duplicate reason "${trimmed}" is too generic. Provide a real justification for the parallel opportunity.`,
+    );
+  }
+  return trimmed;
+}
+
+function findOpenCrmOpportunityForPipeline(
+  database: Database,
+  contactId: string,
+  pipelineId: string | null,
+): CrmOpportunityRow | null {
+  if (!pipelineId) return null;
+  const row = database
+    .prepare(
+      `SELECT * FROM crm_opportunities
+       WHERE primary_contact_id = ? AND pipeline_id = ? AND status IN ('open', 'paused')
+       ORDER BY created_at ASC LIMIT 1`,
+    )
+    .get(contactId, pipelineId) as CrmOpportunityRow | undefined;
+  return row ?? null;
+}
+
+function recordCrmDedupEvent(
+  database: Database,
+  params: {
+    outcome: "rejected" | "bypassed";
+    existing: CrmOpportunityRow;
+    contactId: string;
+    input: CreateCrmOpportunityInput;
+    reason: string | null;
+    newOpportunityId: string | null;
+  },
+): void {
+  const { outcome, existing, contactId, input, reason, newOpportunityId } = params;
+  insertCrmEvent(database, {
+    eventType: outcome === "rejected" ? "crm.opportunity.dedup_rejected" : "crm.opportunity.dedup_bypassed",
+    entityType: "opportunity",
+    entityId: existing.id,
+    contactId,
+    accountId: existing.account_id,
+    opportunityId: existing.id,
+    source: crmMutationSource(input),
+    actorType: input.actorType,
+    actorId: input.actorId,
+    scopeType: input.scopeType,
+    scopeId: input.scopeId,
+    emitContactEvent: false,
+    payload: {
+      outcome,
+      existingOpportunityId: existing.id,
+      existingTitle: existing.title,
+      existingStageId: existing.stage_id,
+      existingStatus: existing.status,
+      pipelineId: existing.pipeline_id,
+      attemptedTitle: typeof input.title === "string" ? input.title.trim() : null,
+      newOpportunityId,
+      reason,
+    },
+  });
+}
+
 export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOpportunity {
   const database = ensureDb();
   const title = normalizeRequiredText(input.title, "CRM opportunity title");
@@ -5415,6 +5510,37 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
     if (existingEvent?.entity_type === "opportunity") {
       const row = getCrmOpportunityRow(database, existingEvent.entity_id);
       if (row) return rowToCrmOpportunity(row);
+    }
+  }
+  // Detect-and-update gate (spec crm/opportunities/dedup-on-create): at most one
+  // open/paused opportunity per (contact, pipeline). See docs/proposals + .ravi/specs.
+  let dedupBypass: { existing: CrmOpportunityRow; reason: string; contactId: string } | null = null;
+  if (contactId) {
+    const existingOpen = findOpenCrmOpportunityForPipeline(database, contactId, stage.pipelineId);
+    if (existingOpen) {
+      if (input.allowDuplicate === true) {
+        dedupBypass = { existing: existingOpen, reason: validateDuplicateReason(input.duplicateReason), contactId };
+      } else {
+        executeWrite(
+          database,
+          () =>
+            recordCrmDedupEvent(database, {
+              outcome: "rejected",
+              existing: existingOpen,
+              contactId,
+              input,
+              reason: null,
+              newOpportunityId: null,
+            }),
+          { label: "contacts:crmDedupRejected" },
+        );
+        throw new Error(
+          `CRM opportunity already open for contact=${contactId} pipeline=${stage.pipelineId}: ` +
+            `${existingOpen.id} "${existingOpen.title}" (stage=${existingOpen.stage_id ?? "?"}, status=${existingOpen.status}). ` +
+            `Update it via 'ravi crm opportunity move ${existingOpen.id} <stage>' or 'ravi crm opportunity timeline-add ${existingOpen.id} ...', ` +
+            `or pass --allow-duplicate --reason "<justificativa>" to intentionally open a parallel opportunity.`,
+        );
+      }
     }
   }
   const opportunityId = `crm_opp_${generateId()}`;
@@ -5511,6 +5637,16 @@ export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOppor
         scopeId: input.scopeId,
         payload: opportunity,
       });
+      if (dedupBypass) {
+        recordCrmDedupEvent(database, {
+          outcome: "bypassed",
+          existing: dedupBypass.existing,
+          contactId: dedupBypass.contactId,
+          input,
+          reason: dedupBypass.reason,
+          newOpportunityId: opportunityId,
+        });
+      }
     },
     { label: "contacts:createCrmOpportunity" },
   );

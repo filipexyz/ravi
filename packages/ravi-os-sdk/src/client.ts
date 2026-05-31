@@ -1272,10 +1272,12 @@ export class RaviClient {
       /** Create a CRM opportunity */
       create: async (title: string, options?: {
         account?: string;
+        allowDuplicate?: boolean;
         contact?: string;
         currency?: string;
         idempotencyKey?: string;
         owner?: string;
+        reason?: string;
         stage?: string;
         value?: string;
       }): Promise<CrmOpportunityCreateReturn> => {

@@ -1160,10 +1160,12 @@ export type CrmOpportunityContactsReturn = unknown;
 /** Input shape for `crm.opportunity.create`. */
 export type CrmOpportunityCreateInput = {
   account?: string;
+  allowDuplicate?: boolean;
   contact?: string;
   currency?: string;
   idempotencyKey?: string;
   owner?: string;
+  reason?: string;
   stage?: string;
   title: string;
   value?: string;
