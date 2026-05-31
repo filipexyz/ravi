@@ -98,6 +98,18 @@ Providers MUST normalize native output into:
 
 Providers MAY emit `provider.raw` for observability, but raw events MUST NOT be consumed as source of truth by product logic.
 
+## Provider Stderr Logging
+
+Provider adapters MAY buffer native stderr for crash diagnostics, but daemon logs MUST stay operationally useful.
+
+Native provider stderr forwarding MUST distinguish signal from known benign provider noise:
+
+- real `ERROR` lines and unknown `WARN` lines SHOULD remain visible as daemon warnings;
+- known benign Codex skill loader warnings about `interface.icon_*` paths MAY be suppressed to debug while preserving the full stderr buffer;
+- known benign Codex MCP process-group cleanup warnings during restart, shutdown, or already-exited subprocess cleanup MAY be suppressed to debug while preserving the full stderr buffer.
+
+Suppressing a provider stderr line MUST NOT remove it from the per-transport stderr buffer used for crash and turn diagnostics.
+
 ## Capability Matrix
 
 Legacy compatibility fields still exposed:

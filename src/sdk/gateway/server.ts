@@ -26,6 +26,8 @@ const log = logger.child("sdk:gateway");
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 7777;
 const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
+const AUTH_WARN_THROTTLE_MS = 60_000;
+const loggedAuthWarnings = new Map<string, number>();
 
 interface ServeLike {
   port: number;
@@ -274,12 +276,36 @@ function authFailureMessage(reason: AuthFailureReason): string {
 
 function logged(request: Request, url: URL, status: number, startedAt: number, response: Response): Response {
   const durationMs = Date.now() - startedAt;
-  const level = status >= 500 ? "error" : status >= 400 ? "warn" : "debug";
+  const level = gatewayLogLevel(request.method, url.pathname, status, Date.now());
   log[level]("gateway request", {
     method: request.method,
     path: url.pathname,
     status,
     durationMs,
+    ...safeGatewayRequestFields(request),
   });
   return response;
+}
+
+export function gatewayLogLevel(method: string, path: string, status: number, now: number): "debug" | "warn" | "error" {
+  if (status >= 500) return "error";
+  if (status < 400) return "debug";
+  if (status !== 401) return "warn";
+
+  const key = `${method}:${path}:${status}`;
+  const previous = loggedAuthWarnings.get(key);
+  if (previous === undefined || now - previous >= AUTH_WARN_THROTTLE_MS) {
+    loggedAuthWarnings.set(key, now);
+    return "warn";
+  }
+  return "debug";
+}
+
+function safeGatewayRequestFields(request: Request): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const origin = request.headers.get("origin");
+  const userAgent = request.headers.get("user-agent");
+  if (origin) fields.origin = origin.slice(0, 200);
+  if (userAgent) fields.userAgent = userAgent.slice(0, 200);
+  return fields;
 }

@@ -7,6 +7,8 @@ const log = logger.child("codex:transport");
 const STDIO_LINE_NEWLINE = "\n";
 const WS_LISTENING_REGEX = /listening on:\s+(ws:\/\/[^\s]+)/i;
 const WS_READY_TIMEOUT_MS = 10_000;
+const BENIGN_CODEX_SKILL_ICON_WARNING = "WARN codex_core_skills::loader: ignoring interface.icon_";
+const BENIGN_CODEX_MCP_CLEANUP_WARNING = "WARN codex_rmcp_client::stdio_server_launcher:";
 
 export type CodexTransportKind = "stdio" | "websocket";
 
@@ -48,6 +50,17 @@ export interface CodexTransport {
   closeChannel(): void;
 }
 
+export function shouldSuppressCodexStderrLine(line: string): boolean {
+  if (line.includes(BENIGN_CODEX_SKILL_ICON_WARNING) && line.includes("icon path must not contain '..'")) {
+    return true;
+  }
+  if (!line.includes(BENIGN_CODEX_MCP_CLEANUP_WARNING)) return false;
+  return (
+    (line.includes("Failed to terminate MCP process group") && line.includes("Operation not permitted")) ||
+    (line.includes("Failed to kill MCP process group") && line.includes("No such process"))
+  );
+}
+
 function attachStderrStreaming(
   spawned: ChildProcess,
   state: { stderr: string; stderrOffset: number },
@@ -65,6 +78,10 @@ function attachStderrStreaming(
       const trimmed = line.trim();
       if (!trimmed) continue;
       if (!/ (WARN|ERROR) /.test(trimmed)) continue;
+      if (shouldSuppressCodexStderrLine(trimmed)) {
+        log.debug("codex stderr suppressed", { pid: spawned.pid, reason: "skill-icon-path" });
+        continue;
+      }
       log.warn("codex stderr", { pid: spawned.pid, line: trimmed.slice(0, 4000) });
     }
     onChunk?.(chunk);
