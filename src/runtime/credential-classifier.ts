@@ -142,7 +142,15 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
   if (input.status && input.status >= 500) {
     return { kind: "network_transient", confidence: "medium", scope: "provider" };
   }
-  if (text.includes("context length") || text.includes("context_limit") || text.includes("maximum context")) {
+  if (
+    text.includes("context length") ||
+    text.includes("context_limit") ||
+    text.includes("maximum context") ||
+    text.includes("context window") ||
+    text.includes("ran out of room") ||
+    text.includes("prompt is too long") ||
+    text.includes("too many tokens")
+  ) {
     return { kind: "context_limit", confidence: "medium", scope: "request" };
   }
   if (input.status === 400 || text.includes("invalid request")) {

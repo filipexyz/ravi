@@ -58,4 +58,17 @@ describe("runtime credential classifier", () => {
     expect(signal.scope).toBe("provider");
     expect(signal.retryableByCredential).toBe(false);
   });
+
+  it("classifies Codex context window exhaustion as a request context limit", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "codex",
+      upstreamProvider: "openai",
+      message:
+        "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",
+    });
+
+    expect(signal.kind).toBe("context_limit");
+    expect(signal.scope).toBe("request");
+    expect(signal.retryableByCredential).toBe(false);
+  });
 });

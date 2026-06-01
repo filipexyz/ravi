@@ -1,5 +1,5 @@
 import { calculateCost } from "../constants.js";
-import { backfillProviderSessionId, saveMessage } from "../db.js";
+import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
 import { nats } from "../nats.js";
@@ -9,6 +9,7 @@ import {
   deleteSession,
   getAnnounceCompaction,
   getSession,
+  resetSession,
   updateProviderSession,
   updateRuntimeProviderState,
   updateTokens,
@@ -19,6 +20,11 @@ import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-tra
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
+import {
+  buildRuntimeContextRecoveryPrompt,
+  classifyRuntimeContextWindowFailure,
+  RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+} from "./context-window-recovery.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
 import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
 import { refreshRuntimeCredential } from "./credential-refresh.js";
@@ -28,6 +34,7 @@ import {
   recordRuntimeCredentialSuccess,
 } from "./credential-store.js";
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
+import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
   stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
@@ -1625,6 +1632,106 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               kind: credentialFailureSignal.kind,
             });
           }
+        }
+
+        const contextWindowFailure = classifyRuntimeContextWindowFailure({
+          runtimeProvider: runtimeSession.provider,
+          error: event.error,
+          rawEvent: event.rawEvent,
+        });
+        if (contextWindowFailure) {
+          const history = getRecentHistory(sessionName, 48);
+          const recovery = buildRuntimeContextRecoveryPrompt({
+            sessionName,
+            runtimeProvider: runtimeSession.provider,
+            model,
+            error: event.error,
+            history,
+          });
+          const resetApplied = resetSession(session.sessionKey);
+          session.sdkSessionId = undefined;
+          session.providerSessionId = undefined;
+          session.runtimeProvider = undefined;
+          session.runtimeSessionDisplayId = undefined;
+          session.runtimeSessionParams = undefined;
+          revokeAgentRuntimeContextsForSession(session.sessionKey, {
+            reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+          });
+          const recoveredMessage = createQueuedRuntimeUserMessage({
+            prompt: recovery.prompt,
+            deliveryBarrier: "after_tool",
+            deliveryBarrierSource: "inferred",
+            source: streaming.currentSource,
+            taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
+            _agentId: agent.id,
+            _runtimeProviderId: runtimeSession.provider,
+          });
+          stashedMessages.set(sessionName, [recoveredMessage]);
+          restartStashedReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+
+          log.warn("Recovering runtime after context window exhaustion", {
+            runId,
+            sessionName,
+            provider: runtimeSession.provider,
+            model,
+            matched: contextWindowFailure.matched,
+            confidence: contextWindowFailure.confidence,
+            resetApplied,
+            historyMessages: history.length,
+            recoveryPromptChars: recovery.chars,
+          });
+          recordTerminalTraceOnce({
+            status: "failed",
+            eventType: "turn.failed",
+            abortReason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+            error: truncateLogDetail(event.error),
+            payloadJson: {
+              recoverable: event.recoverable ?? true,
+              autoRecovered: true,
+              matched: contextWindowFailure.matched,
+              confidence: contextWindowFailure.confidence,
+              failureDetails: formatRuntimeFailureDetails(event) ?? null,
+              rawEvent: rawEventSummary ?? null,
+              metadata: event.metadata ?? null,
+            },
+          });
+          recordTraceEvent({
+            turnId: streaming.currentTraceTurnId,
+            provider: runtimeSession.provider,
+            model,
+            eventType: "session.context_window_exhausted",
+            eventGroup: "session",
+            status: "recovering",
+            source: streaming.currentSource,
+            payloadJson: {
+              reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+              resetApplied,
+              matched: contextWindowFailure.matched,
+              confidence: contextWindowFailure.confidence,
+              historyMessages: history.length,
+              recoveryPromptChars: recovery.chars,
+              recoveryMessageCount: recovery.messageCount,
+              recoveryTruncated: recovery.truncated,
+              currentTurnHadToolStarted,
+            },
+          });
+          updateRuntimeLiveState(sessionName, {
+            activity: "thinking",
+            summary: "recovering context",
+            agentId: agent.id,
+            runId,
+            provider: runtimeSession.provider,
+            model,
+            source: streaming.currentSource,
+          });
+          streaming.currentTurnToolStarted = false;
+          streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+          streaming.interrupted = true;
+          clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+          signalTurnComplete();
+          clearTraceTurnState();
+          streaming.done = true;
+          break;
         }
 
         await emitRuntimeEvent({

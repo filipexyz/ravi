@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { saveMessage } from "../db.js";
 import {
   getOrCreateSession,
   getSession,
@@ -19,6 +20,7 @@ import {
   markRuntimeCredentialAttemptStarted,
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
+import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
@@ -1074,6 +1076,91 @@ describe("runtime session trace instrumentation", () => {
       .get("rcred_retry_before_tool") as { status: string; completed_at: number | null } | undefined;
     expect(attempt?.status).toBe("failed");
     expect(typeof attempt?.completed_at).toBe("number");
+  });
+
+  it("resets provider state and restarts with a recovery prompt after context window exhaustion", async () => {
+    saveMessage(SESSION_NAME, "user", "abre a issue 123 e investiga", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      sourceMessageId: "wamid-old",
+    });
+    saveMessage(SESSION_NAME, "assistant", "Vou investigar e editar os specs.", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+    });
+    saveMessage(SESSION_NAME, "user", "continua de onde parou", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      sourceMessageId: "wamid-latest",
+    });
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "thread-old",
+      runtimeSessionDisplayId: "thread-old",
+      runtimeSessionParams: { sessionId: "thread-old" },
+    });
+
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "continua de onde parou",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-context-limit");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error:
+            "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",
+          recoverable: false,
+          rawEvent: { type: "turn.failed", result: "context window exhausted" },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON }]);
+
+    const stashed = stashedMessages.get(SESSION_NAME);
+    expect(stashed).toHaveLength(1);
+    expect(stashed?.[0]?.message.content).toContain("# Runtime Context Recovery");
+    expect(stashed?.[0]?.message.content).toContain("Latest User Request");
+    expect(stashed?.[0]?.message.content).toContain("continua de onde parou");
+    expect(stashed?.[0]?.message.content).not.toContain("Codex ran out of room");
+
+    const persisted = getSession(SESSION_KEY);
+    expect(persisted?.providerSessionId).toBeUndefined();
+    expect(persisted?.runtimeProvider).toBeUndefined();
+    expect(persisted?.runtimeSessionParams).toBeUndefined();
+
+    const eventTypes = listSessionEvents(SESSION_KEY).map((event) => event.eventType);
+    expect(eventTypes).toContain("turn.failed");
+    expect(eventTypes).toContain("session.context_window_exhausted");
+    expect(getSessionTurn("turn-context-limit")?.status).toBe("failed");
   });
 
   it("does not auto-replay retryable credential failures after a tool started", async () => {
