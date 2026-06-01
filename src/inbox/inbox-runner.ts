@@ -20,6 +20,7 @@ import { ConsoleApiClient, refreshCredentialsForStore } from "../cloud-auth/clie
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
+import { RaviMailClient } from "../mail/client.js";
 import { publish } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { watchEventFromInboxPayload } from "../watch/events.js";
@@ -42,6 +43,7 @@ import {
   updateSubscriptionRemoteId,
   upsertDeliveredItem,
 } from "./inbox-db.js";
+import { enrichMailMessageReceivedPayload, withMailEnrichmentFailure } from "./mail-enrichment.js";
 import { INBOX_NATS_SUBJECT, type ConsoleInboxItem, type InboxNatsPayload } from "./types.js";
 
 const log = logger.child("inbox:runner");
@@ -58,6 +60,8 @@ const ERROR_BACKOFF_INITIAL_MS = 5_000;
 const ERROR_BACKOFF_MAX_MS = 5 * 60_000;
 const PAUSED_RECHECK_MS = 60_000;
 const POLL_BATCH_LIMIT = 25;
+const MAIL_ENRICHMENT_ATTEMPTS = 5;
+const MAIL_ENRICHMENT_INITIAL_DELAY_MS = 500;
 
 interface RunnerOptions {
   intervalMs?: number;
@@ -207,12 +211,28 @@ class InboxRunner {
       }
 
       const generation = payload.watermark.generation;
-      const subscriptionCursor = payload.subscription?.lastDeliveredSequence ?? null;
+      let activeSubscription = payload.subscription;
 
-      if (!state.remoteId && payload.subscription?.id) {
-        state.remoteId = payload.subscription.id;
+      if (state.remoteId && !activeSubscription) {
+        log.info("Inbox remote subscription missing; recreating global subscription", {
+          consoleUrl: row.consoleUrl,
+          previousSubscriptionId: state.remoteId,
+        });
+        const { subscription } = await this.withAutoRefresh(client, credentials, (token) =>
+          upsertGlobalInboxSubscription(client, token, {
+            installationName: credentials.installationId,
+          }),
+        );
+        activeSubscription = subscription ?? null;
+        state.remoteId = activeSubscription?.id ?? null;
+        state.lastEtag = null;
+        if (state.remoteId) updateSubscriptionRemoteId(row.id, state.remoteId);
+      }
+
+      if (!state.remoteId && activeSubscription?.id) {
+        state.remoteId = activeSubscription.id;
         updateSubscriptionRemoteId(row.id, state.remoteId);
-      } else if (state.remoteId && payload.subscription?.id && payload.subscription.id !== state.remoteId) {
+      } else if (state.remoteId && activeSubscription?.id && activeSubscription.id !== state.remoteId) {
         // Server returned a different active subscription than the one
         // we have locally. Happens after a CLI re-login that rotated the
         // installation; the previous subscription is pinned to the old
@@ -220,9 +240,9 @@ class InboxRunner {
         log.info("Inbox subscription drift detected", {
           consoleUrl: row.consoleUrl,
           previousSubscriptionId: state.remoteId,
-          nextSubscriptionId: payload.subscription.id,
+          nextSubscriptionId: activeSubscription.id,
         });
-        state.remoteId = payload.subscription.id;
+        state.remoteId = activeSubscription.id;
         state.lastEtag = null;
         updateSubscriptionRemoteId(row.id, state.remoteId);
         markSubscriptionPolled(row.id, {
@@ -232,13 +252,17 @@ class InboxRunner {
         });
       }
 
+      const subscriptionCursor = activeSubscription?.lastDeliveredSequence ?? null;
+      const hasPendingRemoteItems =
+        subscriptionCursor !== null && subscriptionCursor < payload.watermark.latestSequence;
+
       // Adopt cursor when Console reports we are ahead of our local record.
       const cursorUpdate =
         subscriptionCursor !== null && subscriptionCursor > (row.lastSequence ?? 0)
           ? { lastSequence: subscriptionCursor }
           : {};
 
-      if (!payload.changed) {
+      if (!payload.changed && !hasPendingRemoteItems) {
         // Caught up: it's safe to mark generation locally because there
         // is nothing pending to deliver.
         markSubscriptionPolled(row.id, {
@@ -273,7 +297,8 @@ class InboxRunner {
         status: "delivered";
         leaseId?: string;
       }> = [];
-      let maxSequence = subscriptionCursor ?? row.lastSequence ?? 0;
+      const baseSequence = subscriptionCursor ?? row.lastSequence ?? 0;
+      const deliveryResults: Array<{ sequence: number; delivered: boolean }> = [];
 
       for (const item of poll.items) {
         const handled = await this.handleItem({
@@ -283,6 +308,8 @@ class InboxRunner {
           remoteSubscriptionId: state.remoteId ?? poll.subscription.id,
           item,
           pollId: poll.pollId,
+          client,
+          credentials,
         });
         if (handled.delivered) {
           acks.push({
@@ -291,7 +318,7 @@ class InboxRunner {
             ...(item.lease?.id ? { leaseId: item.lease.id } : {}),
           });
         }
-        if (item.sequence > maxSequence) maxSequence = item.sequence;
+        deliveryResults.push({ sequence: item.sequence, delivered: handled.delivered });
       }
 
       if (acks.length > 0) {
@@ -312,9 +339,10 @@ class InboxRunner {
         }
       }
 
+      const deliveryProgress = computeInboxDeliveryProgress(baseSequence, deliveryResults);
       markSubscriptionPolled(row.id, {
-        generation,
-        lastSequence: Math.max(maxSequence, row.lastSequence ?? 0),
+        ...(deliveryProgress.hadDeliveryFailure ? {} : { generation }),
+        lastSequence: Math.max(deliveryProgress.lastSequence, row.lastSequence ?? 0),
         success: true,
         status: "active",
       });
@@ -337,6 +365,8 @@ class InboxRunner {
     remoteSubscriptionId: string;
     item: ConsoleInboxItem;
     pollId: string;
+    client: ConsoleApiClient;
+    credentials: CloudCredentials;
   }): Promise<{ delivered: boolean }> {
     const localDeliveredAt = new Date().toISOString();
     const natsPayload: InboxNatsPayload = {
@@ -368,7 +398,7 @@ class InboxRunner {
       createdAt: input.item.createdAt,
     };
 
-    const natsPayloadJson = JSON.stringify(natsPayload);
+    const enrichedNatsPayload = await this.enrichLocalPayload(input, natsPayload);
 
     // 1. Persist locally before publish so a crash leaves a durable replay row.
     const { row: localItem, created } = upsertDeliveredItem({
@@ -382,7 +412,7 @@ class InboxRunner {
       severity: input.item.severity,
       dedupeKey: input.item.dedupeKey,
       natsSubject: INBOX_NATS_SUBJECT,
-      natsPayloadJson,
+      natsPayloadJson: JSON.stringify(enrichedNatsPayload),
       deliveredAt: null,
     });
 
@@ -399,11 +429,11 @@ class InboxRunner {
       return { delivered: true };
     }
 
-    const watchEvent = watchEventFromInboxPayload(natsPayload, { inboxItemId: localItem.id });
+    const watchEvent = watchEventFromInboxPayload(enrichedNatsPayload, { inboxItemId: localItem.id });
 
     // 2. Publish to NATS.
     try {
-      await publish(INBOX_NATS_SUBJECT, natsPayload as unknown as Record<string, unknown>);
+      await publish(INBOX_NATS_SUBJECT, enrichedNatsPayload as unknown as Record<string, unknown>);
       if (watchEvent) {
         await publish(watchEvent.subject, watchEvent as unknown as Record<string, unknown>);
       }
@@ -418,6 +448,40 @@ class InboxRunner {
     // 3. Mark delivered locally so we can ack to Console.
     markItemDelivered(localItem.id, Date.now());
     return { delivered: true };
+  }
+
+  private async enrichLocalPayload(
+    input: {
+      item: ConsoleInboxItem;
+      client: ConsoleApiClient;
+      credentials: CloudCredentials;
+    },
+    natsPayload: InboxNatsPayload,
+  ): Promise<InboxNatsPayload> {
+    if (input.item.eventType !== "mail.message.received") return natsPayload;
+    const mailClient = new RaviMailClient(input.client);
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= MAIL_ENRICHMENT_ATTEMPTS; attempt += 1) {
+      try {
+        return await enrichMailMessageReceivedPayload(natsPayload, (messageId, payloadKind) =>
+          this.withAutoRefresh(input.client, input.credentials, (token) =>
+            mailClient.readMessage(token, messageId, { payloadKind }),
+          ),
+        );
+      } catch (error) {
+        lastError = error;
+        if (attempt < MAIL_ENRICHMENT_ATTEMPTS) {
+          await sleep(MAIL_ENRICHMENT_INITIAL_DELAY_MS * 2 ** (attempt - 1));
+        }
+      }
+    }
+
+    log.warn("Mail inbox payload enrichment failed; publishing metadata-only payload", {
+      itemId: input.item.itemId,
+      attempts: MAIL_ENRICHMENT_ATTEMPTS,
+      error: errMessage(lastError),
+    });
+    return withMailEnrichmentFailure(natsPayload, "mail_read_failed");
   }
 
   private async withAutoRefresh<T>(
@@ -486,6 +550,28 @@ function hasInboxScopes(credentials: CloudCredentials): boolean {
 
 function errMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function computeInboxDeliveryProgress(
+  baseSequence: number,
+  items: Array<{ sequence: number; delivered: boolean }>,
+): { lastSequence: number; hadDeliveryFailure: boolean } {
+  let lastSequence = baseSequence;
+  let blockedByFailure = false;
+  for (const item of items) {
+    if (!item.delivered) {
+      blockedByFailure = true;
+      continue;
+    }
+    if (!blockedByFailure && item.sequence > lastSequence) {
+      lastSequence = item.sequence;
+    }
+  }
+  return { lastSequence, hadDeliveryFailure: blockedByFailure };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ----------------------------------------------------------------------------

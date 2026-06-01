@@ -148,9 +148,25 @@ including:
 - `createdAt`
 
 Console inbox items SHOULD carry watch event payloads. Any connector-specific
-payload with sensitive content MUST stay restricted: no raw MIME, plaintext
-attachments, provider access tokens, or full unredacted message bodies should be
-stored or published through the local bridge.
+payload with sensitive content MUST stay restricted by the Console API response:
+no raw MIME, plaintext attachments, provider access tokens, or full unredacted
+message bodies should be returned as ordinary remote inbox metadata.
+
+Ravi Mail is the local exception for operator-owned automations. When a delivered
+`mail.message.received` item references a message id, the local bridge MAY enrich
+the local NATS payload by performing explicit authorized Console Mail `read`
+calls for `subject`, `address_summary`, and `parsed_body` before local
+persistence and publish. That enrichment MUST remain local to the user's runtime:
+Console still owns auth/audit/decryption, the remote inbox item stays metadata
+only, and OSS Ravi MUST NOT implement mail selection or redaction policy.
+
+When mail enrichment succeeds, the NATS JSON MUST include the complete parsed
+email content at `payload.mail.content.text` and `payload.mail.content.html`
+without truncation. It SHOULD also expose `payload.mail.subject`,
+`payload.mail.addressSummary`, `payload.mail.bodyText`, and
+`payload.mail.bodyHtml` for trigger prompts. Because the durable mirror stores
+the exact NATS payload for replay, this intentionally stores the authorized
+plaintext mail content in local SQLite for that user.
 
 For GitHub/source-control watches, `category` SHOULD be `source_control`.
 `source` and `target` SHOULD preserve the safe provider provenance defined in

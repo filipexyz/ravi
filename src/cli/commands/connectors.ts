@@ -31,6 +31,8 @@ export class ConnectorsCommands {
   @CliOnly()
   async connect(
     @Arg("provider", { description: "Provider id (e.g. google)" }) provider: string,
+    @Option({ flags: "--project <id-or-slug>", description: "Ravi Cloud project id or slug for the connector" })
+    project?: string,
     @Option({ flags: "--scope <scope>", description: "Extra OAuth scope; repeat for multiple" }) scope?: string,
     @Option({ flags: "--name <name>", description: "Display name for the connector" }) name?: string,
     @Option({ flags: "--no-open", description: "Do not open the browser automatically" }) noOpen?: boolean,
@@ -43,7 +45,7 @@ export class ConnectorsCommands {
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined;
-      const start = await startConnect({ provider, scopes, displayName: name });
+      const start = await startConnect({ provider, project, scopes, displayName: name });
       if (asJson) {
         console.log(JSON.stringify({ status: "started", ...start }, null, 2));
       } else {
@@ -90,13 +92,14 @@ export class ConnectorsCommands {
   @CliOnly()
   async list(
     @Option({ flags: "--provider <provider>", description: "Filter by provider id" }) provider?: string,
+    @Option({ flags: "--project <id>", description: "Filter by Ravi Cloud project id" }) project?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limitOpt?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching connectors to skip (default: 0)" })
     offsetOpt?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runConnectorCommand(asJson, async () => {
-      const all = await listConnectors({ provider });
+      const all = await listConnectors({ provider, project });
       const limit = Math.min(Math.max(Number.parseInt(limitOpt ?? "", 10) || 50, 1), 500);
       const offset = Math.max(Number.parseInt(offsetOpt ?? "", 10) || 0, 0);
       const connections = all.slice(offset, offset + limit);
@@ -176,12 +179,13 @@ async function pollUntilTerminal(pendingId: string) {
 function printConnectorSummary(conn: ConnectorListItem): void {
   const flag = conn.requiresReauth ? " [reauth required]" : "";
   console.log(`- ${conn.id}  ${conn.provider}  ${conn.status}${flag}`);
-  console.log(`    ${conn.displayName}`);
+  console.log(`    ${conn.displayName} · project ${conn.projectId}`);
 }
 
 function printConnectorDetail(conn: ConnectorDetail): void {
   console.log(`Connector ${conn.id}`);
   console.log(`  Provider: ${conn.provider}`);
+  console.log(`  Project: ${conn.projectId}`);
   console.log(`  Display: ${conn.displayName}`);
   console.log(`  Status: ${conn.status}${conn.requiresReauth ? " (reauth required)" : ""}`);
   console.log(`  External account: ${conn.externalAccountLogin ?? "(unknown)"}`);

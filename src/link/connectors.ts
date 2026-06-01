@@ -24,6 +24,7 @@ export interface ConnectorHelperDeps {
 
 export interface ConnectorListItem {
   id: string;
+  projectId: string;
   provider: string;
   displayName: string;
   status: string;
@@ -60,6 +61,7 @@ export interface ExecResult {
 
 export interface AuthenticatedLinkContext {
   link: LinkApiClient;
+  consoleClient: ConsoleApiClient;
   accessToken: string;
 }
 
@@ -79,16 +81,18 @@ async function authenticate(deps: ConnectorHelperDeps): Promise<AuthenticatedLin
     delete: () => remove(),
   });
   const link = deps.link ?? new LinkApiClient();
-  return { link, accessToken: fresh.accessToken };
+  return { link, consoleClient, accessToken: fresh.accessToken };
 }
 
 export async function startConnect(
-  options: { provider: string; scopes?: string[]; displayName?: string },
+  options: { provider: string; project?: string; scopes?: string[]; displayName?: string },
   deps: ConnectorHelperDeps = {},
 ): Promise<ConnectStartResult> {
   const ctx = await authenticate(deps);
+  const projectId = await resolveConnectorProjectId(ctx, options.project);
   return ctx.link.request<ConnectStartResult>("POST", "/cli/connect/start", ctx.accessToken, {
     provider: options.provider,
+    projectId,
     scopes: options.scopes,
     displayName: options.displayName,
   });
@@ -107,13 +111,15 @@ export async function getConnectStatus(
 }
 
 export async function listConnectors(
-  options: { provider?: string } = {},
+  options: { provider?: string; project?: string } = {},
   deps: ConnectorHelperDeps = {},
 ): Promise<ConnectorListItem[]> {
   const ctx = await authenticate(deps);
-  const path = options.provider
-    ? `/cli/connect/list?provider=${encodeURIComponent(options.provider)}`
-    : "/cli/connect/list";
+  const params = new URLSearchParams();
+  if (options.provider) params.set("provider", options.provider);
+  if (options.project) params.set("project", options.project);
+  const query = params.toString();
+  const path = query ? `/cli/connect/list?${query}` : "/cli/connect/list";
   const result = await ctx.link.request<{ connections: ConnectorListItem[] }>("GET", path, ctx.accessToken);
   return result.connections;
 }
@@ -152,4 +158,81 @@ export async function execCapability(
     },
     options.stepUpToken ? { headers: { "X-Ravi-Step-Up": options.stepUpToken } } : {},
   );
+}
+
+async function resolveConnectorProjectId(
+  ctx: AuthenticatedLinkContext,
+  projectRef: string | undefined,
+): Promise<string> {
+  const projects = await listConsoleProjects(ctx);
+  if (projects.length === 0) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      "No Ravi Cloud projects found. Create one with `ravi cloud projects create <slug>` before connecting providers.",
+    );
+  }
+
+  const ref = projectRef?.trim();
+  if (!ref) {
+    if (projects.length === 1) return requireProjectId(projects[0]!);
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      `Connectors are project-scoped. Pass --project <id-or-slug>. Available projects: ${projects
+        .map(formatProjectRef)
+        .join(", ")}.`,
+    );
+  }
+
+  const match = projects.find((project) => project.id === ref || project.slug === ref);
+  if (!match) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      `Project not found or inaccessible: ${ref}. Available projects: ${projects.map(formatProjectRef).join(", ")}.`,
+    );
+  }
+  return requireProjectId(match);
+}
+
+interface ConnectorProjectRef {
+  id: string | null;
+  slug: string | null;
+  name: string | null;
+}
+
+async function listConsoleProjects(ctx: AuthenticatedLinkContext): Promise<ConnectorProjectRef[]> {
+  const payload = await ctx.consoleClient.requestJson<unknown>("GET", "/api/cli/projects", undefined, ctx.accessToken);
+  const envelope = objectValue(payload);
+  const records: unknown[] = Array.isArray(payload)
+    ? payload
+    : Array.isArray(envelope?.projects)
+      ? envelope.projects
+      : Array.isArray(envelope?.items)
+        ? envelope.items
+        : [];
+  return records.map((record) => {
+    const object = objectValue(record) ?? {};
+    return {
+      id: stringValue(object.id),
+      slug: stringValue(object.slug),
+      name: stringValue(object.name),
+    };
+  });
+}
+
+function requireProjectId(project: ConnectorProjectRef): string {
+  if (project.id) return project.id;
+  throw new CloudAuthError("PAYLOAD_INVALID", "Console project payload did not include a project id.");
+}
+
+function formatProjectRef(project: ConnectorProjectRef): string {
+  const label = project.slug ?? project.name ?? project.id ?? "(unnamed)";
+  return project.id && project.id !== label ? `${label} (${project.id})` : label;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
