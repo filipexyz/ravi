@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
-import { MailCommands, MailDomainsCommands, MailMessagesCommands } from "./mail.js";
+import { MailCommands, MailDomainsCommands, MailMailboxesCommands, MailMessagesCommands } from "./mail.js";
 
 describe("mail CLI commands", () => {
   it("registers a managed domain through mail domains create", async () => {
@@ -81,6 +81,29 @@ describe("mail CLI commands", () => {
     const { output } = await captureConsole(() => command.read("msg_1", undefined, undefined, true));
 
     expect(output).toContain("explicit body");
+  });
+
+  it("disables mailboxes through mail mailboxes disable", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return {
+        mailbox: { address: "agent@ravi.bot", status: "disabled" },
+        disabledRoutes: 2,
+        providerSynced: true,
+      };
+    });
+    const command = new MailMailboxesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.disable("agent@ravi.bot", undefined, true));
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([
+      { method: "POST", path: "/api/cli/mail/mailboxes/agent%40ravi.bot/disable", body: undefined },
+    ]);
+    expect(payload.mailbox.status).toBe("disabled");
+    expect(payload.disabledRoutes).toBe(2);
+    expect(payload.providerSynced).toBe(true);
   });
 
   it("sends without from unless --from is provided", async () => {

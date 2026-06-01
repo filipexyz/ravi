@@ -6,6 +6,7 @@ import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } f
 import {
   createMailDomain,
   createMailbox,
+  disableMailbox,
   listMailDomains,
   listMailboxes,
   listMessages,
@@ -136,6 +137,26 @@ export class MailMailboxesCommands {
     return runMailCommand(asJson, async () => {
       const result = await showMailbox(mailbox, { console: consoleUrl }, this.deps);
       printPayload(result, asJson, () => printRecord("Mailbox", result));
+      return result;
+    });
+  }
+
+  @Command({ name: "disable", description: "Disable a managed Ravi Mail mailbox and its active routes" })
+  @CliOnly()
+  async disable(
+    @Arg("mailbox", { description: "Mailbox id or address" }) mailbox: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runMailCommand(asJson, async () => {
+      const result = await disableMailbox(
+        {
+          mailbox,
+          console: consoleUrl,
+        },
+        this.deps,
+      );
+      printPayload(result, asJson, () => printMailboxDisable(result));
       return result;
     });
   }
@@ -317,6 +338,19 @@ function printItems(title: string, payload: Record<string, unknown>, preferredFi
 function printRecord(title: string, payload: Record<string, unknown>): void {
   const record = extractRecord(payload);
   console.log(`${title}: ${formatSummary(record, ["address", "id", "status", "subject"])}`);
+}
+
+function printMailboxDisable(payload: Record<string, unknown>): void {
+  const record = extractRecord(payload);
+  console.log(`Mailbox: ${formatSummary(record, ["address", "id", "status"])}`);
+  const disabledRoutes = payload.disabledRoutes;
+  if (typeof disabledRoutes === "number") {
+    console.log(`Disabled routes: ${disabledRoutes}`);
+  } else if (Array.isArray(disabledRoutes)) {
+    console.log(`Disabled routes: ${disabledRoutes.length}`);
+  }
+  const providerSynced = payload.providerSynced;
+  if (typeof providerSynced === "boolean") console.log(`Provider synced: ${providerSynced ? "yes" : "no"}`);
 }
 
 function printReadMessage(payload: Record<string, unknown>): void {
