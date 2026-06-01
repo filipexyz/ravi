@@ -13,7 +13,7 @@ import { RaviBot } from "./bot.js";
 import { createGateway } from "./gateway.js";
 import { OmniSender, OmniConsumer } from "./omni/index.js";
 import { loadConfig } from "./utils/config.js";
-import { connectNats, closeNats } from "./nats.js";
+import { connectNats, closeNats, nats } from "./nats.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import {
@@ -492,21 +492,47 @@ async function notifyRestartReason() {
       if (taskId) {
         const task = dbGetTask(taskId);
         if (!task) {
-          log.info("Skipping zombie task session resume", {
+          log.info("Aborting zombie task session - task not found", {
             sessionName: snapshot.sessionName,
             taskId,
             reason: "task_not_found",
           });
+          try {
+            await nats.emit("ravi.session.abort", {
+              sessionName: snapshot.sessionName,
+              reason: "daemon_restart_zombie_cleanup",
+              source: "daemon_startup",
+            } as unknown as Record<string, unknown>);
+          } catch (err) {
+            log.warn("Failed to emit session abort event for zombie cleanup", {
+              sessionName: snapshot.sessionName,
+              taskId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
           continue;
         }
         const terminalStatuses = new Set(["done", "failed", "blocked"]);
         if (terminalStatuses.has(task.status)) {
-          log.info("Skipping zombie task session resume", {
+          log.info("Aborting zombie task session - task terminal", {
             sessionName: snapshot.sessionName,
             taskId,
             taskStatus: task.status,
             reason: "task_terminal",
           });
+          try {
+            await nats.emit("ravi.session.abort", {
+              sessionName: snapshot.sessionName,
+              reason: "daemon_restart_task_terminal",
+              source: "daemon_startup",
+            } as unknown as Record<string, unknown>);
+          } catch (err) {
+            log.warn("Failed to emit session abort event for zombie cleanup", {
+              sessionName: snapshot.sessionName,
+              taskId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
           continue;
         }
       }
@@ -516,11 +542,11 @@ async function notifyRestartReason() {
 }
 
 function isTaskWorkSession(sessionName: string): boolean {
-  return sessionName.includes("-work") && sessionName.startsWith("task-");
+  return /^task-.+-work$/.test(sessionName);
 }
 
 function extractTaskIdFromWorkSession(sessionName: string): string | null {
-  const match = sessionName.match(/^task-(.+?)-work$/);
+  const match = sessionName.match(/^task-([a-zA-Z0-9_-]+)-work$/);
   return match ? match[1] : null;
 }
 

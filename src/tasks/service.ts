@@ -3042,6 +3042,10 @@ export async function completeTask(
   };
 }
 
+function sanitizeTaskIdForNatsTopic(taskId: string): string {
+  return taskId.replace(/[*>]/g, "_");
+}
+
 export async function deleteTask(taskId: string): Promise<boolean> {
   const existingTask = dbGetTask(taskId);
   if (!existingTask) return false;
@@ -3050,7 +3054,8 @@ export async function deleteTask(taskId: string): Promise<boolean> {
   if (deleted) {
     const sessionName = `task-${taskId}-work`;
     try {
-      await nats.emit(`ravi.task.${taskId}.event`, {
+      const safeTaskId = sanitizeTaskIdForNatsTopic(taskId);
+      await nats.emit(`ravi.task.${safeTaskId}.event`, {
         type: "task.deleted",
         taskId,
         assigneeSessionName: sessionName,

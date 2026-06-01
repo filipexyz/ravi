@@ -31,6 +31,19 @@ interface RuntimeTaskEventPayload {
   };
 }
 
+/**
+ * Task runtime release events trigger session abort (Layer B: event-driven cleanup).
+ *
+ * Three-layer ephemeral session cleanup strategy (Issue #71):
+ * - Layer A (Sync): CLI handlers call /api/v1/sessions/reset immediately after task mutation
+ * - Layer B (Event-driven): Task deletion emits NATS event to abort zombie sessions in daemon runtime
+ * - Layer C (Async): Daemon startup validates task existence/status before resuming sessions
+ *
+ * All three layers are necessary because:
+ * - Layer A fails if gateway is offline → Layer B activates
+ * - Layer B fails if NATS is offline → Layer C activates on next restart
+ * - Layer C ensures cleanup even if both earlier layers fail
+ */
 const TASK_RUNTIME_RELEASE_EVENTS = new Set(["task.done", "task.failed", "task.blocked", "task.deleted"]);
 
 export class RuntimeHostSubscriptions {

@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { logger } from "../../utils/logger.js";
 import {
   decodeListCursor,
   encodeListCursor,
@@ -164,22 +165,38 @@ async function releaseTaskSessionSlot(taskId: string): Promise<void> {
   const gatewayUrl = (ctx?.["RAVI_GATEWAY_URL"] as string | undefined) || "http://127.0.0.1:7777";
   const contextKey = ctx?.["RAVI_CONTEXT_KEY"] as string | undefined;
 
+  const timeoutMs = 5000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    await fetch(`${gatewayUrl}/api/v1/sessions/reset`, {
+    const response = await fetch(`${gatewayUrl}/api/v1/sessions/reset`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(contextKey ? { "X-Ravi-Context-Key": contextKey } : {}),
       },
       body: JSON.stringify({ name: sessionName }),
+      signal: controller.signal,
     });
+    await response.text();
   } catch (err) {
-    const log = (await import("../../utils/logger.js")).logger.child("tasks.slot-release");
-    log.warn("Sync slot release failed; NATS event fallback remains active", {
-      taskId,
-      sessionName,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    const log = logger.child("tasks.slot-release");
+    if (err instanceof Error && err.name === "AbortError") {
+      log.warn("Sync slot release timed out; NATS event fallback remains active", {
+        taskId,
+        sessionName,
+        timeoutMs,
+      });
+    } else {
+      log.warn("Sync slot release failed; NATS event fallback remains active", {
+        taskId,
+        sessionName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
