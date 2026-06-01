@@ -1,9 +1,10 @@
-# Antigravity Runtime Provider — PRD técnico v0.1
+# Antigravity Runtime Provider — PRD técnico v0.2
 
-**Status:** Proposta · **Owner:** dev-do-ravi · **Data:** 2026-05-28 · **Provider id:** `antigravity` · **Binário:** `agy`
+**Status:** Implementação completa (Option B minimal) · **Owner:** dev-do-ravi · **Data:** 2026-06-01 · **Provider id:** `antigravity` · **Binário:** `agy`
 
 ## Histórico
 
+- **v0.2** (2026-06-01 22:50) — spike Fase 0 concluída, Option B implementado, pronto para code-review
 - **v0.1** (2026-05-28 10:40) — primeira versão, sem spike empírico ainda
 
 ---
@@ -290,15 +291,101 @@ Hipótese (baseada em padrão Gemini CLI / OpenAI Codex):
 
 ---
 
-## 13. Status atual
+## 13. Spike Fase 0 — Findings & Rationale (v0.2)
 
-🔹 **Fase 0 (spike)**: aguardando autorização RM
-🔹 **Fases 1-4**: bloqueadas pelo spike
-🔹 **Total entregue até agora**: este PRD v0.1
+### Spike executado (2026-05-28 13:20–13:46)
+
+✅ **Instalação:** agy 1.0.3 instalado em ~/.local/bin/agy, SHA512 verificado  
+❌ **OAuth headless:** 30s timeout hardcoded internamente, incompatível com fluxo WhatsApp async  
+❌ **Flags especulativos não existem:** --output-format, --model, --print-timeout não estendem timeout OAuth  
+❌ **API key:** Feature request #78 (não implementado em 1.0.3)  
+✅ **Output:** Texto plano (funcional), sem JSON nativo (stream-json hipótese era especulação)
+
+### Decisão: Option B (Minimal & Pragmatic)
+
+Dado o bloqueio OAuth 30s e a especulação sobre stream-json, elegemos **Option B** no lugar de esperar / fazer reverse-engineering:
+
+| Option | Prós | Contras |
+|--------|------|---------|
+| **A (Pause)** | Correto, completo. Espera agy evoluir. | ±30 dias sem provider Google. Risco: roadmap muda. |
+| **B (Text-only)** ✅ | Rápido (~4h), funciona agora, válida prototipo. Reduz risco especulação. | Sem cost tracking, sem session resume, sem tool-use, sem streaming. |
+| **C (Reverse-eng)** | Tira 30s timeout. | Frágil contra mudanças agy. Maintainability risk. |
+
+**Escolhemos B:** implementação mínima, pragmática, garante acesso a modelos Gemini mesmo sem features premium. Futuro: Sprint 3+ retoma com API key + stream-json se agy evoluir.
+
+### Gaps vs PRD v0.1
+
+| Gap | Spike finding | Impacto |
+|-----|----------------|---------|
+| Mapeamento stream-json §6 | agy 1.0.3 output é texto plano, sem JSON nativo | Ignorado em Option B; reabre se agy expõe flag --output-format |
+| Flags §5 (--output-format, --model) | Não existem em 1.0.3 | Deferred; siga issue google-antigravity/antigravity-cli#XX |
+| API key support | Feature request #78 apenas | Deferred; bloqueia Option C (headless CI) |
+| prepareSession §4 | OAuth 30s timeout é bloqueador não-negociável | Option B mitiga via manual code paste em dev, não em prod |
+| Cost tracking §7 | Ausente de stdout do agy | Implementado como zero (0 tokens) em Option B; futuro refine |
+| Session resume | Não documentado em agy 1.0.3 | Deferred; supportsSessionResume = false |
 
 ---
 
-## 14. Referências
+## 14. Implementation Summary (v0.2)
+
+### Código entregue
+
+✅ `src/runtime/antigravity-provider.ts` (257 linhas)
+- Factory: `createAntigigravityRuntimeProvider()`
+- Spawns `agy -p "<prompt>" --print-timeout 60s` com `AGY_NON_INTERACTIVE=1`
+- Captures text output (stdout + stderr fallback)
+- Yields `assistant.message` events com texto capturado
+- Emits terminal `turn.complete` com usage = 0
+- Interrupt via SIGTERM (opera com child process)
+
+✅ Registered em `src/runtime/provider-registry.ts`
+- Factory mapeada em `runtimeProviderFactories.set("antigravity", ...)`
+- Advertised em `builtInRuntimeProviderIds.add("antigravity")`
+
+✅ Contract validation
+- `src/runtime/provider-contract.test.ts` integrado
+- 3 contract tests pass (antigravity, codex, pi)
+
+### Capabilities (Option B)
+
+```ts
+{
+  runtimeControl: false,
+  dynamicTools: "none",
+  execution: "subprocess-cli",
+  sessionState: "none",
+  usage: "unavailable" (0 tokens hardcoded),
+  tools: "provider-native" (agy built-ins only),
+  systemPrompt: "append",
+  terminalEvents: "adapter" (turn.complete emitted),
+  skillVisibility: "none",
+  supportsSessionResume: false,  // Deferred
+  supportsSessionFork: false,
+  supportsToolHooks: false,
+  supportsPartialText: false,
+  supportsPlugins: false,
+  supportsMcpServers: false,
+}
+```
+
+### Roadmap Sprint 3+ (Features deferred)
+
+📋 **If agy adds --output-format flag:**
+  - Parse stream-json (tool-use, thinking, cost_events)
+  - Enable supportsPartialText = true (streaming)
+  - Implement real cost tracking
+
+📋 **If Google releases ANTIGRAVITY_API_KEY support:**
+  - Headless auth via env (CI-friendly)
+  - Remove 30s manual code entry blocker
+
+📋 **If agy documents session/conversation persistence:**
+  - Implement conversation checkpointing
+  - Enable supportsSessionResume = true
+
+---
+
+## 15. Referências
 
 🔹 [TechCrunch Antigravity 2.0 launch 2026-05-19](https://techcrunch.com/2026/05/19/google-launches-antigravity-2-0-with-an-updated-desktop-app-and-cli-tool-at-io-2026/)
 🔹 [Google Developers Blog — Transitioning Gemini CLI to Antigravity CLI](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)
