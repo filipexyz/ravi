@@ -177,6 +177,7 @@ describe("SdkSwiftCommands", () => {
       expect(generated?.files.map((entry) => entry.file).sort()).toEqual([
         "RaviClient.generated.swift",
         "RaviSchemas.generated.swift",
+        "RaviStreaming.generated.swift",
         "RaviTypes.generated.swift",
         "RaviVersion.generated.swift",
       ]);

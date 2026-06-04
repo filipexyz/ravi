@@ -192,6 +192,8 @@ ravi permissions init agent:dev safe-executables
 ravi permissions init agent:dev full-access
 ```
 
+`full-access` only answers the Ravi REBAC question. A command can still be denied later by provider-native hooks, workspace hooks, external PreToolUse filters, or other runtime policies outside the REBAC store. When `ravi permissions check` says allowed but Bash still fails, inspect the denial source before changing more permissions.
+
 ### Safe Executables List
 
 The `safe-executables` template grants access to commonly needed development binaries: `ls`, `cat`, `head`, `tail`, `find`, `mkdir`, `cp`, `mv`, `touch`, `git`, `grep`, `rg`, `awk`, `sed`, `jq`, `node`, `npm`, `bun`, `python3`, `make`, `cargo`, `go`, `jest`, `vitest`, `eslint`, `prettier`, `echo`, `date`, `pwd`, `which`, and others.

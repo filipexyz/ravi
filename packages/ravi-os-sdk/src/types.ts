@@ -122,6 +122,116 @@ export type AgentsSyncInstructionsInput = {
 /** Return shape for `agents.sync-instructions`. (no @Returns declared) */
 export type AgentsSyncInstructionsReturn = unknown;
 
+/** Input shape for `apps.check`. */
+export type AppsCheckInput = {
+  id?: string;
+};
+
+/** Return shape for `apps.check`. */
+export type AppsCheckReturn = {
+  checked: number;
+  ok: boolean;
+  results: Array<{
+    errors: string[];
+    id: string;
+    ok: boolean;
+    path: string;
+    source: "repo" | "plugin" | "state";
+    warnings: string[];
+  }>;
+};
+
+/** Input shape for `apps.list`. */
+export type AppsListInput = {
+  limit?: string;
+  offset?: string;
+  source?: string;
+};
+
+/** Return shape for `apps.list`. */
+export type AppsListReturn = {
+  apps: Array<{
+    description: string | null;
+    errors: string[];
+    id: string;
+    interfaceNames: string[];
+    name: string | null;
+    path: string;
+    permissions: {
+      mutating: string[];
+      optional: string[];
+      required: string[];
+    };
+    relativePath: string;
+    rootPath: string;
+    schema: string | null;
+    source: "repo" | "plugin" | "state";
+    valid: boolean;
+    version: string | null;
+    warnings: string[];
+  }>;
+  items: Array<{
+    description: string | null;
+    errors: string[];
+    id: string;
+    interfaceNames: string[];
+    name: string | null;
+    path: string;
+    permissions: {
+      mutating: string[];
+      optional: string[];
+      required: string[];
+    };
+    relativePath: string;
+    rootPath: string;
+    schema: string | null;
+    source: "repo" | "plugin" | "state";
+    valid: boolean;
+    version: string | null;
+    warnings: string[];
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `apps.show`. */
+export type AppsShowInput = {
+  id: string;
+};
+
+/** Return shape for `apps.show`. */
+export type AppsShowReturn = {
+  app: {
+    description: string | null;
+    errors: string[];
+    id: string;
+    interfaceNames: string[];
+    manifest: unknown | null;
+    name: string | null;
+    path: string;
+    permissions: {
+      mutating: string[];
+      optional: string[];
+      required: string[];
+    };
+    relativePath: string;
+    rootPath: string;
+    schema: string | null;
+    source: "repo" | "plugin" | "state";
+    valid: boolean;
+    version: string | null;
+    warnings: string[];
+  };
+};
+
 /** Input shape for `artifacts.archive`. */
 export type ArtifactsArchiveInput = {
   id: string;
@@ -355,6 +465,16 @@ export type AudioGenerateInput = {
 
 /** Return shape for `audio.generate`. (no @Returns declared) */
 export type AudioGenerateReturn = unknown;
+
+/** Input shape for `chats.backfill-provider-timestamps`. */
+export type ChatsBackfillProviderTimestampsInput = {
+  apply?: boolean;
+  dryRun?: boolean;
+  limit?: string;
+};
+
+/** Return shape for `chats.backfill-provider-timestamps`. (no @Returns declared) */
+export type ChatsBackfillProviderTimestampsReturn = unknown;
 
 /** Input shape for `chats.list`. */
 export type ChatsListInput = {
@@ -1019,7 +1139,10 @@ export type CrmAccountShowInput = {
 export type CrmAccountShowReturn = unknown;
 
 /** Input shape for `crm.board`. */
-export type CrmBoardInput = Record<string, never>;
+export type CrmBoardInput = {
+  includeEmptyStages?: boolean;
+  pipeline?: string;
+};
 
 /** Return shape for `crm.board`. (no @Returns declared) */
 export type CrmBoardReturn = unknown;
@@ -1115,10 +1238,14 @@ export type CrmFactRejectReturn = unknown;
 export type CrmNextInput = {
   account?: string;
   contact?: string;
+  dueAfter?: string;
+  dueBefore?: string;
+  dueToday?: boolean;
   limit?: string;
   offset?: string;
   opportunity?: string;
   owner?: string;
+  taskType?: string;
 };
 
 /** Return shape for `crm.next`. (no @Returns declared) */
@@ -1185,15 +1312,177 @@ export type CrmOpportunityShowInput = {
 /** Return shape for `crm.opportunity.show`. (no @Returns declared) */
 export type CrmOpportunityShowReturn = unknown;
 
+/** Input shape for `crm.pipeline.create`. */
+export type CrmPipelineCreateInput = {
+  default?: boolean;
+  entityType?: string;
+  idempotencyKey?: string;
+  metadata?: string;
+  name: string;
+};
+
+/** Return shape for `crm.pipeline.create`. (no @Returns declared) */
+export type CrmPipelineCreateReturn = unknown;
+
+/** Input shape for `crm.pipeline.list`. */
+export type CrmPipelineListInput = {
+  entityType?: string;
+  includeArchived?: boolean;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `crm.pipeline.list`. (no @Returns declared) */
+export type CrmPipelineListReturn = unknown;
+
+/** Input shape for `crm.pipeline.set`. */
+export type CrmPipelineSetInput = {
+  field: string;
+  pipeline: string;
+  value: string;
+};
+
+/** Return shape for `crm.pipeline.set`. (no @Returns declared) */
+export type CrmPipelineSetReturn = unknown;
+
+/** Input shape for `crm.pipeline.show`. */
+export type CrmPipelineShowInput = {
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.show`. (no @Returns declared) */
+export type CrmPipelineShowReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.add`. */
+export type CrmPipelineStageAddInput = {
+  category?: string;
+  idempotencyKey?: string;
+  key: string;
+  metadata?: string;
+  name?: string;
+  order?: string;
+  pipeline: string;
+  probability?: string;
+  terminal?: boolean;
+};
+
+/** Return shape for `crm.pipeline.stage.add`. (no @Returns declared) */
+export type CrmPipelineStageAddReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.archive`. */
+export type CrmPipelineStageArchiveInput = {
+  pipeline: string;
+  stage: string;
+};
+
+/** Return shape for `crm.pipeline.stage.archive`. (no @Returns declared) */
+export type CrmPipelineStageArchiveReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.list`. */
+export type CrmPipelineStageListInput = {
+  includeArchived?: boolean;
+  limit?: string;
+  offset?: string;
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.stage.list`. (no @Returns declared) */
+export type CrmPipelineStageListReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.set`. */
+export type CrmPipelineStageSetInput = {
+  field: string;
+  pipeline: string;
+  stage: string;
+  value: string;
+};
+
+/** Return shape for `crm.pipeline.stage.set`. (no @Returns declared) */
+export type CrmPipelineStageSetReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.show`. */
+export type CrmPipelineStageShowInput = {
+  pipeline: string;
+  stage: string;
+};
+
+/** Return shape for `crm.pipeline.stage.show`. (no @Returns declared) */
+export type CrmPipelineStageShowReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.topic.add`. */
+export type CrmPipelineStageTopicAddInput = {
+  description?: string;
+  idempotencyKey?: string;
+  key: string;
+  metadata?: string;
+  order?: string;
+  pipeline: string;
+  stage: string;
+  title?: string;
+  type?: string;
+};
+
+/** Return shape for `crm.pipeline.stage.topic.add`. (no @Returns declared) */
+export type CrmPipelineStageTopicAddReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.topic.archive`. */
+export type CrmPipelineStageTopicArchiveInput = {
+  pipeline: string;
+  stage: string;
+  topic: string;
+};
+
+/** Return shape for `crm.pipeline.stage.topic.archive`. (no @Returns declared) */
+export type CrmPipelineStageTopicArchiveReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.topic.set`. */
+export type CrmPipelineStageTopicSetInput = {
+  field: string;
+  pipeline: string;
+  stage: string;
+  topic: string;
+  value: string;
+};
+
+/** Return shape for `crm.pipeline.stage.topic.set`. (no @Returns declared) */
+export type CrmPipelineStageTopicSetReturn = unknown;
+
+/** Input shape for `crm.pipeline.stage.topics`. */
+export type CrmPipelineStageTopicsInput = {
+  includeArchived?: boolean;
+  limit?: string;
+  offset?: string;
+  pipeline: string;
+  stage: string;
+};
+
+/** Return shape for `crm.pipeline.stage.topics`. (no @Returns declared) */
+export type CrmPipelineStageTopicsReturn = unknown;
+
+/** Input shape for `crm.task.cancel`. */
+export type CrmTaskCancelInput = {
+  reason?: string;
+  task: string;
+};
+
+/** Return shape for `crm.task.cancel`. (no @Returns declared) */
+export type CrmTaskCancelReturn = unknown;
+
 /** Input shape for `crm.task.create`. */
 export type CrmTaskCreateInput = {
   account?: string;
+  body?: string;
+  confidence?: string;
   contact?: string;
   due?: string;
+  evidence?: string;
   idempotencyKey?: string;
+  metadata?: string;
   opportunity?: string;
   owner?: string;
   priority?: string;
+  source?: string;
+  taskType?: string;
   title: string;
 };
 
@@ -1208,6 +1497,24 @@ export type CrmTaskDoneInput = {
 /** Return shape for `crm.task.done`. (no @Returns declared) */
 export type CrmTaskDoneReturn = unknown;
 
+/** Input shape for `crm.task.list`. */
+export type CrmTaskListInput = {
+  account?: string;
+  contact?: string;
+  dueAfter?: string;
+  dueBefore?: string;
+  dueToday?: boolean;
+  limit?: string;
+  offset?: string;
+  opportunity?: string;
+  owner?: string;
+  status?: string;
+  taskType?: string;
+};
+
+/** Return shape for `crm.task.list`. (no @Returns declared) */
+export type CrmTaskListReturn = unknown;
+
 /** Input shape for `crm.task.show`. */
 export type CrmTaskShowInput = {
   task: string;
@@ -1215,6 +1522,16 @@ export type CrmTaskShowInput = {
 
 /** Return shape for `crm.task.show`. (no @Returns declared) */
 export type CrmTaskShowReturn = unknown;
+
+/** Input shape for `crm.task.snooze`. */
+export type CrmTaskSnoozeInput = {
+  reason?: string;
+  task: string;
+  until?: string;
+};
+
+/** Return shape for `crm.task.snooze`. (no @Returns declared) */
+export type CrmTaskSnoozeReturn = unknown;
 
 /** Input shape for `cron.add`. */
 export type CronAddInput = {
@@ -1224,10 +1541,15 @@ export type CronAddInput = {
   cron?: string;
   deleteAfter?: boolean;
   description?: string;
+  envFile?: string;
   every?: string;
+  exec?: string;
   isolated?: boolean;
   message?: string;
   name: string;
+  onError?: string;
+  shell?: string;
+  timeout?: string;
   tz?: string;
 };
 
@@ -1661,6 +1983,99 @@ export type ImageGenerateInput = {
 
 /** Return shape for `image.generate`. (no @Returns declared) */
 export type ImageGenerateReturn = unknown;
+
+/** Input shape for `inbox.archive`. */
+export type InboxArchiveInput = {
+  item: string;
+};
+
+/** Return shape for `inbox.archive`. (no @Returns declared) */
+export type InboxArchiveReturn = unknown;
+
+/** Input shape for `inbox.disable`. */
+export type InboxDisableInput = Record<string, never>;
+
+/** Return shape for `inbox.disable`. (no @Returns declared) */
+export type InboxDisableReturn = unknown;
+
+/** Input shape for `inbox.done`. */
+export type InboxDoneInput = {
+  item: string;
+};
+
+/** Return shape for `inbox.done`. (no @Returns declared) */
+export type InboxDoneReturn = unknown;
+
+/** Input shape for `inbox.enable`. */
+export type InboxEnableInput = Record<string, never>;
+
+/** Return shape for `inbox.enable`. (no @Returns declared) */
+export type InboxEnableReturn = unknown;
+
+/** Input shape for `inbox.items`. */
+export type InboxItemsInput = {
+  limit?: string;
+};
+
+/** Return shape for `inbox.items`. (no @Returns declared) */
+export type InboxItemsReturn = unknown;
+
+/** Input shape for `inbox.list`. */
+export type InboxListInput = {
+  includeArchived?: boolean;
+  limit?: string;
+  offset?: string;
+  source?: string;
+  status?: string;
+};
+
+/** Return shape for `inbox.list`. (no @Returns declared) */
+export type InboxListReturn = unknown;
+
+/** Input shape for `inbox.poll`. */
+export type InboxPollInput = {
+  once?: boolean;
+};
+
+/** Return shape for `inbox.poll`. (no @Returns declared) */
+export type InboxPollReturn = unknown;
+
+/** Input shape for `inbox.read`. */
+export type InboxReadInput = {
+  item: string;
+};
+
+/** Return shape for `inbox.read`. (no @Returns declared) */
+export type InboxReadReturn = unknown;
+
+/** Input shape for `inbox.replay`. */
+export type InboxReplayInput = {
+  ref: string;
+};
+
+/** Return shape for `inbox.replay`. (no @Returns declared) */
+export type InboxReplayReturn = unknown;
+
+/** Input shape for `inbox.snooze`. */
+export type InboxSnoozeInput = {
+  item: string;
+  until?: string;
+};
+
+/** Return shape for `inbox.snooze`. (no @Returns declared) */
+export type InboxSnoozeReturn = unknown;
+
+/** Input shape for `inbox.sources`. */
+export type InboxSourcesInput = Record<string, never>;
+
+/** Return shape for `inbox.sources`. (no @Returns declared) */
+export type InboxSourcesReturn = unknown;
+
+/** Input shape for `inbox.status`. */
+export type InboxStatusInput = Record<string, never>;
+
+/** Return shape for `inbox.status`. (no @Returns declared) */
+export type InboxStatusReturn = unknown;
 
 /** Input shape for `insights.create`. */
 export type InsightsCreateInput = {
@@ -2680,6 +3095,148 @@ export type RoutesShowInput = {
 /** Return shape for `routes.show`. (no @Returns declared) */
 export type RoutesShowReturn = unknown;
 
+/** Input shape for `rules.import`. */
+export type RulesImportInput = {
+  cwd?: string;
+  force?: boolean;
+  includeUser?: boolean;
+  source?: string;
+  write?: boolean;
+};
+
+/** Return shape for `rules.import`. (no @Returns declared) */
+export type RulesImportReturn = unknown;
+
+/** Input shape for `rules.sources`. */
+export type RulesSourcesInput = {
+  cwd?: string;
+  includeUser?: boolean;
+  source?: string;
+};
+
+/** Return shape for `rules.sources`. (no @Returns declared) */
+export type RulesSourcesReturn = unknown;
+
+/** Input shape for `runtime.credentials.add`. */
+export type RuntimeCredentialsAddInput = {
+  agents?: string;
+  authMethod?: string;
+  authProfile?: string;
+  label?: string;
+  models?: string;
+  notes?: string;
+  priority?: string;
+  provider?: string;
+  readOnly?: boolean;
+  remoteForward?: boolean;
+  secretEnv?: string;
+  targetEnv?: string;
+  taskProfiles?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.add`. (no @Returns declared) */
+export type RuntimeCredentialsAddReturn = unknown;
+
+/** Input shape for `runtime.credentials.classify`. */
+export type RuntimeCredentialsClassifyInput = {
+  credential?: string;
+  headers?: string;
+  message?: string;
+  provider?: string;
+  providerCode?: string;
+  providerType?: string;
+  record?: boolean;
+  status?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.classify`. (no @Returns declared) */
+export type RuntimeCredentialsClassifyReturn = unknown;
+
+/** Input shape for `runtime.credentials.disable`. */
+export type RuntimeCredentialsDisableInput = {
+  id: string;
+};
+
+/** Return shape for `runtime.credentials.disable`. (no @Returns declared) */
+export type RuntimeCredentialsDisableReturn = unknown;
+
+/** Input shape for `runtime.credentials.enable`. */
+export type RuntimeCredentialsEnableInput = {
+  id: string;
+};
+
+/** Return shape for `runtime.credentials.enable`. (no @Returns declared) */
+export type RuntimeCredentialsEnableReturn = unknown;
+
+/** Input shape for `runtime.credentials.import`. */
+export type RuntimeCredentialsImportInput = {
+  fromClaudeCode?: boolean;
+  fromCodexHome?: string;
+  label?: string;
+  managedRefresh?: boolean;
+  provider?: string;
+};
+
+/** Return shape for `runtime.credentials.import`. (no @Returns declared) */
+export type RuntimeCredentialsImportReturn = unknown;
+
+/** Input shape for `runtime.credentials.list`. */
+export type RuntimeCredentialsListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+  provider?: string;
+  status?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.list`. (no @Returns declared) */
+export type RuntimeCredentialsListReturn = unknown;
+
+/** Input shape for `runtime.credentials.refresh`. */
+export type RuntimeCredentialsRefreshInput = {
+  agent?: string;
+  force?: boolean;
+  id?: string;
+  model?: string;
+  provider?: string;
+  taskProfile?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.refresh`. (no @Returns declared) */
+export type RuntimeCredentialsRefreshReturn = unknown;
+
+/** Input shape for `runtime.credentials.reset-health`. */
+export type RuntimeCredentialsResetHealthInput = {
+  id: string;
+};
+
+/** Return shape for `runtime.credentials.reset-health`. (no @Returns declared) */
+export type RuntimeCredentialsResetHealthReturn = unknown;
+
+/** Input shape for `runtime.credentials.select`. */
+export type RuntimeCredentialsSelectInput = {
+  agent?: string;
+  model?: string;
+  provider?: string;
+  taskProfile?: string;
+  upstream?: string;
+};
+
+/** Return shape for `runtime.credentials.select`. (no @Returns declared) */
+export type RuntimeCredentialsSelectReturn = unknown;
+
+/** Input shape for `runtime.credentials.status`. */
+export type RuntimeCredentialsStatusInput = {
+  id?: string;
+};
+
+/** Return shape for `runtime.credentials.status`. (no @Returns declared) */
+export type RuntimeCredentialsStatusReturn = unknown;
+
 /** Input shape for `sdk.client.check`. */
 export type SdkClientCheckInput = {
   out?: string;
@@ -2808,12 +3365,23 @@ export type ServiceWaInput = Record<string, never>;
 /** Return shape for `service.wa`. (no @Returns declared) */
 export type ServiceWaReturn = unknown;
 
+/** Input shape for `sessions.actions`. */
+export type SessionsActionsInput = {
+  limit?: string;
+  nameOrKey?: string;
+};
+
+/** Return shape for `sessions.actions`. (no @Returns declared) */
+export type SessionsActionsReturn = unknown;
+
 /** Input shape for `sessions.answer`. */
 export type SessionsAnswerInput = {
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   message: string;
   sender?: string;
+  steer?: boolean;
   target: string;
   to?: string;
 };
@@ -2825,14 +3393,26 @@ export type SessionsAnswerReturn = unknown;
 export type SessionsAskInput = {
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   message: string;
   sender?: string;
+  steer?: boolean;
   target: string;
   to?: string;
 };
 
 /** Return shape for `sessions.ask`. (no @Returns declared) */
 export type SessionsAskReturn = unknown;
+
+/** Input shape for `sessions.attach`. */
+export type SessionsAttachInput = {
+  chat?: string;
+  nameOrKey: string;
+  reason?: string;
+};
+
+/** Return shape for `sessions.attach`. (no @Returns declared) */
+export type SessionsAttachReturn = unknown;
 
 /** Input shape for `sessions.delete`. */
 export type SessionsDeleteInput = {
@@ -2842,11 +3422,42 @@ export type SessionsDeleteInput = {
 /** Return shape for `sessions.delete`. (no @Returns declared) */
 export type SessionsDeleteReturn = unknown;
 
+/** Input shape for `sessions.delete-message`. */
+export type SessionsDeleteMessageInput = {
+  messageRef?: string;
+  sessionOrMessage: string;
+};
+
+/** Return shape for `sessions.delete-message`. (no @Returns declared) */
+export type SessionsDeleteMessageReturn = unknown;
+
+/** Input shape for `sessions.detach`. */
+export type SessionsDetachInput = {
+  chat?: string;
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.detach`. (no @Returns declared) */
+export type SessionsDetachReturn = unknown;
+
+/** Input shape for `sessions.edit-message`. */
+export type SessionsEditMessageInput = {
+  messageOrText?: string;
+  sessionOrMessage: string;
+  text?: string;
+  textArg?: string;
+};
+
+/** Return shape for `sessions.edit-message`. (no @Returns declared) */
+export type SessionsEditMessageReturn = unknown;
+
 /** Input shape for `sessions.execute`. */
 export type SessionsExecuteInput = {
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   message: string;
+  steer?: boolean;
   target: string;
   to?: string;
 };
@@ -2890,7 +3501,9 @@ export type SessionsInfoReturn = unknown;
 export type SessionsInformInput = {
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   message: string;
+  steer?: boolean;
   target: string;
   to?: string;
 };
@@ -2919,6 +3532,15 @@ export type SessionsListInput = {
 /** Return shape for `sessions.list`. (no @Returns declared) */
 export type SessionsListReturn = unknown;
 
+/** Input shape for `sessions.mute`. */
+export type SessionsMuteInput = {
+  chat?: string;
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.mute`. (no @Returns declared) */
+export type SessionsMuteReturn = unknown;
+
 /** Input shape for `sessions.prune`. */
 export type SessionsPruneInput = {
   agent?: string;
@@ -2935,7 +3557,7 @@ export type SessionsPruneReturn = unknown;
 export type SessionsReadInput = {
   count?: string;
   messageId?: string;
-  nameOrKey: string;
+  nameOrKey?: string;
   workspace?: boolean;
 };
 
@@ -3042,9 +3664,11 @@ export type SessionsSendInput = {
   agent?: string;
   barrier?: string;
   channel?: string;
+  immediate?: boolean;
   interactive?: boolean;
   nameOrKey: string;
   prompt?: string;
+  steer?: boolean;
   thread?: string;
   threadOwner?: string;
   threadScope?: string;
@@ -3093,6 +3717,14 @@ export type SessionsSetTtlInput = {
 /** Return shape for `sessions.set-ttl`. (no @Returns declared) */
 export type SessionsSetTtlReturn = unknown;
 
+/** Input shape for `sessions.subscriptions`. */
+export type SessionsSubscriptionsInput = {
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.subscriptions`. (no @Returns declared) */
+export type SessionsSubscriptionsReturn = unknown;
+
 /** Input shape for `sessions.trace`. */
 export type SessionsTraceInput = {
   correlation?: string;
@@ -3113,6 +3745,15 @@ export type SessionsTraceInput = {
 
 /** Return shape for `sessions.trace`. (no @Returns declared) */
 export type SessionsTraceReturn = unknown;
+
+/** Input shape for `sessions.unmute`. */
+export type SessionsUnmuteInput = {
+  chat?: string;
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.unmute`. (no @Returns declared) */
+export type SessionsUnmuteReturn = unknown;
 
 /** Input shape for `sessions.visibility`. */
 export type SessionsVisibilityInput = {
@@ -4081,6 +4722,12 @@ export type TriggersTestInput = {
 /** Return shape for `triggers.test`. (no @Returns declared) */
 export type TriggersTestReturn = unknown;
 
+/** Input shape for `triggers.topics`. */
+export type TriggersTopicsInput = Record<string, never>;
+
+/** Return shape for `triggers.topics`. (no @Returns declared) */
+export type TriggersTopicsReturn = unknown;
+
 /** Input shape for `video.analyze`. */
 export type VideoAnalyzeInput = {
   output?: string;
@@ -4090,6 +4737,94 @@ export type VideoAnalyzeInput = {
 
 /** Return shape for `video.analyze`. (no @Returns declared) */
 export type VideoAnalyzeReturn = unknown;
+
+/** Input shape for `watch.connectors`. */
+export type WatchConnectorsInput = {
+  provider?: string;
+};
+
+/** Return shape for `watch.connectors`. (no @Returns declared) */
+export type WatchConnectorsReturn = unknown;
+
+/** Input shape for `watch.create`. */
+export type WatchCreateInput = {
+  event?: string;
+  installation?: string;
+  name?: string;
+  placement?: string;
+  project?: string;
+  provider: string;
+  resource: string;
+  resourceId?: string;
+};
+
+/** Return shape for `watch.create`. (no @Returns declared) */
+export type WatchCreateReturn = unknown;
+
+/** Input shape for `watch.disable`. */
+export type WatchDisableInput = {
+  id: string;
+};
+
+/** Return shape for `watch.disable`. (no @Returns declared) */
+export type WatchDisableReturn = unknown;
+
+/** Input shape for `watch.enable`. */
+export type WatchEnableInput = {
+  id: string;
+};
+
+/** Return shape for `watch.enable`. (no @Returns declared) */
+export type WatchEnableReturn = unknown;
+
+/** Input shape for `watch.events`. */
+export type WatchEventsInput = {
+  id: string;
+};
+
+/** Return shape for `watch.events`. (no @Returns declared) */
+export type WatchEventsReturn = unknown;
+
+/** Input shape for `watch.list`. */
+export type WatchListInput = {
+  limit?: string;
+  offset?: string;
+  provider?: string;
+  status?: string;
+};
+
+/** Return shape for `watch.list`. (no @Returns declared) */
+export type WatchListReturn = unknown;
+
+/** Input shape for `watch.rm`. */
+export type WatchRmInput = {
+  id: string;
+};
+
+/** Return shape for `watch.rm`. (no @Returns declared) */
+export type WatchRmReturn = unknown;
+
+/** Input shape for `watch.show`. */
+export type WatchShowInput = {
+  id: string;
+};
+
+/** Return shape for `watch.show`. (no @Returns declared) */
+export type WatchShowReturn = unknown;
+
+/** Input shape for `watch.trigger`. */
+export type WatchTriggerInput = {
+  account?: string;
+  agent?: string;
+  cooldown?: string;
+  event?: string;
+  id: string;
+  message?: string;
+  session?: string;
+};
+
+/** Return shape for `watch.trigger`. (no @Returns declared) */
+export type WatchTriggerReturn = unknown;
 
 /** Input shape for `whatsapp.dm.ack`. */
 export type WhatsappDmAckInput = {
@@ -4247,6 +4982,17 @@ export type WhatsappGroupRevokeInviteInput = {
 
 /** Return shape for `whatsapp.group.revoke-invite`. (no @Returns declared) */
 export type WhatsappGroupRevokeInviteReturn = unknown;
+
+/** Input shape for `whatsapp.group.send`. */
+export type WhatsappGroupSendInput = {
+  account?: string;
+  groupId: string;
+  mention?: string[];
+  message: string;
+};
+
+/** Return shape for `whatsapp.group.send`. (no @Returns declared) */
+export type WhatsappGroupSendReturn = unknown;
 
 /** Input shape for `whatsapp.group.settings`. */
 export type WhatsappGroupSettingsInput = {

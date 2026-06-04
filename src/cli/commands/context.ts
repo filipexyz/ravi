@@ -39,6 +39,10 @@ const CONTEXT_DB_META = { source: "context-db", freshness: "persisted" } as cons
 const RESOLVER_META = { source: "resolver", freshness: "live" } as const;
 const DERIVED_META = { source: "derived", freshness: "derived-now" } as const;
 
+function hasRuntimeSessionBinding(context: ContextRecord): boolean {
+  return Boolean(context.sessionKey || context.sessionName);
+}
+
 interface ContextLineageSummary {
   parentContextId: string | null;
   parentContextKind: string | null;
@@ -505,6 +509,7 @@ export class ContextCommands {
 
       const decision = evaluateBashPermission(command, {
         agentId: context.agentId,
+        kind: context.kind,
         sessionKey: context.sessionKey,
         sessionName: context.sessionName,
         capabilities: context.capabilities,
@@ -515,13 +520,15 @@ export class ContextCommands {
         return buildPreToolUseDenyResult(decision.reason ?? "Bash command denied by Ravi");
       }
 
-      const gateDecision = evaluateRuntimeCommandSkillGate({
-        commandLine: command,
-        context,
-        toolName: "Bash",
-      });
-      if (!gateDecision.allowed) {
-        return buildPreToolUseDenyResult(gateDecision.reason ?? "Command requires a skill before execution.");
+      if (hasRuntimeSessionBinding(context)) {
+        const gateDecision = evaluateRuntimeCommandSkillGate({
+          commandLine: command,
+          context,
+          toolName: "Bash",
+        });
+        if (!gateDecision.allowed) {
+          return buildPreToolUseDenyResult(gateDecision.reason ?? "Command requires a skill before execution.");
+        }
       }
 
       return {};

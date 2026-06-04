@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { execSync, spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -18,7 +19,7 @@ import {
   listLiveAdminContexts,
   resolveRuntimeContext,
 } from "../../runtime/context-registry.js";
-import { dbCreateAgent, dbGetAgent } from "../../router/router-db.js";
+import { dbCreateAgent, dbGetAgent, dbUpsertDaemonRestartEpoch } from "../../router/router-db.js";
 import { grantRelation } from "../../permissions/relations.js";
 import {
   CredentialsFileError,
@@ -33,13 +34,24 @@ const RAVI_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DIR, ".env");
 const RESTART_REASON_FILE = join(RAVI_DIR, "restart-reason.txt");
 
-function readRestartReason(): { reason?: string; sessionName?: string } | null {
+type RestartReasonFile = {
+  reason?: string;
+  sessionName?: string;
+  restartEpoch?: string;
+  createdAt?: number;
+};
+
+function newRestartEpoch(createdAt = Date.now()): string {
+  return `restart_${createdAt}_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+}
+
+function readRestartReason(): RestartReasonFile | null {
   if (!existsSync(RESTART_REASON_FILE)) return null;
   try {
     const raw = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as { reason?: string; sessionName?: string };
+      return JSON.parse(raw) as RestartReasonFile;
     } catch {
       return { reason: raw };
     }
@@ -54,12 +66,29 @@ function writeRestartReason(
   options: { preserveExistingSession?: boolean } = {},
 ): void {
   mkdirSync(RAVI_DIR, { recursive: true });
-  const existingSession = options.preserveExistingSession ? readRestartReason()?.sessionName : undefined;
+  const existing = options.preserveExistingSession ? readRestartReason() : null;
+  const existingSession = existing?.sessionName;
   const targetSession = sessionName ?? existingSession;
-  writeFileSync(
-    RESTART_REASON_FILE,
-    JSON.stringify({ reason, ...(targetSession ? { sessionName: targetSession } : {}) }),
-  );
+  const createdAt = existing?.createdAt ?? Date.now();
+  const restartEpoch = existing?.restartEpoch ?? newRestartEpoch(createdAt);
+  const payload = {
+    reason,
+    restartEpoch,
+    createdAt,
+    ...(targetSession ? { sessionName: targetSession } : {}),
+  };
+  writeFileSync(RESTART_REASON_FILE, JSON.stringify(payload));
+  try {
+    dbUpsertDaemonRestartEpoch({
+      restartEpoch,
+      reason,
+      callerSessionName: targetSession,
+      createdAt,
+      updatedAt: Date.now(),
+    });
+  } catch {
+    // The daemon will upsert this again during shutdown/boot. The file is the handoff contract.
+  }
 }
 
 type SourceProjectRootLookupOptions = {

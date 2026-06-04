@@ -20,7 +20,13 @@ import {
   type TriggerInput,
   type Trigger,
 } from "../../triggers/index.js";
-import { getBlockedTriggerTopicReason } from "../../triggers/topic-policy.js";
+import {
+  findTriggerTopicCatalogEntry,
+  getTriggerTopicCatalog,
+  type TriggerTopicCatalogEntry,
+} from "../../triggers/topic-catalog.js";
+import { getTriggerTopicWarnings } from "../../triggers/topic-policy.js";
+import { validateFilter } from "../../triggers/filter.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
@@ -35,12 +41,98 @@ function serializeTrigger(trigger: Trigger) {
   };
 }
 
+function printTopicSummary(): void {
+  console.log("\nTrigger topic catalog:");
+  for (const entry of getTriggerTopicCatalog().slice(0, 8)) {
+    console.log(`  ${entry.pattern.padEnd(30)} ${entry.description}`);
+  }
+  console.log("  ... run `ravi triggers topics` for schemas, default messages, examples, and notes");
+}
+
+function printTopicCatalog(topics: TriggerTopicCatalogEntry[]): void {
+  console.log("\nTrigger Topics:\n");
+  let currentCategory: string | null = null;
+  for (const entry of topics) {
+    if (entry.category !== currentCategory) {
+      currentCategory = entry.category;
+      console.log(`${currentCategory.toUpperCase()}`);
+    }
+    console.log(`  ${entry.pattern}`);
+    console.log(`    ${entry.description}`);
+    console.log(`    payload: ${entry.payload}`);
+    if (entry.schema?.fields.length) {
+      const requiredFields = entry.schema.fields.filter((field) => field.required).map((field) => field.path);
+      const optionalFields = entry.schema.fields.filter((field) => !field.required).map((field) => field.path);
+      if (requiredFields.length) console.log(`    required: ${requiredFields.join(", ")}`);
+      if (optionalFields.length) console.log(`    optional: ${optionalFields.slice(0, 8).join(", ")}`);
+    }
+    if (entry.messageTemplate) console.log(`    default message: ${entry.messageTemplate.template}`);
+    if (entry.filters?.length) console.log(`    filters: ${entry.filters.join(" | ")}`);
+    if (entry.examples[0]) console.log(`    example: ${entry.examples[0]}`);
+    if (entry.notes?.length) {
+      for (const note of entry.notes) console.log(`    note: ${note}`);
+    }
+  }
+}
+
+function printTopicWarnings(warnings: string[]): void {
+  for (const warning of warnings) {
+    console.warn(`Warning: ${warning}`);
+  }
+}
+
+function assertValidTriggerFilter(filter: string | undefined): void {
+  const validation = validateFilter(filter);
+  if (!validation.ok) {
+    fail(
+      `Invalid filter: ${validation.error}. Use data.<path> <operator> "value"; combine with &&, ||, !, and parentheses.`,
+    );
+  }
+}
+
+function resolveTriggerMessage(topic: string, message: string | undefined) {
+  const explicitMessage = message?.trim();
+  if (explicitMessage) {
+    return {
+      message: explicitMessage,
+      source: "explicit" as const,
+      topicCatalogEntry: findTriggerTopicCatalogEntry(topic),
+      templateId: undefined,
+    };
+  }
+
+  const topicCatalogEntry = findTriggerTopicCatalogEntry(topic);
+  const template = topicCatalogEntry?.messageTemplate;
+  if (template?.template) {
+    return {
+      message: template.template,
+      source: "catalog_default" as const,
+      topicCatalogEntry,
+      templateId: template.id,
+    };
+  }
+
+  fail("--message is required for topics without a catalog default message template");
+}
+
 @Group({
   name: "triggers",
   description: "Event triggers",
   scope: "resource",
 })
 export class TriggersCommands {
+  @Command({ name: "topics", description: "List trigger-ready NATS topics" })
+  topics(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const topics = getTriggerTopicCatalog();
+    const payload = { topics };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      printTopicCatalog(topics);
+    }
+    return payload;
+  }
+
   @Command({ name: "list", description: "List all event triggers" })
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -84,13 +176,10 @@ export class TriggersCommands {
       console.log(
         '  ravi triggers add "Contato alterado" --topic "ravi.*.cli.contacts.*" --message "Notifica o grupo"',
       );
-      console.log('  ravi triggers add "Agent Error" --topic "ravi.*.tool" --message "Analise o erro" --cooldown 1m');
-      console.log("\nAvailable topics:");
-      console.log("  ravi.*.cli.{group}.{command}   CLI tool executions (e.g., ravi.*.cli.contacts.add)");
-      console.log("  ravi.*.tool                    SDK tool executions (Bash, Read, etc.)");
-      console.log("  ravi.*.response                Agent responses");
-      console.log("  whatsapp.*.inbound             WhatsApp messages");
-      console.log("  matrix.*.inbound               Matrix messages");
+      console.log(
+        '  ravi triggers add "Permission Alert" --topic "ravi.audit.denied" --message "Analise o erro" --cooldown 1m',
+      );
+      printTopicSummary();
     } else {
       console.log("\nEvent Triggers:\n");
       console.log("  ID        NAME                      ENABLED  TOPIC                           FIRES");
@@ -159,12 +248,7 @@ export class TriggersCommands {
       }
       console.log(`  Created:         ${new Date(trigger.createdAt).toLocaleString()}`);
 
-      console.log("\nAvailable topics:");
-      console.log("  ravi.*.cli.{group}.{command}   CLI tool executions");
-      console.log("  ravi.*.tool                    SDK tool executions");
-      console.log("  ravi.*.response                Agent responses");
-      console.log("  whatsapp.*.inbound             WhatsApp messages");
-      console.log("  matrix.*.inbound               Matrix messages");
+      printTopicSummary();
     }
     return payload;
   }
@@ -177,7 +261,7 @@ export class TriggersCommands {
       description: "Notif topic pattern to subscribe to",
     })
     topic?: string,
-    @Option({ flags: "--message <text>", description: "Prompt message" })
+    @Option({ flags: "--message <text>", description: "Prompt message (defaults to catalog template when available)" })
     message?: string,
     @Option({
       flags: "--agent <id>",
@@ -209,13 +293,9 @@ export class TriggersCommands {
     if (!topic) {
       fail("--topic is required");
     }
-    if (!message) {
-      fail("--message is required");
-    }
-    const blockedReason = getBlockedTriggerTopicReason(topic);
-    if (blockedReason) {
-      fail(blockedReason);
-    }
+    const resolvedMessage = resolveTriggerMessage(topic, message);
+    const topicWarnings = getTriggerTopicWarnings(topic);
+    assertValidTriggerFilter(filter);
 
     // Validate agent if provided
     if (agent) {
@@ -248,19 +328,44 @@ export class TriggersCommands {
     const ctx = getContext();
     const resolvedAgent = agent ?? ctx?.agentId;
 
-    // Resolve account: explicit flag > auto-detect from agent's account mapping
-    const resolvedAccount = account ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
+    // Resolve account in this order:
+    //   1. explicit --account flag
+    //   2. account the caller was actually talking through (ctx.source.accountId)
+    //   3. instance explicitly mapped to the agent
+    // We deliberately avoid the "first enabled instance" fallback inside
+    // getAccountForAgent: it picks the wrong account in multi-account setups
+    // and causes outbound deliveries to fail with "chat not found".
+    const resolvedAccount =
+      account ?? ctx?.source?.accountId ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
 
-    // Capture reply session from caller context for source routing
-    const replySession = ctx?.sessionKey;
+    // Capture reply session from caller context for source routing.
+    // Prefer the friendly session name when available so `triggers show`
+    // surfaces something legible; resolveSession accepts both name and
+    // session_key, so resolution at fire time is identical either way.
+    const replySession = ctx?.sessionName ?? ctx?.sessionKey;
+
+    // Freeze the creator's outbound source as a fallback for when the live
+    // session can no longer resolve a deliverable target (lastChannel empty,
+    // channel routed to "tui", etc).
+    const callerSource = ctx?.source;
+    const replySource =
+      callerSource?.channel && callerSource?.accountId && callerSource?.chatId
+        ? {
+            channel: callerSource.channel,
+            accountId: callerSource.accountId,
+            chatId: callerSource.chatId,
+            ...(callerSource.threadId ? { threadId: callerSource.threadId } : {}),
+          }
+        : undefined;
 
     const input: TriggerInput = {
       name,
       topic,
-      message,
+      message: resolvedMessage.message,
       agentId: resolvedAgent,
       accountId: resolvedAccount,
       replySession,
+      replySource,
       session: sessionTarget,
       cooldownMs,
       filter,
@@ -276,13 +381,23 @@ export class TriggersCommands {
         target: { type: "trigger" as const, id: trigger.id },
         changedCount: 1,
         trigger: serializeTrigger(trigger),
+        messageTemplate: {
+          source: resolvedMessage.source,
+          topicId: resolvedMessage.topicCatalogEntry?.id ?? null,
+          templateId: resolvedMessage.templateId ?? null,
+        },
+        ...(topicWarnings.length ? { warnings: topicWarnings } : {}),
       };
       if (asJson) {
         printJson(payload);
       } else {
+        printTopicWarnings(topicWarnings);
         console.log(`\n✓ Created trigger: ${trigger.id}`);
         console.log(`  Name:       ${trigger.name}`);
         console.log(`  Topic:      ${trigger.topic}`);
+        if (resolvedMessage.source === "catalog_default") {
+          console.log(`  Message:    catalog default (${resolvedMessage.templateId})`);
+        }
         console.log(`  Cooldown:   ${formatDurationMs(trigger.cooldownMs)}`);
         console.log(`  Session:    ${trigger.session}`);
       }
@@ -370,6 +485,7 @@ export class TriggersCommands {
     try {
       let updated: Trigger | null = null;
       let normalizedValue: unknown = value;
+      let warnings: string[] = [];
       const logHuman = (message: string) => {
         if (!asJson) console.log(message);
       };
@@ -386,11 +502,9 @@ export class TriggersCommands {
           break;
 
         case "topic": {
-          const blockedReason = getBlockedTriggerTopicReason(value);
-          if (blockedReason) {
-            fail(blockedReason);
-          }
+          warnings = getTriggerTopicWarnings(value);
           updated = dbUpdateTrigger(id, { topic: value });
+          if (!asJson) printTopicWarnings(warnings);
           logHuman(`✓ Topic set: ${id} -> ${value}`);
           break;
         }
@@ -439,6 +553,7 @@ export class TriggersCommands {
 
         case "filter": {
           const filterValue = value === "null" || value === "-" ? undefined : value;
+          assertValidTriggerFilter(filterValue);
           updated = dbUpdateTrigger(id, { filter: filterValue });
           normalizedValue = filterValue ?? null;
           logHuman(`✓ Filter set: ${id} -> ${filterValue ?? "(none)"}`);
@@ -458,6 +573,7 @@ export class TriggersCommands {
         property: key,
         value: normalizedValue,
         trigger: current ? serializeTrigger(current) : null,
+        ...(warnings.length ? { warnings } : {}),
       };
       if (asJson) {
         printJson(payload);

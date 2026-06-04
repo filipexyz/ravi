@@ -41,9 +41,14 @@ function installChromeStorageMock() {
 
 const chromeStorage = installChromeStorageMock();
 
-const { buildCrmSnapshot, buildSnapshot, buildTasksSnapshot, executeOmniRoute, resolveChatList } = await import(
-  "../../extensions/whatsapp-overlay/lib/compositions.js"
-);
+const {
+  buildCrmSnapshot,
+  buildOmniPanelSnapshot,
+  buildSnapshot,
+  buildTasksSnapshot,
+  executeOmniRoute,
+  resolveChatList,
+} = await import("../../extensions/whatsapp-overlay/lib/compositions.js");
 const { setBindings } = await import("../../extensions/whatsapp-overlay/lib/storage.js");
 const { RaviClient: ExtensionRaviClient } = await import("../../extensions/whatsapp-overlay/lib/sdk/client.js");
 
@@ -125,6 +130,11 @@ describe("whatsapp overlay extension compositions", () => {
           ],
         }),
       },
+      agents: {
+        list: async () => ({
+          agents: [{ id: "dev", name: "Dev", provider: "codex", model: "gpt-5.5" }],
+        }),
+      },
     };
 
     const result = await resolveChatList(client, {
@@ -142,11 +152,62 @@ describe("whatsapp overlay extension compositions", () => {
       resolved: true,
       session: {
         sessionName: "dev",
+        provider: "codex",
+        effectiveProvider: "codex",
+        model: "gpt-5.5",
+        agentProvider: "codex",
+        agentEffectiveProvider: "codex",
+        agentModel: "gpt-5.5",
         live: { activity: "idle", summary: "turn complete" },
       },
     });
     expect(result.sessions.map((session) => session.sessionName)).toEqual(["dev"]);
+    expect(result.sessions[0]).toMatchObject({
+      provider: "codex",
+      effectiveProvider: "codex",
+      model: "gpt-5.5",
+      agentProvider: "codex",
+      agentEffectiveProvider: "codex",
+      agentModel: "gpt-5.5",
+    });
     expect(result.agents.map((agent) => agent.id)).toEqual(["dev"]);
+  });
+
+  it("preserves agent effective provider when explicit provider is omitted", async () => {
+    const now = Date.now();
+    const client = {
+      sessions: {
+        list: async () => ({
+          sessions: [
+            {
+              sessionKey: "agent:achados-promo:main",
+              name: "achados-promo",
+              agentId: "achados-promo",
+              updatedAt: now,
+              createdAt: now - 10_000,
+              live: { activity: "idle", summary: "turn complete", updatedAt: now },
+            },
+          ],
+        }),
+      },
+      agents: {
+        list: async () => ({
+          agents: [{ id: "achados-promo", name: "Achados Promo", effectiveProvider: "claude" }],
+        }),
+      },
+    };
+
+    const snapshot = await buildSnapshot(client, {});
+
+    expect(snapshot.recentSessions[0]).toMatchObject({
+      sessionName: "achados-promo",
+      provider: "claude",
+      effectiveProvider: "claude",
+      agentProvider: "claude",
+      agentEffectiveProvider: "claude",
+      model: null,
+      agentModel: null,
+    });
   });
 
   it("keeps a local agent session binding visible before the runtime session exists", async () => {
@@ -308,6 +369,177 @@ describe("whatsapp overlay extension compositions", () => {
       "new-session",
       { allowRuntimeMismatch: true, asJson: true },
     ]);
+  });
+
+  it("honors the editable session name when creating a route-backed session", async () => {
+    const calls = [];
+    const client = {
+      instances: {
+        routes: {
+          show: async (name, pattern) => {
+            calls.push(["show", name, pattern]);
+            throw new Error("not found");
+          },
+          add: async (name, pattern, agent, options) => {
+            calls.push(["add", name, pattern, agent, options]);
+            return { route: { accountId: name, pattern, agent, session: options.session } };
+          },
+        },
+      },
+    };
+
+    const result = await executeOmniRoute(client, {
+      action: "create-session",
+      sessionName: "custom-session",
+      agentId: "dev",
+      chatId: "120363410237809091@g.us",
+      title: "ravi - extension",
+      instance: "main",
+      channel: "whatsapp",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      createdSession: true,
+      binding: {
+        session: "custom-session",
+        agentId: "dev",
+      },
+      snapshot: {
+        session: {
+          sessionName: "custom-session",
+          agentId: "dev",
+        },
+      },
+    });
+    expect(calls[1]).toEqual([
+      "add",
+      "main",
+      "group:120363410237809091",
+      "dev",
+      {
+        allowRuntimeMismatch: true,
+        asJson: true,
+        session: "custom-session",
+        priority: "100",
+        channel: "whatsapp",
+      },
+    ]);
+  });
+
+  it("supports migrating a chat route to a new agent session", async () => {
+    const calls = [];
+    let route = {
+      accountId: "main",
+      pattern: "group:120363410237809091",
+      agent: "dev",
+      session: "old-session",
+      priority: 100,
+      channel: "whatsapp",
+    };
+    const client = {
+      instances: {
+        routes: {
+          show: async (name, pattern) => {
+            calls.push(["show", name, pattern]);
+            return { route };
+          },
+          set: async (name, pattern, key, value, options) => {
+            calls.push(["set", name, pattern, key, value, options]);
+            route = { ...route, [key]: key === "priority" ? Number(value) : value };
+            return { route };
+          },
+        },
+      },
+    };
+
+    const result = await executeOmniRoute(client, {
+      action: "migrate-session",
+      fromSession: "old-session",
+      session: "support-session",
+      agentId: "support",
+      chatId: "120363410237809091@g.us",
+      title: "ravi - extension",
+      instance: "main",
+      channel: "whatsapp",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      migratedSession: true,
+      fromSession: "old-session",
+      binding: {
+        session: "support-session",
+        agentId: "support",
+      },
+      runtimeRoute: {
+        ok: true,
+        action: "updated",
+        route: {
+          agent: "support",
+          session: "support-session",
+        },
+      },
+    });
+    expect(calls).toContainEqual([
+      "set",
+      "main",
+      "group:120363410237809091",
+      "agent",
+      "support",
+      { allowRuntimeMismatch: true, asJson: true },
+    ]);
+  });
+
+  it("loads configured Ravi instances for the overlay profile selector", async () => {
+    const client = {
+      sessions: {
+        list: async () => ({ sessions: [] }),
+      },
+      agents: {
+        list: async () => ({ agents: [] }),
+      },
+      routes: {
+        list: async () => ({ routes: [] }),
+      },
+      instances: {
+        list: async (options) => ({
+          options,
+          instances: [
+            {
+              name: "main",
+              instanceId: "wa-main",
+              channel: "whatsapp",
+              enabled: true,
+              live: { isConnected: true, profileName: "Luis" },
+            },
+            {
+              name: "ops",
+              instanceId: "wa-ops",
+              channel: "whatsapp",
+              enabled: true,
+              live: { isConnected: false, profileName: "Ops" },
+            },
+          ],
+        }),
+      },
+    };
+
+    const snapshot = await buildOmniPanelSnapshot(client, { instance: "ops" });
+
+    expect(snapshot.instances.map((instance) => instance.id)).toEqual(["main", "ops"]);
+    expect(snapshot.instances[0]).toMatchObject({
+      id: "main",
+      name: "main",
+      instanceId: "wa-main",
+      profileName: "Luis",
+      isConnected: true,
+      isActive: true,
+    });
+    expect(snapshot.preferredInstance).toMatchObject({
+      id: "ops",
+      profileName: "Ops",
+    });
   });
 
   it("loads all visible tasks for the workspace and reports status counts", async () => {

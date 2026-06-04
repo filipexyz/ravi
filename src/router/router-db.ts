@@ -7,7 +7,7 @@
  * Uses lazy initialization - database is only created when first accessed.
  */
 
-import { Database, type Statement } from "bun:sqlite";
+import { Database, type SQLQueryBindings, type Statement } from "bun:sqlite";
 import { z } from "zod";
 import { join } from "node:path";
 import { mkdirSync, existsSync, renameSync } from "node:fs";
@@ -17,6 +17,7 @@ import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
+import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
 
@@ -200,6 +201,31 @@ interface ContextRow {
   revoked_at: number | null;
 }
 
+interface DaemonRestartEpochRow {
+  restart_epoch: string;
+  reason: string;
+  caller_session_name: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface DaemonRestartSessionSnapshotRow {
+  restart_epoch: string;
+  session_key: string;
+  session_name: string;
+  agent_id: string | null;
+  runtime_provider: string | null;
+  activity: string;
+  non_idle: number;
+  last_activity_at: number;
+  stopped_at: number;
+  pending_message_count: number;
+  pending_messages_json: string | null;
+  metadata_json: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 interface ChatRow {
   id: string;
   channel: string;
@@ -252,6 +278,8 @@ interface ChatMessageRow {
   content_json: string | null;
   raw_provenance_json: string | null;
   provider_timestamp: number | null;
+  edited_at: number | null;
+  deleted_at: number | null;
   ingested_at: number;
   created_at: number;
   updated_at: number;
@@ -487,6 +515,16 @@ export interface UpsertChatInput {
   seenAt?: number;
 }
 
+export interface CanonicalizeDmChatForContactInput {
+  chatId: string;
+  contactId: string;
+  platformChatId?: string | null;
+  title?: string | null;
+  avatarUrl?: string | null;
+  rawProvenance?: Record<string, unknown> | null;
+  seenAt?: number;
+}
+
 export interface ChatParticipantRecord {
   id: string;
   chatId: string;
@@ -523,13 +561,41 @@ export interface ChatMessageRecord {
   content?: Record<string, unknown>;
   rawProvenance?: Record<string, unknown>;
   providerTimestamp?: number;
+  editedAt?: number;
+  deletedAt?: number;
   ingestedAt: number;
   createdAt: number;
   updatedAt: number;
 }
 
+export interface ChatMessageProviderTimestampBackfillItem {
+  id: string;
+  chatId: string;
+  providerMessageId: string;
+  previousProviderTimestamp?: number;
+  providerTimestamp: number;
+}
+
+export interface ChatMessageProviderTimestampBackfillResult {
+  dryRun: boolean;
+  scanned: number;
+  candidates: number;
+  skipped: number;
+  unchanged: number;
+  wouldUpdate: number;
+  updated: number;
+  items: ChatMessageProviderTimestampBackfillItem[];
+}
+
 export interface ChatMessageWithSortKey extends ChatMessageRecord {
   sortKey: string;
+}
+
+export interface ChatMessageContactIdentityRef {
+  id?: string | null;
+  channel?: string | null;
+  instanceId?: string | null;
+  normalizedPlatformUserId?: string | null;
 }
 
 export interface ChatListItem {
@@ -555,6 +621,8 @@ export interface UpsertChatMessageInput {
   content?: Record<string, unknown> | null;
   rawProvenance?: Record<string, unknown> | null;
   providerTimestamp?: number | null;
+  editedAt?: number | null;
+  deletedAt?: number | null;
   ingestedAt?: number;
 }
 
@@ -686,6 +754,92 @@ export interface UpsertSessionParticipantInput {
   metadata?: Record<string, unknown> | null;
   incrementMessageCount?: boolean;
   seenAt?: number;
+}
+
+// ----- sessions/attach -----
+// see .ravi/specs/sessions/attach/SPEC.md
+export type SubscriptionRole = "primary" | "input" | "mirror";
+export type AttachedByType = "user" | "agent" | "system";
+export type SubscriptionSpeechMode = "muted" | "speak";
+
+export interface SessionChatSubscriptionRecord {
+  id: number;
+  sessionKey: string;
+  chatId: string;
+  role: SubscriptionRole;
+  attachedByType: AttachedByType;
+  attachedById?: string;
+  attachedReason?: string;
+  contextSnapshotAtAttach?: Record<string, unknown>;
+  speechMode: SubscriptionSpeechMode;
+  speechUpdatedAt?: number;
+  speechReason?: string;
+  outputAttachedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  detachedAt?: number;
+}
+
+export interface CreateSessionChatSubscriptionInput {
+  sessionKey: string;
+  chatId: string;
+  role?: SubscriptionRole;
+  attachedByType?: AttachedByType;
+  attachedById?: string | null;
+  attachedReason?: string | null;
+  contextSnapshotAtAttach?: Record<string, unknown> | null;
+  speechMode?: SubscriptionSpeechMode | null;
+  speechUpdatedAt?: number | null;
+  speechReason?: string | null;
+  outputAttachedAt?: number | null;
+}
+
+export interface DaemonRestartEpochRecord {
+  restartEpoch: string;
+  reason: string;
+  callerSessionName?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DaemonRestartEpochInput {
+  restartEpoch: string;
+  reason: string;
+  callerSessionName?: string | null;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface DaemonRestartSessionSnapshotRecord {
+  restartEpoch: string;
+  sessionKey: string;
+  sessionName: string;
+  agentId?: string;
+  runtimeProvider?: string;
+  activity: string;
+  nonIdle: boolean;
+  lastActivityAt: number;
+  stoppedAt: number;
+  pendingMessageCount: number;
+  pendingMessagesJson?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DaemonRestartSessionSnapshotInput {
+  restartEpoch: string;
+  sessionKey: string;
+  sessionName: string;
+  agentId?: string | null;
+  runtimeProvider?: string | null;
+  activity: string;
+  nonIdle: boolean;
+  lastActivityAt: number;
+  stoppedAt: number;
+  pendingMessages?: unknown[];
+  metadata?: Record<string, unknown> | null;
+  recordedAt?: number;
 }
 
 export interface ListContextsOptions {
@@ -988,6 +1142,12 @@ function getDb(): Database {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_participants_raw_identity
       ON chat_participants(chat_id, normalized_platform_user_id)
       WHERE platform_identity_id IS NULL AND contact_id IS NULL AND agent_id IS NULL AND normalized_platform_user_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_participants_contact_lookup
+      ON chat_participants(contact_id, chat_id)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_participants_agent_lookup
+      ON chat_participants(agent_id, chat_id)
+      WHERE agent_id IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS chat_messages (
       id TEXT PRIMARY KEY,
@@ -1006,6 +1166,8 @@ function getDb(): Database {
       content_json TEXT,
       raw_provenance_json TEXT,
       provider_timestamp INTEGER,
+      edited_at INTEGER,
+      deleted_at INTEGER,
       ingested_at INTEGER NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
@@ -1016,6 +1178,12 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_chat_messages_contact_time
       ON chat_messages(contact_id, provider_timestamp, ingested_at)
       WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_contact_chat_time
+      ON chat_messages(contact_id, chat_id, provider_timestamp, ingested_at)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_agent_chat_time
+      ON chat_messages(agent_id, chat_id, provider_timestamp, ingested_at)
+      WHERE agent_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_chat_messages_platform_identity
       ON chat_messages(platform_identity_id, provider_timestamp)
       WHERE platform_identity_id IS NOT NULL;
@@ -1110,6 +1278,29 @@ function getDb(): Database {
       ON session_chat_bindings(session_key);
     CREATE INDEX IF NOT EXISTS idx_session_chat_bindings_chat
       ON session_chat_bindings(chat_id);
+
+    CREATE TABLE IF NOT EXISTS session_chat_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'input' CHECK(role IN ('primary', 'input', 'mirror')),
+      attached_by_type TEXT NOT NULL DEFAULT 'system' CHECK(attached_by_type IN ('user', 'agent', 'system')),
+      attached_by_id TEXT,
+      attached_reason TEXT,
+      context_snapshot_at_attach_json TEXT,
+      speech_mode TEXT NOT NULL DEFAULT 'speak' CHECK(speech_mode IN ('muted', 'speak')),
+      speech_updated_at INTEGER,
+      speech_reason TEXT,
+      output_attached_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      detached_at INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_pair
+      ON session_chat_subscriptions(session_key, chat_id)
+      WHERE detached_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_session_chat_subscriptions_session
+      ON session_chat_subscriptions(session_key, detached_at);
 
     CREATE TABLE IF NOT EXISTS session_participants (
       id TEXT PRIMARY KEY,
@@ -1458,6 +1649,44 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_session_turns_run
       ON session_turns(run_id, started_at);
 
+    CREATE TABLE IF NOT EXISTS daemon_restart_epochs (
+      restart_epoch TEXT PRIMARY KEY,
+      reason TEXT NOT NULL,
+      caller_session_name TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS daemon_restart_session_snapshots (
+      restart_epoch TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      session_name TEXT NOT NULL,
+      agent_id TEXT,
+      runtime_provider TEXT,
+      activity TEXT NOT NULL,
+      non_idle INTEGER NOT NULL DEFAULT 0 CHECK(non_idle IN (0,1)),
+      last_activity_at INTEGER NOT NULL,
+      stopped_at INTEGER NOT NULL,
+      pending_message_count INTEGER NOT NULL DEFAULT 0,
+      pending_messages_json TEXT,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (restart_epoch, session_key),
+      FOREIGN KEY(restart_epoch) REFERENCES daemon_restart_epochs(restart_epoch) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_daemon_restart_snapshots_epoch_active
+      ON daemon_restart_session_snapshots(restart_epoch, non_idle, stopped_at, last_activity_at);
+
+    CREATE TABLE IF NOT EXISTS daemon_restart_resume_deliveries (
+      restart_epoch TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      delivered_at INTEGER NOT NULL,
+      PRIMARY KEY (restart_epoch, session_key),
+      FOREIGN KEY(restart_epoch) REFERENCES daemon_restart_epochs(restart_epoch) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS session_trace_blobs (
       sha256 TEXT PRIMARY KEY,
       kind TEXT NOT NULL,
@@ -1473,6 +1702,86 @@ function getDb(): Database {
     -- TTL pruning: DELETE FROM session_trace_blobs WHERE created_at < ?
     CREATE INDEX IF NOT EXISTS idx_session_trace_blobs_created
       ON session_trace_blobs(created_at);
+
+    -- Local-first sync: optional, best-effort replication ledger.
+    -- SQLite remains the local source of truth; these tables are durable queues
+    -- for remote bridge delivery and cursor-based remote intake.
+    CREATE TABLE IF NOT EXISTS sync_outbox (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL UNIQUE,
+      origin_installation_id TEXT,
+      domain TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      entity_revision INTEGER,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      payload_json TEXT NOT NULL,
+      evidence_refs_json TEXT,
+      schema_version INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL CHECK(status IN ('pending','leased','sent','acked','failed','dead')),
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER NOT NULL DEFAULT 0,
+      lease_id TEXT,
+      leased_until INTEGER,
+      last_error_code TEXT,
+      occurred_at INTEGER NOT NULL,
+      sent_at INTEGER,
+      acked_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_status_next
+      ON sync_outbox(status, next_attempt_at, created_at);
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_domain_status
+      ON sync_outbox(domain, status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_lease
+      ON sync_outbox(lease_id, leased_until);
+
+    CREATE TABLE IF NOT EXISTS sync_inbox (
+      id TEXT PRIMARY KEY,
+      remote_sequence TEXT,
+      remote_event_id TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','applied','skipped','failed','dead')),
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      last_error_code TEXT,
+      received_at INTEGER NOT NULL,
+      applied_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(remote_event_id),
+      UNIQUE(domain, remote_sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_inbox_status
+      ON sync_inbox(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_sync_inbox_domain_status
+      ON sync_inbox(domain, status, created_at);
+
+    CREATE TABLE IF NOT EXISTS sync_cursors (
+      domain TEXT NOT NULL,
+      cursor_key TEXT NOT NULL,
+      cursor_value TEXT,
+      updated_at INTEGER NOT NULL,
+      meta_json TEXT,
+      PRIMARY KEY (domain, cursor_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_dead_letters (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      domain TEXT,
+      reason_code TEXT NOT NULL,
+      payload_json TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_dead_letters_source
+      ON sync_dead_letters(source, source_id);
 
     -- Instances: central config entity (one per omni connection)
     CREATE TABLE IF NOT EXISTS instances (
@@ -1786,7 +2095,12 @@ function getDb(): Database {
       -- Execution config
       session_target TEXT DEFAULT 'main',
       reply_session TEXT,
+      execution_type TEXT DEFAULT 'agent',
       payload_text TEXT NOT NULL,
+      shell_command TEXT,
+      shell_timeout_ms INTEGER,
+      shell_env_file TEXT,
+      on_error TEXT,
 
       -- State
       next_run_at INTEGER,
@@ -1794,6 +2108,7 @@ function getDb(): Database {
       last_status TEXT,
       last_error TEXT,
       last_duration_ms INTEGER,
+      last_exit_code INTEGER,
 
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -1845,12 +2160,40 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN filter TEXT");
     log.info("Added filter column to triggers table");
   }
+  if (!triggerColumns.some((c) => c.name === "reply_source")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN reply_source TEXT");
+    log.info("Added reply_source column to triggers table");
+  }
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
   if (!cronColumns.some((c) => c.name === "account_id")) {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN account_id TEXT");
     log.info("Added account_id column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "execution_type")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN execution_type TEXT DEFAULT 'agent'");
+    log.info("Added execution_type column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "shell_command")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN shell_command TEXT");
+    log.info("Added shell_command column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "shell_timeout_ms")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN shell_timeout_ms INTEGER");
+    log.info("Added shell_timeout_ms column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "shell_env_file")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN shell_env_file TEXT");
+    log.info("Added shell_env_file column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "on_error")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN on_error TEXT");
+    log.info("Added on_error column to cron_jobs table");
+  }
+  if (!cronColumns.some((c) => c.name === "last_exit_code")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN last_exit_code INTEGER");
+    log.info("Added last_exit_code column to cron_jobs table");
   }
 
   // Migration: add heartbeat_account_id column to agents
@@ -2124,11 +2467,223 @@ function ensureIdentityChatMigrations(database: Database): void {
   ensureColumn(database, "session_events", "normalized_sender_id", "TEXT");
   ensureColumn(database, "session_events", "identity_confidence", "REAL");
   ensureColumn(database, "session_events", "identity_provenance_json", "TEXT");
+  ensureColumn(database, "chat_messages", "edited_at", "INTEGER");
+  ensureColumn(database, "chat_messages", "deleted_at", "INTEGER");
 
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_message_metadata_canonical_chat ON message_metadata(canonical_chat_id)",
   );
   database.exec("CREATE INDEX IF NOT EXISTS idx_session_events_canonical_chat ON session_events(canonical_chat_id)");
+
+  // sessions/attach owns the output attachment. Remove legacy focus state
+  // so old focus rows cannot surprise a future downgrade/inspection path.
+  database.exec("DROP TABLE IF EXISTS session_focus");
+  ensureColumn(database, "session_chat_subscriptions", "output_attached_at", "INTEGER");
+  const hadSubscriptionSpeechMode = tableHasColumn(database, "session_chat_subscriptions", "speech_mode");
+  ensureColumn(
+    database,
+    "session_chat_subscriptions",
+    "speech_mode",
+    "TEXT NOT NULL DEFAULT 'speak' CHECK(speech_mode IN ('muted', 'speak'))",
+  );
+  ensureColumn(database, "session_chat_subscriptions", "speech_updated_at", "INTEGER");
+  ensureColumn(database, "session_chat_subscriptions", "speech_reason", "TEXT");
+  if (!hadSubscriptionSpeechMode) {
+    backfillSessionSpeechModes(database);
+  }
+
+  // sessions/attach: enforce the spec invariant that a chat can only be
+  // active in one session at a time. Order matters here:
+  //   1. dedupe any existing duplicates (soft-detach all but the most
+  //      recent active row per chat) so the UNIQUE index can install;
+  //   2. drop any legacy non-unique index by the same name (created by
+  //      older code on this branch);
+  //   3. install the partial UNIQUE index;
+  //   4. backfill from session_chat_bindings, picking one binding per
+  //      chat (the most recent) so legacy 1:N data does not regenerate
+  //      duplicates after cleanup.
+  // The whole sequence is wrapped in a transaction so a concurrent
+  // writer (e.g. the daemon's consumer doing `attachChatToSession`)
+  // cannot squeeze an INSERT between dedupe and CREATE UNIQUE INDEX,
+  // which would make the CREATE fail and leave the migration half-done.
+  database.transaction(() => {
+    dedupeSessionChatSubscriptions(database);
+    database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
+    database.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
+    );
+    backfillSessionChatSubscriptionsFromBindings(database);
+    backfillSessionOutputAttachments(database);
+    database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
+    database.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_output_target ON session_chat_subscriptions(session_key) WHERE detached_at IS NULL AND output_attached_at IS NOT NULL",
+    );
+  })();
+}
+
+/**
+ * Test-only: re-run the dedupe + backfill migration steps on the current
+ * database. Production callers must rely on `ensureIdentityChatMigrations`
+ * running once at startup.
+ */
+export function dbRunSessionAttachMigrationForTests(): void {
+  const db = getDb();
+  ensureColumn(
+    db,
+    "session_chat_subscriptions",
+    "speech_mode",
+    "TEXT NOT NULL DEFAULT 'speak' CHECK(speech_mode IN ('muted', 'speak'))",
+  );
+  ensureColumn(db, "session_chat_subscriptions", "speech_updated_at", "INTEGER");
+  ensureColumn(db, "session_chat_subscriptions", "speech_reason", "TEXT");
+  dedupeSessionChatSubscriptions(db);
+  db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
+  );
+  backfillSessionChatSubscriptionsFromBindings(db);
+  backfillSessionOutputAttachments(db);
+  db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_output_target ON session_chat_subscriptions(session_key) WHERE detached_at IS NULL AND output_attached_at IS NOT NULL",
+  );
+}
+
+function dedupeSessionChatSubscriptions(database: Database): void {
+  const now = Date.now();
+  const result = database
+    .prepare(
+      `
+      UPDATE session_chat_subscriptions
+      SET detached_at = ?, updated_at = ?
+      WHERE detached_at IS NULL
+        AND id NOT IN (
+          SELECT id FROM (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY chat_id
+                     ORDER BY updated_at DESC, id DESC
+                   ) AS rn
+            FROM session_chat_subscriptions
+            WHERE detached_at IS NULL
+          )
+          WHERE rn = 1
+        )
+    `,
+    )
+    .run(now, now);
+  if (result.changes > 0) {
+    log.warn("Detached duplicate active session_chat_subscriptions (kept most recent per chat)", {
+      rows: result.changes,
+    });
+  }
+}
+
+function backfillSessionChatSubscriptionsFromBindings(database: Database): void {
+  const now = Date.now();
+  // Backfill at most ONE subscription per chat. When legacy
+  // session_chat_bindings has multiple sessions sharing the same chat
+  // (allowed by the legacy schema), pick the most recently updated row
+  // (tiebreak by session_key for determinism). This matches the spec
+  // invariant "one chat → one session" at the cost of losing the older
+  // bindings; operators can manually attach to recover if needed.
+  const result = database
+    .prepare(
+      `
+      INSERT INTO session_chat_subscriptions (
+        session_key, chat_id, role, attached_by_type, attached_by_id,
+        attached_reason, context_snapshot_at_attach_json,
+        speech_mode, speech_updated_at, speech_reason,
+        output_attached_at, created_at, updated_at, detached_at
+      )
+      SELECT
+        ranked.session_key, ranked.chat_id, 'primary', 'system', NULL,
+        'backfill-from-session-chat-bindings', NULL,
+        'speak', ?, 'backfill-from-session-chat-bindings',
+        ?, ?, ?, NULL
+      FROM (
+        SELECT b.session_key,
+               b.chat_id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY b.chat_id
+                 ORDER BY b.updated_at DESC, b.session_key
+               ) AS rn
+        FROM session_chat_bindings b
+      ) ranked
+      WHERE ranked.rn = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM session_chat_subscriptions s
+          WHERE s.chat_id = ranked.chat_id
+            AND s.detached_at IS NULL
+        )
+    `,
+    )
+    .run(now, now, now, now);
+  if (result.changes > 0) {
+    log.info("Backfilled session_chat_subscriptions from session_chat_bindings", { rows: result.changes });
+  }
+}
+
+function backfillSessionOutputAttachments(database: Database): void {
+  const now = Date.now();
+  const result = database
+    .prepare(
+      `
+      UPDATE session_chat_subscriptions
+      SET output_attached_at = ?,
+          speech_mode = 'speak',
+          speech_updated_at = ?,
+          speech_reason = 'backfill-output-attachment',
+          updated_at = ?
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT s.id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY s.session_key
+                   ORDER BY CASE WHEN s.role = 'primary' THEN 0 ELSE 1 END,
+                            s.updated_at DESC,
+                            s.id DESC
+                 ) AS rn
+          FROM session_chat_subscriptions s
+          WHERE s.detached_at IS NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM session_chat_subscriptions o
+              WHERE o.session_key = s.session_key
+                AND o.detached_at IS NULL
+                AND o.output_attached_at IS NOT NULL
+            )
+        )
+        WHERE rn = 1
+      )
+    `,
+    )
+    .run(now, now, now);
+  if (result.changes > 0) {
+    log.info("Backfilled session output attachments", { rows: result.changes });
+  }
+}
+
+function backfillSessionSpeechModes(database: Database): void {
+  const now = Date.now();
+  const result = database
+    .prepare(
+      `
+      UPDATE session_chat_subscriptions
+      SET speech_mode = CASE
+            WHEN output_attached_at IS NOT NULL OR role = 'primary' THEN 'speak'
+            ELSE 'muted'
+          END,
+          speech_updated_at = ?,
+          speech_reason = 'backfill-from-attach-output',
+          updated_at = ?
+      WHERE detached_at IS NULL
+    `,
+    )
+    .run(now, now);
+  if (result.changes > 0) {
+    log.info("Backfilled session subscription speech modes", { rows: result.changes });
+  }
 }
 
 function cleanJsonRecord(value: Record<string, unknown> | null | undefined): string | null {
@@ -2145,6 +2700,16 @@ function parseJsonRecord(value: string | null): Record<string, unknown> | undefi
       : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function parseJsonArray(value: string | null): unknown[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
 }
 
@@ -2190,6 +2755,12 @@ function normalizeChatIdentity(channel: string, platformChatId: string, chatType
     return normalized || trimmed.toLowerCase();
   }
   return trimmed.toLowerCase();
+}
+
+export function dbContactDmNormalizedChatId(contactId: string): string {
+  const trimmed = contactId.trim();
+  if (!trimmed) throw new Error("contactId is required to canonicalize a DM chat");
+  return `contact:${trimmed}`;
 }
 
 function inferChatType(platformChatId: string, explicit?: ChatType | null): ChatType {
@@ -2260,6 +2831,8 @@ function rowToChatMessage(row: ChatMessageRow): ChatMessageRecord {
     content: parseJsonRecord(row.content_json),
     rawProvenance: parseJsonRecord(row.raw_provenance_json),
     providerTimestamp: row.provider_timestamp ?? undefined,
+    editedAt: row.edited_at ?? undefined,
+    deletedAt: row.deleted_at ?? undefined,
     ingestedAt: row.ingested_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -2277,6 +2850,26 @@ function rowToChatMessageWithSortKey(row: ChatMessageWithSortKeyRow): ChatMessag
     ...rowToChatMessage(row),
     sortKey: row.message_sort_key || chatMessageSortKey(row),
   };
+}
+
+function parsePositiveIntegerOption(value: number | string | null | undefined, optionName: string): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${optionName} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function rawPayloadRecord(rawProvenance: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  const rawPayload = rawProvenance?.rawPayload;
+  if (!rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload)) return undefined;
+  return rawPayload as Record<string, unknown>;
+}
+
+function providerTimestampFromRawProvenance(rawProvenanceJson: string | null): number | undefined {
+  const rawPayload = rawPayloadRecord(parseJsonRecord(rawProvenanceJson));
+  return timestampLikeToMs(rawPayload?.messageTimestamp);
 }
 
 function rowToChatReadingList(row: ChatReadingListRow): ChatReadingListRecord {
@@ -2363,8 +2956,11 @@ function upsertChat(database: Database, input: UpsertChatInput): ChatRecord {
   const channel = normalizeChannelId(input.channel);
   const instanceId = input.instanceId?.trim() ?? "";
   const chatType = inferChatType(input.platformChatId, input.chatType);
+  const existingByPlatform = findChatByPlatformOrAlias(database, channel, instanceId, input.platformChatId);
   const normalizedChatId =
-    input.normalizedChatId?.trim() || normalizeChatIdentity(channel, input.platformChatId, chatType);
+    existingByPlatform?.normalized_chat_id ||
+    input.normalizedChatId?.trim() ||
+    normalizeChatIdentity(channel, input.platformChatId, chatType);
   const id = semanticId("chat", [channel, instanceId, normalizedChatId]);
 
   database
@@ -2407,6 +3003,402 @@ function upsertChat(database: Database, input: UpsertChatInput): ChatRecord {
   const row = database
     .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
     .get(channel, instanceId, normalizedChatId) as ChatRow;
+  return rowToChat(row);
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+function chatPlatformAliases(row: ChatRow): string[] {
+  const provenance = parseJsonRecord(row.raw_provenance_json);
+  const canonicalization =
+    provenance?.canonicalization && typeof provenance.canonicalization === "object"
+      ? (provenance.canonicalization as Record<string, unknown>)
+      : {};
+  const platformChatIds = Array.isArray(canonicalization.platformChatIds)
+    ? canonicalization.platformChatIds.filter((value): value is string => typeof value === "string")
+    : [];
+  return uniqueStrings([row.platform_chat_id, ...platformChatIds]);
+}
+
+function findChatByPlatformOrAlias(
+  database: Database,
+  channel: string,
+  instanceId: string,
+  platformChatId: string,
+): ChatRow | undefined {
+  const exact = database
+    .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND platform_chat_id = ?")
+    .get(channel, instanceId, platformChatId) as ChatRow | undefined;
+  if (exact) return exact;
+
+  const rows = database
+    .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND raw_provenance_json IS NOT NULL")
+    .all(channel, instanceId) as ChatRow[];
+  return rows.find((row) => chatPlatformAliases(row).includes(platformChatId));
+}
+
+function mergeChatCanonicalizationProvenance(
+  target: ChatRow,
+  source: ChatRow | null,
+  input: CanonicalizeDmChatForContactInput,
+): Record<string, unknown> {
+  const existingTarget = parseJsonRecord(target.raw_provenance_json) ?? {};
+  const existingSource = source ? (parseJsonRecord(source.raw_provenance_json) ?? {}) : {};
+  const existingCanonicalization =
+    existingTarget.canonicalization && typeof existingTarget.canonicalization === "object"
+      ? (existingTarget.canonicalization as Record<string, unknown>)
+      : {};
+  const previousPlatformChatIds = Array.isArray(existingCanonicalization.platformChatIds)
+    ? existingCanonicalization.platformChatIds.filter((value): value is string => typeof value === "string")
+    : [];
+  const previousMergedChatIds = Array.isArray(existingCanonicalization.mergedChatIds)
+    ? existingCanonicalization.mergedChatIds.filter((value): value is string => typeof value === "string")
+    : [];
+  return mergeJsonRecords(existingSource, existingTarget, input.rawProvenance ?? undefined, {
+    canonicalization: {
+      ...existingCanonicalization,
+      source: "contact_dm",
+      contactId: input.contactId,
+      platformChatIds: uniqueStrings([
+        ...previousPlatformChatIds,
+        target.platform_chat_id,
+        source?.platform_chat_id,
+        input.platformChatId,
+      ]),
+      mergedChatIds: uniqueStrings([
+        ...previousMergedChatIds,
+        source?.id && source.id !== target.id ? source.id : null,
+      ]),
+    },
+  })!;
+}
+
+function mergeChatMessagesIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database.prepare("SELECT * FROM chat_messages WHERE chat_id = ?").all(sourceChatId) as ChatMessageRow[];
+  for (const row of rows) {
+    const existing = database
+      .prepare(
+        `
+        SELECT *
+        FROM chat_messages
+        WHERE channel = ? AND instance_id = ? AND chat_id = ? AND provider_message_id = ?
+      `,
+      )
+      .get(row.channel, row.instance_id, targetChatId, row.provider_message_id) as ChatMessageRow | undefined;
+    if (!existing) {
+      database
+        .prepare("UPDATE chat_messages SET chat_id = ?, updated_at = ? WHERE id = ?")
+        .run(targetChatId, now, row.id);
+      continue;
+    }
+    const mergedProvenance = mergeJsonRecords(
+      parseJsonRecord(existing.raw_provenance_json),
+      parseJsonRecord(row.raw_provenance_json),
+      { mergedFromChatId: sourceChatId },
+    );
+    database
+      .prepare(
+        `
+        UPDATE chat_messages
+        SET raw_sender_id = COALESCE(raw_sender_id, ?),
+            normalized_sender_id = COALESCE(normalized_sender_id, ?),
+            actor_type = CASE WHEN actor_type = 'unknown' AND ? != 'unknown' THEN ? ELSE actor_type END,
+            contact_id = COALESCE(contact_id, ?),
+            agent_id = COALESCE(agent_id, ?),
+            platform_identity_id = COALESCE(platform_identity_id, ?),
+            message_type = COALESCE(message_type, ?),
+            content_json = COALESCE(content_json, ?),
+            raw_provenance_json = COALESCE(?, raw_provenance_json),
+            provider_timestamp = COALESCE(provider_timestamp, ?),
+            updated_at = ?
+        WHERE id = ?
+      `,
+      )
+      .run(
+        row.raw_sender_id,
+        row.normalized_sender_id,
+        row.actor_type,
+        row.actor_type,
+        row.contact_id,
+        row.agent_id,
+        row.platform_identity_id,
+        row.message_type,
+        row.content_json,
+        cleanJsonRecord(mergedProvenance),
+        row.provider_timestamp,
+        now,
+        existing.id,
+      );
+    database.prepare("DELETE FROM chat_messages WHERE id = ?").run(row.id);
+  }
+}
+
+function mergeChatParticipantsIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database
+    .prepare("SELECT * FROM chat_participants WHERE chat_id = ?")
+    .all(sourceChatId) as ChatParticipantRow[];
+  for (const row of rows) {
+    upsertChatParticipant(database, {
+      chatId: targetChatId,
+      platformIdentityId: row.platform_identity_id,
+      contactId: row.contact_id,
+      agentId: row.agent_id,
+      rawPlatformUserId: row.raw_platform_user_id,
+      normalizedPlatformUserId: row.normalized_platform_user_id ?? undefined,
+      role: row.role,
+      status: row.status,
+      source: row.source,
+      metadata: mergeJsonRecords(parseJsonRecord(row.metadata_json), { canonicalizedFromChatId: sourceChatId }),
+      seenAt: Math.max(row.last_seen_at, now),
+    });
+    database.prepare("DELETE FROM chat_participants WHERE id = ?").run(row.id);
+  }
+}
+
+function mergeSessionChatBindingsIntoTarget(database: Database, sourceChatId: string, targetChatId: string): void {
+  const rows = database
+    .prepare("SELECT session_key FROM session_chat_bindings WHERE chat_id = ?")
+    .all(sourceChatId) as Array<{ session_key: string }>;
+  for (const row of rows) {
+    const existing = database
+      .prepare("SELECT 1 FROM session_chat_bindings WHERE session_key = ? AND chat_id = ?")
+      .get(row.session_key, targetChatId);
+    if (existing) {
+      database
+        .prepare("DELETE FROM session_chat_bindings WHERE session_key = ? AND chat_id = ?")
+        .run(row.session_key, sourceChatId);
+    } else {
+      database
+        .prepare("UPDATE session_chat_bindings SET chat_id = ? WHERE session_key = ? AND chat_id = ?")
+        .run(targetChatId, row.session_key, sourceChatId);
+    }
+  }
+}
+
+function mergeSessionChatSubscriptionsIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database
+    .prepare("SELECT id, session_key, detached_at FROM session_chat_subscriptions WHERE chat_id = ?")
+    .all(sourceChatId) as Array<{ id: number; session_key: string; detached_at: number | null }>;
+  for (const row of rows) {
+    const activeTarget = database
+      .prepare("SELECT 1 FROM session_chat_subscriptions WHERE chat_id = ? AND detached_at IS NULL")
+      .get(targetChatId);
+    const activePair = database
+      .prepare("SELECT 1 FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
+      .get(row.session_key, targetChatId);
+    if (row.detached_at === null && (activeTarget || activePair)) {
+      database
+        .prepare("UPDATE session_chat_subscriptions SET detached_at = ?, updated_at = ? WHERE id = ?")
+        .run(now, now, row.id);
+      continue;
+    }
+    database
+      .prepare("UPDATE session_chat_subscriptions SET chat_id = ?, updated_at = ? WHERE id = ?")
+      .run(targetChatId, now, row.id);
+  }
+}
+
+function mergeReadingListMembersIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database
+    .prepare("SELECT id, list_id, removed_at FROM chat_reading_list_members WHERE chat_id = ?")
+    .all(sourceChatId) as Array<{ id: string; list_id: string; removed_at: number | null }>;
+  for (const row of rows) {
+    const activeTarget = database
+      .prepare("SELECT 1 FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL")
+      .get(row.list_id, targetChatId);
+    if (row.removed_at === null && activeTarget) {
+      database.prepare("UPDATE chat_reading_list_members SET removed_at = ? WHERE id = ?").run(now, row.id);
+    } else {
+      database.prepare("UPDATE chat_reading_list_members SET chat_id = ? WHERE id = ?").run(targetChatId, row.id);
+    }
+  }
+}
+
+function mergeReadingCursorsIntoTarget(
+  database: Database,
+  sourceChatId: string,
+  targetChatId: string,
+  now: number,
+): void {
+  const rows = database.prepare("SELECT * FROM chat_reading_cursors WHERE chat_id = ?").all(sourceChatId) as Array<{
+    id: string;
+    list_id: string;
+    reader_type: string;
+    reader_id: string;
+    last_read_message_id: string | null;
+    last_read_message_sort_key: string | null;
+    last_read_event_id: string | null;
+    last_read_event_sort_key: string | null;
+    last_read_at: number | null;
+    read_reason: string | null;
+    metadata_json: string | null;
+    updated_at: number;
+  }>;
+  for (const row of rows) {
+    const existing = database
+      .prepare(
+        `
+        SELECT id, updated_at
+        FROM chat_reading_cursors
+        WHERE list_id = ? AND chat_id = ? AND reader_type = ? AND reader_id = ?
+      `,
+      )
+      .get(row.list_id, targetChatId, row.reader_type, row.reader_id) as { id: string; updated_at: number } | undefined;
+    if (!existing) {
+      database
+        .prepare("UPDATE chat_reading_cursors SET chat_id = ?, updated_at = ? WHERE id = ?")
+        .run(targetChatId, now, row.id);
+      continue;
+    }
+    if (row.updated_at > existing.updated_at) {
+      database
+        .prepare(
+          `
+          UPDATE chat_reading_cursors
+          SET last_read_message_id = ?,
+              last_read_message_sort_key = ?,
+              last_read_event_id = ?,
+              last_read_event_sort_key = ?,
+              last_read_at = ?,
+              read_reason = ?,
+              metadata_json = ?,
+              updated_at = ?
+          WHERE id = ?
+        `,
+        )
+        .run(
+          row.last_read_message_id,
+          row.last_read_message_sort_key,
+          row.last_read_event_id,
+          row.last_read_event_sort_key,
+          row.last_read_at,
+          row.read_reason,
+          row.metadata_json,
+          now,
+          existing.id,
+        );
+    }
+    database.prepare("DELETE FROM chat_reading_cursors WHERE id = ?").run(row.id);
+  }
+  database
+    .prepare("UPDATE chat_reading_cursor_events SET chat_id = ? WHERE chat_id = ?")
+    .run(targetChatId, sourceChatId);
+}
+
+function canonicalizeDmChatForContact(database: Database, input: CanonicalizeDmChatForContactInput): ChatRecord {
+  const contactId = input.contactId.trim();
+  if (!contactId) throw new Error("contactId is required to canonicalize a DM chat");
+  const source = database.prepare("SELECT * FROM chats WHERE id = ?").get(input.chatId) as ChatRow | undefined;
+  if (!source) throw new Error(`Chat not found: ${input.chatId}`);
+  if (source.chat_type !== "dm") return rowToChat(source);
+
+  const now = input.seenAt ?? Date.now();
+  const normalizedChatId = dbContactDmNormalizedChatId(contactId);
+  const target = database
+    .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
+    .get(source.channel, source.instance_id, normalizedChatId) as ChatRow | undefined;
+  const targetRow = target ?? source;
+  const rawProvenance = mergeChatCanonicalizationProvenance(targetRow, target ? source : null, input);
+
+  if (!target || target.id === source.id) {
+    database
+      .prepare(
+        `
+        UPDATE chats
+        SET normalized_chat_id = ?,
+            platform_chat_id = COALESCE(?, platform_chat_id),
+            title = COALESCE(?, title),
+            avatar_url = COALESCE(?, avatar_url),
+            raw_provenance_json = ?,
+            last_seen_at = MAX(last_seen_at, ?),
+            updated_at = ?
+        WHERE id = ?
+      `,
+      )
+      .run(
+        normalizedChatId,
+        input.platformChatId ?? null,
+        input.title ?? null,
+        input.avatarUrl ?? null,
+        cleanJsonRecord(rawProvenance),
+        now,
+        now,
+        source.id,
+      );
+    const row = database.prepare("SELECT * FROM chats WHERE id = ?").get(source.id) as ChatRow;
+    return rowToChat(row);
+  }
+
+  mergeChatMessagesIntoTarget(database, source.id, target.id, now);
+  mergeChatParticipantsIntoTarget(database, source.id, target.id, now);
+  mergeSessionChatBindingsIntoTarget(database, source.id, target.id);
+  mergeSessionChatSubscriptionsIntoTarget(database, source.id, target.id, now);
+  mergeReadingListMembersIntoTarget(database, source.id, target.id, now);
+  mergeReadingCursorsIntoTarget(database, source.id, target.id, now);
+
+  database
+    .prepare("UPDATE message_metadata SET canonical_chat_id = ? WHERE canonical_chat_id = ?")
+    .run(target.id, source.id);
+  database
+    .prepare("UPDATE session_events SET canonical_chat_id = ? WHERE canonical_chat_id = ?")
+    .run(target.id, source.id);
+  database
+    .prepare(
+      `
+      UPDATE chats
+      SET platform_chat_id = COALESCE(?, platform_chat_id),
+          title = COALESCE(?, title),
+          avatar_url = COALESCE(?, avatar_url),
+          raw_provenance_json = ?,
+          first_seen_at = MIN(first_seen_at, ?),
+          last_seen_at = MAX(last_seen_at, ?),
+          updated_at = ?
+      WHERE id = ?
+    `,
+    )
+    .run(
+      input.platformChatId ?? source.platform_chat_id,
+      input.title ?? source.title,
+      input.avatarUrl ?? source.avatar_url,
+      cleanJsonRecord(rawProvenance),
+      source.first_seen_at,
+      Math.max(source.last_seen_at, now),
+      now,
+      target.id,
+    );
+  database.prepare("DELETE FROM chats WHERE id = ?").run(source.id);
+
+  const row = database.prepare("SELECT * FROM chats WHERE id = ?").get(target.id) as ChatRow;
   return rowToChat(row);
 }
 
@@ -2621,9 +3613,9 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
         id, chat_id, channel, instance_id, provider_message_id, raw_chat_id,
         raw_sender_id, normalized_sender_id, actor_type, contact_id, agent_id, platform_identity_id,
         message_type, content_json, raw_provenance_json, provider_timestamp,
-        ingested_at, created_at, updated_at
+        edited_at, deleted_at, ingested_at, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(channel, instance_id, chat_id, provider_message_id) DO UPDATE SET
         raw_sender_id = COALESCE(excluded.raw_sender_id, chat_messages.raw_sender_id),
         normalized_sender_id = COALESCE(excluded.normalized_sender_id, chat_messages.normalized_sender_id),
@@ -2638,6 +3630,8 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
         content_json = COALESCE(excluded.content_json, chat_messages.content_json),
         raw_provenance_json = COALESCE(excluded.raw_provenance_json, chat_messages.raw_provenance_json),
         provider_timestamp = COALESCE(excluded.provider_timestamp, chat_messages.provider_timestamp),
+        edited_at = COALESCE(excluded.edited_at, chat_messages.edited_at),
+        deleted_at = COALESCE(excluded.deleted_at, chat_messages.deleted_at),
         updated_at = excluded.updated_at
     `,
     )
@@ -2658,6 +3652,8 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
       cleanJsonRecord(input.content),
       cleanJsonRecord(input.rawProvenance),
       input.providerTimestamp ?? null,
+      input.editedAt ?? null,
+      input.deletedAt ?? null,
       now,
       now,
       now,
@@ -3577,8 +4573,210 @@ function rowToContext(row: ContextRow): ContextRecord {
   return result;
 }
 
+function rowToDaemonRestartEpoch(row: DaemonRestartEpochRow): DaemonRestartEpochRecord {
+  return {
+    restartEpoch: row.restart_epoch,
+    reason: row.reason,
+    callerSessionName: row.caller_session_name ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToDaemonRestartSessionSnapshot(row: DaemonRestartSessionSnapshotRow): DaemonRestartSessionSnapshotRecord {
+  return {
+    restartEpoch: row.restart_epoch,
+    sessionKey: row.session_key,
+    sessionName: row.session_name,
+    agentId: row.agent_id ?? undefined,
+    runtimeProvider: row.runtime_provider ?? undefined,
+    activity: row.activity,
+    nonIdle: row.non_idle === 1,
+    lastActivityAt: row.last_activity_at,
+    stoppedAt: row.stopped_at,
+    pendingMessageCount: row.pending_message_count,
+    pendingMessagesJson: row.pending_messages_json ?? undefined,
+    metadata: parseJsonRecord(row.metadata_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function dbUpsertDaemonRestartEpoch(input: DaemonRestartEpochInput): DaemonRestartEpochRecord {
+  const createdAt = input.createdAt ?? Date.now();
+  const updatedAt = input.updatedAt ?? createdAt;
+  return executeWrite(
+    getDb(),
+    (database) => {
+      database
+        .prepare(
+          `
+          INSERT INTO daemon_restart_epochs (
+            restart_epoch, reason, caller_session_name, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(restart_epoch) DO UPDATE SET
+            reason = excluded.reason,
+            caller_session_name = COALESCE(excluded.caller_session_name, daemon_restart_epochs.caller_session_name),
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run(input.restartEpoch, input.reason, input.callerSessionName ?? null, createdAt, updatedAt);
+
+      const row = database
+        .prepare("SELECT * FROM daemon_restart_epochs WHERE restart_epoch = ?")
+        .get(input.restartEpoch) as DaemonRestartEpochRow | undefined;
+      if (!row) {
+        throw new Error(`Restart epoch not found after upsert: ${input.restartEpoch}`);
+      }
+      return rowToDaemonRestartEpoch(row);
+    },
+    { label: "daemon_restart_epoch_upsert" },
+  );
+}
+
+export function dbRecordDaemonRestartSessionSnapshot(
+  input: DaemonRestartSessionSnapshotInput,
+): DaemonRestartSessionSnapshotRecord {
+  const now = input.recordedAt ?? Date.now();
+  const pendingMessages = input.pendingMessages ?? [];
+  const pendingMessagesJson = pendingMessages.length > 0 ? JSON.stringify(pendingMessages) : null;
+  return executeWrite(
+    getDb(),
+    (database) => {
+      database
+        .prepare(
+          `
+          INSERT INTO daemon_restart_session_snapshots (
+            restart_epoch, session_key, session_name, agent_id, runtime_provider,
+            activity, non_idle, last_activity_at, stopped_at, pending_message_count,
+            pending_messages_json, metadata_json, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(restart_epoch, session_key) DO UPDATE SET
+            session_name = excluded.session_name,
+            agent_id = COALESCE(excluded.agent_id, daemon_restart_session_snapshots.agent_id),
+            runtime_provider = COALESCE(excluded.runtime_provider, daemon_restart_session_snapshots.runtime_provider),
+            activity = excluded.activity,
+            non_idle = excluded.non_idle,
+            last_activity_at = MAX(daemon_restart_session_snapshots.last_activity_at, excluded.last_activity_at),
+            stopped_at = MAX(daemon_restart_session_snapshots.stopped_at, excluded.stopped_at),
+            pending_message_count = excluded.pending_message_count,
+            pending_messages_json = excluded.pending_messages_json,
+            metadata_json = excluded.metadata_json,
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run(
+          input.restartEpoch,
+          input.sessionKey,
+          input.sessionName,
+          input.agentId ?? null,
+          input.runtimeProvider ?? null,
+          input.activity,
+          input.nonIdle ? 1 : 0,
+          input.lastActivityAt,
+          input.stoppedAt,
+          pendingMessages.length,
+          pendingMessagesJson,
+          cleanJsonRecord(input.metadata ?? null),
+          now,
+          now,
+        );
+
+      const row = database
+        .prepare("SELECT * FROM daemon_restart_session_snapshots WHERE restart_epoch = ? AND session_key = ?")
+        .get(input.restartEpoch, input.sessionKey) as DaemonRestartSessionSnapshotRow | undefined;
+      if (!row) {
+        throw new Error(`Restart snapshot not found after upsert: ${input.restartEpoch}/${input.sessionKey}`);
+      }
+      return rowToDaemonRestartSessionSnapshot(row);
+    },
+    { label: "daemon_restart_snapshot_record" },
+  );
+}
+
+export function dbListEligibleDaemonRestartSessionSnapshots(input: {
+  restartEpoch: string;
+  now?: number;
+  windowMs?: number;
+}): DaemonRestartSessionSnapshotRecord[] {
+  const now = input.now ?? Date.now();
+  const windowMs = input.windowMs ?? 60 * 60 * 1000;
+  const cutoff = now - windowMs;
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT snapshots.*
+      FROM daemon_restart_session_snapshots snapshots
+      JOIN sessions live_sessions ON live_sessions.session_key = snapshots.session_key
+      WHERE snapshots.restart_epoch = ?
+        AND snapshots.non_idle = 1
+        AND snapshots.stopped_at >= ?
+        AND (live_sessions.ephemeral = 0 OR live_sessions.expires_at IS NULL OR live_sessions.expires_at > ?)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM daemon_restart_resume_deliveries delivered
+          WHERE delivered.restart_epoch = snapshots.restart_epoch
+            AND delivered.session_key = snapshots.session_key
+        )
+      ORDER BY snapshots.stopped_at ASC, snapshots.session_name ASC
+    `,
+    )
+    .all(input.restartEpoch, cutoff, now) as DaemonRestartSessionSnapshotRow[];
+  return rows.map(rowToDaemonRestartSessionSnapshot);
+}
+
+export function dbGetDaemonRestartPendingMessages(restartEpoch: string, sessionKey: string): unknown[] {
+  const row = getDb()
+    .prepare(
+      "SELECT pending_messages_json FROM daemon_restart_session_snapshots WHERE restart_epoch = ? AND session_key = ?",
+    )
+    .get(restartEpoch, sessionKey) as { pending_messages_json: string | null } | undefined;
+  return parseJsonArray(row?.pending_messages_json ?? null);
+}
+
+export function dbHasDaemonRestartResumeDelivery(restartEpoch: string, sessionKey: string): boolean {
+  const row = getDb()
+    .prepare("SELECT 1 AS found FROM daemon_restart_resume_deliveries WHERE restart_epoch = ? AND session_key = ?")
+    .get(restartEpoch, sessionKey) as { found: number } | undefined;
+  return Boolean(row);
+}
+
+export function dbMarkDaemonRestartResumeDelivered(input: {
+  restartEpoch: string;
+  sessionKey: string;
+  sessionName?: string | null;
+  deliveredAt?: number;
+}): boolean {
+  const deliveredAt = input.deliveredAt ?? Date.now();
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const result = database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO daemon_restart_resume_deliveries (
+            restart_epoch, session_key, session_name, delivered_at
+          )
+          VALUES (?, ?, ?, ?)
+        `,
+        )
+        .run(input.restartEpoch, input.sessionKey, input.sessionName ?? null, deliveredAt);
+      return result.changes > 0;
+    },
+    { label: "daemon_restart_resume_delivered" },
+  );
+}
+
 export function dbUpsertChat(input: UpsertChatInput): ChatRecord {
   return upsertChat(getDb(), input);
+}
+
+export function dbCanonicalizeDmChatForContact(input: CanonicalizeDmChatForContactInput): ChatRecord {
+  return executeWrite(getDb(), (database) => canonicalizeDmChatForContact(database, input), {
+    label: "canonicalize_dm_chat_for_contact",
+  });
 }
 
 export function dbGetChat(id: string): ChatRecord | null {
@@ -3598,7 +4796,9 @@ export function dbFindChat(input: {
   const row = getDb()
     .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
     .get(channel, instanceId, normalizedChatId) as ChatRow | undefined;
-  return row ? rowToChat(row) : null;
+  if (row) return rowToChat(row);
+  const byPlatform = findChatByPlatformOrAlias(getDb(), channel, instanceId, input.platformChatId);
+  return byPlatform ? rowToChat(byPlatform) : null;
 }
 
 function chatRefCandidates(ref: string): string[] {
@@ -3736,6 +4936,77 @@ export function dbListChats(
   };
 }
 
+function normalizePositiveInteger(value: number | string | null | undefined, fallback: number, max: number): number {
+  if (value === null || value === undefined || value === "") return fallback;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
+export function dbListChatIdsByContactIds(input: {
+  contactIds: string[];
+  limitPerContact?: number | string | null;
+}): Map<string, string[]> {
+  const contactIds = Array.from(new Set(input.contactIds.map((id) => id.trim()).filter(Boolean)));
+  const result = new Map<string, string[]>(contactIds.map((id) => [id, []]));
+  if (contactIds.length === 0) return result;
+
+  const limitPerContact = normalizePositiveInteger(input.limitPerContact, 500, 5_000);
+  const database = getDb();
+  const chunkSize = 250;
+
+  for (let index = 0; index < contactIds.length; index += chunkSize) {
+    const chunk = contactIds.slice(index, index + chunkSize);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = database
+      .prepare(
+        `
+        WITH related_raw AS (
+          SELECT cp.contact_id AS contact_id, cp.chat_id AS chat_id, c.last_seen_at AS last_seen_at
+          FROM chat_participants cp
+          JOIN chats c ON c.id = cp.chat_id
+          WHERE cp.contact_id IN (${placeholders})
+
+          UNION ALL
+
+          SELECT cm.contact_id AS contact_id, cm.chat_id AS chat_id, c.last_seen_at AS last_seen_at
+          FROM chat_messages cm
+          JOIN chats c ON c.id = cm.chat_id
+          WHERE cm.contact_id IN (${placeholders})
+        ),
+        related AS (
+          SELECT contact_id, chat_id, MAX(last_seen_at) AS last_seen_at
+          FROM related_raw
+          WHERE contact_id IS NOT NULL AND chat_id IS NOT NULL
+          GROUP BY contact_id, chat_id
+        ),
+        ranked AS (
+          SELECT
+            contact_id,
+            chat_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY contact_id
+              ORDER BY last_seen_at DESC, chat_id ASC
+            ) AS rank
+          FROM related
+        )
+        SELECT contact_id, chat_id
+        FROM ranked
+        WHERE rank <= ?
+        ORDER BY contact_id ASC, rank ASC
+      `,
+      )
+      .all(...chunk, ...chunk, limitPerContact) as Array<{ contact_id: string; chat_id: string }>;
+
+    for (const row of rows) {
+      const chats = result.get(row.contact_id);
+      if (chats) chats.push(row.chat_id);
+    }
+  }
+
+  return result;
+}
+
 export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): ChatParticipantRecord {
   return upsertChatParticipant(getDb(), input);
 }
@@ -3781,6 +5052,150 @@ export function dbFindChatMessage(input: {
   return row ? rowToChatMessage(row) : null;
 }
 
+function normalizeChatMessageScopeIds(chatIds?: string[] | null): string[] {
+  return Array.from(new Set((chatIds ?? []).map((chatId) => chatId.trim()).filter(Boolean)));
+}
+
+export function dbFindAgentChatMessageByRef(input: {
+  agentId: string;
+  messageRef: string;
+  chatIds?: string[] | null;
+  includeDeleted?: boolean;
+}): ChatMessageRecord | null {
+  const agentId = input.agentId.trim();
+  const messageRef = input.messageRef.trim();
+  if (!agentId || !messageRef) return null;
+
+  const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?", "(m.id = ? OR m.provider_message_id = ?)"];
+  const params: SQLQueryBindings[] = [agentId, messageRef, messageRef];
+  const chatIds = normalizeChatMessageScopeIds(input.chatIds);
+  if (chatIds.length > 0) {
+    whereClauses.push(`m.chat_id IN (${chatIds.map(() => "?").join(", ")})`);
+    params.push(...chatIds);
+  }
+  if (!input.includeDeleted) {
+    whereClauses.push("m.deleted_at IS NULL");
+  }
+
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM chat_messages m
+      WHERE ${whereClauses.join(" AND ")}
+      ORDER BY COALESCE(m.provider_timestamp, m.ingested_at) DESC, m.ingested_at DESC, m.id DESC
+      LIMIT 1
+    `,
+    )
+    .get(...params) as ChatMessageRow | undefined;
+  return row ? rowToChatMessage(row) : null;
+}
+
+export function dbListAgentChatMessagesPage(input: {
+  agentId: string;
+  chatIds?: string[] | null;
+  limit?: number | string | null;
+  offset?: number | string | null;
+  order?: "asc" | "desc";
+  includeDeleted?: boolean;
+}): ListPage<ChatMessageWithSortKey> {
+  const agentId = input.agentId.trim();
+  if (!agentId) {
+    return { total: 0, limit: 0, offset: 0, items: [] };
+  }
+
+  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 10, maxLimit: 100, minLimit: 1 });
+  const order = input.order === "asc" ? "ASC" : "DESC";
+  const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?"];
+  const params: SQLQueryBindings[] = [agentId];
+  const chatIds = normalizeChatMessageScopeIds(input.chatIds);
+  if (chatIds.length > 0) {
+    whereClauses.push(`m.chat_id IN (${chatIds.map(() => "?").join(", ")})`);
+    params.push(...chatIds);
+  }
+  if (!input.includeDeleted) {
+    whereClauses.push("m.deleted_at IS NULL");
+  }
+
+  const whereSql = whereClauses.join(" AND ");
+  const database = getDb();
+  const count = database.prepare(`SELECT COUNT(*) AS total FROM chat_messages m WHERE ${whereSql}`).get(...params) as
+    | { total: number }
+    | undefined;
+  const rows = database
+    .prepare(
+      `
+      SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id) AS message_sort_key
+      FROM chat_messages m
+      WHERE ${whereSql}
+      ORDER BY message_sort_key ${order}
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as ChatMessageWithSortKeyRow[];
+  return {
+    total: count?.total ?? 0,
+    limit,
+    offset,
+    items: rows.map(rowToChatMessageWithSortKey),
+  };
+}
+
+export function dbMarkChatMessageDeleted(id: string, deletedAt = Date.now()): ChatMessageRecord | null {
+  const messageId = id.trim();
+  if (!messageId) return null;
+  const database = getDb();
+  database
+    .prepare("UPDATE chat_messages SET deleted_at = ?, updated_at = ? WHERE id = ?")
+    .run(deletedAt, deletedAt, messageId);
+  return dbGetChatMessage(messageId);
+}
+
+export function dbMarkChatMessageEdited(id: string, text: string, editedAt = Date.now()): ChatMessageRecord | null {
+  const messageId = id.trim();
+  const nextText = text.trim();
+  if (!messageId || !nextText) return null;
+  const current = dbGetChatMessage(messageId);
+  if (!current) return null;
+
+  const previousContent = current.content ?? {};
+  const previousText = typeof previousContent.text === "string" ? previousContent.text : undefined;
+  const nextContent = {
+    ...previousContent,
+    type: previousContent.type ?? current.messageType ?? "text",
+    text: nextText,
+    editedAt,
+  };
+  const previousProvenance = current.rawProvenance ?? {};
+  const previousHistory = Array.isArray(previousProvenance.raviEditHistory) ? previousProvenance.raviEditHistory : [];
+  const nextProvenance = {
+    ...previousProvenance,
+    lastRaviEditAt: editedAt,
+    raviEditHistory: [
+      ...previousHistory,
+      {
+        editedAt,
+        previousText: previousText ?? null,
+        text: nextText,
+      },
+    ],
+  };
+
+  getDb()
+    .prepare(
+      `
+      UPDATE chat_messages
+      SET content_json = ?,
+          raw_provenance_json = ?,
+          edited_at = ?,
+          updated_at = ?
+      WHERE id = ?
+    `,
+    )
+    .run(cleanJsonRecord(nextContent), cleanJsonRecord(nextProvenance), editedAt, editedAt, messageId);
+  return dbGetChatMessage(messageId);
+}
+
 export function dbListChatMessagesPage(input: {
   chatId: string;
   limit?: number | string | null;
@@ -3812,6 +5227,82 @@ export function dbListChatMessagesPage(input: {
   };
 }
 
+export function dbListChatMessagesPageByContactId(input: {
+  contactId: string;
+  identityRefs?: ChatMessageContactIdentityRef[] | null;
+  limit?: number | string | null;
+  offset?: number | string | null;
+  order?: "asc" | "desc";
+}): ListPage<ChatMessageWithSortKey> & { contactId: string } {
+  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const order = input.order === "asc" ? "ASC" : "DESC";
+  const database = getDb();
+  const whereClauses = ["m.contact_id = ?"];
+  const whereParams: SQLQueryBindings[] = [input.contactId];
+
+  const identityRefs = input.identityRefs ?? [];
+  const platformIdentityIds = Array.from(
+    new Set(
+      identityRefs
+        .map((identity) => (typeof identity.id === "string" ? identity.id.trim() : ""))
+        .filter((id) => id.length > 0),
+    ),
+  );
+  if (platformIdentityIds.length > 0) {
+    whereClauses.push(`m.platform_identity_id IN (${platformIdentityIds.map(() => "?").join(", ")})`);
+    whereParams.push(...platformIdentityIds);
+  }
+
+  const senderIdentityClauses: string[] = [];
+  const senderIdentityParams: SQLQueryBindings[] = [];
+  for (const identity of identityRefs) {
+    const normalizedSenderId =
+      typeof identity.normalizedPlatformUserId === "string" ? identity.normalizedPlatformUserId.trim() : "";
+    const channel = typeof identity.channel === "string" ? normalizeChannelId(identity.channel) : "";
+    const instanceId = typeof identity.instanceId === "string" ? identity.instanceId.trim() : "";
+    if (!normalizedSenderId || !channel) continue;
+    if (channel === "phone") {
+      senderIdentityClauses.push("(m.normalized_sender_id = ? AND m.channel LIKE 'whatsapp%')");
+      senderIdentityParams.push(normalizedSenderId);
+      continue;
+    }
+    if (channel === "whatsapp") {
+      senderIdentityClauses.push("(m.normalized_sender_id = ? AND m.channel LIKE 'whatsapp%' AND m.instance_id = ?)");
+      senderIdentityParams.push(normalizedSenderId, instanceId);
+      continue;
+    }
+    senderIdentityClauses.push("(m.normalized_sender_id = ? AND m.channel = ? AND m.instance_id = ?)");
+    senderIdentityParams.push(normalizedSenderId, channel, instanceId);
+  }
+  if (senderIdentityClauses.length > 0) {
+    whereClauses.push(senderIdentityClauses.join(" OR "));
+    whereParams.push(...senderIdentityParams);
+  }
+
+  const whereSql = whereClauses.map((clause) => `(${clause})`).join(" OR ");
+  const count = database
+    .prepare(`SELECT COUNT(*) AS total FROM chat_messages m WHERE ${whereSql}`)
+    .get(...whereParams) as { total: number } | undefined;
+  const rows = database
+    .prepare(
+      `
+      SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id) AS message_sort_key
+      FROM chat_messages m
+      WHERE ${whereSql}
+      ORDER BY message_sort_key ${order}
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...whereParams, limit, offset) as ChatMessageWithSortKeyRow[];
+  return {
+    contactId: input.contactId,
+    total: count?.total ?? 0,
+    limit,
+    offset,
+    items: rows.map(rowToChatMessageWithSortKey),
+  };
+}
+
 export function dbListChatMessages(chatId: string, limit = 50): ChatMessageRecord[] {
   const rows = getDb()
     .prepare(
@@ -3824,6 +5315,80 @@ export function dbListChatMessages(chatId: string, limit = 50): ChatMessageRecor
     )
     .all(chatId, limit) as ChatMessageRow[];
   return rows.map(rowToChatMessage);
+}
+
+export function dbBackfillChatMessageProviderTimestamps(
+  input: { dryRun?: boolean; limit?: number | string | null } = {},
+): ChatMessageProviderTimestampBackfillResult {
+  const limit = parsePositiveIntegerOption(input.limit, "--limit");
+  const limitSql = limit ? "LIMIT ?" : "";
+  const params = limit ? [limit] : [];
+  const database = getDb();
+  const rows = database
+    .prepare(
+      `
+      SELECT id, chat_id, provider_message_id, provider_timestamp, raw_provenance_json
+      FROM chat_messages
+      WHERE raw_provenance_json LIKE '%messageTimestamp%'
+      ORDER BY ingested_at ASC, id ASC
+      ${limitSql}
+    `,
+    )
+    .all(...params) as Array<
+    Pick<ChatMessageRow, "id" | "chat_id" | "provider_message_id" | "provider_timestamp" | "raw_provenance_json">
+  >;
+
+  let skipped = 0;
+  let unchanged = 0;
+  const items: ChatMessageProviderTimestampBackfillItem[] = [];
+
+  for (const row of rows) {
+    const providerTimestamp = providerTimestampFromRawProvenance(row.raw_provenance_json);
+    if (providerTimestamp === undefined) {
+      skipped++;
+      continue;
+    }
+    if (row.provider_timestamp === providerTimestamp) {
+      unchanged++;
+      continue;
+    }
+    items.push({
+      id: row.id,
+      chatId: row.chat_id,
+      providerMessageId: row.provider_message_id,
+      previousProviderTimestamp: row.provider_timestamp ?? undefined,
+      providerTimestamp,
+    });
+  }
+
+  const dryRun = input.dryRun !== false;
+  let updated = 0;
+  if (!dryRun && items.length > 0) {
+    updated = executeWrite(
+      database,
+      (db) => {
+        const now = Date.now();
+        const stmt = db.prepare("UPDATE chat_messages SET provider_timestamp = ?, updated_at = ? WHERE id = ?");
+        let changes = 0;
+        for (const item of items) {
+          changes += stmt.run(item.providerTimestamp, now, item.id).changes;
+        }
+        return changes;
+      },
+      { label: "router:backfillChatMessageProviderTimestamps" },
+    );
+  }
+
+  return {
+    dryRun,
+    scanned: rows.length,
+    candidates: rows.length - skipped,
+    skipped,
+    unchanged,
+    wouldUpdate: items.length,
+    updated,
+    items: items.slice(0, 20),
+  };
 }
 
 function normalizeReadingListOwner(input: { ownerType?: string | null; ownerId?: string | null }): {
@@ -4351,6 +5916,385 @@ export function dbListSessionParticipants(sessionKey: string): SessionParticipan
 
 export function dbBackfillChatModel(): void {
   backfillChatModel(getDb());
+}
+
+// ============================================================================
+// sessions/attach — subscriptions
+// See .ravi/specs/sessions/attach/SPEC.md
+// ============================================================================
+
+interface SessionChatSubscriptionRow {
+  id: number;
+  session_key: string;
+  chat_id: string;
+  role: string;
+  attached_by_type: string;
+  attached_by_id: string | null;
+  attached_reason: string | null;
+  context_snapshot_at_attach_json: string | null;
+  speech_mode: string | null;
+  speech_updated_at: number | null;
+  speech_reason: string | null;
+  output_attached_at: number | null;
+  created_at: number;
+  updated_at: number;
+  detached_at: number | null;
+}
+
+function rowToSessionChatSubscription(row: SessionChatSubscriptionRow): SessionChatSubscriptionRecord {
+  return {
+    id: row.id,
+    sessionKey: row.session_key,
+    chatId: row.chat_id,
+    role: row.role as SubscriptionRole,
+    attachedByType: row.attached_by_type as AttachedByType,
+    attachedById: row.attached_by_id ?? undefined,
+    attachedReason: row.attached_reason ?? undefined,
+    contextSnapshotAtAttach: parseJsonRecord(row.context_snapshot_at_attach_json),
+    speechMode: row.speech_mode === "muted" ? "muted" : "speak",
+    speechUpdatedAt: row.speech_updated_at ?? undefined,
+    speechReason: row.speech_reason ?? undefined,
+    outputAttachedAt: row.output_attached_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    detachedAt: row.detached_at ?? undefined,
+  };
+}
+
+/**
+ * Create or reactivate a session→chat subscription. Idempotent: re-attaching
+ * the same `(session_key, chat_id)` when an active row exists returns it
+ * untouched. The unique partial index on active `chat_id` enforces the
+ * cross-session rule (a chat can only be attached to one session at a time).
+ */
+export function dbCreateSessionChatSubscription(
+  input: CreateSessionChatSubscriptionInput,
+): SessionChatSubscriptionRecord {
+  const db = getDb();
+  const now = Date.now();
+  const speechMode = input.speechMode ?? "speak";
+  const speechUpdatedAt = input.speechUpdatedAt ?? now;
+  const existingActive = db
+    .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
+    .get(input.sessionKey, input.chatId) as SessionChatSubscriptionRow | undefined;
+  if (existingActive) {
+    return rowToSessionChatSubscription(existingActive);
+  }
+
+  // Both write paths below (reactivation UPDATE and fresh INSERT) can
+  // violate the partial UNIQUE index on (chat_id) WHERE detached_at IS
+  // NULL — the reactivation does it by flipping `detached_at = NULL`,
+  // the insert by adding a new active row. Both get translated into the
+  // same typed conflict so concurrent inbound dispatches surface a
+  // clean SessionAttachConflictError instead of raw SQLite errors.
+
+  // Reactivate any prior detached row for the same (session, chat) so
+  // we keep the audit minimal across detach/reattach cycles.
+  try {
+    const reactivated = db
+      .prepare(
+        `
+        UPDATE session_chat_subscriptions
+        SET detached_at = NULL,
+            role = ?,
+            attached_by_type = ?,
+            attached_by_id = ?,
+            attached_reason = ?,
+            context_snapshot_at_attach_json = ?,
+            speech_mode = ?,
+            speech_updated_at = ?,
+            speech_reason = ?,
+            output_attached_at = ?,
+            updated_at = ?
+        WHERE session_key = ? AND chat_id = ? AND detached_at IS NOT NULL
+        `,
+      )
+      .run(
+        input.role ?? "input",
+        input.attachedByType ?? "system",
+        input.attachedById ?? null,
+        input.attachedReason ?? null,
+        cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
+        speechMode,
+        speechUpdatedAt,
+        input.speechReason ?? null,
+        input.outputAttachedAt ?? null,
+        now,
+        input.sessionKey,
+        input.chatId,
+      );
+    if (reactivated.changes > 0) {
+      const row = db
+        .prepare(
+          "SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL",
+        )
+        .get(input.sessionKey, input.chatId) as SessionChatSubscriptionRow;
+      return rowToSessionChatSubscription(row);
+    }
+  } catch (err) {
+    return translateChatUniqueRace(err, input.sessionKey, input.chatId);
+  }
+
+  try {
+    const insert = db
+      .prepare(
+        `
+        INSERT INTO session_chat_subscriptions (
+          session_key, chat_id, role, attached_by_type, attached_by_id,
+          attached_reason, context_snapshot_at_attach_json,
+          speech_mode, speech_updated_at, speech_reason,
+          output_attached_at, created_at, updated_at, detached_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        `,
+      )
+      .run(
+        input.sessionKey,
+        input.chatId,
+        input.role ?? "input",
+        input.attachedByType ?? "system",
+        input.attachedById ?? null,
+        input.attachedReason ?? null,
+        cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
+        speechMode,
+        speechUpdatedAt,
+        input.speechReason ?? null,
+        input.outputAttachedAt ?? null,
+        now,
+        now,
+      );
+    const row = db
+      .prepare("SELECT * FROM session_chat_subscriptions WHERE id = ?")
+      .get(insert.lastInsertRowid) as SessionChatSubscriptionRow;
+    return rowToSessionChatSubscription(row);
+  } catch (err) {
+    return translateChatUniqueRace(err, input.sessionKey, input.chatId);
+  }
+}
+
+/**
+ * Translate a raw SQLite UNIQUE-constraint error on the
+ * `(chat_id) WHERE detached_at IS NULL` index into one of:
+ *   - the existing row, when the race winner is the requested session
+ *     (idempotent recovery);
+ *   - `SubscriptionChatConflictError`, when another session won;
+ *   - the original error, when neither path applies (e.g. the winning
+ *     row was detached between the failure and the re-check — no clean
+ *     translation, let the caller decide).
+ *
+ * Non-UNIQUE errors are re-thrown unchanged.
+ */
+function translateChatUniqueRace(err: unknown, sessionKey: string, chatId: string): SessionChatSubscriptionRecord {
+  if (!isUniqueConstraintError(err)) throw err;
+  const existing = dbFindActiveSubscriptionByChat(chatId);
+  if (existing && existing.sessionKey === sessionKey) return existing;
+  if (existing) {
+    throw new SubscriptionChatConflictError(chatId, existing.sessionKey, sessionKey);
+  }
+  throw err;
+}
+
+/**
+ * Thrown by `dbCreateSessionChatSubscription` when a concurrent writer
+ * already attached the requested chat to a different session. Caller
+ * (typically `attachChatToSession`) should translate this into the
+ * higher-level `SessionAttachConflictError`.
+ */
+export class SubscriptionChatConflictError extends Error {
+  readonly code = "SUBSCRIPTION_CHAT_CONFLICT" as const;
+  constructor(
+    public readonly chatId: string,
+    public readonly currentSessionKey: string,
+    public readonly requestedSessionKey: string,
+  ) {
+    super(
+      `chat ${chatId} is attached to ${currentSessionKey}; cannot subscribe ${requestedSessionKey} (concurrent attach won)`,
+    );
+    this.name = "SubscriptionChatConflictError";
+  }
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const message = (err as { message?: unknown }).message;
+  return typeof message === "string" && /UNIQUE constraint failed/i.test(message);
+}
+
+/**
+ * Active subscriptions (not detached) for a session.
+ */
+export function dbListSessionChatSubscriptions(sessionKey: string): SessionChatSubscriptionRecord[] {
+  const rows = getDb()
+    .prepare(
+      "SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND detached_at IS NULL ORDER BY role, created_at",
+    )
+    .all(sessionKey) as SessionChatSubscriptionRow[];
+  return rows.map(rowToSessionChatSubscription);
+}
+
+/**
+ * Look up the (single) active subscription that owns a chat, across all
+ * sessions. Used by the consumer to detect "this chat is already attached
+ * elsewhere" and route inbound dispatch into the owning session.
+ */
+export function dbFindActiveSubscriptionByChat(chatId: string): SessionChatSubscriptionRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM session_chat_subscriptions WHERE chat_id = ? AND detached_at IS NULL")
+    .get(chatId) as SessionChatSubscriptionRow | undefined;
+  return row ? rowToSessionChatSubscription(row) : null;
+}
+
+/**
+ * Current output attachment for a session. This is the chat that receives
+ * emitted responses from the session until another attach selects a new one
+ * or detach clears it.
+ */
+export function dbGetSessionOutputAttachment(sessionKey: string): SessionChatSubscriptionRecord | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM session_chat_subscriptions
+      WHERE session_key = ?
+        AND detached_at IS NULL
+        AND output_attached_at IS NOT NULL
+      ORDER BY output_attached_at DESC, updated_at DESC, id DESC
+      LIMIT 1
+    `,
+    )
+    .get(sessionKey) as SessionChatSubscriptionRow | undefined;
+  return row ? rowToSessionChatSubscription(row) : null;
+}
+
+/**
+ * Select a session's output attachment. The target row must already be an
+ * active subscription for this session.
+ */
+export function dbSetSessionOutputAttachment(sessionKey: string, chatId: string): SessionChatSubscriptionRecord {
+  const db = getDb();
+  const now = Date.now();
+  db.transaction(() => {
+    db.prepare(
+      `
+      UPDATE session_chat_subscriptions
+      SET output_attached_at = NULL, updated_at = ?
+      WHERE session_key = ?
+        AND detached_at IS NULL
+        AND output_attached_at IS NOT NULL
+        AND chat_id <> ?
+    `,
+    ).run(now, sessionKey, chatId);
+    const result = db
+      .prepare(
+        `
+        UPDATE session_chat_subscriptions
+        SET output_attached_at = ?,
+            speech_mode = 'speak',
+            speech_updated_at = ?,
+            speech_reason = 'output-attachment',
+            updated_at = ?
+        WHERE session_key = ?
+          AND chat_id = ?
+          AND detached_at IS NULL
+      `,
+      )
+      .run(now, now, now, sessionKey, chatId);
+    if (result.changes === 0) {
+      throw new Error(`Cannot attach output: chat ${chatId} is not active in session ${sessionKey}`);
+    }
+  })();
+
+  const row = db
+    .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
+    .get(sessionKey, chatId) as SessionChatSubscriptionRow;
+  return rowToSessionChatSubscription(row);
+}
+
+export function dbSetSessionChatSpeechMode(
+  sessionKey: string,
+  chatId: string,
+  speechMode: SubscriptionSpeechMode,
+  reason?: string | null,
+): SessionChatSubscriptionRecord {
+  const db = getDb();
+  const now = Date.now();
+  const result = db
+    .prepare(
+      `
+      UPDATE session_chat_subscriptions
+      SET speech_mode = ?,
+          speech_updated_at = ?,
+          speech_reason = ?,
+          output_attached_at = CASE WHEN ? = 'muted' THEN NULL ELSE output_attached_at END,
+          updated_at = ?
+      WHERE session_key = ?
+        AND chat_id = ?
+        AND detached_at IS NULL
+    `,
+    )
+    .run(speechMode, now, reason ?? null, speechMode, now, sessionKey, chatId);
+  if (result.changes === 0) {
+    throw new Error(`Cannot set speech mode: chat ${chatId} is not active in session ${sessionKey}`);
+  }
+  const row = db
+    .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
+    .get(sessionKey, chatId) as SessionChatSubscriptionRow;
+  return rowToSessionChatSubscription(row);
+}
+
+/**
+ * Clear the session's output attachment. When `chatId` is provided, only that
+ * chat is cleared if it is currently selected.
+ */
+export function dbClearSessionOutputAttachment(sessionKey: string, chatId?: string): boolean {
+  const now = Date.now();
+  const result = chatId
+    ? getDb()
+        .prepare(
+          `
+          UPDATE session_chat_subscriptions
+          SET output_attached_at = NULL,
+              speech_mode = 'muted',
+              speech_updated_at = ?,
+              speech_reason = 'output-detached',
+              updated_at = ?
+          WHERE session_key = ?
+            AND chat_id = ?
+            AND detached_at IS NULL
+            AND output_attached_at IS NOT NULL
+        `,
+        )
+        .run(now, now, sessionKey, chatId)
+    : getDb()
+        .prepare(
+          `
+          UPDATE session_chat_subscriptions
+          SET output_attached_at = NULL,
+              speech_mode = 'muted',
+              speech_updated_at = ?,
+              speech_reason = 'output-detached',
+              updated_at = ?
+          WHERE session_key = ?
+            AND detached_at IS NULL
+            AND output_attached_at IS NOT NULL
+        `,
+        )
+        .run(now, now, sessionKey);
+  return result.changes > 0;
+}
+
+/**
+ * Soft-delete a subscription. Idempotent: detaching an already-detached
+ * subscription is a no-op. Returns true when the row was actually flipped.
+ */
+export function dbDetachSessionChatSubscription(sessionKey: string, chatId: string): boolean {
+  const now = Date.now();
+  const result = getDb()
+    .prepare(
+      "UPDATE session_chat_subscriptions SET detached_at = ?, output_attached_at = NULL, updated_at = ? WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL",
+    )
+    .run(now, now, sessionKey, chatId);
+  return result.changes > 0;
 }
 
 // ============================================================================
@@ -5291,15 +7235,17 @@ export function getFirstAccountName(): string | undefined {
 }
 
 /**
- * Get the instance name mapped to a specific agent.
- * Falls back to first instance name if no mapping found.
+ * Get the instance name explicitly mapped to a specific agent.
+ *
+ * Returns `undefined` when no enabled instance is mapped to the agent.
+ * Previously this fell back to "first enabled instance", which silently
+ * picked an unrelated account in multi-account setups and caused outbound
+ * deliveries to fail with "chat not found". Callers that genuinely want a
+ * best-effort guess must opt in explicitly.
  */
 export function getAccountForAgent(agentId: string): string | undefined {
   const instances = dbListInstances();
-  return (
-    instances.find((instance) => instance.enabled !== false && instance.agent === agentId)?.name ??
-    instances.find((instance) => instance.enabled !== false)?.name
-  );
+  return instances.find((instance) => instance.enabled !== false && instance.agent === agentId)?.name;
 }
 
 /**
@@ -5589,6 +7535,17 @@ const SESSION_EVENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — daily rollu
 const SESSION_TRACE_BLOBS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — keep blob TTL aligned with events
 const AUDIT_LOG_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const COST_EVENTS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+const TRACE_EXPORT_CURSOR_DOMAIN = "runtime_trace";
+const TRACE_EXPORT_SESSION_EVENTS_CURSOR = "session_events_enqueued";
+
+function getTraceExportSessionEventsCursor(db: Database): number | null {
+  const row = db
+    .prepare("SELECT cursor_value FROM sync_cursors WHERE domain = ? AND cursor_key = ?")
+    .get(TRACE_EXPORT_CURSOR_DOMAIN, TRACE_EXPORT_SESSION_EVENTS_CURSOR) as { cursor_value: string | null } | undefined;
+  if (!row?.cursor_value) return null;
+  const cursor = Number(row.cursor_value);
+  return Number.isFinite(cursor) && cursor >= 0 ? cursor : null;
+}
 
 /**
  * Delete message metadata older than 7 days.
@@ -5627,6 +7584,7 @@ export interface DbPruneOptions {
   vacuum?: boolean;
   dryRun?: boolean;
   walCheckpoint?: boolean;
+  now?: number;
 }
 
 /**
@@ -5641,7 +7599,8 @@ export interface DbPruneOptions {
  */
 export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   const db = getDb();
-  const now = Date.now();
+  const now = options.now ?? Date.now();
+  const traceExportCursor = getTraceExportSessionEventsCursor(db);
   const result: DbPruneResult = {
     messageMetadata: 0,
     sessionEvents: 0,
@@ -5656,14 +7615,23 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   if (options.dryRun) {
     const count = (sql: string, threshold: number): number =>
       Number((db.prepare(sql).get(threshold) as { c: number }).c ?? 0);
+    const countSessionEvents = (): number => {
+      if (traceExportCursor === null) {
+        return count("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+      }
+      return Number(
+        (
+          db
+            .prepare("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ? AND id <= ?")
+            .get(now - SESSION_EVENTS_TTL_MS, traceExportCursor) as { c: number }
+        ).c ?? 0,
+      );
+    };
     result.messageMetadata = count(
       "SELECT COUNT(*) AS c FROM message_metadata WHERE created_at < ?",
       now - MESSAGE_META_TTL_MS,
     );
-    result.sessionEvents = count(
-      "SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?",
-      now - SESSION_EVENTS_TTL_MS,
-    );
+    result.sessionEvents = countSessionEvents();
     result.sessionTraceBlobs = count(
       "SELECT COUNT(*) AS c FROM session_trace_blobs WHERE created_at < ?",
       now - SESSION_TRACE_BLOBS_TTL_MS,
@@ -5684,9 +7652,19 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
     db.prepare(sql).run(threshold);
     return getDbChanges();
   };
+  const deleteSessionEvents = (): number => {
+    if (traceExportCursor === null) {
+      return runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+    }
+    db.prepare("DELETE FROM session_events WHERE timestamp < ? AND id <= ?").run(
+      now - SESSION_EVENTS_TTL_MS,
+      traceExportCursor,
+    );
+    return getDbChanges();
+  };
 
   result.messageMetadata = runDelete("DELETE FROM message_metadata WHERE created_at < ?", now - MESSAGE_META_TTL_MS);
-  result.sessionEvents = runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+  result.sessionEvents = deleteSessionEvents();
   result.sessionTraceBlobs = runDelete(
     "DELETE FROM session_trace_blobs WHERE created_at < ?",
     now - SESSION_TRACE_BLOBS_TTL_MS,

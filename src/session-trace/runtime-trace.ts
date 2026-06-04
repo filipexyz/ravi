@@ -1,4 +1,4 @@
-import type { DeliveryBarrier } from "../delivery-barriers.js";
+import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { RuntimeMessageTarget } from "../runtime/host-session.js";
 import type {
   RuntimeCapabilities,
@@ -55,6 +55,7 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   contextId?: string | null;
   source?: RuntimeMessageTarget | null;
   deliveryBarrier?: DeliveryBarrier | null;
+  deliveryBarrierSource?: DeliveryBarrierSource | null;
   taskBarrierTaskId?: string | null;
   settingSources?: string[];
   hasHooks: boolean;
@@ -66,6 +67,7 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   queuedMessageCount?: number;
   pendingIds?: string[];
   commands?: unknown[];
+  runtimeCredential?: Record<string, unknown> | null;
 }
 
 export interface RuntimeTraceTerminalTurnInput extends RuntimeTraceIdentity {
@@ -200,6 +202,7 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       context_id: input.contextId ?? null,
       source: input.source ?? null,
       delivery_barrier: input.deliveryBarrier ?? null,
+      delivery_barrier_source: input.deliveryBarrierSource ?? null,
       task_barrier_task_id: input.taskBarrierTaskId ?? null,
       system_prompt_sha256: systemPrompt.sha256,
       system_prompt_chars: input.systemPrompt.length,
@@ -219,6 +222,7 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       queued_message_count: input.queuedMessageCount ?? null,
       pending_ids: input.pendingIds ?? [],
       commands: input.commands ?? [],
+      runtime_credential: input.runtimeCredential ?? null,
     };
     const request = recordSessionBlob({
       kind: "adapter_request",

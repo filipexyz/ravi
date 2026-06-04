@@ -1,6 +1,7 @@
 export const DELIVERY_BARRIER_VALUES = ["immediate_interrupt", "after_tool", "after_response", "after_task"] as const;
 
 export type DeliveryBarrier = (typeof DELIVERY_BARRIER_VALUES)[number];
+export type DeliveryBarrierSource = "explicit" | "default" | "inferred";
 
 export const DEFAULT_DELIVERY_BARRIER: DeliveryBarrier = "after_tool";
 
@@ -12,6 +13,9 @@ export interface DeliveryBarrierInferenceInput {
   _heartbeat?: unknown;
   _trigger?: unknown;
   _systemSupervisor?: unknown;
+  _cron?: unknown;
+  _hook?: unknown;
+  _daemonRestartResume?: unknown;
 }
 
 const DELIVERY_BARRIER_PRIORITY: Record<DeliveryBarrier, number> = {
@@ -27,10 +31,14 @@ const DELIVERY_BARRIER_ALIASES: Record<string, DeliveryBarrier> = {
   immediate: "immediate_interrupt",
   now: "immediate_interrupt",
   p1: "after_tool",
+  steer: "after_tool",
+  steering: "after_tool",
   tool: "after_tool",
   after_tool: "after_tool",
   "after-tool": "after_tool",
   p2: "after_response",
+  followup: "after_response",
+  "follow-up": "after_response",
   response: "after_response",
   after_response: "after_response",
   "after-response": "after_response",
@@ -53,6 +61,20 @@ export function parseDeliveryBarrier(value?: string | null, fallback = DEFAULT_D
   return normalizeDeliveryBarrier(value) ?? fallback;
 }
 
+export function requireDeliveryBarrier(
+  value: string | DeliveryBarrier | null | undefined,
+  label = "deliveryBarrier",
+): DeliveryBarrier {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${label} is required.`);
+  }
+  const barrier = normalizeDeliveryBarrier(value);
+  if (!barrier) {
+    throw new Error(`Unknown ${label}: ${value}. Use followup, steer, p0, p1, p2, p3 or the canonical barrier names.`);
+  }
+  return barrier;
+}
+
 export function inferDeliveryBarrier(input: DeliveryBarrierInferenceInput): DeliveryBarrier {
   const explicit = normalizeDeliveryBarrier(
     typeof input.deliveryBarrier === "string" ? input.deliveryBarrier : (input.deliveryBarrier ?? undefined),
@@ -71,15 +93,18 @@ export function inferDeliveryBarrier(input: DeliveryBarrierInferenceInput): Deli
 
   const prompt = typeof input.prompt === "string" ? input.prompt : "";
 
-  if (prompt.startsWith("[System] Answer:")) {
-    return "immediate_interrupt";
-  }
-
   if (input._heartbeat || input._trigger || input._systemSupervisor || prompt.startsWith("[System] Execute:")) {
     return "after_task";
   }
 
-  if (prompt.startsWith("[System] Ask:") || prompt.startsWith("[System] Inform:")) {
+  if (
+    input._cron ||
+    input._hook ||
+    input._daemonRestartResume ||
+    prompt.startsWith("[System] Ask:") ||
+    prompt.startsWith("[System] Answer:") ||
+    prompt.startsWith("[System] Inform:")
+  ) {
     return "after_response";
   }
 

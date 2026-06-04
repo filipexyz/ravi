@@ -125,6 +125,7 @@ export class RuntimePromptSubscription {
                 source: prompt.source,
                 context: prompt.context,
                 deliveryBarrier: prompt.deliveryBarrier,
+                deliveryBarrierSource: prompt.deliveryBarrierSource,
                 taskBarrierTaskId: prompt.taskBarrierTaskId,
                 commands: prompt.commands,
                 observation: prompt._observation,

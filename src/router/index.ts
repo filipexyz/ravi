@@ -30,6 +30,7 @@ export {
   findRoute,
   matchRoute,
   resolveRoute,
+  commitMatchedRoute,
   expandHome,
   getAgentCwd,
 } from "./resolver.js";
@@ -153,4 +154,12 @@ export {
   makeSessionPermanent,
   getExpiringSessions,
   getExpiredSessions,
+  // sessions/attach
+  attachChatToSession,
+  detachChatFromSession,
+  listSessionSubscriptions,
+  findSessionByAttachedChat,
+  SessionAttachConflictError,
+  SessionAttachInstanceMismatchError,
+  subscriptionAllowsCrossInstance,
 } from "./sessions.js";

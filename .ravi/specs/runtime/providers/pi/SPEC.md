@@ -143,6 +143,7 @@ If usage is missing on an error or abort, terminal events MUST still be emitted.
 - The provider MUST terminate the Pi subprocess when the Ravi session handle is interrupted or closed.
 - The provider MUST turn subprocess exit before terminal result into recoverable `turn.failed`.
 - The provider MUST NOT translate normal Ravi prompt delivery into `steer` or `follow_up`, including queued channel prompts after an interrupt/requeue.
+- The provider MUST tolerate the race where Pi `isStreaming` lags the `agent_end` event Ravi observes: when `prompt` is rejected with an "already processing" error, the provider MUST retry the same `prompt` with bounded exponential backoff (`100, 250, 500, 1000, 2000` ms — total ≤ 3.85s) before yielding `turn.failed`. Retries MUST remain plain `prompt` commands and MUST NOT add `streamingBehavior`, so they cannot be enqueued as `followUp` / `steer` and become orphaned or out-of-order when Pi has already drained its follow-up queue.
 - The provider MUST reject `turn.follow_up` when there is no active Ravi turn.
 - The provider MAY accept `turn.steer` before the first Ravi turn is active only to bridge the bootstrap gap where the host session already exists and the first prompt is still pending delivery.
 - The provider MUST reject overlapping prompt submission unless the operation is represented as explicit active-turn control.

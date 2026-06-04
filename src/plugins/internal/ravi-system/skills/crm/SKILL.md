@@ -244,6 +244,79 @@ ravi crm next --owner agent:main --json
 ravi crm task done <task-id> --json
 ```
 
+## Scheduled Commitments + Daily Digest
+
+Quando o cliente promete algo com data ("vou comprar sexta", "te aviso semana que vem"), o agent que esta conversando cria uma `crm_tasks` com `task_type=commitment` e `due_at` no momento prometido. Todo dia 1 cron varredor lista o que vence e entrega o digest.
+
+### Padrao arquitetural
+
+**1 cron varredor + N rows em `crm_tasks`**. Nunca 1 cron por cliente. O agent que ja tem o contexto da conversa cria a task direto via CLI. O cron diario chama `ravi crm next --due-today` (ou equivalente) e ja entrega o resultado.
+
+### Quando o agent cria commitment
+
+Use `task_type=commitment` com:
+
+- `due_at` na timezone do operador, normalizado (sem ambiguidade entre "sexta" 2026-05-22 ou 2026-05-29)
+- `evidence_json` com `[{ message_id, quote, extracted_phrase, extracted_date_iso }]`
+- `confidence` proporcional a clareza do enunciado
+- `idempotency_key` = hash de `(contact_id, due_at_normalizado, phrase_fingerprint)` para tolerar reprocessamento sem duplicar
+- `metadata_json.commitment_kind` opcional: `purchase | follow_up_request | callback | revisit`
+
+```bash
+ravi crm task create "Compra prometida — kraft 60g" \
+  --contact 5511987340036 \
+  --task-type commitment \
+  --priority high \
+  --due 2026-05-22T09:00-03:00 \
+  --owner agent:main \
+  --confidence 0.9 \
+  --evidence '[{"message_id":"cm_...","quote":"vou comprar sexta","extracted_date_iso":"2026-05-22"}]' \
+  --metadata '{"commitment_kind":"purchase"}' \
+  --idempotency-key commitment:<contact_id>:2026-05-22:kraft-60g \
+  --json
+```
+
+### Quando o cliente muda de ideia
+
+Sempre atualize a row existente via `idempotency_key`, NUNCA cria nova:
+
+- **Cancela**: `ravi crm task cancel <id>` -> status=canceled.
+- **Reagenda**: `ravi crm task snooze <id> --until <novo-due-at>` -> push do due_at antigo pra metadata.history.
+- **Confirma**: `ravi crm task done <id>` -> status=done; se houve venda, opcionalmente cria/atualiza `crm_opportunities` ganha.
+
+Cada mutacao emite `crm_events` correspondente — a timeline reconstroi o arco da negociacao.
+
+### Daily digest
+
+Cron unico chama o comando CLI que ja consulta o estado:
+
+```bash
+ravi cron add commitment-digest-morning "0 8 * * *" \
+  --command "ravi crm next --due-today --owner agent:main --json" \
+  --account main
+```
+
+Saida do `ravi crm next --due-today` ja agrupa por owner e expoe as tarefas que vencem hoje. O cron entrega isso via o canal configurado (default: WhatsApp DM pro operador).
+
+Para evitar dupla notificacao no mesmo dia, o cron MAY filtrar tarefas com `metadata_json.last_digested_at` recente.
+
+### Inspecao e debug
+
+```bash
+ravi crm next --owner agent:main --task-type commitment --due-before 2026-05-23 --json
+ravi crm task list --status scheduled --task-type commitment --json
+ravi crm task show <task-id> --json
+```
+
+### Regras de ouro
+
+- Commitment E sempre uma row em `crm_tasks`. Nao e cron, nao e trigger, nao e fact.
+- Cancelamento/reschedule MUST atualizar a row existente, nao criar nova.
+- Digest E read-only — observa, nao muta status.
+- Sem due_at concreto, nao vira commitment. Promessa vaga ("te aviso quando puder") e `task_type=follow_up` com status=waiting, sem digest.
+- O agent que conversa e quem cria. Sem observer separado.
+- O cron e UM comando CLI, sem task profile envolvido.
+
 ## Fluxo Recomendado Para Agente
 
 1. Resolva o alvo para contato canonico.

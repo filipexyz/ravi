@@ -84,8 +84,18 @@ mock.module("../../router/router-db.js", () => ({
 }));
 
 mock.module("../../cron/index.js", () => ({
-  dbCreateCronJob: () => {
-    throw new Error("not used");
+  dbCreateCronJob: (input: Record<string, unknown>) => {
+    cronJob = {
+      id: "cron-created",
+      enabled: true,
+      deleteAfterRun: Boolean(input.deleteAfterRun),
+      sessionTarget: input.sessionTarget ?? "main",
+      createdAt: 1,
+      updatedAt: 1,
+      nextRunAt: 2,
+      ...input,
+    };
+    return cronJob;
   },
   dbGetCronJob: () => cronJob,
   dbListCronJobs: () => (cronJob ? [cronJob] : []),
@@ -106,7 +116,12 @@ mock.module("../../cron/index.js", () => ({
   describeSchedule: (schedule: Record<string, unknown>) =>
     schedule.type === "every" ? "every 30m" : String(schedule.type),
   formatDurationMs: (ms: number) => `${Math.round(ms / 60000)}m`,
-  parseDurationMs: () => 1_800_000,
+  parseDurationMs: (value: string) => {
+    const match = value.match(/^(\d+)(s|m|h)$/);
+    if (!match) return 1_800_000;
+    const n = Number(match[1]);
+    return match[2] === "s" ? n * 1000 : match[2] === "m" ? n * 60_000 : n * 3_600_000;
+  },
   isValidCronExpression: () => true,
 }));
 
@@ -136,6 +151,7 @@ describe("CronCommands --json", () => {
       name: "Daily",
       enabled: true,
       schedule: { type: "every", every: 1_800_000 },
+      executionType: "agent",
       message: "hello",
       sessionTarget: "main",
       deleteAfterRun: false,
@@ -143,6 +159,50 @@ describe("CronCommands --json", () => {
       createdAt: 1,
       updatedAt: 1,
     };
+  });
+
+  it("creates shell jobs without requiring an agent message", async () => {
+    const payload = await captureJson(() =>
+      new CronCommands().add(
+        "Shell ETL",
+        undefined,
+        "30m",
+        undefined,
+        undefined,
+        undefined,
+        "python3 /tmp/etl.py",
+        undefined,
+        "notify-session:ops",
+        "5m",
+        "/tmp/job.env",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "Run deterministic ETL",
+        true,
+      ),
+    );
+
+    expect(payload).toMatchObject({
+      status: "created",
+      target: { type: "cron", id: "cron-created" },
+      job: {
+        id: "cron-created",
+        executionType: "shell",
+        message: "",
+        shellCommand: "python3 /tmp/etl.py",
+        shellTimeoutMs: 300_000,
+        shellEnvFile: "/tmp/job.env",
+        onError: "notify-session:ops",
+      },
+    });
+  });
+
+  it("rejects shell jobs that also provide an agent message", async () => {
+    await expect(
+      new CronCommands().add("Bad", undefined, "30m", undefined, undefined, "hello", "echo no"),
+    ).rejects.toThrow("--message cannot be combined with --shell/--exec");
   });
 
   it("returns updated cron job data for set --json", async () => {

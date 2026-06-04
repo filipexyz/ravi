@@ -71,6 +71,7 @@ describe("channel session trace", () => {
           sourceMessageId: "inbound-1",
         },
         deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "explicit",
       },
     });
     const response = {
@@ -128,6 +129,11 @@ describe("channel session trace", () => {
       expect(event.actorType).toBeNull();
       expect(event.messageId).toBe("inbound-1");
     }
+    const published = events.find((event) => event.eventType === "prompt.published");
+    expect(published?.payloadJson).toMatchObject({
+      deliveryBarrier: "after_tool",
+      deliveryBarrierSource: "explicit",
+    });
     for (const event of events.slice(3)) {
       expect(event.sourceChannel).toBe("whatsapp");
       expect(event.sourceAccountId).toBe("main");

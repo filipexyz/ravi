@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { requestCascadingApproval, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
 import { createBashPermissionHook, createToolPermissionHook } from "../bash/index.js";
 import { createPreCompactHook } from "../hooks/index.js";
+import { createRtkRewriteHook } from "../hooks/rtk-rewrite.js";
 import { createSanitizeBashHook } from "../hooks/sanitize-bash.js";
 import { nats } from "../nats.js";
 import type { AgentConfig } from "../router/index.js";
@@ -35,7 +36,12 @@ export function createRuntimeHostHooks({
 
   const hookOpts = { getAgentId: () => agent.id };
   const hooks: Record<string, RuntimeHookMatcher[]> = {
-    PreToolUse: [createToolPermissionHook(hookOpts), createBashPermissionHook(hookOpts), createSanitizeBashHook()],
+    PreToolUse: [
+      createToolPermissionHook(hookOpts),
+      createBashPermissionHook(hookOpts),
+      createSanitizeBashHook(),
+      createRtkRewriteHook(),
+    ],
     PermissionRequest: [
       {
         hooks: [

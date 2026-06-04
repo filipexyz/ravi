@@ -41,13 +41,19 @@ interface CronJobRow {
 
   session_target: string;
   reply_session: string | null;
+  execution_type: string | null;
   payload_text: string;
+  shell_command: string | null;
+  shell_timeout_ms: number | null;
+  shell_env_file: string | null;
+  on_error: string | null;
 
   next_run_at: number | null;
   last_run_at: number | null;
   last_status: string | null;
   last_error: string | null;
   last_duration_ms: number | null;
+  last_exit_code: number | null;
 
   created_at: number;
   updated_at: number;
@@ -74,6 +80,7 @@ function rowToJob(row: CronJobRow): CronJob {
     deleteAfterRun: row.delete_after_run === 1,
     schedule,
     sessionTarget: row.session_target as SessionTarget,
+    executionType: row.execution_type === "shell" ? "shell" : "agent",
     message: row.payload_text,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -83,11 +90,16 @@ function rowToJob(row: CronJobRow): CronJob {
   if (row.account_id !== null) job.accountId = row.account_id;
   if (row.description !== null) job.description = row.description;
   if (row.reply_session !== null) job.replySession = row.reply_session;
+  if (row.shell_command !== null) job.shellCommand = row.shell_command;
+  if (row.shell_timeout_ms !== null) job.shellTimeoutMs = row.shell_timeout_ms;
+  if (row.shell_env_file !== null) job.shellEnvFile = row.shell_env_file;
+  if (row.on_error !== null) job.onError = row.on_error;
   if (row.next_run_at !== null) job.nextRunAt = row.next_run_at;
   if (row.last_run_at !== null) job.lastRunAt = row.last_run_at;
   if (row.last_status !== null) job.lastStatus = row.last_status as JobStatus;
   if (row.last_error !== null) job.lastError = row.last_error;
   if (row.last_duration_ms !== null) job.lastDurationMs = row.last_duration_ms;
+  if (row.last_exit_code !== null) job.lastExitCode = row.last_exit_code;
 
   return job;
 }
@@ -111,10 +123,11 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
     INSERT INTO cron_jobs (
       id, agent_id, account_id, name, description, enabled, delete_after_run,
       schedule_type, schedule_at, schedule_every, schedule_cron, schedule_timezone,
-      session_target, reply_session, payload_text,
+      session_target, reply_session, execution_type, payload_text,
+      shell_command, shell_timeout_ms, shell_env_file, on_error,
       next_run_at,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -132,7 +145,12 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
     input.schedule.timezone ?? null,
     input.sessionTarget ?? "main",
     input.replySession ?? null,
+    input.executionType ?? "agent",
     input.message,
+    input.shellCommand ?? null,
+    input.shellTimeoutMs ?? null,
+    input.shellEnvFile ?? null,
+    input.onError ?? null,
     nextRunAt ?? null,
     now,
     now,
@@ -233,9 +251,29 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
     fields.push("reply_session = ?");
     values.push(updates.replySession ?? null);
   }
+  if (updates.executionType !== undefined) {
+    fields.push("execution_type = ?");
+    values.push(updates.executionType);
+  }
   if (updates.message !== undefined) {
     fields.push("payload_text = ?");
     values.push(updates.message);
+  }
+  if (hasOwn("shellCommand")) {
+    fields.push("shell_command = ?");
+    values.push(updates.shellCommand ?? null);
+  }
+  if (hasOwn("shellTimeoutMs")) {
+    fields.push("shell_timeout_ms = ?");
+    values.push(updates.shellTimeoutMs ?? null);
+  }
+  if (hasOwn("shellEnvFile")) {
+    fields.push("shell_env_file = ?");
+    values.push(updates.shellEnvFile ?? null);
+  }
+  if (hasOwn("onError")) {
+    fields.push("on_error = ?");
+    values.push(updates.onError ?? null);
   }
 
   if (fields.length === 0) {
@@ -311,6 +349,7 @@ export function dbUpdateJobState(id: string, state: JobStateUpdate): void {
       last_error = ?,
       last_duration_ms = ?,
       next_run_at = ?,
+      last_exit_code = ?,
       updated_at = ?
     WHERE id = ?
   `);
@@ -321,6 +360,7 @@ export function dbUpdateJobState(id: string, state: JobStateUpdate): void {
     state.lastError ?? null,
     state.lastDurationMs ?? null,
     state.nextRunAt ?? null,
+    state.lastExitCode ?? null,
     now,
     id,
   );

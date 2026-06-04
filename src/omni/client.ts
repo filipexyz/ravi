@@ -144,6 +144,17 @@ export function createOmniClient(config: { baseUrl: string; apiKey: string; cliV
         const payload = await request<{ messageId?: string }>("/messages/send/reaction", { method: "POST", body });
         return { messageId: payload.data?.messageId, success: true };
       },
+      async deleteChannel(body: { instanceId: string; channelId: string; messageId: string }): Promise<void> {
+        await request("/messages/delete-channel", { method: "POST", body });
+      },
+      async editChannel(body: {
+        instanceId: string;
+        channelId: string;
+        messageId: string;
+        text: string;
+      }): Promise<void> {
+        await request("/messages/edit-channel", { method: "POST", body });
+      },
       async sendMedia(body: JsonObject): Promise<{ messageId?: string; status?: string }> {
         const payload = await request<{ messageId?: string; status?: string }>("/messages/send/media", {
           method: "POST",

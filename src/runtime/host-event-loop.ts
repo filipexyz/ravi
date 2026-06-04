@@ -1,5 +1,5 @@
 import { calculateCost } from "../constants.js";
-import { backfillProviderSessionId, saveMessage } from "../db.js";
+import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
 import { nats } from "../nats.js";
@@ -9,6 +9,7 @@ import {
   deleteSession,
   getAnnounceCompaction,
   getSession,
+  resetSession,
   updateProviderSession,
   updateRuntimeProviderState,
   updateTokens,
@@ -20,10 +21,27 @@ import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete 
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
+  buildRuntimeContextRecoveryPrompt,
+  classifyRuntimeContextWindowFailure,
+  RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+} from "./context-window-recovery.js";
+import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
+import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
+import { refreshRuntimeCredential } from "./credential-refresh.js";
+import {
+  completeRuntimeCredentialAttempt,
+  recordRuntimeCredentialFailure,
+  recordRuntimeCredentialSuccess,
+} from "./credential-store.js";
+import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
+import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import {
+  stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
+import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   createObservationEvent,
@@ -117,6 +135,141 @@ function firstString(...values: unknown[]): string | undefined {
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
   }
   return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function headerValue(value: unknown): string | number | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const resolved = headerValue(item);
+      if (resolved !== undefined) return resolved;
+    }
+  }
+  return undefined;
+}
+
+function readHeaderSource(value: unknown): Record<string, string | number | undefined> | undefined {
+  if (!value) return undefined;
+  const out: Record<string, string | number | undefined> = {};
+  const maybeIterable = value as { entries?: unknown };
+  if (typeof maybeIterable.entries === "function") {
+    for (const [key, raw] of maybeIterable.entries() as Iterable<[unknown, unknown]>) {
+      if (typeof key !== "string") continue;
+      const resolved = headerValue(raw);
+      if (resolved !== undefined) out[key] = resolved;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+  const maybeForEach = value as { forEach?: unknown };
+  if (typeof maybeForEach.forEach === "function") {
+    (maybeForEach.forEach as (callback: (raw: unknown, key: unknown) => void) => void)((raw, key) => {
+      if (typeof key !== "string") return;
+      const resolved = headerValue(raw);
+      if (resolved !== undefined) out[key] = resolved;
+    });
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+  const record = asRecord(value);
+  if (!record) return undefined;
+  for (const [key, raw] of Object.entries(record)) {
+    const resolved = headerValue(raw);
+    if (resolved !== undefined) out[key] = resolved;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function extractRuntimeFailureHeaders(
+  rawEvent?: Record<string, unknown>,
+): Record<string, string | number | undefined> | undefined {
+  if (!rawEvent) return undefined;
+  const rawError = asRecord(rawEvent.error);
+  const rawResponse = asRecord(rawEvent.response);
+  const rawErrorResponse = asRecord(rawError?.response);
+  const merged: Record<string, string | number | undefined> = {};
+  for (const source of [
+    readHeaderSource(rawEvent.headers),
+    readHeaderSource(rawResponse?.headers),
+    readHeaderSource(rawError?.headers),
+    readHeaderSource(rawErrorResponse?.headers),
+  ]) {
+    if (!source) continue;
+    Object.assign(merged, source);
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function recordRuntimeCredentialTurnSuccess(streaming: RuntimeHostStreamingSession): void {
+  const credential = streaming.currentRuntimeCredential;
+  const credentialId = credential?.credentialId;
+  if (!credentialId) return;
+  try {
+    recordRuntimeCredentialSuccess(credentialId);
+    completeRuntimeCredentialAttempt(credential?.attemptId, { status: "succeeded" });
+  } catch (error) {
+    log.warn("Failed to record runtime credential success", { credentialId, error });
+  }
+}
+
+function clearRuntimeCredentialAttempt(streaming: RuntimeHostStreamingSession, attemptId: string | undefined): void {
+  if (!attemptId) return;
+  if (streaming.currentRuntimeCredential?.attemptId === attemptId) {
+    streaming.currentRuntimeCredential.attemptId = undefined;
+  }
+}
+
+function recordRuntimeCredentialTurnFailure(input: {
+  streaming: RuntimeHostStreamingSession;
+  provider: RuntimeProviderId;
+  model: string;
+  error: string;
+  rawEvent?: Record<string, unknown>;
+}): RuntimeCredentialFailureSignal | undefined {
+  const credential = input.streaming.currentRuntimeCredential;
+  if (!credential) return undefined;
+  const rawError = asRecord(input.rawEvent?.error);
+  const headers = extractRuntimeFailureHeaders(input.rawEvent);
+  const signal = classifyRuntimeCredentialFailure({
+    runtimeProvider: input.provider,
+    upstreamProvider: credential.upstreamProvider,
+    model: input.model,
+    credentialId: credential.credentialId,
+    httpStatus: firstNumber(input.rawEvent?.status, input.rawEvent?.statusCode, rawError?.status, rawError?.statusCode),
+    providerCode: firstString(input.rawEvent?.code, rawError?.code),
+    providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
+    message: input.error,
+    ...(headers ? { headers } : {}),
+    requestId: firstString(
+      input.rawEvent?.requestId,
+      input.rawEvent?.request_id,
+      rawError?.requestId,
+      rawError?.request_id,
+    ),
+    source: "sdk-error",
+  });
+
+  try {
+    recordRuntimeCredentialFailure(credential.credentialId, signal);
+    completeRuntimeCredentialAttempt(credential.attemptId, { status: "failed", signal });
+  } catch (error) {
+    log.warn("Failed to record runtime credential failure", {
+      credentialId: credential.credentialId,
+      kind: signal.kind,
+      error,
+    });
+  }
+  return signal;
 }
 
 function buildProviderRawRuntimeEvent(
@@ -591,14 +744,32 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
     const emitId = Math.random().toString(36).slice(2, 8);
+    // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`.
+    // Attach selects the chat that receives this session's external output.
+    // Sentinel agents observe silently → no target.
+    let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTarget>["target"] | undefined;
+    let resolvedSource: ReturnType<typeof resolveSessionOutputTarget>["source"] = "unresolved";
+    if (streaming.agentMode !== "sentinel") {
+      const resolution = resolveSessionOutputTarget({
+        sessionKey: session.sessionKey,
+        fallback: streaming.currentSource,
+      });
+      resolvedTarget = resolution.target;
+      resolvedSource = resolution.source;
+      if (!resolution.target) {
+        log.warn("Response target unresolved — dropping emit", { sessionName, source: resolvedSource });
+        return;
+      }
+    }
     log.info("Emitting response", {
       sessionName,
       emitId,
       textLen: text.length,
+      targetSource: resolvedSource,
     });
     await nats.emit(`ravi.session.${sessionName}.response`, {
       response: text,
-      target: streaming.agentMode === "sentinel" ? undefined : streaming.currentSource,
+      target: resolvedTarget,
       ...(metadata ? { metadata } : {}),
       _emitId: emitId,
       _instanceId: instanceId,
@@ -750,6 +921,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       if (event.type === "tool.started") {
         streaming.lastToolFailure = undefined;
+        streaming.currentTurnToolStarted = true;
         streaming.toolRunning = true;
         streaming.currentToolId = event.toolUse.id;
         streaming.currentToolName = event.toolUse.name;
@@ -1136,12 +1308,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           output: outputTokens,
           sessionId: event.session?.displayId ?? event.providerSessionId,
         });
+        const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
+        recordRuntimeCredentialTurnSuccess(streaming);
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
         // Skill gates can be persisted by the Codex Bash hook in a separate process.
         // Refresh before merging the provider's terminal snapshot so those marks survive turn.complete.
         refreshRuntimeSessionParamsFromDb();
-        const runtimeSessionParams = mergeRuntimeSessionParams(event.session?.params ?? undefined);
+        const runtimeSessionParams = mergeRuntimeCredentialSessionMetadata(
+          mergeRuntimeSessionParams(event.session?.params ?? undefined),
+          streaming.currentRuntimeCredential,
+        );
         const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
         const persistedSessionId =
           runtimeSessionDisplayId ??
@@ -1159,6 +1336,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.sdkSessionId = runtimeSessionDisplayId ?? persistedSessionId;
           session.runtimeProvider = runtimeSession.provider;
         }
+        clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
         updateTokens(session.sessionKey, inputTokens, outputTokens);
 
         const executionModel = resolveCostTrackingModel(
@@ -1267,6 +1445,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.pendingAbort = false;
+        streaming.currentTurnToolStarted = false;
         streaming.turnActive = false;
         clearTraceTurnState();
         patchLiveState(
@@ -1308,6 +1487,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
+        streaming.currentTurnToolStarted = false;
         streaming.turnActive = false;
         clearTraceTurnState();
         markRuntimeLiveIdle(sessionName, "turn interrupted");
@@ -1321,6 +1501,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
         const suppressedRecoverable = interruptedRecoverable || internalRecoverable;
         const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
+        const currentTurnHadToolStarted = streaming.currentTurnToolStarted === true;
+        const credentialFailureSignal = !suppressedRecoverable
+          ? recordRuntimeCredentialTurnFailure({
+              streaming,
+              provider: runtimeSession.provider,
+              model,
+              error: event.error,
+              rawEvent: event.rawEvent,
+            })
+          : undefined;
+        const failedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
         log[suppressedRecoverable ? "info" : "warn"](
           suppressedRecoverable ? "Turn interrupted by recoverable runtime failure" : "Turn failed",
           {
@@ -1342,32 +1533,27 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             rawEvent: event.rawEvent,
             metadata: event.metadata,
           });
-        } else {
-          await emitRuntimeEvent({
-            ...event,
-            provider: runtimeSession.provider,
+          recordTerminalTraceOnce({
+            status: "interrupted",
+            eventType: "turn.interrupted",
+            abortReason: internalAbortReason ?? "recoverable_interrupt_failure",
+            error: null,
+            payloadJson: {
+              recoverable: event.recoverable ?? true,
+              suppressedRecoverable,
+              failureDetails: formatRuntimeFailureDetails(event) ?? null,
+              rawEvent: rawEventSummary ?? null,
+              metadata: event.metadata ?? null,
+            },
           });
-        }
-        recordTerminalTraceOnce({
-          status: suppressedRecoverable ? "interrupted" : "failed",
-          eventType: suppressedRecoverable ? "turn.interrupted" : "turn.failed",
-          abortReason: suppressedRecoverable ? (internalAbortReason ?? "recoverable_interrupt_failure") : null,
-          error: suppressedRecoverable ? null : event.error,
-          payloadJson: {
+          flushObservationEvents("turn.interrupt", {
+            provider: runtimeSession.provider,
             recoverable: event.recoverable ?? true,
             suppressedRecoverable,
-            failureDetails: formatRuntimeFailureDetails(event) ?? null,
-            rawEvent: rawEventSummary ?? null,
-            metadata: event.metadata ?? null,
-          },
-        });
-        flushObservationEvents(suppressedRecoverable ? "turn.interrupt" : "turn.failed", {
-          provider: runtimeSession.provider,
-          recoverable: event.recoverable ?? true,
-          suppressedRecoverable,
-          error: suppressedRecoverable ? null : event.error,
-          abortReason: suppressedRecoverable ? (internalAbortReason ?? "recoverable_interrupt_failure") : null,
-        });
+            error: null,
+            abortReason: internalAbortReason ?? "recoverable_interrupt_failure",
+          });
+        }
 
         responseText = "";
         clearActiveToolState();
@@ -1376,7 +1562,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.pendingAbort = false;
         streaming.turnActive = false;
         streaming.internalAbortReason = undefined;
-        clearTraceTurnState();
 
         if (suppressedRecoverable) {
           const restartReason = internalAbortReason ?? "recoverable_interrupt_failure";
@@ -1396,9 +1581,187 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
           restartStashedReason = restartReason;
           signalTurnComplete();
+          clearTraceTurnState();
           streaming.done = true;
           break;
         }
+
+        if (credentialFailureSignal?.retryableByCredential) {
+          const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
+          if (currentTurnHadToolStarted) {
+            log.info("Skipping runtime credential retry after tool activity", {
+              runId,
+              sessionName,
+              credentialId: streaming.currentRuntimeCredential?.credentialId,
+              kind: credentialFailureSignal.kind,
+            });
+          } else {
+            const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
+            if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
+              try {
+                await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
+                  reason: "retryable_failure",
+                });
+              } catch (error) {
+                log.warn("Runtime credential refresh after failure failed", {
+                  runId,
+                  sessionName,
+                  credentialId: streaming.currentRuntimeCredential.credentialId,
+                  error,
+                });
+              }
+              restartStashedReason = restartReason;
+              log.info("Closing runtime after retryable credential failure", {
+                runId,
+                sessionName,
+                credentialId: streaming.currentRuntimeCredential.credentialId,
+                kind: credentialFailureSignal.kind,
+                pendingMessages: streaming.pendingMessages.length,
+                stashedMessages: stashedCount,
+              });
+              streaming.currentTurnToolStarted = false;
+              signalTurnComplete();
+              clearTraceTurnState();
+              streaming.done = true;
+              break;
+            }
+            log.warn("Skipping runtime credential retry because current turn messages are unavailable", {
+              runId,
+              sessionName,
+              credentialId: streaming.currentRuntimeCredential?.credentialId,
+              kind: credentialFailureSignal.kind,
+            });
+          }
+        }
+
+        const contextWindowFailure = classifyRuntimeContextWindowFailure({
+          runtimeProvider: runtimeSession.provider,
+          error: event.error,
+          rawEvent: event.rawEvent,
+        });
+        if (contextWindowFailure) {
+          const history = getRecentHistory(sessionName, 48);
+          const recovery = buildRuntimeContextRecoveryPrompt({
+            sessionName,
+            runtimeProvider: runtimeSession.provider,
+            model,
+            error: event.error,
+            history,
+          });
+          const resetApplied = resetSession(session.sessionKey);
+          session.sdkSessionId = undefined;
+          session.providerSessionId = undefined;
+          session.runtimeProvider = undefined;
+          session.runtimeSessionDisplayId = undefined;
+          session.runtimeSessionParams = undefined;
+          revokeAgentRuntimeContextsForSession(session.sessionKey, {
+            reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+          });
+          const recoveredMessage = createQueuedRuntimeUserMessage({
+            prompt: recovery.prompt,
+            deliveryBarrier: "after_tool",
+            deliveryBarrierSource: "inferred",
+            source: streaming.currentSource,
+            taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
+            _agentId: agent.id,
+            _runtimeProviderId: runtimeSession.provider,
+          });
+          stashedMessages.set(sessionName, [recoveredMessage]);
+          restartStashedReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+
+          log.warn("Recovering runtime after context window exhaustion", {
+            runId,
+            sessionName,
+            provider: runtimeSession.provider,
+            model,
+            matched: contextWindowFailure.matched,
+            confidence: contextWindowFailure.confidence,
+            resetApplied,
+            historyMessages: history.length,
+            recoveryPromptChars: recovery.chars,
+          });
+          recordTerminalTraceOnce({
+            status: "failed",
+            eventType: "turn.failed",
+            abortReason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+            error: truncateLogDetail(event.error),
+            payloadJson: {
+              recoverable: event.recoverable ?? true,
+              autoRecovered: true,
+              matched: contextWindowFailure.matched,
+              confidence: contextWindowFailure.confidence,
+              failureDetails: formatRuntimeFailureDetails(event) ?? null,
+              rawEvent: rawEventSummary ?? null,
+              metadata: event.metadata ?? null,
+            },
+          });
+          recordTraceEvent({
+            turnId: streaming.currentTraceTurnId,
+            provider: runtimeSession.provider,
+            model,
+            eventType: "session.context_window_exhausted",
+            eventGroup: "session",
+            status: "recovering",
+            source: streaming.currentSource,
+            payloadJson: {
+              reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+              resetApplied,
+              matched: contextWindowFailure.matched,
+              confidence: contextWindowFailure.confidence,
+              historyMessages: history.length,
+              recoveryPromptChars: recovery.chars,
+              recoveryMessageCount: recovery.messageCount,
+              recoveryTruncated: recovery.truncated,
+              currentTurnHadToolStarted,
+            },
+          });
+          updateRuntimeLiveState(sessionName, {
+            activity: "thinking",
+            summary: "recovering context",
+            agentId: agent.id,
+            runId,
+            provider: runtimeSession.provider,
+            model,
+            source: streaming.currentSource,
+          });
+          streaming.currentTurnToolStarted = false;
+          streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+          streaming.interrupted = true;
+          clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+          signalTurnComplete();
+          clearTraceTurnState();
+          streaming.done = true;
+          break;
+        }
+
+        await emitRuntimeEvent({
+          ...event,
+          provider: runtimeSession.provider,
+        });
+        recordTerminalTraceOnce({
+          status: "failed",
+          eventType: "turn.failed",
+          abortReason: null,
+          error: event.error,
+          payloadJson: {
+            recoverable: event.recoverable ?? true,
+            suppressedRecoverable,
+            failureDetails: formatRuntimeFailureDetails(event) ?? null,
+            rawEvent: rawEventSummary ?? null,
+            metadata: event.metadata ?? null,
+          },
+        });
+        flushObservationEvents("turn.failed", {
+          provider: runtimeSession.provider,
+          recoverable: event.recoverable ?? true,
+          suppressedRecoverable,
+          error: event.error,
+          abortReason: null,
+        });
+        clearTraceTurnState();
+
+        streaming.currentTurnToolStarted = false;
+        clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
         if (streaming.agentMode !== "sentinel") {
           await emitResponse(formatUserFacingTurnFailure(event.error));
@@ -1439,6 +1802,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
 
     if (streamingSessions.delete(sessionName)) {
+      completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
+        status: "abandoned",
+        metadata: { phase: "runtime.event_loop.finally" },
+      });
       if (restartStashedReason && restartStashedSession) {
         await restartStashedSession({ sessionName, reason: restartStashedReason });
       }

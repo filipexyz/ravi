@@ -37,7 +37,12 @@
         "groups": [
           {
             "group": "Getting Started",
-            "pages": ["index", "start/quickstart", "start/configuration"]
+            "pages": [
+              "index",
+              "start/quickstart",
+              "start/configuration",
+              "start/first-time-runbook"
+            ]
           }
         ]
       },

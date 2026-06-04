@@ -28,6 +28,10 @@ export interface MailboxCreateOptions extends MailClientOptions {
   domain: string;
 }
 
+export interface MailboxDisableOptions extends MailClientOptions {
+  mailbox: string;
+}
+
 export interface MailDomainCreateOptions extends MailClientOptions {
   domain: string;
 }
@@ -118,6 +122,17 @@ export class RaviMailClient {
       await this.request<Record<string, unknown>>(
         "GET",
         `/api/cli/mail/mailboxes/${encodeURIComponent(mailbox)}`,
+        undefined,
+        accessToken,
+      ),
+    );
+  }
+
+  async disableMailbox(accessToken: string, options: MailboxDisableOptions): Promise<Record<string, unknown>> {
+    return sanitizeMetadataResponse(
+      await this.request<Record<string, unknown>>(
+        "POST",
+        `/api/cli/mail/mailboxes/${encodeURIComponent(options.mailbox)}/disable`,
         undefined,
         accessToken,
       ),
@@ -255,6 +270,14 @@ export async function showMailbox(
 ): Promise<Record<string, unknown>> {
   const auth = await createAuthenticatedMailContext(options, deps);
   return new RaviMailClient(auth.client).showMailbox(auth.accessToken, mailbox);
+}
+
+export async function disableMailbox(
+  options: MailboxDisableOptions,
+  deps: MailClientDeps = {},
+): Promise<Record<string, unknown>> {
+  const auth = await createAuthenticatedMailContext(options, deps);
+  return new RaviMailClient(auth.client).disableMailbox(auth.accessToken, options);
 }
 
 export async function listMessages(

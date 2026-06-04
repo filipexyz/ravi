@@ -1,6 +1,6 @@
 import { resolveToolGroup } from "../cli/tool-registry.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { hasRelation } from "./relations.js";
+import { hasRelation, listRelations } from "./relations.js";
 
 /**
  * Check if a runtime context capability snapshot allows an action.
@@ -69,7 +69,7 @@ function capabilitiesAllow(
  * CLI groups.
  */
 export function canWithCapabilityContext(
-  context: { agentId?: string | null; capabilities: ContextCapability[] },
+  context: { agentId?: string | null; kind?: string | null; capabilities: ContextCapability[] },
   permission: string,
   objectType: string,
   objectId: string,
@@ -78,7 +78,18 @@ export function canWithCapabilityContext(
     return true;
   }
 
-  return capabilitiesAllow(context.capabilities, permission, objectType, objectId);
+  if (capabilitiesAllow(context.capabilities, permission, objectType, objectId)) {
+    return true;
+  }
+
+  // Agent runtime contexts are long-lived roots for an agent session. Operator
+  // grants must take effect there without requiring a daemon/runtime restart.
+  // Derived contexts remain snapshot-based for least privilege.
+  if (context.kind === "agent-runtime" && context.agentId) {
+    return liveAgentCan(context.agentId, permission, objectType, objectId);
+  }
+
+  return false;
 }
 
 export function isSuperadmin(subjectType: string, subjectId: string): boolean {
@@ -87,6 +98,46 @@ export function isSuperadmin(subjectType: string, subjectId: string): boolean {
 
 export function isAgentSuperadmin(agentId: string | undefined): boolean {
   return Boolean(agentId && isSuperadmin("agent", agentId));
+}
+
+function liveAgentCan(agentId: string, permission: string, objectType: string, objectId: string): boolean {
+  if (hasRelation("agent", agentId, permission, objectType, objectId)) {
+    return true;
+  }
+
+  if (objectId !== "*" && hasRelation("agent", agentId, permission, objectType, "*")) {
+    return true;
+  }
+
+  if (objectId !== "*") {
+    const patternRelations = listRelations({
+      subjectType: "agent",
+      subjectId: agentId,
+      relation: permission,
+      objectType,
+    });
+
+    for (const relation of patternRelations) {
+      if (relation.objectId.includes("*") && matchPattern(relation.objectId, objectId)) {
+        return true;
+      }
+    }
+  }
+
+  if (permission === "use" && objectType === "tool" && objectId !== "*") {
+    const groupRelations = listRelations({
+      subjectType: "agent",
+      subjectId: agentId,
+      relation: "use",
+      objectType: "toolgroup",
+    });
+    for (const relation of groupRelations) {
+      const members = resolveToolGroup(relation.objectId);
+      if (members?.includes(objectId)) return true;
+    }
+  }
+
+  return false;
 }
 
 /**

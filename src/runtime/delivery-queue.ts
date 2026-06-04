@@ -26,6 +26,7 @@ export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMess
     session_id: "",
     parent_tool_use_id: null,
     deliveryBarrier: getRuntimePromptDeliveryBarrier(prompt),
+    deliveryBarrierSource: prompt.deliveryBarrierSource,
     taskBarrierTaskId: prompt.taskBarrierTaskId,
     commands: prompt.commands,
     launchPrompt: cloneRuntimeLaunchPrompt(prompt),
@@ -215,6 +216,7 @@ export async function* createRuntimeMessageGenerator({
       session.onTurnComplete = resolve;
     });
     session.turnActive = true;
+    session.currentTurnToolStarted = false;
     if (session.idleGapRecoveryTimer) {
       clearTimeout(session.idleGapRecoveryTimer);
       session.idleGapRecoveryTimer = undefined;

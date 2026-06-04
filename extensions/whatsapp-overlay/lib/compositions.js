@@ -7,13 +7,16 @@ import {
 } from "./live-state.js";
 
 export async function buildSnapshot(client, query) {
-  const [sessionsResult, allBindings] = await Promise.all([
+  const [sessionsResult, agentsResult] = await Promise.all([
     client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    listAgents(client),
     getBindings(),
     ensureLiveStateStream().catch(() => false),
   ]);
 
-  const sessions = normalizeSessions(sessionsResult);
+  const baseSessions = normalizeSessions(sessionsResult);
+  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), baseSessions);
+  const sessions = enrichSessionsWithAgentRuntime(baseSessions, agents);
   const binding = await findBinding({ chatId: query?.chatId, title: query?.title });
   const requestedSessionName = clean(query?.session) ?? clean(binding?.session);
 
@@ -309,17 +312,21 @@ function buildDispatchState(item, actorSession, dispatchSessions) {
 }
 
 export async function buildOmniPanelSnapshot(client, query) {
-  const [sessionsResult, agentsResult, routesResult, allBindings] = await Promise.all([
+  const [sessionsResult, agentsResult, routesResult, instancesResult, allBindings] = await Promise.all([
     client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
     listAgents(client),
     client.routes.list().catch(() => ({ routes: [] })),
+    listInstances(client),
     getBindings(),
     ensureLiveStateStream().catch(() => false),
   ]);
 
-  const sessions = normalizeSessions(sessionsResult);
-  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), sessions);
+  const baseSessions = normalizeSessions(sessionsResult);
+  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), baseSessions);
+  const sessions = enrichSessionsWithAgentRuntime(baseSessions, agents);
   const routes = Array.isArray(routesResult?.routes) ? routesResult.routes : [];
+  const instances = normalizeInstances(instancesResult);
+  const preferredInstance = resolvePreferredInstance(instances, query?.instance);
   const binding = await findBinding({ chatId: query?.chatId, title: query?.title });
 
   return {
@@ -336,7 +343,8 @@ export async function buildOmniPanelSnapshot(client, query) {
     routes,
     sessions: sessions.map(toListEntry),
     agents,
-    instances: [],
+    instances,
+    preferredInstance,
   };
 }
 
@@ -344,7 +352,7 @@ export async function executeOmniRoute(client, body) {
   const action = clean(body?.action);
   if (!action) return { ok: false, error: "Missing action", code: "invalid_action" };
 
-  const session = clean(body?.session);
+  const session = clean(body?.session ?? body?.sessionName);
   const chatId = clean(body?.chatId);
   const title = clean(body?.title);
   const instance = clean(body?.instance);
@@ -374,6 +382,24 @@ export async function executeOmniRoute(client, body) {
       const snapshot = toSessionSnapshot(createSyntheticBindingSession(binding), binding);
       return { ok: true, createdSession: true, binding, runtimeRoute, snapshot: { session: snapshot } };
     }
+    case "migrate-session": {
+      if (!agentId || !chatId || !instance) {
+        return { ok: false, error: "agentId, chatId and instance required", code: "invalid_args" };
+      }
+      const sessionName = session || buildSyntheticSessionName(agentId, chatName || title || chatId);
+      const runtimeRoute = await upsertRuntimeChatRoute(client, { session: sessionName, agentId, chatId, instance, channel });
+      if (runtimeRoute?.ok === false) return runtimeRoute;
+      const binding = await upsertBinding({ session: sessionName, agentId, chatId, title, instance, chatType, chatName });
+      const snapshot = toSessionSnapshot(createSyntheticBindingSession(binding), binding);
+      return {
+        ok: true,
+        migratedSession: true,
+        fromSession: clean(body?.fromSession) ?? null,
+        binding,
+        runtimeRoute,
+        snapshot: { session: snapshot },
+      };
+    }
     case "unbind": {
       if (!chatId && !title) return { ok: false, error: "chatId or title required", code: "invalid_args" };
       const runtimeRoute = chatId && instance ? await clearRuntimeChatRouteSession(client, { chatId, instance }) : null;
@@ -400,8 +426,10 @@ export async function resolveChatList(client, body) {
     listAgents(client),
     ensureLiveStateStream().catch(() => false),
   ]);
-  const sessions = normalizeSessions(sessionsResult);
-  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), sessions);
+  const baseSessions = normalizeSessions(sessionsResult);
+  const agents = mergeAgentsWithSessions(normalizeAgents(agentsResult), baseSessions);
+  const sessions = enrichSessionsWithAgentRuntime(baseSessions, agents);
+  const agentsById = indexAgentsById(agents);
   const items = await Promise.all(
     entries.map(async (entry) => {
       const id = clean(entry?.id) ?? null;
@@ -413,7 +441,10 @@ export async function resolveChatList(client, body) {
         title: query.title,
         session: requestedSessionName,
       });
-      const syntheticSession = !resolved.session && binding?.session ? createSyntheticBindingSession(binding) : null;
+      const syntheticSession =
+        !resolved.session && binding?.session
+          ? enrichSessionWithAgentRuntime(createSyntheticBindingSession(binding), agentsById)
+          : null;
       const matchedSession = resolved.session ?? syntheticSession;
       return {
         id,
@@ -524,11 +555,15 @@ function normalizeSessions(result) {
     accountId: s.accountId ?? null,
     lastAccountId: s.lastAccountId ?? null,
     groupId: s.groupId ?? null,
-    thinkingLevel: s.thinkingLevel ?? null,
-    modelOverride: s.modelOverride ?? null,
     updatedAt: s.updatedAt ?? 0,
     createdAt: s.createdAt ?? 0,
     ...s,
+    runtimeProvider: s.runtimeProvider ?? null,
+    effectiveProvider: s.effectiveProvider ?? s.provider ?? s.runtimeProvider ?? null,
+    thinkingLevel: s.thinkingLevel ?? null,
+    modelOverride: s.modelOverride ?? null,
+    provider: s.provider ?? s.runtimeProvider ?? s.effectiveProvider ?? null,
+    model: s.model ?? s.modelOverride ?? null,
   }));
 }
 
@@ -536,6 +571,12 @@ function listAgents(client) {
   return client?.agents?.list
     ? client.agents.list({}).catch(() => ({ agents: [] }))
     : Promise.resolve({ agents: [] });
+}
+
+function listInstances(client) {
+  return client?.instances?.list
+    ? client.instances.list({ asJson: true, limit: "100" }).catch(() => ({ instances: [] }))
+    : Promise.resolve({ instances: [] });
 }
 
 function normalizeAgents(result) {
@@ -550,13 +591,16 @@ function normalizeAgents(result) {
     .map((agent) => {
       const id = clean(agent?.id ?? agent?.agentId ?? agent?.name);
       if (!id) return null;
+      const provider = clean(agent?.provider);
+      const effectiveProvider = clean(agent?.effectiveProvider ?? provider);
       return {
         ...agent,
         id,
         name: clean(agent?.name ?? agent?.displayName ?? id) ?? id,
         displayName: clean(agent?.displayName ?? agent?.name ?? id) ?? id,
         cwd: clean(agent?.cwd),
-        provider: clean(agent?.provider),
+        provider,
+        effectiveProvider,
         model: clean(agent?.model),
       };
     })
@@ -572,9 +616,116 @@ function mergeAgentsWithSessions(agents, sessions) {
   for (const session of sessions) {
     const id = clean(session?.agentId);
     if (!id || byId.has(id)) continue;
-    byId.set(id, { id, name: id, displayName: id, inferred: true });
+    const provider = clean(session?.provider ?? session?.runtimeProvider ?? session?.effectiveProvider);
+    byId.set(id, {
+      id,
+      name: id,
+      displayName: id,
+      provider,
+      effectiveProvider: clean(session?.effectiveProvider ?? provider),
+      model: clean(session?.model ?? session?.modelOverride),
+      inferred: true,
+    });
   }
   return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function indexAgentsById(agents) {
+  const byId = new Map();
+  for (const agent of Array.isArray(agents) ? agents : []) {
+    const id = clean(agent?.id ?? agent?.agentId ?? agent?.name);
+    if (id && !byId.has(id)) byId.set(id, agent);
+  }
+  return byId;
+}
+
+function enrichSessionsWithAgentRuntime(sessions, agents) {
+  const agentsById = indexAgentsById(agents);
+  return sessions.map((session) => enrichSessionWithAgentRuntime(session, agentsById));
+}
+
+function enrichSessionWithAgentRuntime(session, agentsById) {
+  if (!session || typeof session !== "object") return session;
+  const agent = agentsById.get(clean(session.agentId)) ?? null;
+  const runtimeProvider = clean(session.runtimeProvider);
+  const agentProvider = clean(agent?.provider ?? agent?.effectiveProvider);
+  const agentEffectiveProvider = clean(agent?.effectiveProvider ?? agentProvider);
+  const effectiveProvider = clean(session.effectiveProvider ?? session.provider ?? runtimeProvider ?? agentEffectiveProvider);
+  const modelOverride = clean(session.modelOverride);
+  const agentModel = clean(agent?.model);
+  return {
+    ...session,
+    runtimeProvider,
+    effectiveProvider,
+    provider: clean(session.provider ?? runtimeProvider ?? effectiveProvider),
+    model: clean(session.model ?? modelOverride ?? agentModel),
+    agentProvider,
+    agentEffectiveProvider,
+    agentModel,
+  };
+}
+
+function normalizeInstances(result) {
+  const list = Array.isArray(result?.instances)
+    ? result.instances
+    : Array.isArray(result?.items)
+      ? result.items
+      : Array.isArray(result)
+        ? result
+        : [];
+  return list
+    .map((instance) => {
+      if (!instance || typeof instance !== "object") return null;
+      const live = instance.live && typeof instance.live === "object" ? instance.live : {};
+      const name = clean(instance.name ?? instance.id);
+      const id = name ?? clean(instance.id ?? instance.instanceId);
+      if (!id) return null;
+      const profileName = clean(instance.profileName ?? live.profileName ?? instance.profile?.name);
+      const instanceId = clean(instance.instanceId);
+      const channel = clean(instance.channel) ?? "whatsapp";
+      const ownerIdentifier = clean(instance.ownerIdentifier ?? instanceId ?? instance.externalId);
+      const phone = clean(instance.phone ?? live.phone ?? instance.defaults?.phone);
+      const enabled = instance.enabled !== false && instance.raviStatus !== "disabled";
+      const isConnected = Boolean(instance.isConnected ?? live.isConnected);
+      const isActive = enabled && Boolean(instance.isActive ?? live.isActive ?? isConnected);
+      return {
+        ...instance,
+        id,
+        name: name ?? id,
+        instanceId,
+        channel,
+        profileName,
+        phone,
+        ownerIdentifier,
+        isConnected,
+        isActive,
+        raviStatus: instance.raviStatus ?? (enabled ? "enabled" : "disabled"),
+        updatedAt: instance.updatedAt ?? live.updatedAt ?? null,
+        lastSeenAt: instance.lastSeenAt ?? live.lastSeenAt ?? null,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (left.isConnected !== right.isConnected) return left.isConnected ? -1 : 1;
+      if (left.isActive !== right.isActive) return left.isActive ? -1 : 1;
+      return left.name.localeCompare(right.name);
+    });
+}
+
+function resolvePreferredInstance(instances, requested) {
+  const preferred = clean(requested);
+  if (preferred) {
+    const exact = instances.find((instance) =>
+      [instance.id, instance.name, instance.instanceId].filter(Boolean).includes(preferred),
+    );
+    if (exact) return exact;
+  }
+  return (
+    instances.find((instance) => instance.isConnected) ??
+    instances.find((instance) => instance.isActive) ??
+    instances[0] ??
+    null
+  );
 }
 
 function normalizeTasks(result) {
@@ -632,6 +783,13 @@ function toListEntry(session) {
     accountId: session.accountId ?? session.lastAccountId ?? null,
     updatedAt: session.updatedAt ?? 0,
     createdAt: session.createdAt ?? 0,
+    runtimeProvider: session.runtimeProvider ?? null,
+    effectiveProvider: session.effectiveProvider ?? session.provider ?? session.runtimeProvider ?? session.agentProvider ?? null,
+    provider: session.provider ?? session.runtimeProvider ?? session.effectiveProvider ?? session.agentProvider ?? null,
+    model: session.model ?? session.modelOverride ?? session.agentModel ?? null,
+    agentProvider: session.agentProvider ?? null,
+    agentEffectiveProvider: session.agentEffectiveProvider ?? null,
+    agentModel: session.agentModel ?? null,
     thinkingLevel: session.thinkingLevel ?? null,
     modelOverride: session.modelOverride ?? null,
     live,

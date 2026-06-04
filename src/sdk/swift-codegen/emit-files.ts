@@ -20,6 +20,8 @@ import {
   returnTypeName,
 } from "./naming.js";
 import { jsonSchemaToSwift, type JsonSchema } from "./json-schema-to-swift.js";
+import { defaultStreamChannels } from "../gateway/streaming/channels.js";
+import { emitStreamingSwift } from "./streaming-codegen.js";
 
 const HEADER = [
   "// GENERATED FILE - DO NOT EDIT.",
@@ -42,6 +44,7 @@ export interface EmittedSwiftSdk {
   types: string;
   schemas: string;
   version: string;
+  streaming: string;
 }
 
 export function emitAllSwift(registry: RegistrySnapshot, options: EmitSwiftOptions): EmittedSwiftSdk {
@@ -53,6 +56,7 @@ export function emitAllSwift(registry: RegistrySnapshot, options: EmitSwiftOptio
     types: emitSwiftTypes(sortedCommands),
     schemas: emitSwiftSchemas(sortedCommands),
     version: emitSwiftVersion(options.version),
+    streaming: emitStreamingSwift(defaultStreamChannels),
   };
 }
 
@@ -116,10 +120,10 @@ function renderOptionsStruct(cmd: CommandRegistryEntry): string | null {
   lines.push("  func encodeBody(into body: inout [String: RaviJSON]) throws {");
   for (const field of fields) {
     if (field.isRequired) {
-      lines.push(`    body[${JSON.stringify(field.rawName)}] = try RaviJSON.fromEncodable(${field.swiftName})`);
+      lines.push(`    body[${JSON.stringify(field.rawName)}] = try RaviJSON.fromEncodable(self.${field.swiftName})`);
     } else {
-      lines.push(`    if let ${field.swiftName} {`);
-      lines.push(`      body[${JSON.stringify(field.rawName)}] = try RaviJSON.fromEncodable(${field.swiftName})`);
+      lines.push(`    if let value = self.${field.swiftName} {`);
+      lines.push(`      body[${JSON.stringify(field.rawName)}] = try RaviJSON.fromEncodable(value)`);
       lines.push("    }");
     }
   }
@@ -372,29 +376,29 @@ function renderMethod(swiftName: string, cmd: CommandRegistryEntry): string {
   const mutatesBody = sig.args.length > 0 || sig.options.length > 0;
   const lines: string[] = [];
   lines.push(`  public func ${swiftName}(${params}) async throws -> ${returnName} {`);
-  lines.push(`    ${mutatesBody ? "var" : "let"} body: [String: RaviJSON] = [:]`);
+  lines.push(`    ${mutatesBody ? "var" : "let"} requestBody: [String: RaviJSON] = [:]`);
   for (const arg of sig.args) {
     const swiftArg = propertyName(arg.name);
     if (arg.required) {
-      lines.push(`    body[${JSON.stringify(arg.name)}] = try RaviJSON.fromEncodable(${swiftArg})`);
+      lines.push(`    requestBody[${JSON.stringify(arg.name)}] = try RaviJSON.fromEncodable(${swiftArg})`);
     } else {
       lines.push(`    if let ${swiftArg} {`);
-      lines.push(`      body[${JSON.stringify(arg.name)}] = try RaviJSON.fromEncodable(${swiftArg})`);
+      lines.push(`      requestBody[${JSON.stringify(arg.name)}] = try RaviJSON.fromEncodable(${swiftArg})`);
       lines.push("    }");
     }
   }
   if (sig.options.length > 0) {
-    lines.push("    try options.encodeBody(into: &body)");
+    lines.push("    try options.encodeBody(into: &requestBody)");
   }
   const groupSegments = JSON.stringify(cmd.groupSegments);
   const command = JSON.stringify(cmd.command);
   if (cmd.binary) {
     lines.push(
-      `    return try await transport.callBinary(groupSegments: ${groupSegments}, command: ${command}, body: body)`,
+      `    return try await transport.callBinary(groupSegments: ${groupSegments}, command: ${command}, body: requestBody)`,
     );
   } else {
     lines.push(
-      `    return try await transport.call(groupSegments: ${groupSegments}, command: ${command}, body: body, as: ${returnName}.self)`,
+      `    return try await transport.call(groupSegments: ${groupSegments}, command: ${command}, body: requestBody, as: ${returnName}.self)`,
     );
   }
   lines.push("  }");

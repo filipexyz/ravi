@@ -40,6 +40,8 @@ This domain exists because a cron prompt is too weak as the source of truth for 
 - Cron is a scheduler. It MUST NOT be the full semantic definition of a recurring process.
 - Trigger is an event subscription. It MUST NOT be the full semantic definition of a recurring process.
 - Routine is the durable contract that may use cron, triggers, tasks, sessions, skills, and quality modes.
+- Cron MAY execute deterministic shell jobs directly when the work requires no agent judgment. Shell cron jobs MUST preserve the same lifecycle/status tracking as agent cron jobs and MUST NOT invoke an agent on successful runs.
+- Shell cron jobs MAY notify a session on failure, but the notification MUST be an explicit `on-error` policy.
 
 ## Routine Shape
 

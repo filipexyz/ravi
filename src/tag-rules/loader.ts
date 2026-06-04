@@ -65,7 +65,7 @@ export function loadTagRulesFromDirectory(directory?: string): LoadTagRulesResul
   return { rules, errors };
 }
 
-export function parseTagRuleFromString(content: string, source = "<inline>"): TagRule {
+export function parseTagRuleFromString(content: string, _source = "<inline>"): TagRule {
   const parsed = JSON.parse(content);
   return TagRuleSchema.parse(parsed);
 }

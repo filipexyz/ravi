@@ -4,15 +4,20 @@ import { createContact, getContact, upsertAgentPlatformIdentity } from "./contac
 import { Gateway, SILENT_TOKEN } from "./gateway.js";
 import {
   dbBindSessionToChat,
+  dbFindChatMessage,
+  dbGetChatMessage,
   dbGetMessageMeta,
   dbSaveMessageMeta,
   dbUpsertChat,
+  dbUpsertChatMessage,
   dbUpsertInstance,
 } from "./router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
 import { listSessionEvents } from "./session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
+import { upsertOmniGroupMetadata } from "./omni/group-metadata-cache.js";
+import type { OmniUserMention } from "./omni/mentions.js";
 
 const emitted: Array<[string, Record<string, unknown>]> = [];
 const emitMock = mock(async (topic: string, payload: Record<string, unknown>) => {
@@ -24,6 +29,25 @@ type RuntimePresenceEventData = {
   status?: string;
   nativeEvent?: string;
   _source?: NonNullable<ResponseMessage["target"]>;
+};
+
+type GatewaySendOptions = string | { threadId?: string; mentions?: OmniUserMention[] };
+type GatewaySend = (
+  instanceId: string,
+  chatId: string,
+  text: string,
+  optionsOrThreadId?: GatewaySendOptions,
+) => Promise<unknown>;
+type MessageDeleteEventData = {
+  channel?: string;
+  accountId: string;
+  chatId: string;
+  messageId: string;
+  canonicalMessageId?: string;
+  replyTopic?: string;
+};
+type MessageEditEventData = MessageDeleteEventData & {
+  text: string;
 };
 
 let stateDir: string | null = null;
@@ -54,12 +78,14 @@ function seedSession() {
 }
 
 function makeGateway(
-  send: (instanceId: string, chatId: string, text: string, threadId?: string) => Promise<unknown>,
+  send: GatewaySend,
   overrides: {
     getActiveTarget?: () => ResponseMessage["target"] | undefined;
     clearActiveTarget?: () => void;
     renewActiveTarget?: () => Promise<boolean>;
     sendTyping?: (instanceId: string, chatId: string, active?: boolean) => Promise<void>;
+    deleteMessage?: (instanceId: string, chatId: string, messageId: string) => Promise<void>;
+    editMessage?: (instanceId: string, chatId: string, messageId: string, text: string) => Promise<void>;
   } = {},
 ) {
   const gateway = new Gateway({
@@ -67,6 +93,8 @@ function makeGateway(
       send,
       sendTyping: overrides.sendTyping ?? mock(async () => {}),
       sendReaction: mock(async () => {}),
+      deleteMessage: overrides.deleteMessage ?? mock(async () => {}),
+      editMessage: overrides.editMessage ?? mock(async () => {}),
       sendMedia: mock(async () => ({})),
       markRead: mock(async () => {}),
     } as never,
@@ -99,6 +127,22 @@ async function handleResponse(gateway: unknown, sessionName: string, response: R
       handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void>;
     }
   ).handleResponseEvent(sessionName, response);
+}
+
+async function handleMessageDelete(gateway: unknown, data: MessageDeleteEventData): Promise<void> {
+  await (
+    gateway as {
+      handleMessageDeleteEvent(data: MessageDeleteEventData): Promise<void>;
+    }
+  ).handleMessageDeleteEvent(data);
+}
+
+async function handleMessageEdit(gateway: unknown, data: MessageEditEventData): Promise<void> {
+  await (
+    gateway as {
+      handleMessageEditEvent(data: MessageEditEventData): Promise<void>;
+    }
+  ).handleMessageEditEvent(data);
 }
 
 async function wait(ms: number): Promise<void> {
@@ -207,6 +251,140 @@ describe("Gateway session trace instrumentation", () => {
       agentId: "main",
       platformIdentityId: agentIdentity.id,
     });
+    expect(
+      dbFindChatMessage({
+        channel: "whatsapp-baileys",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: chat.id,
+        providerMessageId: "outbound-1",
+      }),
+    ).toMatchObject({
+      chatId: chat.id,
+      actorType: "agent",
+      agentId: "main",
+      platformIdentityId: agentIdentity.id,
+      providerMessageId: "outbound-1",
+      content: { type: "text", text: "hello back" },
+    });
+  });
+
+  it("deletes an own outbound message through omni and marks the canonical message row", async () => {
+    const { sessionKey } = seedSession();
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      platformChatId: "120363000000000000@g.us",
+      chatType: "group",
+    });
+    dbBindSessionToChat({
+      sessionKey,
+      chatId: chat.id,
+      agentId: "main",
+      bindingReason: "test_delete_own_outbound",
+    });
+    const own = dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      providerMessageId: "outbound-delete-1",
+      rawChatId: "120363000000000000@g.us",
+      rawSenderId: "5511000000000@s.whatsapp.net",
+      normalizedSenderId: "5511000000000",
+      actorType: "agent",
+      agentId: "main",
+      messageType: "text",
+      content: { type: "text", text: "mensagem errada" },
+    }).message;
+    const deleteMessage = mock(async () => {});
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "unused" })),
+      { deleteMessage },
+    );
+
+    await handleMessageDelete(gateway, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:120363000000000000",
+      messageId: "outbound-delete-1",
+      canonicalMessageId: own.id,
+      replyTopic: "ravi._reply.test-delete",
+    });
+
+    expect(deleteMessage).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363000000000000@g.us",
+      "outbound-delete-1",
+    );
+    expect(dbGetChatMessage(own.id)?.deletedAt).toBeTruthy();
+    expect(emitted).toContainEqual([
+      "ravi._reply.test-delete",
+      expect.objectContaining({
+        success: true,
+        messageId: "outbound-delete-1",
+        canonicalMessageId: own.id,
+      }),
+    ]);
+  });
+
+  it("edits an own outbound message through omni and updates the canonical message row", async () => {
+    const { sessionKey } = seedSession();
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      platformChatId: "120363000000000000@g.us",
+      chatType: "group",
+    });
+    dbBindSessionToChat({
+      sessionKey,
+      chatId: chat.id,
+      agentId: "main",
+      bindingReason: "test_edit_own_outbound",
+    });
+    const own = dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      providerMessageId: "outbound-edit-1",
+      rawChatId: "120363000000000000@g.us",
+      rawSenderId: "5511000000000@s.whatsapp.net",
+      normalizedSenderId: "5511000000000",
+      actorType: "agent",
+      agentId: "main",
+      messageType: "text",
+      content: { type: "text", text: "mensagem errada" },
+    }).message;
+    const editMessage = mock(async () => {});
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "unused" })),
+      { editMessage },
+    );
+
+    await handleMessageEdit(gateway, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:120363000000000000",
+      messageId: "outbound-edit-1",
+      canonicalMessageId: own.id,
+      text: "mensagem corrigida",
+      replyTopic: "ravi._reply.test-edit",
+    });
+
+    expect(editMessage).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363000000000000@g.us",
+      "outbound-edit-1",
+      "mensagem corrigida",
+    );
+    expect(dbGetChatMessage(own.id)?.content).toMatchObject({ text: "mensagem corrigida" });
+    expect(dbGetChatMessage(own.id)?.editedAt).toBeTruthy();
+    expect(emitted).toContainEqual([
+      "ravi._reply.test-edit",
+      expect.objectContaining({
+        success: true,
+        messageId: "outbound-edit-1",
+        canonicalMessageId: own.id,
+      }),
+    ]);
   });
 
   it("updates outbound interaction projection only for resolved DM contact targets", async () => {
@@ -288,6 +466,61 @@ describe("Gateway session trace instrumentation", () => {
     const updated = getContact(contact.id);
     expect(updated?.last_outbound_at).toBeNull();
     expect(updated?.interaction_count).toBe(0);
+  });
+
+  it("resolves exact outbound group mentions from group participants", async () => {
+    const oldApiUrl = process.env.OMNI_API_URL;
+    const oldApiKey = process.env.OMNI_API_KEY;
+    process.env.OMNI_API_URL = "http://omni.local";
+    process.env.OMNI_API_KEY = "test-key";
+
+    try {
+      const { sessionName } = seedSession();
+      const groupJid = "120363000000000000@g.us";
+      upsertOmniGroupMetadata({
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: groupJid,
+        channel: "whatsapp",
+        name: "Ravi - Dev",
+        participants: [
+          { platformUserId: "91015272759397@lid", displayName: "Ravi Bot" },
+          { platformUserId: "5511947879044@s.whatsapp.net", displayName: "Luís Filipe" },
+        ],
+        fetchedAt: Date.now(),
+      });
+      const send = mock(async (..._args: Parameters<GatewaySend>) => ({ messageId: "outbound-mentioned" }));
+      const gateway = makeGateway(send);
+
+      await handleResponse(
+        gateway,
+        sessionName,
+        makeResponse({
+          response: "oi @Luis @RaviBot @Luisalgo @12345678901234",
+          target: {
+            channel: "whatsapp-baileys",
+            accountId: "main",
+            chatId: groupJid,
+            sourceMessageId: "inbound-group",
+          },
+        }),
+      );
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
+      expect(text).toBe("oi @5511947879044 @91015272759397 @Luisalgo @12345678901234");
+      expect(options).toMatchObject({
+        mentions: expect.arrayContaining([
+          { id: "5511947879044@s.whatsapp.net", type: "user" },
+          { id: "91015272759397@lid", type: "user" },
+        ]),
+      });
+    } finally {
+      if (oldApiUrl === undefined) delete process.env.OMNI_API_URL;
+      else process.env.OMNI_API_URL = oldApiUrl;
+      if (oldApiKey === undefined) delete process.env.OMNI_API_KEY;
+      else process.env.OMNI_API_KEY = oldApiKey;
+    }
   });
 
   it("renews active presence one second after a delivered non-final response", async () => {

@@ -22,8 +22,9 @@
 1. Wait for a Ravi `RuntimePromptMessage`.
 2. If Pi is idle, send `prompt`.
 3. If Pi is streaming, reject regular prompt delivery and require explicit `turn.steer` or queued follow-up semantics.
-4. Convert Pi events to Ravi runtime events.
-5. Emit exactly one terminal event for the accepted Ravi prompt.
+4. If Pi rejects the `prompt` with "already processing", retry the same plain `prompt` on the busy backoff (`100, 250, 500, 1000, 2000` ms). This handles the race where Pi's `isStreaming` lags the `agent_end` event Ravi already observed. Never substitute `streamingBehavior=followUp` here — Pi may have already drained its follow-up queue, which would orphan the message or reorder it behind the next prompt.
+5. Convert Pi events to Ravi runtime events.
+6. Emit exactly one terminal event for the accepted Ravi prompt.
 
 ## Handle Multiple Incoming Chat Messages
 
@@ -49,6 +50,7 @@
 - Check whether a parallel tool batch left Ravi host state with one active stale tool.
 - Check stderr for process-level failures.
 - Check whether `get_state.isStreaming` disagrees with Ravi `turnActive`.
+- If channels saw the literal string "Agent is already processing", confirm the busy-retry backoff exhausted all 5 attempts (~3.85s) before yielding `turn.failed`. That means Pi held `isStreaming=true` for longer than the budget — usually post-turn auto-compaction or an extension `agent_end` subscriber blocking `finishRun()`. Inspect `provider.raw` for `compaction_start` without a matching `compaction_end`.
 - If repeated human messages were merged into one assistant context unexpectedly, check for `dispatch.push_existing` after a Pi handle already exists. Interactive `after_tool` prompts should usually show `dispatch.native_steer` instead.
 - If the issue happened immediately after cold start, check whether the second message arrived before the first `turn.started`. This is the pre-turn steer gap covered by the provider buffer.
 

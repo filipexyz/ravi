@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
 import { dbGetChat, dbGetSessionChatBinding } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
@@ -16,11 +17,22 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import {
+  isRuntimeCredentialSessionCompatible,
+  resolveRuntimeCredentialAttemptBinding,
+  serializeRuntimeCredentialAttemptBinding,
+} from "./credential-resolver.js";
+import {
+  bindRuntimeCredentialAttemptTurn,
+  markRuntimeCredentialAttemptStarted,
+  reserveRuntimeCredentialAttempt,
+} from "./credential-store.js";
 import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
 import { prepareRuntimeProviderBootstrap } from "./runtime-provider-bootstrap.js";
 import { buildRuntimeRequestContext, buildRuntimeRequestEnv } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { RuntimeCapabilities, RuntimeProviderId, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
 
 export interface RuntimeStartRequestBuildOptions {
@@ -49,6 +61,7 @@ export interface RuntimeStartRequestBuildOptions {
 export interface RuntimeStartRequestBuildResult {
   runtimeRequest: RuntimeStartRequest;
   toolContext: Record<string, unknown>;
+  runtimeCredentialAttempt?: RuntimeCredentialAttemptBinding;
 }
 
 export function resolveRuntimePromptSource(
@@ -146,9 +159,31 @@ export async function buildRuntimeStartRequest(
     context: runtimeContext,
     session,
   });
+  const credentialResolution = await resolveRuntimeCredentialAttemptBinding({
+    runtimeProvider: runtimeProviderId,
+    upstreamProvider: resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model),
+    model,
+    agentId: agent.id,
+    sessionKey: dbSessionKey,
+    sessionName,
+    runId,
+  });
+  if (!credentialResolution.attemptBinding && credentialResolution.managedPoolConfigured) {
+    throw new Error(formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected));
+  }
+  if (credentialResolution.attemptBinding) {
+    (toolContext as Record<string, unknown>).runtimeCredential = serializeRuntimeCredentialAttemptBinding(
+      credentialResolution.attemptBinding,
+    );
+  }
+  const providerEnv = mergeProviderCredentialEnv(
+    providerBootstrap?.env,
+    buildRuntimeCredentialProfileEnv(runtimeProviderId, credentialResolution.attemptBinding ?? undefined),
+    credentialResolution.attemptBinding?.resolvedEnv,
+  );
   const runtimeEnv = buildRuntimeRequestEnv({
     raviEnv,
-    providerEnv: providerBootstrap?.env,
+    ...(providerEnv ? { providerEnv } : {}),
     runtimeCapabilities,
   });
   const canUseTool = async (toolName: string, input: Record<string, unknown>) => {
@@ -165,13 +200,16 @@ export async function buildRuntimeStartRequest(
     };
   };
 
+  const canResumeCredentialSession =
+    canResumeStoredSession &&
+    isRuntimeCredentialSessionCompatible(storedRuntimeSessionParams, credentialResolution.attemptBinding);
   const { forkFromProviderSessionId, resumeProviderSessionId } = resolveRuntimeSessionContinuity({
     dbSessionKey,
     runtimeProviderId,
     supportsSessionFork: runtimeCapabilities.supportsSessionFork,
     supportsSessionResume: runtimeCapabilities.supportsSessionResume,
     storedProviderSessionId,
-    canResumeStoredSession,
+    canResumeStoredSession: canResumeCredentialSession,
     defaultRuntimeProviderId,
   });
   const { specServer, hooks, remoteSpawn } = buildRuntimeHostAttachments({
@@ -195,12 +233,29 @@ export async function buildRuntimeStartRequest(
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id);
   const traceTurnStart = (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     const firstMessage = input.deliverableMessages[0];
+    const turnId = createSessionTraceTurnId();
+    const runtimeCredential = credentialResolution.attemptBinding;
+    if (runtimeCredential && !runtimeCredential.attemptId) {
+      runtimeCredential.attemptId = reserveRuntimeCredentialAttempt({
+        credentialId: runtimeCredential.credentialId,
+        sessionKey: dbSessionKey,
+        sessionName,
+        runId,
+        turnId,
+        runtimeProvider: runtimeCredential.runtimeProvider,
+        upstreamProvider: runtimeCredential.upstreamProvider,
+        model,
+        metadata: { reason: "turn" },
+      });
+    }
+    bindRuntimeCredentialAttemptTurn(runtimeCredential?.attemptId, turnId);
+    markRuntimeCredentialAttemptStarted(runtimeCredential?.attemptId);
     return recordAdapterRequestTrace({
       sessionKey: dbSessionKey,
       sessionName,
       agentId: agent.id,
       runId,
-      turnId: createSessionTraceTurnId(),
+      turnId,
       provider: runtimeProviderId,
       model,
       effort: runtimeResolution.options.effort ?? null,
@@ -209,12 +264,17 @@ export async function buildRuntimeStartRequest(
       systemPrompt: systemPromptAppend,
       systemPromptSectionMetadata,
       cwd: sessionCwd,
-      resume: Boolean(resumeProviderSessionId || canResumeStoredSession),
+      resume: Boolean(resumeProviderSessionId || canResumeCredentialSession),
       fork: Boolean(forkFromProviderSessionId),
-      providerSessionIdBefore: forkFromProviderSessionId ?? resumeProviderSessionId ?? storedProviderSessionId ?? null,
+      providerSessionIdBefore:
+        forkFromProviderSessionId ??
+        resumeProviderSessionId ??
+        (canResumeCredentialSession ? storedProviderSessionId : null) ??
+        null,
       contextId: runtimeContext.contextId,
       source: streamingSession.currentSource ?? resolvedSource ?? null,
       deliveryBarrier: firstMessage?.deliveryBarrier ?? null,
+      deliveryBarrierSource: firstMessage?.deliveryBarrierSource ?? null,
       taskBarrierTaskId: firstMessage?.taskBarrierTaskId ?? null,
       settingSources: agent.settingSources ?? ["project"],
       hasHooks: Boolean(hooks && Object.keys(hooks).length > 0),
@@ -226,6 +286,7 @@ export async function buildRuntimeStartRequest(
       queuedMessageCount: input.deliverableMessages.length,
       pendingIds: input.deliverableMessages.map((message) => message.pendingId).filter((id): id is string => !!id),
       commands: input.deliverableMessages.flatMap((message) => message.commands ?? []),
+      runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
     });
   };
   const messageGenerator = createRuntimeMessageGenerator({
@@ -243,7 +304,7 @@ export async function buildRuntimeStartRequest(
       ...(runtimeResolution.options.thinking ? { thinking: runtimeResolution.options.thinking } : {}),
       cwd: sessionCwd,
       ...(resumeProviderSessionId ? { resume: resumeProviderSessionId } : {}),
-      ...(canResumeStoredSession
+      ...(canResumeCredentialSession
         ? {
             resumeSession: {
               params: storedRuntimeSessionParams,
@@ -267,5 +328,77 @@ export async function buildRuntimeStartRequest(
       ...(remoteSpawn ? { remoteSpawn } : {}),
     },
     toolContext,
+    ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
+}
+
+function mergeProviderCredentialEnv(
+  ...envs: Array<Record<string, string> | undefined>
+): Record<string, string> | undefined {
+  const present = envs.filter((env): env is Record<string, string> => Boolean(env));
+  if (present.length === 0) return undefined;
+  return {
+    ...Object.assign({}, ...present),
+  };
+}
+
+export function resolveRuntimeCredentialUpstreamProvider(
+  runtimeProviderId: RuntimeProviderId,
+  model: string | undefined,
+): string | undefined {
+  const selector = model?.trim();
+  const slashIndex = selector?.indexOf("/") ?? -1;
+  if (selector && slashIndex > 0 && slashIndex < selector.length - 1) {
+    return selector.slice(0, slashIndex);
+  }
+  if (runtimeProviderId === "pi") {
+    return process.env.RAVI_PI_PROVIDER?.trim() || process.env.PI_PROVIDER?.trim() || "openai";
+  }
+  if (runtimeProviderId === "codex") {
+    return process.env.RAVI_CODEX_PROVIDER?.trim() || process.env.CODEX_PROVIDER?.trim() || "openai";
+  }
+  if (runtimeProviderId === "claude") {
+    return (
+      process.env.RAVI_CLAUDE_UPSTREAM_PROVIDER?.trim() ||
+      process.env.CLAUDE_CODE_PROVIDER?.trim() ||
+      process.env.ANTHROPIC_PROVIDER?.trim() ||
+      "anthropic"
+    );
+  }
+  return undefined;
+}
+
+function buildRuntimeCredentialProfileEnv(
+  runtimeProviderId: RuntimeProviderId,
+  binding: RuntimeCredentialAttemptBinding | undefined,
+): Record<string, string> | undefined {
+  const authProfileRef = binding?.authProfileRef?.trim();
+  if (!authProfileRef) return undefined;
+  const profilePath = expandHomePath(authProfileRef);
+  if (runtimeProviderId === "codex") {
+    return { CODEX_HOME: profilePath };
+  }
+  if (runtimeProviderId === "claude") {
+    return { CLAUDE_CONFIG_DIR: profilePath };
+  }
+  return undefined;
+}
+
+function expandHomePath(value: string): string {
+  if (value === "~") return homedir();
+  if (value.startsWith("~/")) return `${homedir()}${value.slice(1)}`;
+  return value;
+}
+
+function formatRuntimeCredentialResolutionFailure(
+  runtimeProviderId: RuntimeProviderId,
+  model: string | undefined,
+  rejected: Array<{ label: string; reason: string }>,
+): string {
+  const reasonSummary = rejected
+    .slice(0, 5)
+    .map((item) => `${item.label}: ${item.reason}`)
+    .join("; ");
+  const suffix = reasonSummary ? ` Rejected credentials: ${reasonSummary}.` : "";
+  return `No managed runtime credential could be resolved for provider ${runtimeProviderId}${model ? ` model ${model}` : ""}.${suffix}`;
 }

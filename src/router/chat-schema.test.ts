@@ -2,12 +2,17 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   dbBindSessionToChat,
   dbAddChatToReadingList,
+  dbCanonicalizeDmChatForContact,
   dbCreateChatReadingList,
   dbFindChat,
   dbFindChatByRef,
   dbFindChatReadingList,
+  dbFindAgentChatMessageByRef,
+  dbContactDmNormalizedChatId,
   dbGetSessionChatBinding,
   dbGetChatReadingDelta,
+  dbListAgentChatMessagesPage,
+  dbListChatIdsByContactIds,
   dbListChats,
   dbListChatParticipants,
   dbListChatReadingListMembers,
@@ -18,6 +23,9 @@ import {
   dbFindChatMessage,
   dbListChatMessages,
   dbListChatMessagesPage,
+  dbListChatMessagesPageByContactId,
+  dbMarkChatMessageDeleted,
+  dbMarkChatMessageEdited,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
@@ -211,6 +219,95 @@ describe("identity chat schema", () => {
     expect(dbListChatMessages(chat.id)).toHaveLength(1);
   });
 
+  it("lists and marks an agent's own messages for session actions", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999999@s.whatsapp.net",
+      chatType: "dm",
+    });
+    const own = dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "outbound-1",
+      rawChatId: "5511999999999@s.whatsapp.net",
+      rawSenderId: "5511000000000@s.whatsapp.net",
+      normalizedSenderId: "5511000000000",
+      actorType: "agent",
+      agentId: "dev",
+      platformIdentityId: "pi_agent_dev",
+      messageType: "text",
+      content: { type: "text", text: "vou corrigir" },
+      providerTimestamp: 1_700_000_000_000,
+      ingestedAt: 1_700_000_000_100,
+    }).message;
+    dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "contact-1",
+      rawChatId: "5511999999999@s.whatsapp.net",
+      rawSenderId: "5511999999999@s.whatsapp.net",
+      actorType: "contact",
+      contactId: "contact_1",
+      content: { type: "text", text: "humano" },
+    });
+
+    expect(
+      dbFindAgentChatMessageByRef({
+        agentId: "dev",
+        messageRef: "outbound-1",
+        chatIds: [chat.id],
+      })?.id,
+    ).toBe(own.id);
+    expect(dbListAgentChatMessagesPage({ agentId: "dev", chatIds: [chat.id] }).items.map((m) => m.id)).toEqual([
+      own.id,
+    ]);
+
+    const deleted = dbMarkChatMessageDeleted(own.id, 1_700_000_001_000);
+    expect(deleted?.deletedAt).toBe(1_700_000_001_000);
+    expect(dbFindAgentChatMessageByRef({ agentId: "dev", messageRef: own.id, chatIds: [chat.id] })).toBeNull();
+    expect(
+      dbFindAgentChatMessageByRef({ agentId: "dev", messageRef: own.id, chatIds: [chat.id], includeDeleted: true })?.id,
+    ).toBe(own.id);
+  });
+
+  it("marks an agent's own message as edited for session actions", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999999@s.whatsapp.net",
+      chatType: "dm",
+    });
+    const own = dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "outbound-edit-1",
+      rawChatId: "5511999999999@s.whatsapp.net",
+      rawSenderId: "5511000000000@s.whatsapp.net",
+      normalizedSenderId: "5511000000000",
+      actorType: "agent",
+      agentId: "dev",
+      messageType: "text",
+      content: { type: "text", text: "texto antigo" },
+      providerTimestamp: 1_700_000_000_000,
+      ingestedAt: 1_700_000_000_100,
+    }).message;
+
+    const edited = dbMarkChatMessageEdited(own.id, "texto novo", 1_700_000_002_000);
+
+    expect(edited?.editedAt).toBe(1_700_000_002_000);
+    expect(edited?.content).toMatchObject({ type: "text", text: "texto novo", editedAt: 1_700_000_002_000 });
+    expect(edited?.rawProvenance?.raviEditHistory).toEqual([
+      { editedAt: 1_700_000_002_000, previousText: "texto antigo", text: "texto novo" },
+    ]);
+    expect(
+      dbFindAgentChatMessageByRef({ agentId: "dev", messageRef: "outbound-edit-1", chatIds: [chat.id] })?.content,
+    ).toMatchObject({ text: "texto novo" });
+  });
+
   it("lists chats and reads messages through the durable ledger", () => {
     const chat = dbUpsertChat({
       channel: "whatsapp",
@@ -257,6 +354,194 @@ describe("identity chat schema", () => {
     expect(messages.total).toBe(2);
     expect(messages.items.map((message) => message.content?.text)).toEqual(["primeira", "segunda"]);
     expect(messages.items[0]?.sortKey).toMatch(/cm_/);
+
+    const contactMessages = dbListChatMessagesPageByContactId({ contactId: "contact_1" });
+    expect(contactMessages.total).toBe(2);
+    expect(contactMessages.items.map((message) => message.content?.text)).toEqual(["segunda", "primeira"]);
+  });
+
+  it("lists related chat ids for contacts in one batched indexed query shape", () => {
+    const first = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511991111111@s.whatsapp.net",
+      chatType: "dm",
+      title: "First",
+    });
+    const second = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511992222222@s.whatsapp.net",
+      chatType: "dm",
+      title: "Second",
+    });
+    const shared = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+      title: "Shared",
+    });
+
+    dbUpsertChatParticipant({ chatId: first.id, contactId: "contact_a", source: "test" });
+    dbUpsertChatParticipant({ chatId: shared.id, contactId: "contact_a", source: "test" });
+    dbUpsertChatMessage({
+      chatId: second.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "wamid-batch-contact-b",
+      rawChatId: "5511992222222@s.whatsapp.net",
+      actorType: "contact",
+      contactId: "contact_b",
+      content: { type: "text", text: "hello" },
+      providerTimestamp: 1_700_000_010_000,
+      ingestedAt: 1_700_000_010_100,
+    });
+
+    const byContact = dbListChatIdsByContactIds({ contactIds: ["contact_a", "contact_b", "contact_empty"] });
+    expect(byContact.get("contact_a")?.sort()).toEqual([first.id, shared.id].sort());
+    expect(byContact.get("contact_b")).toEqual([second.id]);
+    expect(byContact.get("contact_empty")).toEqual([]);
+  });
+
+  it("canonicalizes WhatsApp DM LID and phone chats for the same contact", () => {
+    const normalizedChatId = dbContactDmNormalizedChatId("contact_1");
+    const list = dbCreateChatReadingList({ name: "crm-analysis", ownerType: "agent", ownerId: "crm" });
+    const lidChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "238289734901889@lid",
+      chatType: "dm",
+      title: "Raquel",
+    });
+    dbUpsertChatMessage({
+      chatId: lidChat.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "wamid-lid",
+      rawChatId: "238289734901889@lid",
+      rawSenderId: "238289734901889@lid",
+      normalizedSenderId: "lid:238289734901889",
+      actorType: "contact",
+      contactId: "contact_1",
+      platformIdentityId: "pi_lid",
+      content: { type: "text", text: "via lid" },
+      providerTimestamp: 1_700_000_000_000,
+      ingestedAt: 1_700_000_000_100,
+    });
+    dbUpsertChatParticipant({
+      chatId: lidChat.id,
+      contactId: "contact_1",
+      platformIdentityId: "pi_lid",
+      rawPlatformUserId: "238289734901889@lid",
+      normalizedPlatformUserId: "lid:238289734901889",
+      source: "inbound_message",
+    });
+    dbAddChatToReadingList({ listId: list.id, chatId: lidChat.id, source: "crm" });
+
+    expect(
+      dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "instance-1",
+        platformChatId: "238289734901889@lid",
+        normalizedChatId,
+        chatType: "dm",
+      }).id,
+    ).toBe(lidChat.id);
+
+    const canonicalLid = dbCanonicalizeDmChatForContact({
+      chatId: lidChat.id,
+      contactId: "contact_1",
+      platformChatId: "238289734901889@lid",
+      title: "Raquel",
+      rawProvenance: { source: "test", alias: "lid" },
+      seenAt: 1_700_000_000_100,
+    });
+    expect(canonicalLid.id).toBe(lidChat.id);
+    expect(canonicalLid.normalizedChatId).toBe(normalizedChatId);
+
+    const phoneChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999999@s.whatsapp.net",
+      chatType: "dm",
+      title: "Raquel",
+    });
+    dbUpsertChatMessage({
+      chatId: phoneChat.id,
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      providerMessageId: "wamid-phone",
+      rawChatId: "5511999999999@s.whatsapp.net",
+      rawSenderId: "5511999999999@s.whatsapp.net",
+      normalizedSenderId: "5511999999999",
+      actorType: "contact",
+      contactId: "contact_1",
+      platformIdentityId: "pi_phone",
+      content: { type: "text", text: "via phone" },
+      providerTimestamp: 1_700_000_001_000,
+      ingestedAt: 1_700_000_001_100,
+    });
+    dbUpsertChatParticipant({
+      chatId: phoneChat.id,
+      contactId: "contact_1",
+      platformIdentityId: "pi_phone",
+      rawPlatformUserId: "5511999999999@s.whatsapp.net",
+      normalizedPlatformUserId: "5511999999999",
+      source: "inbound_message",
+    });
+    dbAddChatToReadingList({ listId: list.id, chatId: phoneChat.id, source: "crm" });
+
+    const canonicalPhone = dbCanonicalizeDmChatForContact({
+      chatId: phoneChat.id,
+      contactId: "contact_1",
+      platformChatId: "5511999999999@s.whatsapp.net",
+      title: "Raquel",
+      rawProvenance: { source: "test", alias: "phone" },
+      seenAt: 1_700_000_001_100,
+    });
+
+    expect(canonicalPhone.id).toBe(canonicalLid.id);
+    expect(canonicalPhone.normalizedChatId).toBe(normalizedChatId);
+    expect(
+      dbFindChat({ channel: "whatsapp", instanceId: "instance-1", platformChatId: "238289734901889@lid" })?.id,
+    ).toBe(canonicalLid.id);
+    expect(
+      dbFindChat({ channel: "whatsapp", instanceId: "instance-1", platformChatId: "5511999999999@s.whatsapp.net" })?.id,
+    ).toBe(canonicalLid.id);
+    expect(
+      dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "instance-1",
+        platformChatId: "238289734901889@lid",
+        normalizedChatId,
+        chatType: "dm",
+      }).id,
+    ).toBe(canonicalLid.id);
+    expect(
+      dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "instance-1",
+        platformChatId: "5511999999999@s.whatsapp.net",
+        chatType: "dm",
+      }).id,
+    ).toBe(canonicalLid.id);
+    expect(
+      dbFindChat({ channel: "whatsapp", instanceId: "instance-1", platformChatId: "238289734901889@lid" })?.id,
+    ).toBe(canonicalLid.id);
+
+    const chats = dbListChats({ instanceId: "instance-1", contactId: "contact_1" });
+    expect(chats.total).toBe(1);
+    expect(chats.items[0]?.chat.id).toBe(canonicalLid.id);
+    expect(
+      dbListChatMessages(canonicalLid.id)
+        .map((message) => message.providerMessageId)
+        .sort(),
+    ).toEqual(["wamid-lid", "wamid-phone"]);
+    expect(dbListChatParticipants(canonicalLid.id)).toHaveLength(1);
+    const members = dbListChatReadingListMembers({ listId: list.id });
+    expect(members.total).toBe(1);
+    expect(members.items[0]?.chat.id).toBe(canonicalLid.id);
   });
 
   it("keeps reading-list cursors independent per list and reader", () => {

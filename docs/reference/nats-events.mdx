@@ -36,7 +36,9 @@ The prompt topic goes via JetStream WorkQueue stream (`SESSION_PROMPTS`). All ot
 | `ravi.inbound.reply` | `{ targetMessageId, text, senderId }` |
 | `ravi.inbound.pollVote` | `{ pollMessageId, votes: [{ name, voters[] }] }` |
 
-Channel messages arrive via omni JetStream on `message.received.{channelType}.{instanceId}`, not via ravi pub/sub. The OmniConsumer translates these into session prompts.
+Inbound channel messages arrive through Omni JetStream subjects such as `message.received.{channelType}.{instanceId}` and are routed into sessions by `OmniConsumer`, not published as Ravi pub/sub aliases like `whatsapp.*.inbound`. Emoji reactions are normalized to the canonical trigger subject `ravi.inbound.reaction`; `whatsapp.*.reaction` is not published.
+
+Reaction events are correlation signals. Use `targetMessageId` to look up routine-owned state; do not assume the event includes the original chat, caption, media metadata, or domain object.
 
 ## Delivery Events (Bot to Gateway)
 
@@ -98,6 +100,12 @@ ravi.{sessionKey}.cli.{group}.{command}
 ```
 
 Example: `ravi.agent:main:main.cli.contacts.add`
+
+Standalone CLI commands that are not tied to a session use `_cli` as the session token:
+
+```
+ravi._cli.cli.{group}.{command}
+```
 
 ## Copilot Events (Claude Code Bridge)
 

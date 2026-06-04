@@ -412,6 +412,59 @@ describe("Pi runtime provider", () => {
     expect(promptCommand).not.toHaveProperty("streamingBehavior");
   });
 
+  it("retries a prompt rejected with 'already processing' until pi settles", async () => {
+    const transport = new FakePiRpcTransport();
+    let promptAttempts = 0;
+    transport.responseFor = (command) => {
+      if (command.type !== "prompt") return undefined;
+      promptAttempts += 1;
+      if (promptAttempts < 3) {
+        return {
+          id: command.id,
+          type: "response",
+          command: "prompt",
+          success: false,
+          error: "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+        };
+      }
+      return defaultResponse(command);
+    };
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("retry")).events,
+    );
+
+    expect(promptAttempts).toBeGreaterThanOrEqual(3);
+    expect(events.map((event) => event.type)).not.toContain("turn.failed");
+    expect(events.at(-1)).toMatchObject({ type: "turn.complete" });
+    const promptCommands = transport.commands.filter((command) => command.type === "prompt");
+    expect(promptCommands.length).toBeGreaterThanOrEqual(3);
+    expect(promptCommands[0]).not.toHaveProperty("streamingBehavior");
+  });
+
+  it("surfaces turn.failed after exhausting busy retries", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type !== "prompt") return undefined;
+      return {
+        id: command.id,
+        type: "response",
+        command: "prompt",
+        success: false,
+        error: "Agent is already processing. Specify streamingBehavior to queue.",
+      };
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("busy")).events,
+    );
+
+    const promptCount = transport.commands.filter((command) => command.type === "prompt").length;
+    expect(promptCount).toBe(6); // initial + 5 backoff retries
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed" });
+  });
+
   it("restarts a dead Pi RPC transport before sending a prompt", async () => {
     const deadTransport = new FakePiRpcTransport();
     deadTransport.responseFor = (command) => {

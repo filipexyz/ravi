@@ -25,6 +25,7 @@ let routerConfig: { agents: Record<string, Record<string, unknown>> } = { agents
 let chatHistory: Array<Record<string, unknown>> = [];
 let chatHistoryByChat: Array<Record<string, unknown>> = [];
 let messageMetadataRows: Array<Record<string, unknown>> = [];
+const chatRecords = new Map<string, Record<string, unknown>>();
 let displayNameUpdates: Array<{ sessionKey: string; displayName: string }> = [];
 let deletedSessionKeys: string[] = [];
 let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
@@ -146,6 +147,7 @@ mock.module("../../router/index.js", () => ({
 
 mock.module("../../router/router-db.js", () => ({
   ...actualRouterDbModule,
+  dbGetChat: (chatId: string) => chatRecords.get(chatId) ?? actualRouterDbModule.dbGetChat(chatId),
   dbListContexts: (options?: { sessionKey?: string }) =>
     listedContexts.filter((context) => {
       if (!options?.sessionKey) return true;
@@ -218,7 +220,20 @@ mock.module("../../tags/service.js", () => ({
 }));
 
 const { SessionCommands } = await import("./sessions.js");
-const { extractNormalizedTranscriptMessages } = await import("./sessions.js");
+const {
+  buildCurrentSessionActionsCommand,
+  buildCurrentSessionDeleteMessageCommand,
+  buildCurrentSessionEditMessageCommand,
+  buildCurrentSessionReadCommand,
+  buildSessionActionsPromptHint,
+  buildSessionActionsCommand,
+  buildSessionDeleteMessageCommand,
+  buildSessionEditMessageCommand,
+  buildSessionDetachCommand,
+  buildSessionUnmuteCommand,
+  serializeSessionActionMessage,
+  extractNormalizedTranscriptMessages,
+} = await import("./sessions.js");
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -256,6 +271,7 @@ beforeEach(() => {
   chatHistory = [];
   chatHistoryByChat = [];
   messageMetadataRows = [];
+  chatRecords.clear();
   displayNameUpdates = [];
   deletedSessionKeys = [];
   renameSessionNameCalls = [];
@@ -361,6 +377,121 @@ describe("SessionCommands wait mode", () => {
   });
 });
 
+describe("SessionCommands delivery barriers", () => {
+  beforeEach(() => {
+    publishedPrompts.length = 0;
+    resolvedSession = {
+      sessionKey: "agent:dev:main",
+      name: "dev",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+  });
+
+  it("sends cross-session prompts as follow-up by default", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send("dev", "hello");
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
+    expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("default");
+  });
+
+  it("keeps explicit immediate delivery for cross-session prompts", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send(
+        "dev",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "p0",
+      );
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("immediate_interrupt");
+    expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("explicit");
+  });
+
+  it("supports steer delivery for cross-session prompts", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send(
+        "dev",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_tool");
+    expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("explicit");
+  });
+
+  it("supports followup and steer barrier aliases", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send(
+        "dev",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "steer",
+      );
+    });
+
+    expect(publishedPrompts.at(-1)?.payload.deliveryBarrier).toBe("after_tool");
+    expect(publishedPrompts.at(-1)?.payload.deliveryBarrierSource).toBe("explicit");
+  });
+
+  it("answers as follow-up by default", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.answer("dev", "answer");
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.prompt).toBe("[System] Answer: [from: unknown] answer");
+    expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
+    expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("default");
+  });
+});
+
 describe("SessionCommands list --json", () => {
   beforeEach(() => {
     listedSessions = [
@@ -415,6 +546,82 @@ describe("SessionCommands list --json", () => {
       activity: "thinking",
       summary: "running",
       updatedAt: 3000,
+    });
+  });
+});
+
+describe("SessionCommands attach hints", () => {
+  it("builds the detach command returned by attach", () => {
+    expect(buildSessionDetachCommand("dev", "chat_123")).toBe("ravi sessions detach dev --chat chat_123");
+  });
+
+  it("builds the unmute command used by muted source hints", () => {
+    expect(buildSessionUnmuteCommand("dev", "chat_123")).toBe("ravi sessions unmute dev --chat chat_123");
+  });
+
+  it("builds action discovery and own-message deletion commands", () => {
+    expect(buildCurrentSessionActionsCommand()).toBe("ravi sessions actions --json");
+    expect(buildCurrentSessionDeleteMessageCommand("cm_123")).toBe("ravi sessions delete-message cm_123");
+    expect(buildCurrentSessionEditMessageCommand("cm_123")).toBe('ravi sessions edit-message cm_123 "<new-text>"');
+    expect(buildCurrentSessionReadCommand()).toBe("ravi sessions read --json");
+    expect(buildSessionActionsCommand("dev")).toBe("ravi sessions actions dev --json");
+    expect(buildSessionDeleteMessageCommand("dev", "cm_123")).toBe("ravi sessions delete-message dev cm_123");
+    expect(buildSessionEditMessageCommand("dev", "cm_123")).toBe('ravi sessions edit-message dev cm_123 "<new-text>"');
+  });
+
+  it("builds a prompt-ready hint for session action tools", () => {
+    const hint = buildSessionActionsPromptHint();
+
+    expect(hint).toContain("ravi sessions actions --json");
+    expect(hint).toContain("recentOwnMessages.items");
+    expect(hint).toContain("chatId");
+    expect(hint).toContain("chatTitle");
+    expect(hint).toContain("ravi sessions delete-message <message-id>");
+    expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(hint).toContain("Only delete or edit messages authored by this session's agent");
+  });
+
+  it("includes chat identity on recent own action messages", () => {
+    chatRecords.set("chat_ae70f8bc7ec999d2e2048219", {
+      id: "chat_ae70f8bc7ec999d2e2048219",
+      title: "ravi - dev",
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "120363424772797713@g.us",
+    });
+
+    const item = serializeSessionActionMessage(
+      {
+        sessionKey: "agent:dev:whatsapp:main:chat_ae70f8bc7ec999d2e2048219",
+        name: "dev",
+        agentId: "dev",
+      } as any,
+      {
+        id: "msg_123",
+        providerMessageId: "3EB0123",
+        chatId: "chat_ae70f8bc7ec999d2e2048219",
+        channel: "whatsapp",
+        instanceId: "main",
+        content: { text: "vou corrigir" },
+        messageType: "text",
+        providerTimestamp: "2026-05-25T23:00:00.000Z",
+        ingestedAt: "2026-05-25T23:00:01.000Z",
+        deletedAt: null,
+        editedAt: null,
+      } as any,
+    );
+
+    expect(item).toMatchObject({
+      id: "msg_123",
+      chatId: "chat_ae70f8bc7ec999d2e2048219",
+      chatTitle: "ravi - dev",
+      chat: {
+        id: "chat_ae70f8bc7ec999d2e2048219",
+        title: "ravi - dev",
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: "120363424772797713@g.us",
+      },
     });
   });
 });

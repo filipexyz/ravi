@@ -19,15 +19,27 @@ import { promisify } from "node:util";
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
 const CONSUMER_RETRY_DELAY_MS = 2_000;
 const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
+const CONSUMER_LAG_WARN_MS = 10_000;
 const unregisteredCooldowns = new Map<string, number>();
-import { expandHome, resolveRoute } from "../router/index.js";
+import {
+  attachChatToSession,
+  commitMatchedRoute,
+  expandHome,
+  findSessionByAttachedChat,
+  getSession,
+  listSessionSubscriptions,
+  matchRoute,
+  subscriptionAllowsCrossInstance,
+} from "../router/index.js";
 import { configStore } from "../config-store.js";
 import {
   getContact,
   getContactName,
+  buildMentionedContactPromptContexts,
   ensureContactFromInbound,
   isContactAllowedForAgent,
   recordInbound,
+  resolveAgentPlatformIdentity,
   resolvePlatformIdentity,
   saveAccountPending,
   type PlatformIdentity,
@@ -35,18 +47,24 @@ import {
 } from "../contacts.js";
 import {
   dbBindSessionToChat,
+  dbCanonicalizeDmChatForContact,
+  dbContactDmNormalizedChatId,
+  dbGetChat,
   dbGetMessageMeta,
   dbSaveMessageMeta,
   dbUpsertChat,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
+  type SessionChatSubscriptionRecord,
 } from "../router/router-db.js";
 import { resetSession } from "../router/sessions.js";
 import {
   recordChannelMessageReceivedTrace,
+  recordRouteRejectedTrace,
   recordRouteResolvedTrace,
   type NormalizedSessionTraceSource,
+  type RouteRejectionReason,
 } from "../session-trace/channel-trace.js";
 import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
@@ -66,9 +84,11 @@ import {
 import type { AgentConfig } from "../router/types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
+import { extractInboundMentionTargets, normalizeInboundMentionText } from "./mentions.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
 import { runTagRulesForContact } from "../tag-rules/index.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
+import { firstProviderTimestampMs, timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
 import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
@@ -127,6 +147,8 @@ interface OmniEvent {
     personId?: string;
     source?: string;
     ingestMode?: "realtime" | "history-sync";
+    pluginReceivedAt?: number | string;
+    receivedAt?: number | string;
   };
   timestamp: number;
 }
@@ -145,6 +167,7 @@ interface MessageReceivedPayload {
     isVoiceNote?: boolean;
   };
   replyToId?: string;
+  platformTimestamp?: number | string;
   rawPayload?: Record<string, unknown>;
 }
 
@@ -229,6 +252,25 @@ function rawPayloadNumber(rawPayload: Record<string, unknown> | undefined, key: 
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function resolveMessageProviderTimestampMs(payload: MessageReceivedPayload, envelopeTimestamp: number): number {
+  return (
+    firstProviderTimestampMs(payload.platformTimestamp, payload.rawPayload?.messageTimestamp, envelopeTimestamp) ??
+    Date.now()
+  );
+}
+
+function resolvePluginReceivedAtMs(event: OmniEvent, payload: MessageReceivedPayload): number | null {
+  return (
+    timestampLikeToMs(payload.rawPayload?.pluginReceivedAt) ??
+    timestampLikeToMs(payload.rawPayload?.plugin_received_at) ??
+    timestampLikeToMs(payload.rawPayload?.receivedAt) ??
+    timestampLikeToMs(payload.rawPayload?.received_at) ??
+    timestampLikeToMs(event.metadata?.pluginReceivedAt) ??
+    timestampLikeToMs(event.metadata?.receivedAt) ??
+    null
+  );
+}
+
 /**
  * Parse the NATS subject to get channelType and instanceId.
  * Subject format: {eventType}.{channelType}.{instanceId}
@@ -270,12 +312,27 @@ function resolveSenderPlatformIdentity(input: {
       ? []
       : uniqueStrings([input.normalizedSenderId, input.rawSenderId]);
 
-  const channelLookups = [
-    { channel: input.channel, instanceIds: uniqueStrings([input.instanceId, ""]), senderIds },
+  for (const platformUserId of senderIds) {
+    const identity = resolvePlatformIdentity({ channel: input.channel, instanceId: input.instanceId, platformUserId });
+    if (identity) return identity;
+  }
+
+  // Agent channel accounts are scoped to the instance they own, but in a
+  // shared WhatsApp group their messages are received by every connected
+  // Ravi instance in the group. Resolve exact agent-owned platform ids
+  // across instances before generic/global fallbacks so agent accounts do
+  // not get downgraded to legacy phone contacts on sibling accounts.
+  for (const platformUserId of senderIds) {
+    const identity = resolveAgentPlatformIdentity({ channel: input.channel, platformUserId });
+    if (identity) return identity;
+  }
+
+  const fallbackLookups = [
+    { channel: input.channel, instanceIds: [""], senderIds },
     ...(input.channel === "whatsapp" ? [{ channel: "phone", instanceIds: [""], senderIds: phoneFallbackIds }] : []),
   ];
 
-  for (const lookup of channelLookups) {
+  for (const lookup of fallbackLookups) {
     for (const instanceId of lookup.instanceIds) {
       if (lookup.senderIds.length === 0) continue;
       for (const platformUserId of lookup.senderIds) {
@@ -529,19 +586,51 @@ export class OmniConsumer {
     }
 
     const { channelType, instanceId } = parsed;
-    const payload = event.payload as MessageReceivedPayload;
+    let payload = event.payload as MessageReceivedPayload;
 
     // Skip reaction messages — these are handled by the REACTION stream consumer
     if (payload.content.type === "reaction") return;
 
-    const msgTs = event.timestamp > 1e12 ? event.timestamp : event.timestamp * 1000;
+    const handlerStartedAt = Date.now();
+    const pluginReceivedAtMs = resolvePluginReceivedAtMs(event, payload);
+    const consumerLagMs = pluginReceivedAtMs === null ? null : Math.max(0, handlerStartedAt - pluginReceivedAtMs);
+    if (
+      consumerLagMs !== null &&
+      consumerLagMs >= CONSUMER_LAG_WARN_MS &&
+      event.metadata?.ingestMode !== "history-sync"
+    ) {
+      log.warn("Omni consumer lag detected", {
+        eventId: event.id,
+        subject,
+        consumerLagMs,
+        pluginReceivedAtMs,
+        handlerStartedAt,
+      });
+    }
+
+    // Provider timestamps are the source of truth for message ordering.
+    // History-sync batches can share one envelope timestamp while each message
+    // carries its original platform timestamp in the payload.
+    const msgTs = resolveMessageProviderTimestampMs(payload, event.timestamp);
     // History-sync/old messages must still feed the durable chat/contact ledger.
     // They are suppressed only before route/runtime dispatch to avoid replaying prompts.
     const suppressRuntimeReplay = event.metadata?.ingestMode === "history-sync" || msgTs < this.startedAt - 5_000;
 
     // Derive phone and group status from JIDs
     const rawPayload = payload.rawPayload as Record<string, unknown> | undefined;
-    const editInfo = this.extractMessageEditInfo(payload, rawPayload);
+    let editInfo = this.extractMessageEditInfo(payload, rawPayload);
+    const normalizedMentionText = normalizeInboundMentionText({
+      text: editInfo?.newText ?? payload.content?.text,
+      rawPayload,
+      resolveName: (id) => this.resolveMentionDisplayName(id),
+    });
+    if (
+      normalizedMentionText.text !== undefined &&
+      normalizedMentionText.text !== (editInfo?.newText ?? payload.content?.text)
+    ) {
+      payload = { ...payload, content: { ...payload.content, text: normalizedMentionText.text } };
+      if (editInfo) editInfo = { ...editInfo, newText: normalizedMentionText.text };
+    }
     // isDm: Slack uses lowercase "isDm", Discord/Telegram use "isDM"
     const rawIsDm = rawPayload?.isDm ?? rawPayload?.isDM;
     // rawPayload.isGroup: Telegram sets this explicitly
@@ -625,10 +714,27 @@ export class OmniConsumer {
     // - Strip JID domain suffixes (@g.us, @s.whatsapp.net)
     const sessionChannel = channelType.replace(/-baileys$/, "");
     const sessionGroupId = isGroup ? chatJid.replace(/@.*$/, "") : undefined;
-    const canonicalChat = dbUpsertChat({
+    const normalizedSenderId = resolvedSenderPhone || senderPhone;
+    let senderPlatformIdentity = resolveSenderPlatformIdentity({
+      channel: sessionChannel,
+      instanceId,
+      normalizedSenderId,
+      rawSenderId: senderPhone,
+      rawProviderSenderId: payload.from,
+    });
+    let senderContact =
+      senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
+        ? getContact(senderPlatformIdentity.ownerId)
+        : (getContact(resolvedSenderPhone) ?? getContact(senderPhone));
+    const senderContactChatKey =
+      !isGroup && !threadId && !isNonDmChannel && senderPlatformIdentity?.ownerType !== "agent" && senderContact?.id
+        ? dbContactDmNormalizedChatId(senderContact.id)
+        : undefined;
+    let canonicalChat = dbUpsertChat({
       channel: sessionChannel,
       instanceId,
       platformChatId: threadId ? `${chatJid}#${threadId}` : chatJid,
+      normalizedChatId: senderContactChatKey,
       chatType: threadId ? "thread" : isGroup ? "group" : isNonDmChannel ? "channel" : "dm",
       title: rawPayloadString(rawPayload, "chatName") ?? null,
       rawProvenance: {
@@ -642,18 +748,23 @@ export class OmniConsumer {
       },
       seenAt: msgTs,
     });
-    const normalizedSenderId = resolvedSenderPhone || senderPhone;
-    let senderPlatformIdentity = resolveSenderPlatformIdentity({
-      channel: sessionChannel,
-      instanceId,
-      normalizedSenderId,
-      rawSenderId: senderPhone,
-      rawProviderSenderId: payload.from,
-    });
-    let senderContact =
-      senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
-        ? getContact(senderPlatformIdentity.ownerId)
-        : (getContact(resolvedSenderPhone) ?? getContact(senderPhone));
+    if (senderContactChatKey && senderContact?.id) {
+      canonicalChat = dbCanonicalizeDmChatForContact({
+        chatId: canonicalChat.id,
+        contactId: senderContact.id,
+        platformChatId: chatJid,
+        title: rawPayloadString(rawPayload, "chatName") ?? rawPayloadString(rawPayload, "pushName") ?? null,
+        rawProvenance: {
+          source: "omni.message.received",
+          eventId: event.id,
+          accountId: effectiveAccountId,
+          instanceId,
+          chatId: chatJid,
+          senderId: payload.from,
+        },
+        seenAt: msgTs,
+      });
+    }
 
     if (
       !isGroup &&
@@ -696,6 +807,23 @@ export class OmniConsumer {
         });
         if (intake.platformIdentity) senderPlatformIdentity = intake.platformIdentity;
         if (intake.contact) senderContact = intake.contact;
+        if (!threadId && !isNonDmChannel && intake.contact?.id) {
+          canonicalChat = dbCanonicalizeDmChatForContact({
+            chatId: canonicalChat.id,
+            contactId: intake.contact.id,
+            platformChatId: chatJid,
+            title: rawPayloadString(rawPayload, "chatName") ?? rawPayloadString(rawPayload, "pushName") ?? null,
+            rawProvenance: {
+              source: "omni.message.received",
+              eventId: event.id,
+              accountId: effectiveAccountId,
+              instanceId,
+              chatId: chatJid,
+              senderId: payload.from,
+            },
+            seenAt: msgTs,
+          });
+        }
       } catch (error) {
         log.warn("Failed to ensure inbound contact", {
           instanceId,
@@ -842,8 +970,11 @@ export class OmniConsumer {
       return;
     }
 
-    // Resolve route to get session key
-    const resolved = resolveRoute(routerConfig, {
+    // Match route (pure) — no DB writes yet. The session row is only
+    // committed after every policy/scope gate passes so rejected inbounds
+    // don't leave orphan sessions behind (spec contacts/identity-graph/
+    // unified-model: identity → policy → route resolution → persist).
+    let matched = matchRoute(routerConfig, {
       phone: routePhone,
       channel: sessionChannel,
       accountId: effectiveAccountId,
@@ -853,7 +984,7 @@ export class OmniConsumer {
       peerKind,
     });
 
-    if (!resolved) {
+    if (!matched) {
       const isNew = saveAccountPending(effectiveAccountId, routePhone, {
         chatId: chatJid,
         isGroup,
@@ -879,6 +1010,55 @@ export class OmniConsumer {
       return;
     }
 
+    // sessions/attach: if the canonical chat is already subscribed to a
+    // session, route the inbound there instead of to the route-derived
+    // session. The subscription is an explicit operator decision and
+    // overrides the default route resolution.
+    // See .ravi/specs/sessions/attach/SPEC.md (Instance Isolation)
+    const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
+    if (existingSubscription && existingSubscription.sessionKey !== matched.sessionKey) {
+      const ownerSession = getSession(existingSubscription.sessionKey);
+      const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
+      // Instance isolation: never let the subscription override jump
+      // across Omni instances. If the override would route an inbound
+      // from instance A into a session that lives on instance B, the
+      // session's outbound would later be emitted via instance B —
+      // hitting a different WhatsApp account entirely. The 2026-05-21
+      // production loop was caused by exactly this jump. Fall back to
+      // the route-derived session when this is detected.
+      const sameInstance = subscriptionAllowsCrossInstance(canonicalChat.id, existingSubscription.sessionKey);
+      if (!sameInstance) {
+        log.warn("Subscription override would jump instances — ignoring subscription, using route resolution", {
+          chatId: canonicalChat.id,
+          subscriptionSessionKey: existingSubscription.sessionKey,
+          routeSessionKey: matched.sessionKey,
+        });
+      } else if (ownerSession && ownerAgent) {
+        log.info("Inbound rerouted by session subscription", {
+          chatId: canonicalChat.id,
+          fromSessionKey: matched.sessionKey,
+          toSessionKey: existingSubscription.sessionKey,
+        });
+        matched = {
+          agentId: ownerSession.agentId,
+          agent: ownerAgent,
+          sessionKey: existingSubscription.sessionKey,
+          dmScope: matched.dmScope,
+          // The original route stays so policy lookups can still consult
+          // its `policy` override. The subscription doesn't expose a
+          // route — instance-level policy is the next fallback.
+          route: matched.route,
+        };
+      } else {
+        log.warn("Subscription points to a missing session or agent — falling back to route resolution", {
+          chatId: canonicalChat.id,
+          subscriptionSessionKey: existingSubscription.sessionKey,
+          hasSession: !!ownerSession,
+          hasAgent: !!ownerAgent,
+        });
+      }
+    }
+
     const traceSource: NormalizedSessionTraceSource = {
       channel: sessionChannel,
       accountId: effectiveAccountId,
@@ -896,37 +1076,62 @@ export class OmniConsumer {
       identityConfidence: effectiveActorMetadata.identityConfidence ?? null,
       identityProvenance: effectiveActorMetadata.identityProvenance ?? null,
     };
-    const routeId = (resolved.route as { id?: number } | undefined)?.id ?? null;
-    dbBindSessionToChat({
-      sessionKey: resolved.sessionKey,
-      chatId: canonicalChat.id,
-      agentId: resolved.agent.id,
-      routeId,
-      bindingReason: "inbound_route",
-      seenAt: msgTs,
-    });
-    dbUpsertSessionParticipant({
-      sessionKey: resolved.sessionKey,
-      ownerType: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "contact" : "unknown",
-      ownerId: effectiveActorType === "agent" ? (effectiveActorAgentId ?? null) : (effectiveContactId ?? null),
-      platformIdentityId: effectivePlatformIdentityId ?? null,
-      role: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "human" : "unknown",
-      metadata: {
-        rawSenderId: effectiveRawSenderId,
-        normalizedSenderId: effectiveNormalizedSenderId,
-        canonicalChatId: canonicalChat.id,
-        ...(editInfo && editOriginalMessageMeta
-          ? { inheritedFromEditedMessageId: editOriginalMessageMeta.messageId }
-          : {}),
-      },
-      seenAt: msgTs,
-    });
+    const saveInboundMessageMeta = (extra: { transcription?: string; mediaPath?: string; mediaType?: string } = {}) => {
+      if (!payload.externalId || !chatJid) return;
+      dbSaveMessageMeta(payload.externalId, chatJid, {
+        canonicalChatId: effectiveActorMetadata.canonicalChatId,
+        actorType: effectiveActorMetadata.actorType,
+        contactId: effectiveActorMetadata.contactId,
+        agentId: effectiveActorMetadata.actorAgentId,
+        platformIdentityId: effectiveActorMetadata.platformIdentityId,
+        rawSenderId: effectiveActorMetadata.rawSenderId,
+        normalizedSenderId: effectiveActorMetadata.normalizedSenderId,
+        identityConfidence: effectiveActorMetadata.identityConfidence,
+        identityProvenance: effectiveActorMetadata.identityProvenance,
+        ...extra,
+      });
+    };
 
-    try {
+    // Fail-soft trace recorder shared by every trace on this path. Trace
+    // writes must never crash the inbound handler, so each call is guarded
+    // with a single warn-on-failure pattern instead of repeating try/catch
+    // at every site.
+    const safeTrace = <T>(description: string, fn: () => T): T | null => {
+      try {
+        return fn();
+      } catch (error) {
+        log.warn(description, { sessionKey: matched.sessionKey, messageId: payload.externalId, error });
+        return null;
+      }
+    };
+
+    // `route.rejected` emitter for the policy / scope rejection sites
+    // below. `sessionName` is null because the session row hasn't been
+    // committed yet — that's the orphan-prevention contract.
+    const rejectRoute = (reason: RouteRejectionReason, payloadJson: Record<string, unknown>) => {
+      safeTrace("Failed to record route.rejected trace", () =>
+        recordRouteRejectedTrace({
+          sessionKey: matched.sessionKey,
+          sessionName: null,
+          agentId: matched.agent.id,
+          timestamp: msgTs,
+          source: traceSource,
+          reason,
+          payloadJson,
+        }),
+      );
+    };
+
+    // Factual "we received this message" trace fires before any rejection
+    // gate. `sessionName` may be unknown until `commitMatchedRoute` runs,
+    // so the trace is keyed by the matched `sessionKey` only — that's
+    // enough for `sessions trace` lookups and for follow-up traces
+    // (`route.resolved` / `route.rejected`) to be correlated.
+    safeTrace("Failed to record channel.message.received trace", () =>
       recordChannelMessageReceivedTrace({
-        sessionKey: resolved.sessionKey,
-        sessionName: resolved.sessionName,
-        agentId: resolved.agent.id,
+        sessionKey: matched.sessionKey,
+        sessionName: null,
+        agentId: matched.agent.id,
         timestamp: msgTs,
         source: traceSource,
         payloadJson: {
@@ -944,42 +1149,34 @@ export class OmniConsumer {
           contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
           actorAgentId: effectiveActorAgentId ?? null,
           platformIdentityId: effectivePlatformIdentityId ?? null,
+          pluginReceivedAtMs,
+          consumerHandlerStartedAt: handlerStartedAt,
+          consumerLagMs,
           chatName: rawPayloadString(rawPayload, "chatName") ?? null,
           routePhone,
         },
         preview: payload.content?.text ?? null,
+      }),
+    );
+
+    if (effectiveActorType === "agent") {
+      saveInboundMessageMeta();
+      rejectRoute("agent_actor_observed", {
+        reason: "agent_actor_observed",
+        actorAgentId: effectiveActorAgentId ?? null,
+        platformIdentityId: effectivePlatformIdentityId ?? null,
+        routeSessionKey: matched.sessionKey,
+        routeAgentId: matched.agent.id,
       });
-      recordRouteResolvedTrace({
-        sessionKey: resolved.sessionKey,
-        sessionName: resolved.sessionName,
-        agentId: resolved.agent.id,
-        timestamp: msgTs,
-        source: traceSource,
-        payloadJson: {
-          sessionKey: resolved.sessionKey,
-          sessionName: resolved.sessionName,
-          agentId: resolved.agent.id,
-          dmScope: resolved.dmScope,
-          route: resolved.route
-            ? {
-                pattern: resolved.route.pattern,
-                priority: resolved.route.priority ?? null,
-                policy: resolved.route.policy ?? null,
-                dmScope: resolved.route.dmScope ?? null,
-                session: resolved.route.session ?? null,
-              }
-            : null,
-          peerKind: peerKind ?? (isGroup ? "group" : "dm"),
-          groupId: sessionGroupId ?? null,
-          threadId: threadId ?? null,
-        },
+      log.info("Agent-origin channel message observed; suppressing runtime dispatch", {
+        instanceId,
+        accountId: effectiveAccountId,
+        chatId: chatJid,
+        senderId: senderPhone,
+        actorAgentId: effectiveActorAgentId,
+        routeSessionKey: matched.sessionKey,
       });
-    } catch (error) {
-      log.warn("Failed to record inbound session trace", {
-        sessionName: resolved.sessionName,
-        messageId: payload.externalId,
-        error,
-      });
+      return;
     }
 
     // -- Policy resolution helper --
@@ -1003,11 +1200,12 @@ export class OmniConsumer {
     // -- Group policy enforcement --
     // Skip policy check if the group has an explicit route (not wildcard) —
     // having a specific route is an implicit approval.
-    const hasExplicitRoute = resolved.route && resolved.route.pattern !== "*";
+    const hasExplicitRoute = matched.route && matched.route.pattern !== "*";
     if (isGroup && !hasExplicitRoute) {
-      const groupPolicy = resolvePolicy("groupPolicy", resolved.route?.policy, "open");
+      const groupPolicy = resolvePolicy("groupPolicy", matched.route?.policy, "open");
       if (groupPolicy === "closed") {
         log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
+        rejectRoute("group_closed", { groupPolicy, chatJid, accountId: effectiveAccountId });
         return;
       }
       if (groupPolicy === "allowlist") {
@@ -1034,6 +1232,12 @@ export class OmniConsumer {
               isGroup: true,
             });
           }
+          rejectRoute("group_allowlist_pending", {
+            groupPolicy,
+            chatJid,
+            accountId: effectiveAccountId,
+            contactStatus: contact?.status ?? null,
+          });
           return;
         }
       }
@@ -1042,9 +1246,10 @@ export class OmniConsumer {
 
     // -- DM policy enforcement --
     if (!isGroup) {
-      const dmPolicy = resolvePolicy("dmPolicy", resolved.route?.policy, "open");
+      const dmPolicy = resolvePolicy("dmPolicy", matched.route?.policy, "open");
       if (dmPolicy === "closed") {
         log.info("DM rejected by policy (closed)", { senderPhone, accountId: effectiveAccountId });
+        rejectRoute("dm_closed", { dmPolicy, senderPhone, accountId: effectiveAccountId });
         return;
       }
       if (dmPolicy === "pairing") {
@@ -1070,23 +1275,148 @@ export class OmniConsumer {
               isGroup: false,
             });
           }
+          rejectRoute("dm_pairing_pending", {
+            dmPolicy,
+            senderPhone,
+            accountId: effectiveAccountId,
+            contactStatus: contact?.status ?? null,
+          });
           return;
         }
       }
       // "open" → falls through normally
     }
 
-    const { sessionName, agent } = resolved;
-    const agentMode = agent.mode ?? "active";
-
-    // Per-agent contact scoping
+    // -- Per-agent contact scoping --
+    const agentMode = matched.agent.mode ?? "active";
     if (agentMode !== "sentinel") {
       const checkId = isGroup ? chatJid : senderPhone;
-      if (!isContactAllowedForAgent(checkId, agent.id)) {
-        log.info("Contact not allowed for agent", { checkId, agentId: agent.id });
+      if (!isContactAllowedForAgent(checkId, matched.agent.id)) {
+        log.info("Contact not allowed for agent", { checkId, agentId: matched.agent.id });
+        rejectRoute("agent_contact_scope_denied", { checkId, agentId: matched.agent.id, isGroup });
         return;
       }
     }
+
+    // All policy / scope gates passed — commit the route, bind the
+    // session to the canonical chat, register the participant, and emit
+    // `route.resolved`.
+    const resolved = commitMatchedRoute(matched, {
+      phone: routePhone,
+      isGroup,
+      groupId: sessionGroupId,
+      threadId,
+      peerKind,
+    });
+    const routeId = (resolved.route as { id?: number } | undefined)?.id ?? null;
+    dbBindSessionToChat({
+      sessionKey: resolved.sessionKey,
+      chatId: canonicalChat.id,
+      agentId: resolved.agent.id,
+      routeId,
+      bindingReason: "inbound_route",
+      seenAt: msgTs,
+    });
+
+    // sessions/attach: keep the subscriptions index in sync with the
+    // legacy 1:1 binding. First-time chats become `primary`; subsequent
+    // chats routed into an existing session become `input`. Idempotent
+    // on re-routing the same chat.
+    // See .ravi/specs/sessions/attach/SPEC.md
+    try {
+      const existingSubscriptions = listSessionSubscriptions(resolved.sessionKey);
+      const existingSubscription = existingSubscriptions.find((s) => s.chatId === canonicalChat.id);
+      const hasPrimary = existingSubscriptions.some((s) => s.role === "primary");
+      const hasOutputTarget = existingSubscriptions.some((s) => s.outputAttachedAt !== undefined);
+      const role = existingSubscription?.role ?? (hasPrimary ? "input" : "primary");
+      const setOutputTarget =
+        existingSubscription?.outputAttachedAt !== undefined ||
+        (!existingSubscription && role === "primary") ||
+        (!hasOutputTarget && role === "primary");
+      const shouldEnableSpeech = setOutputTarget || (!existingSubscription && role === "primary");
+      attachChatToSession({
+        sessionKey: resolved.sessionKey,
+        chatId: canonicalChat.id,
+        role,
+        attachedByType: "system",
+        attachedReason: "inbound-route",
+        speechMode: existingSubscription
+          ? shouldEnableSpeech
+            ? "speak"
+            : undefined
+          : role === "primary"
+            ? "speak"
+            : "muted",
+        speechReason: existingSubscription
+          ? shouldEnableSpeech
+            ? "primary-inbound-route"
+            : undefined
+          : role === "primary"
+            ? "primary-inbound-route"
+            : "listen-only-inbound-route",
+        // Inbound routing keeps the subscription index warm, but it must not
+        // steal the session's output attachment after an operator attached a
+        // different chat as the output surface.
+        setOutputTarget,
+      });
+    } catch (error) {
+      // Conflict means the chat is currently attached to another session;
+      // the override block above already detected and reused that owner
+      // (so we shouldn't reach this path with a conflicting chat). Log
+      // defensively and let the inbound continue — the legacy
+      // `session_chat_bindings` row is still authoritative for now.
+      log.warn("Failed to record session_chat_subscription", {
+        chatId: canonicalChat.id,
+        sessionKey: resolved.sessionKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    dbUpsertSessionParticipant({
+      sessionKey: resolved.sessionKey,
+      ownerType: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "contact" : "unknown",
+      ownerId: effectiveActorType === "agent" ? (effectiveActorAgentId ?? null) : (effectiveContactId ?? null),
+      platformIdentityId: effectivePlatformIdentityId ?? null,
+      role: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "human" : "unknown",
+      metadata: {
+        rawSenderId: effectiveRawSenderId,
+        normalizedSenderId: effectiveNormalizedSenderId,
+        canonicalChatId: canonicalChat.id,
+        ...(editInfo && editOriginalMessageMeta
+          ? { inheritedFromEditedMessageId: editOriginalMessageMeta.messageId }
+          : {}),
+      },
+      seenAt: msgTs,
+    });
+
+    safeTrace("Failed to record route.resolved trace", () =>
+      recordRouteResolvedTrace({
+        sessionKey: resolved.sessionKey,
+        sessionName: resolved.sessionName,
+        agentId: resolved.agent.id,
+        timestamp: msgTs,
+        source: traceSource,
+        payloadJson: {
+          sessionKey: resolved.sessionKey,
+          sessionName: resolved.sessionName,
+          agentId: resolved.agent.id,
+          dmScope: resolved.dmScope,
+          route: resolved.route
+            ? {
+                pattern: resolved.route.pattern,
+                priority: resolved.route.priority ?? null,
+                policy: resolved.route.policy ?? null,
+                dmScope: resolved.route.dmScope ?? null,
+                session: resolved.route.session ?? null,
+              }
+            : null,
+          peerKind: peerKind ?? (isGroup ? "group" : "dm"),
+          groupId: sessionGroupId ?? null,
+          threadId: threadId ?? null,
+        },
+      }),
+    );
+
+    const { sessionName, agent } = resolved;
     this.recordInboundContactInteraction(effectiveActorMetadata);
 
     // Resolve sender display name: pushName (from rawPayload) → contacts DB → phone
@@ -1112,27 +1442,23 @@ export class OmniConsumer {
     const groupName = groupMetadata?.name ?? rawGroupName;
     const groupMembers =
       formatGroupMembers(groupMetadata) ?? (isGroup ? this.resolveGroupMembers(rawPayload) : undefined);
+    const mentionedContactsContext = isGroup
+      ? buildMentionedContactPromptContexts({
+          channel: sessionChannel,
+          instanceId,
+          mentions: extractInboundMentionTargets(rawPayload),
+        })
+      : [];
 
     // Process media (download from omni disk → agent attachments, transcribe audio)
     const agentCwd = expandHome(agent.cwd);
     const mediaResult = await this.processMedia(payload, agentCwd);
 
-    if (payload.externalId && chatJid) {
-      dbSaveMessageMeta(payload.externalId, chatJid, {
-        canonicalChatId: effectiveActorMetadata.canonicalChatId,
-        actorType: effectiveActorMetadata.actorType,
-        contactId: effectiveActorMetadata.contactId,
-        agentId: effectiveActorMetadata.actorAgentId,
-        platformIdentityId: effectiveActorMetadata.platformIdentityId,
-        rawSenderId: effectiveActorMetadata.rawSenderId,
-        normalizedSenderId: effectiveActorMetadata.normalizedSenderId,
-        identityConfidence: effectiveActorMetadata.identityConfidence,
-        identityProvenance: effectiveActorMetadata.identityProvenance,
-        transcription: mediaResult?.transcript,
-        mediaPath: mediaResult?.localPath,
-        mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
-      });
-    }
+    saveInboundMessageMeta({
+      transcription: mediaResult?.transcript,
+      mediaPath: mediaResult?.localPath,
+      mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
+    });
 
     // Extract reply/quoted message context (works across all channels)
     const replyContext = this.extractReplyContext(payload.replyToId, rawPayload);
@@ -1182,6 +1508,7 @@ export class OmniConsumer {
       senderName,
       groupName,
       groupMembers,
+      mentionedContactsContext,
       chatJid,
       event,
       effectiveActorMetadata,
@@ -1240,6 +1567,7 @@ export class OmniConsumer {
       accountId: effectiveAccountId,
       instanceId,
       chatId: chatJid,
+      canonicalChatId: canonicalChat.id,
       ...(threadId ? { threadId } : {}),
       ...(payload.externalId ? { sourceMessageId: payload.externalId } : {}),
       ...effectiveActorMetadata,
@@ -1257,6 +1585,17 @@ export class OmniConsumer {
       return;
     }
 
+    // Session surface hint: attach makes one session listen to multiple
+    // chats. Every inbound prompt carries source/default/speech state so
+    // the agent can adjust speech internally without exposing routing
+    // mechanics to users. See .ravi/specs/sessions/attach/SPEC.md.
+    const subs = listSessionSubscriptions(resolved.sessionKey);
+    const originHint = this.formatSessionSurfaceHint({
+      sessionRef: resolved.sessionName ?? resolved.sessionKey,
+      sourceChatId: canonicalChat.id,
+      subscriptions: subs,
+    });
+
     const envelope = this.formatEnvelope(
       channelType,
       payload,
@@ -1271,6 +1610,7 @@ export class OmniConsumer {
       replyContext,
       replyMediaPath,
       commandExpansion.content,
+      originHint,
     );
     const editRebasePlan = editInfo
       ? buildRuntimeMessageEditRebasePlan({
@@ -2036,6 +2376,42 @@ export class OmniConsumer {
     return parts.join("\n");
   }
 
+  private formatSessionSurfaceHint(input: {
+    sessionRef: string;
+    sourceChatId: string;
+    subscriptions: SessionChatSubscriptionRecord[];
+  }): string | undefined {
+    if (input.subscriptions.length === 0) return undefined;
+
+    const sourceSub = input.subscriptions.find((sub) => sub.chatId === input.sourceChatId);
+    const defaultOutputSub = input.subscriptions.find((sub) => sub.outputAttachedAt !== undefined);
+    const sourceSpeech = sourceSub?.speechMode ?? "unattached";
+    const defaultSpeakOutput = defaultOutputSub?.speechMode === "speak";
+    const defaultOutput = defaultSpeakOutput
+      ? `${defaultOutputSub.chatId} speech=${defaultOutputSub.speechMode}`
+      : "none";
+    const surfaces = input.subscriptions
+      .map((sub) => {
+        const chat = dbGetChat(sub.chatId);
+        const title = chat?.title ? ` title=${JSON.stringify(chat.title)}` : "";
+        const output = sub.outputAttachedAt !== undefined ? " defaultOutput=true" : "";
+        return `${sub.chatId} role=${sub.role} speech=${sub.speechMode}${output}${title}`;
+      })
+      .join("; ");
+    const instruction =
+      sourceSub?.speechMode === "muted"
+        ? defaultSpeakOutput
+          ? `source_chat is muted/listen-only. If a public reply must go to source_chat, internally run \`ravi sessions unmute ${input.sessionRef} --chat ${input.sourceChatId}\` before your final response. Otherwise answer normally and Ravi will use the default speak chat.`
+          : `source_chat is muted/listen-only and there is no default speak chat. If a public reply must go to source_chat, internally run \`ravi sessions unmute ${input.sessionRef} --chat ${input.sourceChatId}\` before your final response.`
+        : "source_chat is speak-enabled; a normal response can be emitted there.";
+
+    return [
+      `[session surfaces] session=${input.sessionRef} source_chat=${input.sourceChatId} source_speech=${sourceSpeech} default_speak_chat=${defaultOutput}`,
+      `[session surfaces] ${surfaces}`,
+      `[session surfaces] ${instruction} Do not mention mute, unmute, attach, subscriptions, routing, or output mechanics to users.`,
+    ].join("\n");
+  }
+
   private formatEnvelope(
     channelType: string,
     payload: MessageReceivedPayload,
@@ -2050,6 +2426,7 @@ export class OmniConsumer {
     replyContext?: { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null,
     replyMediaPath?: string,
     contentOverride?: string,
+    originHint?: string,
   ): string {
     const channelName = this.channelDisplayName(channelType);
     const dt = new Date(timestamp);
@@ -2083,14 +2460,15 @@ export class OmniConsumer {
       replyBlock = `\n[Replying to ${sender} mid:${replyContext.quotedId}]\n${quotedContent}${mediaLine}\n[/Replying]\n`;
     }
 
+    const hintPrefix = originHint ? `${originHint}\n` : "";
     if (isGroup) {
       const groupLabel = groupName || stripJid(chatJid);
       const header = `[${channelName} ${groupLabel} id:${chatJid}${threadTag}${midTag} ${ts} ${dow}] ${senderName}:`;
-      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
+      return replyBlock ? `${hintPrefix}${header}${replyBlock}${content}` : `${hintPrefix}${header} ${content}`;
     } else {
       const nameTag = senderName !== senderPhone ? ` ${senderName}` : "";
       const header = `[${channelName} +${senderPhone}${nameTag}${midTag} ${ts} ${dow}]`;
-      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
+      return replyBlock ? `${hintPrefix}${header}${replyBlock}${content}` : `${hintPrefix}${header} ${content}`;
     }
   }
 
@@ -2103,6 +2481,11 @@ export class OmniConsumer {
     if (alt) return stripJid(alt);
 
     return fallback;
+  }
+
+  private resolveMentionDisplayName(id: string): string | null | undefined {
+    const stripped = stripJid(id);
+    return getContactName(id) ?? getContactName(stripped) ?? undefined;
   }
 
   private resolveGroupName(rawPayload: Record<string, unknown> | undefined, chatJid: string): string | undefined {
@@ -2160,6 +2543,7 @@ export class OmniConsumer {
     senderName: string,
     groupName: string | undefined,
     groupMembers: string[] | undefined,
+    mentionedContactsContext: MessageContext["mentionedContactsContext"] | undefined,
     chatJid: string,
     event: OmniEvent,
     actorMetadata?: MessageActorMetadata,
@@ -2182,6 +2566,7 @@ export class OmniConsumer {
       ...(groupName ? { groupName } : {}),
       ...(groupId ? { groupId } : {}),
       ...(groupMembers && groupMembers.length > 0 ? { groupMembers } : {}),
+      ...(mentionedContactsContext && mentionedContactsContext.length > 0 ? { mentionedContactsContext } : {}),
       ...(editInfo
         ? {
             isEditedMessage: true,

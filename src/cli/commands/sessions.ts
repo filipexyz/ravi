@@ -9,7 +9,12 @@ import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
-import { DEFAULT_DELIVERY_BARRIER, normalizeDeliveryBarrier, type DeliveryBarrier } from "../../delivery-barriers.js";
+import {
+  DEFAULT_DELIVERY_BARRIER,
+  normalizeDeliveryBarrier,
+  type DeliveryBarrier,
+  type DeliveryBarrierSource,
+} from "../../delivery-barriers.js";
 import {
   getSessionAdapterDebugSnapshot,
   listSessionAdapters,
@@ -31,6 +36,11 @@ import {
   setSessionEphemeral,
   extendSession,
   makeSessionPermanent,
+  attachChatToSession,
+  detachChatFromSession,
+  listSessionSubscriptions,
+  setSessionChatSpeechMode,
+  SessionAttachConflictError,
 } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
@@ -38,9 +48,16 @@ import { loadConfig } from "../../utils/config.js";
 import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
+  dbFindAgentChatMessageByRef,
+  dbFindChatByRef,
+  dbGetChat,
+  dbGetSessionChatBinding,
   dbGetMessageMeta,
+  dbListAgentChatMessagesPage,
   dbListContexts,
   dbListMessageMetaByChatId,
+  type ChatMessageRecord,
+  type ChatMessageWithSortKey,
   type ContextRecord,
 } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
@@ -81,6 +98,7 @@ import {
   filterAccessibleSessions,
 } from "../../permissions/scope.js";
 import { formatInspectionSection, printInspectionBlock, printInspectionField } from "../inspection-output.js";
+import { requestReply } from "../../utils/request-reply.js";
 import { parseSessionTraceTime, querySessionTrace, type SessionTraceQueryResult } from "../../session-trace/query.js";
 import { explainSessionTrace, type SessionTraceExplanation } from "../../session-trace/explain.js";
 import { buildCliInvocationMetadata, hashForAudit, type CliInvocationMetadata } from "../provenance.js";
@@ -104,6 +122,10 @@ import type {
 } from "../../session-trace/types.js";
 
 const SEND_TIMEOUT_MS = 120000; // 2 minutes
+const MESSAGE_DELETE_TOPIC = "ravi.outbound.message.delete";
+const MESSAGE_DELETE_TIMEOUT_MS = 15000;
+const MESSAGE_EDIT_TOPIC = "ravi.outbound.message.edit";
+const MESSAGE_EDIT_TIMEOUT_MS = 15000;
 const CONFIG_DB_META = { source: "config-db", freshness: "persisted", via: "router-config" } as const;
 const SESSION_DB_META = { source: "session-db", freshness: "persisted" } as const;
 const RUNTIME_SNAPSHOT_META = { source: "runtime-snapshot", freshness: "persisted" } as const;
@@ -118,6 +140,290 @@ function printJson(payload: unknown): void {
 
 function printJsonl(payload: unknown): void {
   console.log(JSON.stringify(payload));
+}
+
+export function buildSessionDetachCommand(sessionRef: string, chatId: string): string {
+  return `ravi sessions detach ${sessionRef} --chat ${chatId}`;
+}
+
+export function buildSessionUnmuteCommand(sessionRef: string, chatId: string): string {
+  return `ravi sessions unmute ${sessionRef} --chat ${chatId}`;
+}
+
+export function buildCurrentSessionActionsCommand(): string {
+  return "ravi sessions actions --json";
+}
+
+export function buildSessionActionsCommand(sessionRef: string): string {
+  return `ravi sessions actions ${sessionRef} --json`;
+}
+
+export function buildCurrentSessionDeleteMessageCommand(messageRef: string): string {
+  return `ravi sessions delete-message ${messageRef}`;
+}
+
+export function buildSessionDeleteMessageCommand(sessionRef: string, messageRef: string): string {
+  return `ravi sessions delete-message ${sessionRef} ${messageRef}`;
+}
+
+function quoteCliArg(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+export function buildCurrentSessionEditMessageCommand(messageRef: string, text = "<new-text>"): string {
+  return `ravi sessions edit-message ${messageRef} ${quoteCliArg(text)}`;
+}
+
+export function buildSessionEditMessageCommand(sessionRef: string, messageRef: string, text = "<new-text>"): string {
+  return `ravi sessions edit-message ${sessionRef} ${messageRef} ${quoteCliArg(text)}`;
+}
+
+export function buildCurrentSessionReadCommand(): string {
+  return "ravi sessions read --json";
+}
+
+export function buildSessionActionsPromptHint(): string {
+  return [
+    "Use this payload as the canonical conversational action surface for the current session.",
+    `First run \`${buildCurrentSessionActionsCommand()}\` to inspect available tools and recent own message IDs.`,
+    "For accidental own outbound messages, pick the target from `recentOwnMessages.items`.",
+    "Use each recent message's `chatId` and `chatTitle` to confirm which group/chat the action targets.",
+    `To delete an own outbound message, run \`${buildCurrentSessionDeleteMessageCommand("<message-id>")}\`.`,
+    `To edit an own outbound text message, run \`${buildCurrentSessionEditMessageCommand("<message-id>", "novo texto")}\`.`,
+    "Only delete or edit messages authored by this session's agent; do not use these tools on user messages.",
+  ].join("\n");
+}
+
+function buildSessionActionToolHints(): Record<string, Record<string, unknown>> {
+  return {
+    deleteMessage: {
+      id: "message.delete",
+      tool: "ravi sessions delete-message",
+      command: buildCurrentSessionDeleteMessageCommand("<message-id>"),
+      idSource: "recentOwnMessages.items[].id or recentOwnMessages.items[].providerMessageId",
+      useWhen: "Remove an accidental outbound message authored by this session's agent.",
+      constraints: [
+        "Target must be an own outbound message returned by recentOwnMessages.",
+        "Confirm the target item's chatId/chatTitle before acting.",
+        "Do not use on user-authored messages.",
+        "Prefer the canonical item id when available.",
+      ],
+      promptHint:
+        "After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions delete-message <message-id>`.",
+    },
+    editMessage: {
+      id: "message.edit",
+      tool: "ravi sessions edit-message",
+      command: buildCurrentSessionEditMessageCommand("<message-id>", "novo texto"),
+      idSource: "recentOwnMessages.items[].id or recentOwnMessages.items[].providerMessageId",
+      textSource: "The corrected replacement text you want visible in the chat.",
+      useWhen: "Correct an accidental outbound text message authored by this session's agent.",
+      constraints: [
+        "Target must be an own outbound message returned by recentOwnMessages.",
+        "Confirm the target item's chatId/chatTitle before acting.",
+        "Use only for text content that should be replaced.",
+        "Do not expose internal message IDs to users unless debugging requires it.",
+      ],
+      promptHint:
+        'After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions edit-message <message-id> "novo texto"`.',
+    },
+  };
+}
+
+function sessionActionRef(session: Pick<SessionEntry, "name" | "sessionKey">): string {
+  return session.name ?? session.sessionKey;
+}
+
+function resolveCurrentSessionRef(): string | undefined {
+  const ctx = getContext();
+  return ctx?.sessionName?.trim() || ctx?.sessionKey?.trim() || undefined;
+}
+
+function extractActionMessageText(message: ChatMessageWithSortKey | ChatMessageRecord): string | undefined {
+  const content = message.content ?? {};
+  const text = content.text;
+  if (typeof text === "string" && text.trim()) return text.trim();
+  const caption = content.caption;
+  if (typeof caption === "string" && caption.trim()) return caption.trim();
+  const type = typeof content.type === "string" ? content.type : message.messageType;
+  return type ? `[${type}]` : undefined;
+}
+
+function sessionActionChatIds(session: SessionEntry): string[] {
+  const ids = new Set<string>();
+  for (const subscription of listSessionSubscriptions(session.sessionKey)) {
+    ids.add(subscription.chatId);
+  }
+  const binding = dbGetSessionChatBinding(session.sessionKey);
+  if (binding?.chatId) ids.add(binding.chatId);
+  return Array.from(ids);
+}
+
+function serializeSessionActionChat(chatId: string | undefined): Record<string, unknown> | null {
+  if (!chatId) return null;
+  const chat = dbGetChat(chatId);
+  if (!chat) {
+    return {
+      id: chatId,
+      title: null,
+      channel: null,
+      instanceId: null,
+      platformChatId: null,
+    };
+  }
+  return {
+    id: chat.id,
+    title: chat.title ?? null,
+    channel: chat.channel,
+    instanceId: chat.instanceId,
+    platformChatId: chat.platformChatId,
+  };
+}
+
+export function serializeSessionActionMessage(
+  _session: SessionEntry,
+  message: ChatMessageWithSortKey | ChatMessageRecord,
+): Record<string, unknown> {
+  const sentAt = message.providerTimestamp ?? message.ingestedAt;
+  const chat = serializeSessionActionChat(message.chatId);
+  return {
+    id: message.id,
+    providerMessageId: message.providerMessageId,
+    chatId: message.chatId,
+    chatTitle: typeof chat?.title === "string" ? chat.title : null,
+    chat,
+    channel: message.channel,
+    instanceId: message.instanceId,
+    text: extractActionMessageText(message) ?? null,
+    messageType: message.messageType ?? null,
+    sentAt,
+    deletedAt: message.deletedAt ?? null,
+    editedAt: message.editedAt ?? null,
+    commands: {
+      delete: buildCurrentSessionDeleteMessageCommand(message.id),
+      deleteByProviderMessageId: buildCurrentSessionDeleteMessageCommand(message.providerMessageId),
+      edit: buildCurrentSessionEditMessageCommand(message.id),
+      editByProviderMessageId: buildCurrentSessionEditMessageCommand(message.providerMessageId),
+    },
+  };
+}
+
+function buildSessionActionsPayload(session: SessionEntry, options: { limit?: number } = {}): Record<string, unknown> {
+  const ref = sessionActionRef(session);
+  const limit = options.limit ?? 10;
+  const toolHints = buildSessionActionToolHints();
+  const promptHint = buildSessionActionsPromptHint();
+  const subscriptions = listSessionSubscriptions(session.sessionKey).map((subscription) => {
+    const chat = dbGetChat(subscription.chatId);
+    return {
+      chatId: subscription.chatId,
+      role: subscription.role,
+      speechMode: subscription.speechMode,
+      defaultOutput: Boolean(subscription.outputAttachedAt),
+      chat: chat
+        ? {
+            id: chat.id,
+            title: chat.title ?? null,
+            channel: chat.channel,
+            instanceId: chat.instanceId,
+            platformChatId: chat.platformChatId,
+          }
+        : null,
+    };
+  });
+  const chatIds = sessionActionChatIds(session);
+  const recentOwnMessages = dbListAgentChatMessagesPage({
+    agentId: session.agentId,
+    chatIds,
+    limit,
+    order: "desc",
+  });
+
+  return {
+    session: {
+      ref,
+      sessionKey: session.sessionKey,
+      sessionName: session.name ?? null,
+      agentId: session.agentId,
+    },
+    surfaces: {
+      chatIds,
+      subscriptions,
+    },
+    promptHint,
+    usage: {
+      discoveryCommand: buildCurrentSessionActionsCommand(),
+      messageIdSource: "recentOwnMessages.items[].id or recentOwnMessages.items[].providerMessageId",
+      chatContextSource: "recentOwnMessages.items[].chatId and recentOwnMessages.items[].chatTitle",
+      tools: toolHints,
+    },
+    actions: [
+      {
+        id: "message.delete",
+        status: "available",
+        description: "Delete one of this session agent's own channel messages.",
+        command: buildCurrentSessionDeleteMessageCommand("<message-id>"),
+        promptHint: toolHints.deleteMessage.promptHint,
+        idSource: toolHints.deleteMessage.idSource,
+        constraints: toolHints.deleteMessage.constraints,
+      },
+      {
+        id: "message.edit",
+        status: "available",
+        description: "Edit one of this session agent's own text channel messages.",
+        command: buildCurrentSessionEditMessageCommand("<message-id>"),
+        promptHint: toolHints.editMessage.promptHint,
+        idSource: toolHints.editMessage.idSource,
+        constraints: toolHints.editMessage.constraints,
+      },
+      {
+        id: "message.react",
+        status: "available",
+        description: "React to a channel message when the channel supports reactions.",
+        command: "ravi react send <message-id> <emoji>",
+      },
+      {
+        id: "sticker.send",
+        status: "available",
+        description: "Send a sticker when the channel supports stickers.",
+        command: "ravi stickers send <sticker-id>",
+      },
+      {
+        id: "session.read",
+        status: "available",
+        description: "Read this session's recent transcript.",
+        command: buildCurrentSessionReadCommand(),
+      },
+      {
+        id: "message.reply",
+        status: "planned",
+        description: "Native quoted reply command is not implemented yet.",
+      },
+    ],
+    recentOwnMessages: {
+      total: recentOwnMessages.total,
+      limit: recentOwnMessages.limit,
+      offset: recentOwnMessages.offset,
+      items: recentOwnMessages.items.map((message) => serializeSessionActionMessage(session, message)),
+    },
+    hints: [
+      "Read promptHint and usage.tools before choosing a conversational action.",
+      "Use recentOwnMessages.items[].chatId and recentOwnMessages.items[].chatTitle to confirm the group/chat first.",
+      "Use recentOwnMessages.items[].commands.delete to remove an accidental message you sent.",
+      "Use recentOwnMessages.items[].commands.edit to edit an accidental message you sent.",
+      "message.delete and message.edit are scoped to messages sent by this session's agent.",
+    ],
+  };
+}
+
+function parseSessionActionsLimit(value: string | undefined): number {
+  if (!value?.trim()) return 10;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    fail("--limit must be a positive integer");
+    return 10;
+  }
+  return Math.min(parsed, 100);
 }
 
 function formatTagSlugs(tags: TagBinding[]): string {
@@ -325,11 +631,13 @@ function readMessageMetadataFallback(session: SessionEntry, limit: number): Norm
 function buildDeliveryJson(
   session: SessionEntry,
   deliveryBarrier: DeliveryBarrier,
+  deliveryBarrierSource: DeliveryBarrierSource,
   source: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined,
   context: ChannelContext | undefined,
 ): Record<string, unknown> {
   return {
     barrier: deliveryBarrier,
+    barrierSource: deliveryBarrierSource,
     source: source ?? null,
     context: context ?? null,
     target: {
@@ -619,15 +927,31 @@ function formatWaitTimeoutError(sessionName: string): string {
 function resolveDeliveryBarrierOptionWithDefault(
   value: string | undefined,
   fallback: DeliveryBarrier,
-): DeliveryBarrier {
+  options: { steer?: boolean; immediate?: boolean } = {},
+): { barrier: DeliveryBarrier; source: DeliveryBarrierSource } {
   const barrier = normalizeDeliveryBarrier(value);
+  if (options.immediate && options.steer) {
+    throw new Error("--immediate cannot be combined with --steer.");
+  }
+  if (options.immediate) {
+    if (value && barrier !== "immediate_interrupt") {
+      throw new Error("--immediate cannot be combined with a non-immediate --barrier value.");
+    }
+    return { barrier: "immediate_interrupt", source: "explicit" };
+  }
+  if (options.steer) {
+    if (value && barrier !== "after_tool") {
+      throw new Error("--steer cannot be combined with a non-steer --barrier value.");
+    }
+    return { barrier: "after_tool", source: "explicit" };
+  }
   if (!value) {
-    return fallback;
+    return { barrier: fallback, source: "default" };
   }
   if (!barrier) {
     throw new Error(`Unknown delivery barrier: ${value}. Use p0, p1, p2, p3 or the named aliases.`);
   }
-  return barrier;
+  return { barrier, source: "explicit" };
 }
 
 function trimDebugText(value: string, max = 160): string {
@@ -844,6 +1168,7 @@ function buildSuggestedDebugCommands(
   const commands = [
     `ravi sessions debug ${target}`,
     `ravi sessions read ${target}`,
+    buildSessionActionsCommand(target),
     `ravi agents session ${session.agentId}`,
     `ravi agents debug ${session.agentId} ${target}`,
     `ravi context list --session ${session.sessionKey}`,
@@ -2467,7 +2792,11 @@ export class SessionCommands {
     threadSummary?: string,
     @Option({ flags: "--thread-scope <type:id>", description: "Scope for thread lookup/create" }) threadScope?: string,
     @Option({ flags: "--thread-owner <type:id>", description: "Owner for thread auto-create" }) threadOwner?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     let createdSession = false;
@@ -2488,7 +2817,11 @@ export class SessionCommands {
       return;
     }
 
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_tool");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
 
     if (asJson && (interactive || !prompt)) {
       fail("sessions send --json requires a prompt and cannot be combined with --interactive.");
@@ -2511,7 +2844,7 @@ export class SessionCommands {
 
     const origin = getContext()?.sessionKey ?? "unknown";
     const { source, context } = this.resolveSource(session, channel, to);
-    const delivery = buildDeliveryJson(session, deliveryBarrier, source, context);
+    const deliveryJson = buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context);
     let fullPrompt = `[System] Inform: [from: ${origin}] ${prompt}`;
     let preparedThread: PreparedThreadHandoff | undefined;
     let promptPayload: Record<string, unknown> | undefined;
@@ -2551,13 +2884,22 @@ export class SessionCommands {
         let responseText = "";
         let chars = 0;
         try {
-          chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, {
-            silent: true,
-            promptPayload,
-            onResponse: (chunk) => {
-              responseText += chunk;
+          chars = await this.streamToSession(
+            sessionName,
+            fullPrompt,
+            session,
+            channel,
+            to,
+            deliveryBarrier,
+            delivery.source,
+            {
+              silent: true,
+              promptPayload,
+              onResponse: (chunk) => {
+                responseText += chunk;
+              },
             },
-          });
+          );
           if (preparedThread) {
             preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
           }
@@ -2572,7 +2914,7 @@ export class SessionCommands {
           createdSession,
           session: buildSessionJson(session),
           promptLength: prompt.length,
-          delivery,
+          delivery: deliveryJson,
           thread: preparedThread ? buildSendThreadJson(preparedThread) : null,
           response: {
             length: chars,
@@ -2588,9 +2930,18 @@ export class SessionCommands {
       console.log("─".repeat(50));
       let chars = 0;
       try {
-        chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, {
-          promptPayload,
-        });
+        chars = await this.streamToSession(
+          sessionName,
+          fullPrompt,
+          session,
+          channel,
+          to,
+          deliveryBarrier,
+          delivery.source,
+          {
+            promptPayload,
+          },
+        );
         if (preparedThread) {
           preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
         }
@@ -2602,7 +2953,16 @@ export class SessionCommands {
       console.log(`\n✅ Done (${chars} chars)`);
     } else {
       try {
-        await this.emitToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, promptPayload);
+        await this.emitToSession(
+          sessionName,
+          fullPrompt,
+          session,
+          channel,
+          to,
+          deliveryBarrier,
+          delivery.source,
+          promptPayload,
+        );
         if (preparedThread) {
           preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
         }
@@ -2618,7 +2978,7 @@ export class SessionCommands {
           createdSession,
           session: buildSessionJson(session),
           promptLength: prompt.length,
-          delivery,
+          delivery: deliveryJson,
           thread: preparedThread ? buildSendThreadJson(preparedThread) : null,
         };
         printJson(payload);
@@ -2635,7 +2995,11 @@ export class SessionCommands {
     @Arg("sender", { required: false, description: "Who originally asked (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
@@ -2644,10 +3008,14 @@ export class SessionCommands {
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Ask: [from: ${origin}${senderTag}] ${message}\n(If you already know the answer, send it back immediately with: ravi sessions answer ${origin} "answer" "${sender ?? ""}" — no need to ask in the chat. Otherwise, your text output IS the message sent to the chat — just write the question directly, don't describe what you're doing. When you get answers, send each one back with: ravi sessions answer ${origin} "answer" "${sender ?? ""}". You can call answer multiple times as new info comes in. IMPORTANT: Don't consider the ask "done" after the first reply — if the person keeps adding details, context, or follow-ups, send another answer with the new info each time. Only forward messages related to this question — ignore unrelated conversation.)`;
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
     if (asJson) {
       const payload = {
         action: "ask",
@@ -2655,7 +3023,7 @@ export class SessionCommands {
         session: buildSessionJson(session),
         messageLength: message.length,
         sender: sender ?? null,
-        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       printJson(payload);
       return payload;
@@ -2670,7 +3038,11 @@ export class SessionCommands {
     @Arg("sender", { required: false, description: "Who is answering (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
@@ -2679,10 +3051,14 @@ export class SessionCommands {
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Answer: [from: ${origin}${senderTag}] ${message}`;
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "immediate_interrupt");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
     if (asJson) {
       const payload = {
         action: "answer",
@@ -2690,7 +3066,7 @@ export class SessionCommands {
         session: buildSessionJson(session),
         messageLength: message.length,
         sender: sender ?? null,
-        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       printJson(payload);
       return payload;
@@ -2704,24 +3080,32 @@ export class SessionCommands {
     @Arg("message", { description: "Task to execute" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Execute: ${message}`;
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_task");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_task", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
     if (asJson) {
       const payload = {
         action: "execute",
         published: true,
         session: buildSessionJson(session),
         messageLength: message.length,
-        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       printJson(payload);
       return payload;
@@ -2735,24 +3119,32 @@ export class SessionCommands {
     @Arg("message", { description: "Information to send" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
+    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Inform: ${message}`;
-    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response");
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+    });
+    const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
     if (asJson) {
       const payload = {
         action: "inform",
         published: true,
         session: buildSessionJson(session),
         messageLength: message.length,
-        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       printJson(payload);
       return payload;
@@ -2762,7 +3154,11 @@ export class SessionCommands {
 
   @Command({ name: "read", description: "Read message history of a session (normalized)" })
   read(
-    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("nameOrKey", {
+      description: "Optional session name/key override (defaults to current session)",
+      required: false,
+    })
+    nameOrKey?: string,
     @Option({ flags: "-n, --count <count>", description: "Number of messages to show (default: 20)" })
     countStr?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -2777,7 +3173,15 @@ export class SessionCommands {
     })
     messageId?: string,
   ) {
-    const session = this.resolveTarget(nameOrKey);
+    const target = nameOrKey?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions read --json inside a session, or ravi sessions read <name> --json outside one.",
+      );
+      return;
+    }
+
+    const session = this.resolveTarget(target);
     if (!session) return;
 
     if (messageId) {
@@ -2789,7 +3193,7 @@ export class SessionCommands {
     }
 
     const maxMessages = parseReadMessageCount(countStr);
-    const sessionLabel = session.name ?? nameOrKey;
+    const sessionLabel = session.name ?? target;
     const chatHistory = getRecentHistory(sessionLabel, maxMessages);
     if (chatHistory.length > 0) {
       const messages = chatHistory.map(normalizeChatDbMessage);
@@ -3406,6 +3810,7 @@ export class SessionCommands {
     channelOverride?: string,
     toOverride?: string,
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
+    deliveryBarrierSource: DeliveryBarrierSource = "default",
     promptPayload?: Record<string, unknown>,
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
@@ -3419,6 +3824,7 @@ export class SessionCommands {
       context,
       _approvalSource,
       deliveryBarrier,
+      deliveryBarrierSource,
       ...(promptPayload ?? {}),
     } as Record<string, unknown>);
   }
@@ -3433,6 +3839,7 @@ export class SessionCommands {
     channelOverride?: string,
     toOverride?: string,
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
+    deliveryBarrierSource: DeliveryBarrierSource = "default",
     options: { silent?: boolean; onResponse?: (chunk: string) => void; promptPayload?: Record<string, unknown> } = {},
   ): Promise<number> {
     let responseLength = 0;
@@ -3539,6 +3946,7 @@ export class SessionCommands {
       context,
       _approvalSource,
       deliveryBarrier,
+      deliveryBarrierSource,
       ...(options.promptPayload ?? {}),
     } as Record<string, unknown>);
 
@@ -3636,6 +4044,496 @@ export class SessionCommands {
 
     ask();
   }
+
+  // ==========================================================================
+  // sessions/attach — subscriptions + output attachment
+  // See .ravi/specs/sessions/attach/SPEC.md
+  // ==========================================================================
+
+  @Command({
+    name: "attach",
+    description: "Attach a chat as the session output target and input source",
+  })
+  attach(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
+    @Option({ flags: "--reason <text>", description: "Why the chat is being attached (audit)" }) reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    if (!chatRef?.trim()) {
+      fail("--chat is required");
+      return;
+    }
+    const chat = resolveAttachChat(chatRef);
+    if (!chat) {
+      fail(`Chat not found: ${chatRef}`);
+      return;
+    }
+    try {
+      const result = attachChatToSession({
+        sessionKey: session.sessionKey,
+        chatId: chat.id,
+        role: "input",
+        attachedByType: "user",
+        attachedReason: reason?.trim() || "cli-attach",
+        setOutputTarget: true,
+      });
+      const sessionRef = session.name ?? session.sessionKey;
+      const detachCommand = buildSessionDetachCommand(sessionRef, chat.id);
+      if (asJson) {
+        printJson({
+          attached: result.created,
+          outputAttached: result.outputAttached,
+          subscription: result.subscription,
+          session: { name: session.name, sessionKey: session.sessionKey },
+          chat: { id: chat.id, title: chat.title, channel: chat.channel, instanceId: chat.instanceId },
+          hints: {
+            detach: detachCommand,
+          },
+        });
+        return;
+      }
+      const verb = result.created ? "Attached" : "Already attached";
+      console.log(`${verb} chat ${chat.id} (${chat.title ?? "no title"}) to session ${sessionRef}`);
+      console.log(`Output target: ${chat.id}`);
+      console.log(`Detach hint: ${detachCommand}`);
+    } catch (err) {
+      if (err instanceof SessionAttachConflictError) {
+        if (asJson) {
+          printJson({ error: err.code, message: err.message, currentOwner: err.currentSessionKey, chatId: err.chatId });
+          return;
+        }
+        fail(err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  @Command({ name: "detach", description: "Detach a chat/output target from a session" })
+  detach(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    if (!chatRef?.trim()) {
+      fail("--chat is required");
+      return;
+    }
+    const chat = resolveAttachChat(chatRef);
+    if (!chat) {
+      fail(`Chat not found: ${chatRef}`);
+      return;
+    }
+    const result = detachChatFromSession(session.sessionKey, chat.id);
+    if (asJson) {
+      printJson({
+        detached: result.detached,
+        outputDetached: result.outputDetached,
+        sessionKey: session.sessionKey,
+        chatId: chat.id,
+      });
+      return;
+    }
+    if (result.detached) {
+      const suffix = result.outputDetached ? " and cleared it as output target" : "";
+      console.log(`Detached chat ${chat.id} from session ${session.name ?? session.sessionKey}${suffix}`);
+    } else if (result.outputDetached) {
+      console.log(
+        `Cleared chat ${chat.id} as output target for ${session.name ?? session.sessionKey}; primary input remains attached`,
+      );
+    } else {
+      console.log(`Chat ${chat.id} is not currently attached to ${session.name ?? session.sessionKey}`);
+    }
+  }
+
+  @Command({ name: "mute", description: "Keep a subscribed chat as listen-only for a session" })
+  mute(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    if (!chatRef?.trim()) {
+      fail("--chat is required");
+      return;
+    }
+    const chat = resolveAttachChat(chatRef);
+    if (!chat) {
+      fail(`Chat not found: ${chatRef}`);
+      return;
+    }
+    const subscription = setSessionChatSpeechMode({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      speechMode: "muted",
+      reason: "cli-mute",
+    });
+    if (asJson) {
+      printJson({ sessionKey: session.sessionKey, chatId: chat.id, speechMode: subscription.speechMode, subscription });
+      return;
+    }
+    console.log(`Muted chat ${chat.id} for session ${session.name ?? session.sessionKey}; inbound remains subscribed`);
+  }
+
+  @Command({ name: "unmute", description: "Allow a subscribed chat to receive session responses" })
+  unmute(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    if (!chatRef?.trim()) {
+      fail("--chat is required");
+      return;
+    }
+    const chat = resolveAttachChat(chatRef);
+    if (!chat) {
+      fail(`Chat not found: ${chatRef}`);
+      return;
+    }
+    const subscription = setSessionChatSpeechMode({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      speechMode: "speak",
+      reason: "cli-unmute",
+    });
+    if (asJson) {
+      printJson({ sessionKey: session.sessionKey, chatId: chat.id, speechMode: subscription.speechMode, subscription });
+      return;
+    }
+    console.log(`Unmuted chat ${chat.id} for session ${session.name ?? session.sessionKey}`);
+  }
+
+  @Command({
+    name: "actions",
+    description: "Show available chat actions and recent own messages for a session",
+  })
+  actions(
+    @Arg("nameOrKey", {
+      description: "Optional session name/key override (defaults to current session)",
+      required: false,
+    })
+    nameOrKey?: string,
+    @Option({ flags: "--limit <n>", description: "Recent own messages to include (default: 10)" }) limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const target = nameOrKey?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions actions --json inside a session, or ravi sessions actions <name> --json outside one.",
+      );
+      return;
+    }
+
+    const session = this.resolveTarget(target);
+    if (!session) return;
+
+    const payload = buildSessionActionsPayload(session, { limit: parseSessionActionsLimit(limit) });
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`Actions for ${sessionActionRef(session)}:`);
+    const actions = payload.actions as Array<Record<string, unknown>>;
+    for (const action of actions) {
+      const status = action.status === "available" ? "available" : "planned";
+      const command = typeof action.command === "string" ? ` — ${action.command}` : "";
+      console.log(`  ${action.id}: ${status}${command}`);
+    }
+    if (typeof payload.promptHint === "string") {
+      console.log(`\nPrompt hint:\n${payload.promptHint}`);
+    }
+
+    const recent = payload.recentOwnMessages as { items: Array<Record<string, unknown>>; total: number };
+    console.log(`\nRecent own messages (${recent.items.length} returned of ${recent.total}):`);
+    if (recent.items.length === 0) {
+      console.log("  (none)");
+    } else {
+      for (const message of recent.items) {
+        const text = typeof message.text === "string" ? ` — ${message.text.slice(0, 80)}` : "";
+        const commands = message.commands as Record<string, unknown> | undefined;
+        console.log(`  ${message.id} (${message.providerMessageId})${text}`);
+        if (typeof commands?.delete === "string") {
+          console.log(`    delete: ${commands.delete}`);
+        }
+      }
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "delete-message",
+    description: "Delete one of this session agent's own channel messages",
+  })
+  async deleteMessage(
+    @Arg("sessionOrMessage", {
+      description: "Session name/key, or message id when running inside a session",
+    })
+    sessionOrMessage: string,
+    @Arg("messageRef", { description: "Canonical or provider message id", required: false }) messageRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const inferredSession = !messageRef?.trim();
+    const target = messageRef?.trim() ? sessionOrMessage.trim() : resolveCurrentSessionRef();
+    const ref = messageRef?.trim() || sessionOrMessage.trim();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions delete-message <message-id> inside a session, or ravi sessions delete-message <session> <message-id> outside one.",
+      );
+      return;
+    }
+    if (!ref) {
+      fail("Message id is required");
+      return;
+    }
+
+    const session = this.resolveTarget(target);
+    if (!session) return;
+
+    const scopeCtx = getScopeContext();
+    const sessionRef = sessionActionRef(session);
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionRef)) {
+      fail(`Session not found: ${target}`);
+      return;
+    }
+
+    const message = dbFindAgentChatMessageByRef({
+      agentId: session.agentId,
+      messageRef: ref,
+      chatIds: sessionActionChatIds(session),
+    });
+    if (!message) {
+      fail(`Message not found or is not an own message for session: ${ref}`);
+      return;
+    }
+
+    const reply = await requestReply<{
+      success?: boolean;
+      messageId?: string;
+      canonicalMessageId?: string;
+      deletedRecord?: unknown;
+      target?: Record<string, unknown>;
+    }>(
+      MESSAGE_DELETE_TOPIC,
+      {
+        channel: message.channel,
+        accountId: message.instanceId,
+        chatId: message.rawChatId,
+        messageId: message.providerMessageId,
+        canonicalMessageId: message.id,
+      },
+      MESSAGE_DELETE_TIMEOUT_MS,
+    );
+
+    if (reply.success === false) {
+      fail("Message delete failed");
+      return;
+    }
+
+    const payload = {
+      deleted: true,
+      session: {
+        ref: sessionRef,
+        sessionKey: session.sessionKey,
+        sessionName: session.name ?? null,
+        agentId: session.agentId,
+      },
+      message: serializeSessionActionMessage(session, {
+        ...message,
+        deletedAt: Date.now(),
+      }),
+      reply,
+      hints: {
+        actions: inferredSession ? buildCurrentSessionActionsCommand() : buildSessionActionsCommand(sessionRef),
+      },
+    };
+
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`Deleted message ${message.providerMessageId} for session ${sessionRef}`);
+    console.log(
+      `Actions: ${inferredSession ? buildCurrentSessionActionsCommand() : buildSessionActionsCommand(sessionRef)}`,
+    );
+    return payload;
+  }
+
+  @Command({
+    name: "edit-message",
+    description: "Edit one of this session agent's own text channel messages",
+  })
+  async editMessage(
+    @Arg("sessionOrMessage", {
+      description: "Session name/key, or message id when running inside a session",
+    })
+    sessionOrMessage: string,
+    @Arg("messageOrText", { description: "Message id, or new text when running inside a session", required: false })
+    messageOrText?: string,
+    @Arg("textArg", { description: "New text for explicit session mode", required: false }) textArg?: string,
+    @Option({ flags: "--text <text>", description: "New text content" }) textOption?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const explicitText = textOption !== undefined;
+    const inferredSession = !textArg?.trim() && (!explicitText || !messageOrText?.trim());
+    const target = inferredSession ? resolveCurrentSessionRef() : sessionOrMessage.trim();
+    const ref = inferredSession ? sessionOrMessage.trim() : messageOrText?.trim();
+    const nextText = (explicitText ? textOption : inferredSession ? messageOrText : textArg)?.trim();
+
+    if (!target) {
+      fail(
+        'No current session context found. Use ravi sessions edit-message <message-id> "new text" inside a session, or ravi sessions edit-message <session> <message-id> "new text" outside one.',
+      );
+      return;
+    }
+    if (!ref) {
+      fail("Message id is required");
+      return;
+    }
+    if (!nextText) {
+      fail("New text is required");
+      return;
+    }
+
+    const session = this.resolveTarget(target);
+    if (!session) return;
+
+    const scopeCtx = getScopeContext();
+    const sessionRef = sessionActionRef(session);
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionRef)) {
+      fail(`Session not found: ${target}`);
+      return;
+    }
+
+    const message = dbFindAgentChatMessageByRef({
+      agentId: session.agentId,
+      messageRef: ref,
+      chatIds: sessionActionChatIds(session),
+    });
+    if (!message) {
+      fail(`Message not found or is not an own message for session: ${ref}`);
+      return;
+    }
+
+    const reply = await requestReply<{
+      success?: boolean;
+      messageId?: string;
+      canonicalMessageId?: string;
+      editedRecord?: ChatMessageRecord | null;
+      target?: Record<string, unknown>;
+      error?: string;
+    }>(
+      MESSAGE_EDIT_TOPIC,
+      {
+        channel: message.channel,
+        accountId: message.instanceId,
+        chatId: message.rawChatId,
+        messageId: message.providerMessageId,
+        canonicalMessageId: message.id,
+        text: nextText,
+      },
+      MESSAGE_EDIT_TIMEOUT_MS,
+    );
+
+    if (reply.success === false) {
+      fail(`Message edit failed${reply.error ? `: ${reply.error}` : ""}`);
+      return;
+    }
+
+    const editedMessage = reply.editedRecord ?? {
+      ...message,
+      content: { ...(message.content ?? {}), text: nextText },
+      editedAt: Date.now(),
+    };
+    const payload = {
+      edited: true,
+      session: {
+        ref: sessionRef,
+        sessionKey: session.sessionKey,
+        sessionName: session.name ?? null,
+        agentId: session.agentId,
+      },
+      message: serializeSessionActionMessage(session, editedMessage),
+      reply,
+      hints: {
+        actions: inferredSession ? buildCurrentSessionActionsCommand() : buildSessionActionsCommand(sessionRef),
+      },
+    };
+
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`Edited message ${message.providerMessageId} for session ${sessionRef}`);
+    console.log(
+      `Actions: ${inferredSession ? buildCurrentSessionActionsCommand() : buildSessionActionsCommand(sessionRef)}`,
+    );
+    return payload;
+  }
+
+  @Command({ name: "subscriptions", description: "List chats attached to a session" })
+  subscriptions(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveSession(nameOrKey);
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+    const subs = listSessionSubscriptions(session.sessionKey);
+    if (asJson) {
+      const enriched = subs.map((s) => {
+        const chat = dbGetChat(s.chatId);
+        return {
+          ...s,
+          chat: chat ? { id: chat.id, title: chat.title, channel: chat.channel, instanceId: chat.instanceId } : null,
+        };
+      });
+      printJson({ sessionKey: session.sessionKey, sessionName: session.name, subscriptions: enriched });
+      return;
+    }
+    if (subs.length === 0) {
+      console.log(`No subscriptions for session ${session.name ?? session.sessionKey}`);
+      return;
+    }
+    console.log(`Subscriptions for ${session.name ?? session.sessionKey}:`);
+    for (const sub of subs) {
+      const chat = dbGetChat(sub.chatId);
+      const title = chat?.title ?? "(no title)";
+      const channel = chat?.channel ?? "?";
+      const outputMarker = sub.outputAttachedAt ? " output" : "";
+      console.log(`  [${sub.role}${outputMarker} speech=${sub.speechMode}] ${sub.chatId} — ${title} (${channel})`);
+    }
+  }
+}
+
+function resolveAttachChat(ref: string): ReturnType<typeof dbGetChat> {
+  const direct = dbGetChat(ref);
+  if (direct) return direct;
+  return dbFindChatByRef({ ref });
 }
 
 export interface NormalizedTranscriptMessage {

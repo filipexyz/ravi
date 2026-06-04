@@ -8,6 +8,7 @@ import type { AgentConfig } from "../router/types.js";
 import type { ChannelContext } from "./message-types.js";
 import { loadAgentWorkspaceInstructions } from "./agent-instructions.js";
 import { buildStickerPromptSection } from "../stickers/prompt.js";
+import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 
 export interface RuntimeSystemPromptInput {
   agent: AgentConfig;
@@ -30,6 +31,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
     }),
     ...buildStickerPromptSectionsForRuntime(input.agent, input.ctx, input.sessionRuntimeParams),
     ...(await buildWorkspacePromptSections(input.cwd)),
+    ...(await buildRaviRulesPromptSections(input.cwd)),
     ...buildAgentPromptSections(input.agent),
     ...buildExtraPromptSections(input.extraSections),
   ];
@@ -71,6 +73,11 @@ async function buildWorkspacePromptSections(cwd: string): Promise<PromptContextS
       ].join("\n"),
     },
   ];
+}
+
+async function buildRaviRulesPromptSections(cwd: string): Promise<PromptContextSection[]> {
+  const section = await buildRaviRulesPromptSection(cwd);
+  return section ? [section] : [];
 }
 
 function buildAgentPromptSections(agent: AgentConfig): PromptContextSection[] {

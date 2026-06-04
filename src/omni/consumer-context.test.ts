@@ -7,11 +7,14 @@ import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
 import type { MessageMetadata } from "../router/router-db.js";
 
 const actualRouterDbModule = await import("../router/router-db.js");
+const actualRouterIndexModule = await import("../router/index.js");
 const actualRouterSessionsModule = await import("../router/sessions.js");
 const actualChatDbModule = await import("../db.js");
 const actualDbSaveMessageMeta = actualRouterDbModule.dbSaveMessageMeta;
 const actualDbGetMessageMeta = actualRouterDbModule.dbGetMessageMeta;
 const actualDbUpsertChat = actualRouterDbModule.dbUpsertChat;
+const actualDbCanonicalizeDmChatForContact = actualRouterDbModule.dbCanonicalizeDmChatForContact;
+const actualDbContactDmNormalizedChatId = actualRouterDbModule.dbContactDmNormalizedChatId;
 const actualDbUpsertChatMessage = actualRouterDbModule.dbUpsertChatMessage;
 const actualDbUpsertChatParticipant = actualRouterDbModule.dbUpsertChatParticipant;
 const actualDbBindSessionToChat = actualRouterDbModule.dbBindSessionToChat;
@@ -28,9 +31,12 @@ const messageMetaSaveCalls: Array<[string, string, Record<string, unknown>]> = [
 const agentPlatformIdentityCalls: Array<Record<string, unknown>> = [];
 const ensureContactFromInboundCalls: Array<Record<string, unknown>> = [];
 const platformIdentityByUser = new Map<string, Record<string, unknown>>();
+const platformIdentityByLookup = new Map<string, Record<string, unknown>>();
+const agentPlatformIdentityByUser = new Map<string, Record<string, unknown>>();
 const contactByRef = new Map<string, Record<string, unknown>>();
 const messageMetaById = new Map<string, MessageMetadata>();
 const recordInboundCalls: string[] = [];
+const channelMessageTraceCalls: Array<Record<string, unknown>> = [];
 let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
 let contactIntakeMode: "off" | "discovered" | "pending" = "off";
@@ -48,6 +54,14 @@ function defaultRouteResult(): Record<string, unknown> {
       mode: "active",
     },
   };
+}
+
+function platformIdentityLookupKey(input: {
+  channel?: string | null;
+  instanceId?: string | null;
+  platformUserId: string;
+}) {
+  return `${input.channel ?? ""}:${input.instanceId ?? ""}:${input.platformUserId}`;
 }
 
 mock.module("../nats.js", () => ({
@@ -71,9 +85,16 @@ mock.module("../slash/index.js", () => ({
   handleSlashCommand: mock(async () => false),
 }));
 
+// Note: we intentionally do NOT override `matchRoute` here. Overriding a
+// re-exported symbol in `../router/index.js` leaks into direct imports
+// from `../router/resolver.js` (a bun quirk where the live binding is
+// mutated in place), which would break `resolver.test.ts`. Instead we
+// fix the config so the real `matchRoute` returns a valid match, and
+// only override `commitMatchedRoute` to inject the test's routeResult.
 mock.module("../router/index.js", () => ({
+  ...actualRouterIndexModule,
   expandHome: (cwd: string) => cwd,
-  resolveRoute: () => routeResult,
+  commitMatchedRoute: () => routeResult,
 }));
 
 mock.module("../config-store.js", () => ({
@@ -91,10 +112,23 @@ mock.module("../config-store.js", () => ({
         },
       },
       routes: [],
-      agents: {},
+      agents: {
+        main: {
+          id: "main",
+          cwd: agentCwd,
+          dmScope: "main",
+          mode: "active",
+        },
+      },
       defaultAgent: "main",
       defaultDmScope: "main",
-      accountAgents: {},
+      // When routeResult is null, the test wants to exercise the "no route"
+      // fallback in the consumer. We mirror that by leaving accountAgents
+      // empty so the real matchRoute hits its "no route for account, skip"
+      // branch. When routeResult is set, accountAgents maps main→main so
+      // matchRoute returns a valid match; commitMatchedRoute is then mocked
+      // to inject the test's routeResult for downstream assertions.
+      accountAgents: routeResult ? { main: "main" } : {},
       ignoredOmniInstanceIds: [],
     }),
   },
@@ -103,6 +137,12 @@ mock.module("../config-store.js", () => ({
 mock.module("../contacts.js", () => ({
   isContactAllowedForAgent: () => true,
   saveAccountPending: () => false,
+  buildMentionedContactPromptContexts: mock((input: { mentions?: Array<{ id: string; displayName?: string }> }) =>
+    (input.mentions ?? []).map((mention) => ({
+      displayName: mention.displayName ?? "Contato mencionado",
+      summaryLines: ["Contexto CRM de teste para a pessoa mencionada."],
+    })),
+  ),
   recordInbound: mock((contactRef: string) => {
     recordInboundCalls.push(contactRef);
   }),
@@ -134,8 +174,12 @@ mock.module("../contacts.js", () => ({
       eventIds: [],
     };
   }),
-  resolvePlatformIdentity: (input: { platformUserId: string }) =>
-    platformIdentityByUser.get(input.platformUserId) ?? null,
+  resolvePlatformIdentity: (input: { channel?: string | null; instanceId?: string | null; platformUserId: string }) =>
+    platformIdentityByLookup.get(platformIdentityLookupKey(input)) ??
+    platformIdentityByUser.get(input.platformUserId) ??
+    null,
+  resolveAgentPlatformIdentity: (input: { platformUserId: string }) =>
+    agentPlatformIdentityByUser.get(input.platformUserId) ?? null,
   upsertAgentPlatformIdentity: mock((input: Record<string, unknown>) => {
     agentPlatformIdentityCalls.push(input);
     return {
@@ -165,6 +209,10 @@ mock.module("../router/router-db.js", () => ({
   }),
   dbGetMessageMeta: mock((messageId: string) => messageMetaById.get(messageId) ?? actualDbGetMessageMeta(messageId)),
   dbUpsertChat: mock((input: Parameters<typeof actualDbUpsertChat>[0]) => actualDbUpsertChat(input)),
+  dbCanonicalizeDmChatForContact: mock((input: Parameters<typeof actualDbCanonicalizeDmChatForContact>[0]) =>
+    actualDbCanonicalizeDmChatForContact(input),
+  ),
+  dbContactDmNormalizedChatId: actualDbContactDmNormalizedChatId,
   dbUpsertChatMessage: mock((input: Parameters<typeof actualDbUpsertChatMessage>[0]) => {
     chatMessageCalls.push(input);
     return actualDbUpsertChatMessage(input);
@@ -183,7 +231,11 @@ mock.module("../router/router-db.js", () => ({
 }));
 
 mock.module("../session-trace/channel-trace.js", () => ({
-  recordChannelMessageReceivedTrace: mock(() => ({})),
+  recordChannelMessageReceivedTrace: mock((input: Record<string, unknown>) => {
+    channelMessageTraceCalls.push(input);
+    return {};
+  }),
+  recordRouteRejectedTrace: mock(() => ({})),
   recordRouteResolvedTrace: mock(() => ({})),
 }));
 
@@ -233,9 +285,12 @@ describe("OmniConsumer channel context", () => {
     agentPlatformIdentityCalls.length = 0;
     ensureContactFromInboundCalls.length = 0;
     platformIdentityByUser.clear();
+    platformIdentityByLookup.clear();
+    agentPlatformIdentityByUser.clear();
     contactByRef.clear();
     messageMetaById.clear();
     recordInboundCalls.length = 0;
+    channelMessageTraceCalls.length = 0;
   });
 
   afterEach(async () => {
@@ -310,6 +365,237 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
+  it("does not mute an existing primary output subscription on repeated inbound from the same chat", async () => {
+    const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    for (const externalId of ["msg-primary-first", "msg-primary-second"]) {
+      await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+        id: `evt-${externalId}`,
+        type: "message.received",
+        payload: {
+          externalId,
+          chatId: "120363424772797713@g.us",
+          from: "178035101794451",
+          content: {
+            type: "text",
+            text: "oi",
+          },
+          rawPayload: {
+            pushName: "Luis Filipe",
+            chatName: "ravi - dev",
+            resolvedSenderPhone: "5511947879044",
+            isGroup: true,
+          },
+        },
+        metadata: {
+          instanceId: "instance-1",
+          channelType: "whatsapp-baileys",
+          ingestMode: "realtime",
+        },
+        timestamp: Date.now(),
+      });
+    }
+
+    const subscriptions = actualRouterSessionsModule.listSessionSubscriptions(sessionKey);
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0]).toMatchObject({
+      role: "primary",
+      speechMode: "speak",
+    });
+    expect(subscriptions[0].outputAttachedAt).toBeDefined();
+    expect(promptCalls).toHaveLength(2);
+    expect(promptCalls[1][1].prompt).toContain("source_speech=speak");
+  });
+
+  it("records consumer lag from plugin received timestamps in channel traces", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+    const pluginReceivedAt = Date.now() - 2_000;
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-consumer-lag",
+      type: "message.received",
+      payload: {
+        externalId: "msg-consumer-lag",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "lag trace",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          pluginReceivedAt,
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(channelMessageTraceCalls).toHaveLength(1);
+    expect(channelMessageTraceCalls[0].payloadJson).toMatchObject({
+      pluginReceivedAtMs: pluginReceivedAt,
+    });
+    expect(
+      (channelMessageTraceCalls[0].payloadJson as { consumerLagMs?: number }).consumerLagMs,
+    ).toBeGreaterThanOrEqual(0);
+  });
+
+  it("renders inbound WhatsApp numeric mention placeholders as mentioned contact names", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-mention",
+      type: "message.received",
+      payload: {
+        externalId: "msg-mention",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "@91015272759397 viu quem marquei aqui?",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+          mentionedJids: ["91015272759397@lid"],
+          mentionedContacts: [{ jid: "91015272759397@lid", name: "ravi" }],
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("@ravi viu quem marquei aqui?");
+    expect(prompt.prompt).not.toContain("@91015272759397 viu quem marquei aqui?");
+    expect(prompt.prompt).not.toContain("Contexto CRM de teste");
+    expect(prompt.prompt).not.toContain("[Nota privada do Ravi");
+    expect(prompt.prompt).not.toContain("Nota privada de identidade");
+    expect(prompt.prompt).not.toContain("## Pessoas Mencionadas");
+    expect(prompt.prompt).not.toContain("foi mencionado nesta mensagem");
+    expect(prompt.context).toMatchObject({
+      mentionedContactsContext: [
+        {
+          displayName: "ravi",
+          summaryLines: ["Contexto CRM de teste para a pessoa mencionada."],
+        },
+      ],
+    });
+    expect(chatMessageCalls[0].content).toMatchObject({
+      type: "text",
+      text: "@ravi viu quem marquei aqui?",
+    });
+    expect(chatMessageCalls[0].rawProvenance).toMatchObject({
+      rawPayload: {
+        mentionedJids: ["91015272759397@lid"],
+        mentionedContacts: [{ jid: "91015272759397@lid", name: "ravi" }],
+      },
+    });
+  });
+
+  it("renders attached input origin hints with attach-as-output guidance", async () => {
+    const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
+    const primaryChat = actualDbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+      title: "ravi - dev",
+    });
+    actualRouterSessionsModule.attachChatToSession({
+      sessionKey,
+      chatId: primaryChat.id,
+      role: "primary",
+      attachedByType: "system",
+      attachedReason: "test-primary",
+    });
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-attached-input",
+      type: "message.received",
+      payload: {
+        externalId: "msg-attached-input",
+        chatId: "120363424704882209@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "boa",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev - test",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    const inputChat = actualRouterDbModule.dbFindChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424704882209@g.us",
+      chatType: "group",
+    });
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain(`[session surfaces] session=dev source_chat=${inputChat?.id}`);
+    expect(prompt.prompt).toContain("source_speech=muted");
+    expect(prompt.prompt).toContain(`ravi sessions unmute dev --chat ${inputChat?.id}`);
+    expect(prompt.prompt).toContain("Do not mention mute, unmute, attach, subscriptions, routing, or output mechanics");
+    expect(prompt.prompt).not.toContain("ravi sessions focus");
+  });
+
   it("stores inbound DM messages and runs contact intake before no-route return", async () => {
     routeResult = null;
     contactIntakeMode = "pending";
@@ -374,6 +660,7 @@ describe("OmniConsumer channel context", () => {
 
   it("captures history-sync messages without replaying them to runtime", async () => {
     contactIntakeMode = "pending";
+    const originalMessageTimestamp = 1_761_059_699;
     const sender = {
       send: mock(async () => {}),
       sendTyping: mock(async () => {}),
@@ -398,6 +685,7 @@ describe("OmniConsumer channel context", () => {
           pushName: "Lead Importado",
           resolvedSenderPhone: "5511999904321",
           isGroup: false,
+          messageTimestamp: originalMessageTimestamp,
         },
       },
       metadata: {
@@ -405,7 +693,7 @@ describe("OmniConsumer channel context", () => {
         channelType: "whatsapp-baileys",
         ingestMode: "history-sync",
       },
-      timestamp: Date.now(),
+      timestamp: 1_777_777_777_000,
     });
 
     expect(ensureContactFromInboundCalls).toHaveLength(1);
@@ -418,8 +706,12 @@ describe("OmniConsumer channel context", () => {
       actorType: "contact",
       contactId: "contact_auto",
       platformIdentityId: "pi_auto",
+      providerTimestamp: originalMessageTimestamp * 1000,
       rawProvenance: {
         ingestMode: "history-sync",
+        rawPayload: {
+          messageTimestamp: originalMessageTimestamp,
+        },
       },
     });
   });
@@ -542,6 +834,50 @@ describe("OmniConsumer channel context", () => {
     ]);
   });
 
+  it("publishes hash-space messages as normal chat instead of command failures", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-hash-space",
+      type: "message.received",
+      payload: {
+        externalId: "msg-hash-space",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "# nota comum",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("Luis Filipe:");
+    expect(prompt.prompt).toContain("# nota comum");
+    expect(prompt.prompt).not.toContain("## Ravi Command:");
+    expect(prompt.commands).toBeUndefined();
+  });
+
   it("resets the runtime session and republishes an Omni message edit as a rebase replay", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     actualUpdateProviderSession(sessionKey, "codex", "provider-before-edit");
@@ -640,7 +976,7 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
-  it("resolves an agent-owned platform identity as an agent actor", async () => {
+  it("observes same-instance agent messages without publishing a prompt", async () => {
     platformIdentityByUser.set("5511000000000", {
       id: "pi_agent_sender",
       ownerType: "agent",
@@ -685,30 +1021,109 @@ describe("OmniConsumer channel context", () => {
       timestamp: Date.now(),
     });
 
-    expect(promptCalls).toHaveLength(1);
-    expect(promptCalls[0][1].context).toMatchObject({
-      actorType: "agent",
-      actorAgentId: "dev",
-      platformIdentityId: "pi_agent_sender",
-      rawSenderId: "5511000000000",
-      normalizedSenderId: "5511000000000",
-    });
+    expect(promptCalls).toHaveLength(0);
+    expect(sessionParticipantCalls).toHaveLength(0);
     expect(chatParticipantCalls[0]).toMatchObject({
       agentId: "dev",
       contactId: null,
       platformIdentityId: "pi_agent_sender",
       role: "agent",
     });
-    expect(sessionParticipantCalls[0]).toMatchObject({
-      ownerType: "agent",
-      ownerId: "dev",
+    expect(chatMessageCalls[0]).toMatchObject({
+      actorType: "agent",
+      agentId: "dev",
       platformIdentityId: "pi_agent_sender",
-      role: "agent",
+      rawSenderId: "5511000000000",
+      normalizedSenderId: "5511000000000",
     });
     expect(messageMetaSaveCalls[0][2]).toMatchObject({
       actorType: "agent",
       agentId: "dev",
       platformIdentityId: "pi_agent_sender",
+      rawSenderId: "5511000000000",
+      normalizedSenderId: "5511000000000",
+    });
+  });
+
+  it("observes cross-instance agent messages without publishing a prompt", async () => {
+    platformIdentityByLookup.set(
+      platformIdentityLookupKey({ channel: "phone", instanceId: "", platformUserId: "551153045142" }),
+      {
+        id: "pi_legacy_hana_contact",
+        ownerType: "contact",
+        ownerId: "contact_hana_legacy",
+        channel: "phone",
+        instanceId: "",
+        platformUserId: "551153045142",
+        normalizedPlatformUserId: "551153045142",
+        confidence: 0.9,
+      },
+    );
+    agentPlatformIdentityByUser.set("551153045142", {
+      id: "pi_hana_agent",
+      ownerType: "agent",
+      ownerId: "dev",
+      channel: "whatsapp",
+      instanceId: "instance-hana",
+      platformUserId: "551153045142@s.whatsapp.net",
+      normalizedPlatformUserId: "551153045142",
+      confidence: 1,
+    });
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-agent-cross-instance",
+      type: "message.received",
+      payload: {
+        externalId: "msg-agent-cross-instance",
+        chatId: "120363424772797713@g.us",
+        from: "551153045142@s.whatsapp.net",
+        content: {
+          type: "text",
+          text: "resposta da outra conta-agent",
+        },
+        rawPayload: {
+          pushName: "Hana",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(0);
+    expect(sessionParticipantCalls).toHaveLength(0);
+    expect(chatMessageCalls[0]).toMatchObject({
+      actorType: "agent",
+      agentId: "dev",
+      platformIdentityId: "pi_hana_agent",
+      rawSenderId: "551153045142",
+      normalizedSenderId: "551153045142",
+    });
+    expect(chatParticipantCalls[0]).toMatchObject({
+      agentId: "dev",
+      contactId: null,
+      platformIdentityId: "pi_hana_agent",
+      role: "agent",
+    });
+    expect(messageMetaSaveCalls[0][2]).toMatchObject({
+      actorType: "agent",
+      agentId: "dev",
+      platformIdentityId: "pi_hana_agent",
+      rawSenderId: "551153045142",
+      normalizedSenderId: "551153045142",
     });
   });
 

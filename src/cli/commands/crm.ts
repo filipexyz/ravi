@@ -1,16 +1,24 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option, Scope } from "../decorators.js";
 import { fail } from "../context.js";
-import { buildCliOffsetPagination } from "../pagination.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
+  archiveCrmPipelineStage,
+  archiveCrmPipelineStageTopic,
+  cancelCrmTask,
   completeCrmTask,
   confirmCrmFact,
   createCrmAccount,
   createCrmOpportunity,
+  createCrmPipeline,
+  createCrmPipelineStage,
+  createCrmPipelineStageTopic,
   createCrmTask,
   getCrmAccount,
   getCrmContactProfile,
   getCrmOpportunity,
+  getCrmPipeline,
+  getCrmPipelineStage,
   getCrmTask,
   linkCrmAccountContact,
   linkCrmOpportunityContact,
@@ -18,16 +26,51 @@ import {
   listCrmFacts,
   listCrmNextActions,
   listCrmOpportunityBoard,
+  listCrmOpportunityBoardStages,
   listCrmOpportunityContacts,
+  listCrmPipelineStageTopics,
+  listCrmPipelineStages,
+  listCrmPipelines,
+  listCrmTasks,
   moveCrmOpportunityStage,
   proposeCrmFact,
   rejectCrmFact,
+  snoozeCrmTask,
+  updateCrmPipeline,
+  updateCrmPipelineStage,
+  updateCrmPipelineStageTopic,
   updateCrmContactProfile,
+  type CrmTask,
   type CrmOwnerType,
 } from "../../contacts.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function formatCrmTaskForJson<T extends Partial<CrmTask>>(task: T): T & Record<string, unknown> {
+  return {
+    ...task,
+    contact_id: task.contactId,
+    account_id: task.accountId,
+    opportunity_id: task.opportunityId,
+    chat_id: task.chatId,
+    session_key: task.sessionKey,
+    task_type: task.taskType,
+    due_at: task.dueAt,
+    due_date: task.dueAt,
+    snoozed_until: task.snoozedUntil,
+    completed_at: task.completedAt,
+    canceled_at: task.canceledAt,
+    owner_type: task.ownerType,
+    owner_id: task.ownerId,
+    created_by_type: task.createdByType,
+    created_by_id: task.createdById,
+    idempotency_key: task.idempotencyKey,
+    ravi_task_id: task.raviTaskId,
+    created_at: task.createdAt,
+    updated_at: task.updatedAt,
+  };
 }
 
 function parseOwner(owner?: string): { ownerType?: CrmOwnerType; ownerId?: string } {
@@ -48,6 +91,19 @@ function parseOptionalNumber(value: string | undefined, label: string): number |
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) fail(`${label} must be a number`);
   return parsed;
+}
+
+function parseRequiredNumber(value: string, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) fail(`${label} must be a number`);
+  return parsed;
+}
+
+function parseBooleanValue(value: string, label: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "sim", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "nao", "não", "off"].includes(normalized)) return false;
+  fail(`${label} must be true/false`);
 }
 
 function parseJsonObjectArg(value: string): Record<string, unknown> | null {
@@ -95,15 +151,267 @@ function showCrmContactProfile(contactRef: string, asJson?: boolean) {
     printJson(payload);
     return payload;
   }
-  console.log(`\nCRM contact: ${profile.contact.displayName ?? profile.contact.id}`);
-  console.log(`  lifecycle: ${profile.profile?.lifecycle ?? "unknown"}`);
-  console.log(`  health: ${profile.profile?.relationshipHealth ?? "unknown"}`);
-  console.log(`  priority: ${profile.profile?.priority ?? "normal"}`);
-  console.log(`  next: ${profile.profile?.nextActionSummary ?? "-"}`);
-  console.log(
-    `  links: ${profile.accountMemberships.length} accounts, ${profile.opportunities.length} opportunities, ${profile.tasks.length} tasks`,
-  );
+  renderCrmContactCard(profile);
   return payload;
+}
+
+// ============================================================================
+// Rich contact card renderer (text mode)
+// ============================================================================
+
+const CARD_WIDTH = 80;
+const FACT_VALUE_PREVIEW = 200;
+
+function renderCrmContactCard(profile: NonNullable<ReturnType<typeof getCrmContactProfile>>): void {
+  const { contact, policy, profile: prof, accountMemberships, opportunities, tasks, nextActions, facts } = profile;
+  const name = contact.displayName?.trim() || contact.id;
+
+  console.log("");
+  console.log(name);
+  console.log(divider("─"));
+  printPair("id", contact.id, "kind", contact.kind);
+  printPair("phone", contact.primaryPhone ?? "-", "email", contact.primaryEmail ?? "-");
+  printPair("added", formatDate(contact.createdAt), "updated", formatDate(contact.updatedAt));
+
+  console.log("");
+  console.log("Status");
+  printPair(
+    "lifecycle",
+    prof?.lifecycle ?? "unknown",
+    "health",
+    prof?.relationshipHealth ?? "unknown",
+    "priority",
+    prof?.priority ?? "normal",
+  );
+  printPair(
+    "policy",
+    policy?.status ?? "unknown",
+    "reply",
+    policy?.replyMode ?? "auto",
+    "opt-out",
+    formatBool(policy?.optOut),
+  );
+  const owner = formatOwner(prof?.ownerType, prof?.ownerId);
+  printPair("owner", owner, "source", policy?.source ?? "-");
+  const allowed = policy?.allowedAgents?.length ? policy.allowedAgents.join(", ") : "(all)";
+  printPair("allowed agents", allowed);
+  if (prof?.nextActionSummary || prof?.nextActionAt) {
+    const due = prof.nextActionAt ? formatDate(prof.nextActionAt) : "-";
+    printPair("next at", due);
+    printBlockValue("next", prof.nextActionSummary ?? "-");
+  }
+
+  console.log("");
+  console.log("Interactions");
+  printPair(
+    "count",
+    String(policy?.interactionCount ?? 0),
+    "last in",
+    formatRelative(policy?.lastInboundAt),
+    "last out",
+    formatRelative(policy?.lastOutboundAt),
+  );
+  if (prof?.lastMeaningfulInteractionAt) {
+    printPair("last meaningful", formatRelative(prof.lastMeaningfulInteractionAt));
+  }
+
+  const tags = policy?.tags ?? [];
+  console.log("");
+  console.log(`Tags (${tags.length})`);
+  console.log(`  ${tags.length === 0 ? "(none)" : tags.join(", ")}`);
+
+  const notes = policy?.notes && typeof policy.notes === "object" ? (policy.notes as Record<string, unknown>) : {};
+  const noteKeys = Object.keys(notes);
+  if (noteKeys.length > 0) {
+    console.log("");
+    console.log(`Notes (${noteKeys.length})`);
+    for (const k of noteKeys.slice(0, 10)) {
+      printBlockValue(k, formatNoteValue(notes[k]));
+    }
+    if (noteKeys.length > 10) {
+      console.log(`  … ${noteKeys.length - 10} more (--json for all)`);
+    }
+  }
+
+  const confirmedFacts = facts.filter((f) => f.status === "confirmed");
+  const proposedFacts = facts.filter((f) => f.status === "proposed");
+  if (confirmedFacts.length > 0 || proposedFacts.length > 0) {
+    console.log("");
+    const summary = [
+      confirmedFacts.length ? `${confirmedFacts.length} confirmed` : null,
+      proposedFacts.length ? `${proposedFacts.length} proposed` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    console.log(`Facts (${summary})`);
+    for (const fact of confirmedFacts) printFact(fact);
+    if (proposedFacts.length > 0) {
+      console.log("");
+      console.log("  Proposed");
+      for (const fact of proposedFacts) printFact(fact);
+    }
+  }
+
+  if (accountMemberships.length > 0) {
+    console.log("");
+    console.log(`Accounts (${accountMemberships.length})`);
+    for (const m of accountMemberships) {
+      const accName = m.account?.name ?? "(no name)";
+      const role = m.role ? ` · role ${m.role}` : "";
+      const primary = m.isPrimary ? " · primary" : "";
+      console.log(`  · ${accName} (${m.accountId})${role}${primary}`);
+    }
+  }
+
+  if (opportunities.length > 0) {
+    console.log("");
+    console.log(`Opportunities (${opportunities.length})`);
+    for (const o of opportunities) {
+      const value = o.valueCents != null ? formatMoney(o.valueCents, o.currency) : "-";
+      console.log(`  · ${o.title} · ${o.status} · ${o.priority} · value ${value}`);
+    }
+  }
+
+  const openTasks = tasks.filter((t) => t.status !== "done" && t.status !== "canceled");
+  if (openTasks.length > 0) {
+    console.log("");
+    console.log(`Open tasks (${openTasks.length})`);
+    for (const t of openTasks.slice(0, 10)) {
+      const due = t.dueAt ? formatDate(t.dueAt) : "-";
+      console.log(`  · [${t.priority}] ${due} · ${t.title}`);
+    }
+    if (openTasks.length > 10) {
+      console.log(`  … ${openTasks.length - 10} more (ravi crm tasks list --contact ${contact.id})`);
+    }
+  }
+
+  if (nextActions.length > 0) {
+    console.log("");
+    console.log(`Next actions (${nextActions.length})`);
+    for (const a of nextActions.slice(0, 10)) {
+      const due = a.dueAt ? formatDate(a.dueAt) : "-";
+      console.log(`  · [${a.priority}] ${due} · ${a.title}`);
+    }
+  }
+
+  // Footer: link counts (always shown so callers know they exist even when empty),
+  // plus pointer to --json for the raw payload.
+  console.log("");
+  console.log(
+    `Links: ${accountMemberships.length} accounts · ${opportunities.length} opportunities · ${tasks.length} tasks · ${nextActions.length} next actions`,
+  );
+  console.log("Run with --json for the full payload (raw facts, evidence, metadata, all timestamps).");
+}
+
+function divider(char: string): string {
+  return char.repeat(Math.min(CARD_WIDTH, 80));
+}
+
+function printPair(...labelValuePairs: string[]): void {
+  // Compact 3-column layout: each pair is `label: value` with column padding.
+  const pairs: Array<[string, string]> = [];
+  for (let i = 0; i < labelValuePairs.length; i += 2) {
+    pairs.push([labelValuePairs[i] ?? "", labelValuePairs[i + 1] ?? "-"]);
+  }
+  const cellWidth = pairs.length === 1 ? 76 : pairs.length === 2 ? 38 : 25;
+  const cells = pairs.map(([label, value]) => {
+    const text = `${label}: ${value}`;
+    return text.length > cellWidth ? `${text.slice(0, cellWidth - 1)}…` : text.padEnd(cellWidth);
+  });
+  console.log(`  ${cells.join("")}`);
+}
+
+function printBlockValue(label: string, value: string): void {
+  const lines = value.split("\n");
+  console.log(`  ${label}:`);
+  for (const line of lines) {
+    const wrapped = line.length > CARD_WIDTH - 4 ? `${line.slice(0, CARD_WIDTH - 5)}…` : line;
+    console.log(`    ${wrapped}`);
+  }
+}
+
+function printFact(fact: {
+  key: string;
+  value: unknown;
+  status: string;
+  confidence: number;
+  source: string;
+  updatedAt: string;
+}): void {
+  const value = formatFactValue(fact.value);
+  console.log(`  · ${fact.key}`);
+  const wrapped = value.length > CARD_WIDTH - 6 ? `${value.slice(0, CARD_WIDTH - 7)}…` : value;
+  console.log(`      ${wrapped}`);
+  const conf = Number.isFinite(fact.confidence) ? fact.confidence.toFixed(2) : "?";
+  console.log(`      ${fact.status} · confidence ${conf} · source ${fact.source} · ${formatDate(fact.updatedAt)}`);
+}
+
+function formatFactValue(value: unknown): string {
+  if (value == null) return "-";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    const json = JSON.stringify(value);
+    return json.length > FACT_VALUE_PREVIEW ? `${json.slice(0, FACT_VALUE_PREVIEW - 1)}…` : json;
+  } catch {
+    return String(value);
+  }
+}
+
+function formatNoteValue(value: unknown): string {
+  return formatFactValue(value);
+}
+
+function formatBool(value: boolean | null | undefined): string {
+  return value ? "yes" : "no";
+}
+
+function formatOwner(ownerType?: string | null, ownerId?: string | null): string {
+  if (!ownerType && !ownerId) return "-";
+  if (ownerType && ownerId) return `${ownerType}:${ownerId}`;
+  return ownerType ?? ownerId ?? "-";
+}
+
+// SQLite CURRENT_TIMESTAMP serializes as `YYYY-MM-DD HH:MM:SS` (no T, no
+// zone). The DB stores UTC but the string lacks the marker, so plain
+// `new Date(s)` parses it as local — making "now" look hours in the
+// future on negative-offset hosts. Patch the marker when we detect the
+// SQLite shape; otherwise pass through.
+function parseTimestamp(value: string | number): Date {
+  if (typeof value === "number") return new Date(value);
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) {
+    return new Date(`${value.replace(" ", "T")}Z`);
+  }
+  return new Date(value);
+}
+
+function formatDate(value: string | number | null | undefined): string {
+  if (value == null) return "-";
+  const d = parseTimestamp(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatRelative(value: string | number | null | undefined): string {
+  if (value == null) return "never";
+  const d = parseTimestamp(value);
+  if (Number.isNaN(d.getTime())) return "never";
+  const ms = Date.now() - d.getTime();
+  if (ms < 0) return formatDate(value);
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  return formatDate(value);
+}
+
+function formatMoney(cents: number, currency: string): string {
+  const amount = (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${currency} ${amount}`;
 }
 
 function showCrmAccount(accountRef: string, asJson?: boolean) {
@@ -149,6 +457,11 @@ export class ACrmCommands {
     @Option({ flags: "--contact <contact>", description: "Filter by contact" }) contact?: string,
     @Option({ flags: "--account <account>", description: "Filter by account" }) account?: string,
     @Option({ flags: "--opportunity <opportunity>", description: "Filter by opportunity" }) opportunity?: string,
+    @Option({ flags: "--task-type <type>", description: "Filter by task_type (e.g. commitment, follow_up, call)" })
+    taskType?: string,
+    @Option({ flags: "--due-today", description: "Only actions whose due_at is today" }) dueToday?: boolean,
+    @Option({ flags: "--due-before <ts>", description: "Only actions with due_at < <ts>" }) dueBefore?: string,
+    @Option({ flags: "--due-after <ts>", description: "Only actions with due_at >= <ts>" }) dueAfter?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 25, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching actions to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -159,6 +472,10 @@ export class ACrmCommands {
       contactRef: contact,
       accountId: account,
       opportunityId: opportunity,
+      taskType,
+      dueToday: Boolean(dueToday),
+      dueBefore,
+      dueAfter,
       limit,
       offset,
     });
@@ -168,7 +485,23 @@ export class ACrmCommands {
       offset: page.offset,
       returned: page.items.length,
       total: page.total,
-      options: ["--owner", owner, "--contact", contact, "--account", account, "--opportunity", opportunity],
+      options: [
+        "--owner",
+        owner,
+        "--contact",
+        contact,
+        "--account",
+        account,
+        "--opportunity",
+        opportunity,
+        "--task-type",
+        taskType,
+        ...(dueToday ? ["--due-today"] : []),
+        "--due-before",
+        dueBefore,
+        "--due-after",
+        dueAfter,
+      ],
     });
     const payload = { total: page.total, pagination, items: page.items, actions: page.items };
     if (asJson) {
@@ -252,11 +585,29 @@ export class ACrmCommands {
 
   @Scope("open")
   @Command({ name: "board", description: "Show open opportunity board" })
-  board(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const board = listCrmOpportunityBoard();
-    const payload = { total: board.length, opportunities: board };
+  board(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--pipeline <pipeline>", description: "Filter by CRM pipeline ID or name" }) pipeline?: string,
+    @Option({ flags: "--include-empty-stages", description: "Include configured stages with no opportunities" })
+    includeEmptyStages?: boolean,
+  ) {
+    const board = listCrmOpportunityBoard({ pipelineRef: pipeline });
+    const stages = includeEmptyStages ? listCrmOpportunityBoardStages(pipeline) : undefined;
+    const payload = stages
+      ? { total: board.length, stages, opportunities: board }
+      : { total: board.length, opportunities: board };
     if (asJson) {
       printJson(payload);
+      return payload;
+    }
+    if (stages) {
+      console.log("\nCRM opportunity board:\n");
+      for (const group of stages) {
+        console.log(`${group.stage.key} ${group.stage.name} (${group.opportunities.length})`);
+        for (const opportunity of group.opportunities) {
+          console.log(`  - ${opportunity.opportunityId}: ${opportunity.title}`);
+        }
+      }
       return payload;
     }
     if (board.length === 0) {
@@ -266,6 +617,440 @@ export class ACrmCommands {
     console.log("\nCRM opportunity board:\n");
     for (const opportunity of board) {
       console.log(`- ${opportunity.stageKey ?? "-"} ${opportunity.opportunityId}: ${opportunity.title}`);
+    }
+    return payload;
+  }
+}
+
+@Group({
+  name: "crm.pipeline",
+  description: "CRM configurable pipelines",
+})
+export class CrmPipelineCommands {
+  @Scope("open")
+  @Command({ name: "list", description: "List CRM pipelines" })
+  list(
+    @Option({ flags: "--entity-type <type>", description: "Filter by CRM entity type" }) entityType?: string,
+    @Option({ flags: "--include-archived", description: "Include archived pipelines" }) includeArchived?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching pipelines to skip (default: 0)" })
+    offset?: string,
+  ) {
+    const pipelines = listCrmPipelines({ entityType, includeArchived: Boolean(includeArchived) });
+    const page = paginateCliItems(pipelines, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "pipeline", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: ["--entity-type", entityType, ...(includeArchived ? ["--include-archived"] : [])],
+    });
+    const payload = { total: page.total, pagination, items: page.items, pipelines: page.items };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (page.items.length === 0) {
+      console.log("No CRM pipelines found.");
+      return payload;
+    }
+    for (const pipeline of page.items) {
+      console.log(`- ${pipeline.isDefault ? "*" : "-"} ${pipeline.id} ${pipeline.name} ${pipeline.status}`);
+    }
+    if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({ name: "show", description: "Show one CRM pipeline with stages and topics" })
+  show(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const payload = pipeline;
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`\nCRM pipeline: ${pipeline.pipeline.name}`);
+    console.log(`  id: ${pipeline.pipeline.id}`);
+    console.log(`  entity: ${pipeline.pipeline.entityType}`);
+    console.log(`  status: ${pipeline.pipeline.status}`);
+    console.log("\nStages:");
+    for (const stage of pipeline.stages) {
+      const topics = pipeline.topicsByStage[stage.id] ?? [];
+      console.log(
+        `- ${stage.key} ${stage.name} order=${stage.sortOrder} status=${stage.status} topics=${topics.length}`,
+      );
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "create", description: "Create a CRM pipeline" })
+  create(
+    @Arg("name", { description: "Pipeline name" }) name: string,
+    @Option({ flags: "--entity-type <type>", description: "CRM entity type (default: opportunity)" })
+    entityType?: string,
+    @Option({ flags: "--default", description: "Mark as default pipeline for the entity type" }) isDefault?: boolean,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object" }) metadataJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated create attempts" })
+    idempotencyKey?: string,
+  ) {
+    const pipeline = createCrmPipeline({
+      name,
+      entityType,
+      isDefault: isDefault === true,
+      metadata: parseOptionalJsonObject(metadataJson, "--metadata"),
+      source: "cli",
+      actorType: "user",
+      idempotencyKey,
+    });
+    const payload = { status: "created" as const, pipeline, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline created: ${pipeline.id} ${pipeline.name}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "set", description: "Set a CRM pipeline field" })
+  set(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("field", { description: "name|entity-type|default|status|metadata" }) field: string,
+    @Arg("value", { description: "New value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const normalizedField = field.trim().toLowerCase();
+    const input: Parameters<typeof updateCrmPipeline>[0] = {
+      pipelineRef,
+      source: "cli",
+      actorType: "user",
+    };
+    if (normalizedField === "name") input.name = value;
+    else if (normalizedField === "entity-type" || normalizedField === "entitytype") input.entityType = value;
+    else if (normalizedField === "default" || normalizedField === "is-default")
+      input.isDefault = parseBooleanValue(value, field);
+    else if (normalizedField === "status") input.status = value;
+    else if (normalizedField === "metadata") input.metadata = parseJsonObjectArg(value);
+    else fail(`Unsupported CRM pipeline field: ${field}`);
+
+    const pipeline = updateCrmPipeline(input);
+    const payload = { status: "updated" as const, pipeline, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline updated: ${pipeline.id} ${pipeline.name}`);
+    }
+    return payload;
+  }
+}
+
+@Group({
+  name: "crm.pipeline.stage",
+  description: "CRM pipeline stages",
+})
+export class CrmPipelineStageCommands {
+  @Scope("open")
+  @Command({ name: "list", description: "List stages in a CRM pipeline" })
+  list(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({ flags: "--include-archived", description: "Include archived stages" }) includeArchived?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching stages to skip (default: 0)" }) offset?: string,
+  ) {
+    const stages = listCrmPipelineStages(pipelineRef, { includeArchived: Boolean(includeArchived) });
+    const page = paginateCliItems(stages, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "pipeline", "stage", "list", pipelineRef],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: includeArchived ? ["--include-archived"] : [],
+    });
+    const payload = { pipeline: pipelineRef, total: page.total, pagination, items: page.items, stages: page.items };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (page.items.length === 0) {
+      console.log("No CRM pipeline stages found.");
+      return payload;
+    }
+    for (const stage of page.items) {
+      console.log(`- ${stage.sortOrder} ${stage.key} ${stage.name} ${stage.status}`);
+    }
+    if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({ name: "show", description: "Show one CRM pipeline stage" })
+  show(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const stage = getCrmPipelineStage(pipelineRef, stageRef);
+    if (!stage) fail(`CRM pipeline stage not found: ${stageRef}`);
+    if (asJson) {
+      printJson(stage);
+      return stage;
+    }
+    console.log(`\nCRM pipeline stage: ${stage.stage.name}`);
+    console.log(`  key: ${stage.stage.key}`);
+    console.log(`  order: ${stage.stage.sortOrder}`);
+    console.log(`  topics: ${stage.topics.length}`);
+    return stage;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "add", description: "Add a stage to a CRM pipeline" })
+  add(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("key", { description: "Stage key" }) key: string,
+    @Option({ flags: "--name <name>", description: "Stage display name" }) name?: string,
+    @Option({ flags: "--order <n>", description: "Stage sort order" }) order?: string,
+    @Option({ flags: "--category <category>", description: "new|active|waiting|terminal_won|terminal_lost" })
+    category?: string,
+    @Option({ flags: "--probability <n>", description: "Default probability between 0 and 1" }) probability?: string,
+    @Option({ flags: "--terminal", description: "Mark stage as terminal" }) terminal?: boolean,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object" }) metadataJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated create attempts" })
+    idempotencyKey?: string,
+  ) {
+    if (!name) fail("--name is required");
+    if (!order) fail("--order is required");
+    const stage = createCrmPipelineStage({
+      pipelineRef,
+      key,
+      name,
+      sortOrder: parseRequiredNumber(order, "--order"),
+      category,
+      probability: parseOptionalNumber(probability, "--probability") ?? undefined,
+      isTerminal: terminal === true ? true : undefined,
+      metadata: parseOptionalJsonObject(metadataJson, "--metadata"),
+      source: "cli",
+      actorType: "user",
+      idempotencyKey,
+    });
+    const payload = { status: "created" as const, stage, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage created: ${stage.key} ${stage.name}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "set", description: "Set a CRM pipeline stage field" })
+  set(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Arg("field", { description: "key|name|order|category|probability|terminal|status|metadata" }) field: string,
+    @Arg("value", { description: "New value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const normalizedField = field.trim().toLowerCase();
+    const input: Parameters<typeof updateCrmPipelineStage>[0] = {
+      pipelineRef,
+      stageRef,
+      source: "cli",
+      actorType: "user",
+    };
+    if (normalizedField === "key") input.key = value;
+    else if (normalizedField === "name") input.name = value;
+    else if (normalizedField === "order" || normalizedField === "sort-order")
+      input.sortOrder = parseRequiredNumber(value, field);
+    else if (normalizedField === "category") input.category = value;
+    else if (normalizedField === "probability") input.probability = parseOptionalNumber(value, field);
+    else if (normalizedField === "terminal" || normalizedField === "is-terminal")
+      input.isTerminal = parseBooleanValue(value, field);
+    else if (normalizedField === "status") input.status = value;
+    else if (normalizedField === "metadata") input.metadata = parseJsonObjectArg(value);
+    else fail(`Unsupported CRM pipeline stage field: ${field}`);
+
+    const stage = updateCrmPipelineStage(input);
+    const payload = { status: "updated" as const, stage, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage updated: ${stage.key} ${stage.name}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "archive", description: "Archive a CRM pipeline stage" })
+  archive(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const stage = archiveCrmPipelineStage({ pipelineRef, stageRef, source: "cli", actorType: "user" });
+    const payload = { status: "archived" as const, stage, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage archived: ${stage.key}`);
+    }
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({ name: "topics", description: "List topics configured for a CRM pipeline stage" })
+  topics(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Option({ flags: "--include-archived", description: "Include archived topics" }) includeArchived?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching topics to skip (default: 0)" }) offset?: string,
+  ) {
+    const topics = listCrmPipelineStageTopics(pipelineRef, stageRef, { includeArchived: Boolean(includeArchived) });
+    const page = paginateCliItems(topics, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "pipeline", "stage", "topics", pipelineRef, stageRef],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: includeArchived ? ["--include-archived"] : [],
+    });
+    const payload = {
+      pipeline: pipelineRef,
+      stage: stageRef,
+      total: page.total,
+      pagination,
+      items: page.items,
+      topics: page.items,
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (page.items.length === 0) {
+      console.log("No CRM pipeline stage topics found.");
+      return payload;
+    }
+    for (const topic of page.items) {
+      console.log(`- ${topic.sortOrder} ${topic.key} ${topic.title} ${topic.status}`);
+    }
+    if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
+    return payload;
+  }
+}
+
+@Group({
+  name: "crm.pipeline.stage.topic",
+  description: "CRM pipeline stage topics",
+})
+export class CrmPipelineStageTopicCommands {
+  @Scope("writeContacts")
+  @Command({ name: "add", description: "Add a topic to a CRM pipeline stage" })
+  add(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Arg("key", { description: "Topic key" }) key: string,
+    @Option({ flags: "--title <title>", description: "Topic title" }) title?: string,
+    @Option({ flags: "--description <text>", description: "Topic description" }) description?: string,
+    @Option({
+      flags: "--type <type>",
+      description: "subject|objection|qualification|proposal|pricing|next_action|risk",
+    })
+    topicType?: string,
+    @Option({ flags: "--order <n>", description: "Topic sort order" }) order?: string,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object" }) metadataJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated create attempts" })
+    idempotencyKey?: string,
+  ) {
+    if (!title) fail("--title is required");
+    const topic = createCrmPipelineStageTopic({
+      pipelineRef,
+      stageRef,
+      key,
+      title,
+      description,
+      topicType,
+      sortOrder: order === undefined ? undefined : parseRequiredNumber(order, "--order"),
+      metadata: parseOptionalJsonObject(metadataJson, "--metadata"),
+      source: "cli",
+      actorType: "user",
+      idempotencyKey,
+    });
+    const payload = { status: "created" as const, topic, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage topic created: ${topic.key} ${topic.title}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "set", description: "Set a CRM pipeline stage topic field" })
+  set(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Arg("topic", { description: "Topic key or ID" }) topicRef: string,
+    @Arg("field", { description: "key|title|description|type|order|status|metadata" }) field: string,
+    @Arg("value", { description: "New value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const normalizedField = field.trim().toLowerCase();
+    const input: Parameters<typeof updateCrmPipelineStageTopic>[0] = {
+      pipelineRef,
+      stageRef,
+      topicRef,
+      source: "cli",
+      actorType: "user",
+    };
+    if (normalizedField === "key") input.key = value;
+    else if (normalizedField === "title") input.title = value;
+    else if (normalizedField === "description") input.description = parseNullable(value);
+    else if (normalizedField === "type" || normalizedField === "topic-type") input.topicType = value;
+    else if (normalizedField === "order" || normalizedField === "sort-order")
+      input.sortOrder = parseRequiredNumber(value, field);
+    else if (normalizedField === "status") input.status = value;
+    else if (normalizedField === "metadata") input.metadata = parseJsonObjectArg(value);
+    else fail(`Unsupported CRM pipeline stage topic field: ${field}`);
+
+    const topic = updateCrmPipelineStageTopic(input);
+    const payload = { status: "updated" as const, topic, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage topic updated: ${topic.key} ${topic.title}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "archive", description: "Archive a CRM pipeline stage topic" })
+  archive(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Arg("stage", { description: "Stage key or ID" }) stageRef: string,
+    @Arg("topic", { description: "Topic key or ID" }) topicRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const topic = archiveCrmPipelineStageTopic({ pipelineRef, stageRef, topicRef, source: "cli", actorType: "user" });
+    const payload = { status: "archived" as const, topic, changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM pipeline stage topic archived: ${topic.key}`);
     }
     return payload;
   }
@@ -719,7 +1504,7 @@ export class CrmTaskCommands {
   ) {
     const task = getCrmTask(taskId);
     if (!task) fail(`CRM task not found: ${taskId}`);
-    const payload = { target: taskId, task };
+    const payload = { target: taskId, task: formatCrmTaskForJson(task) };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -740,10 +1525,22 @@ export class CrmTaskCommands {
     @Option({ flags: "--due <date>", description: "Due date/time" }) dueAt?: string,
     @Option({ flags: "--priority <priority>", description: "low|normal|high|urgent" }) priority?: string,
     @Option({ flags: "--owner <type:id>", description: "Owner, e.g. agent:main" }) owner?: string,
+    @Option({ flags: "--task-type <type>", description: "Task type (e.g. follow_up, commitment, call)" })
+    taskType?: string,
+    @Option({ flags: "--body <text>", description: "Task body / longer description" }) body?: string,
+    @Option({ flags: "--source <source>", description: "Source label (default: cli)" }) source?: string,
+    @Option({ flags: "--confidence <n>", description: "Confidence in the task (0.0–1.0)" }) confidence?: string,
+    @Option({ flags: "--evidence <json>", description: "Evidence JSON array attached to the task event" })
+    evidenceJson?: string,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object stored on the task" })
+    metadataJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated task creation" })
     idempotencyKey?: string,
   ) {
+    const evidence = parseOptionalJson(evidenceJson, "--evidence");
+    const metadata = parseOptionalJsonObject(metadataJson, "--metadata");
+    const confidenceValue = confidence !== undefined ? parseFloatOrFail(confidence, "--confidence") : undefined;
     const task = createCrmTask({
       title,
       contactRef,
@@ -751,12 +1548,17 @@ export class CrmTaskCommands {
       opportunityId,
       dueAt,
       priority,
+      taskType,
+      body,
       ...parseOwner(owner),
       idempotencyKey,
-      source: "cli",
+      source: source ?? "cli",
       actorType: "user",
+      confidence: confidenceValue,
+      evidence,
+      metadata,
     });
-    const payload = { status: "created" as const, task, changedCount: 1 };
+    const payload = { status: "created" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
     if (asJson) {
       printJson(payload);
     } else {
@@ -772,7 +1574,7 @@ export class CrmTaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const task = completeCrmTask({ taskId, source: "cli", actorType: "user" });
-    const payload = { status: "done" as const, task, changedCount: 1 };
+    const payload = { status: "done" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
     if (asJson) {
       printJson(payload);
     } else {
@@ -780,4 +1582,148 @@ export class CrmTaskCommands {
     }
     return payload;
   }
+
+  @Scope("writeContacts")
+  @Command({ name: "cancel", description: "Cancel a CRM task" })
+  cancel(
+    @Arg("task", { description: "CRM task ID" }) taskId: string,
+    @Option({ flags: "--reason <text>", description: "Reason for cancellation (stored in event payload)" })
+    reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const task = cancelCrmTask({ taskId, reason, source: "cli", actorType: "user" });
+    const payload = { status: "canceled" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM task canceled: ${task.id}`);
+    }
+    return payload;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "snooze", description: "Snooze a CRM task to a new due_at" })
+  snooze(
+    @Arg("task", { description: "CRM task ID" }) taskId: string,
+    @Option({ flags: "--until <ts>", description: "New due_at / snoozed_until (ISO timestamp)" }) until?: string,
+    @Option({ flags: "--reason <text>", description: "Reason for snoozing" }) reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!until) fail("--until <ts> is required");
+    const task = snoozeCrmTask({
+      taskId,
+      snoozedUntil: until,
+      source: "cli",
+      actorType: "user",
+      evidence: reason ? { reason } : undefined,
+    });
+    const payload = { status: "snoozed" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ CRM task snoozed until ${until}: ${task.id}`);
+    }
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({ name: "list", description: "List CRM tasks (all statuses)" })
+  list(
+    @Option({ flags: "--owner <type:id>", description: "Filter by owner, e.g. agent:main" }) owner?: string,
+    @Option({ flags: "--contact <contact>", description: "Filter by contact" }) contact?: string,
+    @Option({ flags: "--account <account>", description: "Filter by account" }) account?: string,
+    @Option({ flags: "--opportunity <opportunity>", description: "Filter by opportunity" }) opportunity?: string,
+    @Option({ flags: "--task-type <type>", description: "Filter by task_type" }) taskType?: string,
+    @Option({ flags: "--status <status>", description: "Filter by status (open, scheduled, done, canceled, snoozed)" })
+    status?: string,
+    @Option({ flags: "--due-today", description: "Only tasks whose due_at is today" }) dueToday?: boolean,
+    @Option({ flags: "--due-before <ts>", description: "Only tasks with due_at < <ts>" }) dueBefore?: string,
+    @Option({ flags: "--due-after <ts>", description: "Only tasks with due_at >= <ts>" }) dueAfter?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 25, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching tasks to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const ownerFilter = parseOwner(owner);
+    const page = listCrmTasks({
+      ...ownerFilter,
+      contactRef: contact,
+      accountId: account,
+      opportunityId: opportunity,
+      taskType,
+      status,
+      dueToday: Boolean(dueToday),
+      dueBefore,
+      dueAfter,
+      limit,
+      offset,
+    });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "task", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: [
+        "--owner",
+        owner,
+        "--contact",
+        contact,
+        "--account",
+        account,
+        "--opportunity",
+        opportunity,
+        "--task-type",
+        taskType,
+        "--status",
+        status,
+        ...(dueToday ? ["--due-today"] : []),
+        "--due-before",
+        dueBefore,
+        "--due-after",
+        dueAfter,
+      ],
+    });
+    const items = page.items.map(formatCrmTaskForJson);
+    const payload = { total: page.total, pagination, items, tasks: items };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (page.items.length === 0) {
+      console.log("No CRM tasks match the filter.");
+      return payload;
+    }
+    console.log(`\nCRM tasks (${page.items.length} returned of ${page.total}):\n`);
+    for (const task of page.items) {
+      console.log(
+        `  ${task.id}  [${task.status}]  ${task.taskType.padEnd(12)}  due=${task.dueAt ?? "-"}  ${task.title}`,
+      );
+    }
+    if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
+    return payload;
+  }
+}
+
+function parseOptionalJson(value: string | undefined, label: string): unknown {
+  if (value === undefined) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    fail(`${label} must be valid JSON: ${(error as Error).message}`);
+  }
+}
+
+function parseOptionalJsonObject(value: string | undefined, label: string): Record<string, unknown> | undefined {
+  const parsed = parseOptionalJson(value, label);
+  if (parsed === undefined) return undefined;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    fail(`${label} must be a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function parseFloatOrFail(value: string, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) fail(`${label} must be a number`);
+  return parsed;
 }

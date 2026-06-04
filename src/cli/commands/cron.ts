@@ -27,8 +27,38 @@ import {
   type CronJob,
   type CronSchedule,
 } from "../../cron/index.js";
+import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
+
+function parseCronShellTimeout(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      fail(`Invalid timeout: ${value}`);
+    }
+    return seconds * 1000;
+  }
+  try {
+    return parseDurationMs(trimmed);
+  } catch (err) {
+    fail(`Invalid timeout: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+function normalizeCronOnError(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === "-" || trimmed === "null") return undefined;
+
+  const prefix = "notify-session:";
+  if (!trimmed.startsWith(prefix) || !trimmed.slice(prefix.length).trim()) {
+    fail(`Invalid --on-error value: ${value}. Use notify-session:<session>`);
+  }
+  return `${prefix}${trimmed.slice(prefix.length).trim()}`;
+}
 
 function resolveCronRouting(job: CronJob): CronRoutingResolution {
   if (!job.replySession) {
@@ -78,8 +108,11 @@ function printJson(payload: unknown): void {
 function serializeCronJob(job: CronJob) {
   return {
     ...job,
-    effectiveAgentId: job.agentId ?? getDefaultAgentId(),
+    effectiveAgentId: job.executionType === "agent" ? (job.agentId ?? getDefaultAgentId()) : undefined,
+    ownerAgentId: job.executionType === "shell" ? job.agentId : undefined,
     scheduleDescription: describeSchedule(job.schedule),
+    shellTimeoutDescription:
+      job.executionType === "shell" ? formatDurationMs(job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS) : undefined,
     routing: resolveCronRouting(job),
   };
 }
@@ -199,6 +232,14 @@ export class CronCommands {
     @Option({ flags: "--at <datetime>", description: "One-shot time (e.g., 2025-02-01T15:00)" }) at?: string,
     @Option({ flags: "--tz <timezone>", description: "Timezone (e.g., America/Sao_Paulo)" }) tz?: string,
     @Option({ flags: "--message <text>", description: "Prompt message" }) message?: string,
+    @Option({ flags: "--shell <cmd>", description: "Run a shell command directly without invoking an agent" })
+    shell?: string,
+    @Option({ flags: "--exec <cmd>", description: "Alias for --shell" }) exec?: string,
+    @Option({ flags: "--on-error <action>", description: "Error action, e.g. notify-session:<session>" })
+    onError?: string,
+    @Option({ flags: "--timeout <seconds|duration>", description: "Shell timeout, e.g. 60 or 5m" })
+    timeout?: string,
+    @Option({ flags: "--env-file <path>", description: "Env file loaded for shell jobs" }) envFile?: string,
     @Option({ flags: "--isolated", description: "Run in isolated session" }) isolated?: boolean,
     @Option({ flags: "--delete-after", description: "Delete job after first run" }) deleteAfter?: boolean,
     @Option({ flags: "--agent <id>", description: "Agent ID (default: default agent)" }) agent?: string,
@@ -208,9 +249,28 @@ export class CronCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const warnings: string[] = [];
+    const shellCommand = shell?.trim() || exec?.trim();
+    const shellFlagCount = [shell, exec].filter((value) => value?.trim()).length;
+    const isShellJob = Boolean(shellCommand);
 
-    // Validate message is provided
-    if (!message) {
+    if (shellFlagCount > 1) {
+      fail("Only one of --shell or --exec can be specified");
+    }
+    if (isShellJob && message) {
+      fail("--message cannot be combined with --shell/--exec");
+    }
+    if (isShellJob && account) {
+      fail("--account is only valid for agent cron jobs");
+    }
+    if (isShellJob && isolated) {
+      fail("--isolated is only valid for agent cron jobs");
+    }
+    if (!isShellJob && (onError || timeout || envFile)) {
+      fail("--on-error, --timeout and --env-file are only valid with --shell/--exec");
+    }
+
+    // Validate message is provided for agent jobs.
+    if (!isShellJob && !message) {
       fail("--message is required");
     }
 
@@ -267,23 +327,36 @@ export class CronCommands {
     const ctx = getContext();
     const resolvedAgent = agent ?? ctx?.agentId;
 
-    // Resolve account: explicit flag > auto-detect from agent's account mapping
-    const resolvedAccount = account ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
+    // Resolve account in this order:
+    //   1. explicit --account flag
+    //   2. account the caller was actually talking through (ctx.source.accountId)
+    //   3. instance explicitly mapped to the agent
+    // The third step no longer falls back to "first enabled instance" — that
+    // silently picked the wrong account in multi-account setups and broke
+    // outbound delivery from scheduled jobs.
+    const resolvedAccount = isShellJob
+      ? undefined
+      : (account ?? ctx?.source?.accountId ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined));
 
     // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123)
-    const replySession = ctx?.sessionKey;
+    const replySession = isShellJob ? undefined : ctx?.sessionKey;
 
     // Create job
     const input: CronJobInput = {
       name,
       schedule,
-      message,
+      message: isShellJob ? "" : message!,
       agentId: resolvedAgent,
       accountId: resolvedAccount,
       replySession,
       description,
-      sessionTarget: isolated ? "isolated" : "main",
+      sessionTarget: isShellJob ? "main" : isolated ? "isolated" : "main",
       deleteAfterRun: deleteAfter,
+      executionType: isShellJob ? "shell" : "agent",
+      shellCommand: isShellJob ? shellCommand : undefined,
+      shellTimeoutMs: isShellJob ? parseCronShellTimeout(timeout) : undefined,
+      shellEnvFile: isShellJob ? envFile : undefined,
+      onError: isShellJob ? normalizeCronOnError(onError) : undefined,
     };
 
     try {
@@ -305,7 +378,11 @@ export class CronCommands {
       } else {
         console.log(`\n✓ Created job: ${job.id}`);
         console.log(`  Name:       ${job.name}`);
+        console.log(`  Mode:       ${job.executionType}`);
         console.log(`  Schedule:   ${describeSchedule(job.schedule)}`);
+        if (job.executionType === "shell") {
+          console.log(`  Timeout:    ${formatDurationMs(job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS)}`);
+        }
         if (job.nextRunAt) {
           console.log(`  Next run:   ${new Date(job.nextRunAt).toLocaleString()}`);
         }
@@ -390,7 +467,7 @@ export class CronCommands {
     @Arg("id", { description: "Job ID" }) id: string,
     @Arg("key", {
       description:
-        "Property: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+        "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after",
     })
     key: string,
     @Arg("value", { description: "Property value" }) value: string,
@@ -414,9 +491,59 @@ export class CronCommands {
           break;
 
         case "message":
-          dbUpdateCronJob(id, { message: value });
+          dbUpdateCronJob(id, {
+            executionType: "agent",
+            message: value,
+            shellCommand: undefined,
+            shellTimeoutMs: undefined,
+            shellEnvFile: undefined,
+            onError: undefined,
+          });
           logHuman(`✓ Message set: ${id}`);
           break;
+
+        case "shell":
+        case "exec":
+          dbUpdateCronJob(id, {
+            executionType: "shell",
+            message: "",
+            shellCommand: value,
+          });
+          logHuman(`✓ Shell command set: ${id}`);
+          break;
+
+        case "timeout": {
+          if (job.executionType !== "shell") {
+            fail("timeout only applies to shell cron jobs");
+          }
+          const shellTimeoutMs = value === "null" || value === "-" ? undefined : parseCronShellTimeout(value);
+          dbUpdateCronJob(id, { shellTimeoutMs });
+          normalizedValue = shellTimeoutMs ?? null;
+          logHuman(`✓ Shell timeout set: ${id} -> ${shellTimeoutMs ? formatDurationMs(shellTimeoutMs) : "(default)"}`);
+          break;
+        }
+
+        case "env-file": {
+          if (job.executionType !== "shell") {
+            fail("env-file only applies to shell cron jobs");
+          }
+          const shellEnvFile = value === "null" || value === "-" ? undefined : value;
+          dbUpdateCronJob(id, { shellEnvFile });
+          normalizedValue = shellEnvFile ?? null;
+          logHuman(`✓ Shell env file set: ${id} -> ${shellEnvFile ?? "(none)"}`);
+          break;
+        }
+
+        case "on-error": {
+          if (job.executionType !== "shell") {
+            fail("on-error only applies to shell cron jobs");
+          }
+          const normalizedOnError = normalizeCronOnError(value);
+          dbUpdateCronJob(id, { onError: normalizedOnError });
+          normalizedValue = normalizedOnError ?? null;
+          logHuman(`✓ On-error action set: ${id} -> ${normalizedOnError ?? "(none)"}`);
+          break;
+        }
 
         case "cron": {
           if (!isValidCronExpression(value)) {
@@ -519,7 +646,7 @@ export class CronCommands {
 
         default:
           fail(
-            `Unknown property: ${key}. Valid: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after`,
+            `Unknown property: ${key}. Valid: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after`,
           );
       }
 

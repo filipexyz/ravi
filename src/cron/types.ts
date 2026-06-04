@@ -10,6 +10,7 @@
 export type ScheduleType = "at" | "every" | "cron";
 export type SessionTarget = "main" | "isolated";
 export type JobStatus = "ok" | "error";
+export type CronExecutionType = "agent" | "shell";
 
 /**
  * Schedule configuration for a cron job
@@ -43,8 +44,18 @@ export interface CronJob {
   sessionTarget: SessionTarget;
   /** Session key to emit prompt to (e.g., agent:comm:whatsapp:main:group:123) */
   replySession?: string;
+  /** Execution mode. Existing rows default to agent. */
+  executionType: CronExecutionType;
   /** The prompt text to send to the agent */
   message: string;
+  /** Shell command for executionType=shell */
+  shellCommand?: string;
+  /** Shell command timeout in milliseconds */
+  shellTimeoutMs?: number;
+  /** Optional env file path to merge into the shell process environment */
+  shellEnvFile?: string;
+  /** Optional error action, currently notify-session:<session> */
+  onError?: string;
 
   // State
   nextRunAt?: number;
@@ -52,6 +63,7 @@ export interface CronJob {
   lastStatus?: JobStatus;
   lastError?: string;
   lastDurationMs?: number;
+  lastExitCode?: number;
 
   createdAt: number;
   updatedAt: number;
@@ -72,8 +84,18 @@ export interface CronJobInput {
   sessionTarget?: SessionTarget;
   /** Session key to emit prompt to (captured from caller context) */
   replySession?: string;
+  /** Execution mode. Defaults to agent. */
+  executionType?: CronExecutionType;
   /** The prompt text to send to the agent */
   message: string;
+  /** Shell command for executionType=shell */
+  shellCommand?: string;
+  /** Shell command timeout in milliseconds */
+  shellTimeoutMs?: number;
+  /** Optional env file path to merge into the shell process environment */
+  shellEnvFile?: string;
+  /** Optional error action, currently notify-session:<session> */
+  onError?: string;
 }
 
 /**
@@ -85,4 +107,5 @@ export interface JobStateUpdate {
   lastError?: string;
   lastDurationMs?: number;
   nextRunAt?: number;
+  lastExitCode?: number;
 }

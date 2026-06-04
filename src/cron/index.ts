@@ -9,6 +9,7 @@ export type {
   ScheduleType,
   SessionTarget,
   JobStatus,
+  CronExecutionType,
   CronSchedule,
   CronJob,
   CronJobInput,

@@ -5,7 +5,7 @@ description: Schedule recurring and one-shot tasks for your agents using cron ex
 
 ## Overview
 
-Cron jobs are scheduled tasks that send prompts to agents at specified times. They support three schedule types: standard cron expressions, fixed intervals, and one-shot datetimes. The daemon manages all timers and executes jobs automatically.
+Cron jobs are scheduled tasks that run at specified times. They can either send prompts to agents or execute deterministic shell commands directly. They support three schedule types: standard cron expressions, fixed intervals, and one-shot datetimes. The daemon manages all timers and executes jobs automatically.
 
 ## Schedule Types
 
@@ -96,7 +96,7 @@ ravi cron set <id> tz America/New_York
 
 ## Session Targets
 
-Jobs run in one of two session modes:
+Agent jobs run in one of two session modes:
 
 ### Main Session (default)
 
@@ -130,6 +130,37 @@ Generate the daily summary report
 
 This prefix helps the agent understand the context of the prompt — that it originated from a scheduled job rather than a user message.
 
+## Shell Jobs
+
+Use `--shell` or `--exec` for deterministic scripts that do not need agent reasoning. Shell jobs are tracked by `ravi cron list/show/run` like agent jobs, but successful runs do not publish any prompt and do not spend LLM tokens.
+
+```bash
+ravi cron add "ETL batch" \
+  --cron "*/15 * * * *" \
+  --shell "python3 /home/ravi/some-script.py >> /var/log/some.log 2>&1"
+```
+
+On failure, a shell job records `lastStatus=error`, `lastError`, duration, and exit code. To involve an agent only when the command fails, add an explicit error action:
+
+```bash
+ravi cron add "ETL batch" \
+  --cron "*/15 * * * *" \
+  --shell "python3 /home/ravi/some-script.py" \
+  --on-error notify-session:admin-group
+```
+
+Optional shell controls:
+
+```bash
+ravi cron add "Scrape" \
+  --every 30m \
+  --shell "python3 scripts/scrape.py" \
+  --timeout 10m \
+  --env-file /home/ravi/jobs/scrape.env
+```
+
+`--timeout` accepts seconds as a bare number or duration strings like `30s`, `5m`, or `1h`. `--env-file` reads simple dotenv-style `KEY=value` lines and merges them into the shell process environment.
+
 ## Anti-Drift
 
 For interval-based jobs, the next run time is calculated from the **originally scheduled time**, not from when execution finishes. This prevents timing drift caused by variable execution durations.
@@ -148,6 +179,10 @@ Each cron job has the following properties:
 |---|---|---|
 | `name` | Human-readable job name | Yes |
 | `message` | Prompt text sent to the agent | Yes |
+| `shell` / `exec` | Shell command for direct shell jobs | Yes |
+| `timeout` | Shell timeout | Yes |
+| `env-file` | Env file for shell jobs | Yes |
+| `on-error` | Shell failure action, e.g. `notify-session:<session>` | Yes |
 | `schedule` | Schedule configuration (cron/every/at) | Via `cron` or `every` keys |
 | `agent` | Agent that executes the job | Yes |
 | `account` | Account ID for channel delivery | Yes |
@@ -167,6 +202,7 @@ Each cron job has the following properties:
 | `lastStatus` | `ok` or `error` |
 | `lastDurationMs` | Execution time in milliseconds |
 | `lastError` | Error message if last run failed |
+| `lastExitCode` | Shell exit code for shell jobs |
 
 ## CLI Workflows
 
@@ -216,6 +252,10 @@ When a job is re-enabled, its `nextRunAt` is recalculated from the current time 
 
 ```bash
 ravi cron set <id> message "Updated prompt text"
+ravi cron set <id> shell "python3 /home/ravi/job.py"
+ravi cron set <id> timeout 5m
+ravi cron set <id> env-file /home/ravi/job.env
+ravi cron set <id> on-error notify-session:admin-group
 ravi cron set <id> cron "0 10 * * *"
 ravi cron set <id> every 1h
 ravi cron set <id> tz America/New_York

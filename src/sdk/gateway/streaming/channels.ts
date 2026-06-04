@@ -5,19 +5,260 @@ import type { StreamChannel, StreamChannelMatch, StreamEvent, StreamRequestConte
 const SESSION_DEBUG_EVENT_PATTERNS = ["prompt", "response", "stream", "tool", "runtime", "claude", "delivery"] as const;
 const DEFAULT_SESSION_DEBUG_TIMEOUT_MS = 60_000;
 
+// Shared payload schema fragments. Each channel-payload schema is a plain
+// JSON Schema object so the SDK codegen (`src/sdk/client-codegen/`) can
+// translate it to TypeScript and Swift without parsing TS source.
+const TOPIC_EVENT_SCHEMA = {
+  type: "object",
+  required: ["type", "topic", "data"],
+  additionalProperties: false,
+  properties: {
+    type: { type: "string" },
+    topic: { type: "string" },
+    data: {},
+    timestamp: { type: "string" },
+    count: { type: "number" },
+  },
+} as const;
+
+const TASK_EVENT_SCHEMA = {
+  type: "object",
+  required: ["type", "topic"],
+  additionalProperties: {},
+  properties: {
+    type: { const: "task.event" },
+    topic: { type: "string" },
+  },
+} as const;
+
+const SESSION_EVENT_SCHEMA = {
+  type: "object",
+  required: ["type", "sessionName"],
+  additionalProperties: false,
+  properties: {
+    type: { enum: ["session.event", "stream.end"] },
+    sessionName: { type: "string" },
+    topic: { type: "string" },
+    data: {},
+    reason: { type: "string" },
+    timeoutMs: { type: "number" },
+    timestamp: { type: "string" },
+  },
+} as const;
+
+const CHAT_EVENT_SCHEMA = {
+  type: "object",
+  required: ["type", "chatId", "topic", "data", "timestamp"],
+  additionalProperties: false,
+  properties: {
+    type: { const: "chat.event" },
+    chatId: { type: "string" },
+    topic: { type: "string" },
+    data: {},
+    timestamp: { type: "string" },
+  },
+} as const;
+
+const INSTANCE_EVENT_SCHEMA = {
+  type: "object",
+  required: ["type", "instanceId", "topic", "data", "timestamp"],
+  additionalProperties: false,
+  properties: {
+    type: { const: "instance.event" },
+    instanceId: { type: "string" },
+    topic: { type: "string" },
+    data: {},
+    timestamp: { type: "string" },
+  },
+} as const;
+
+const EMPTY_OPTIONS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {},
+} as const;
+
+// Omni envelope + sub-payload schemas. These mirror the shapes published by
+// omni-v2 on `message.received.*` / `reaction.received.*` / `presence.typing` /
+// `chat.unread-updated`. Used by the `chats` channel's `eventPayloads` so the
+// SDK codegen can synthesise typed `decodeMessage()` / `decodeReaction()` /
+// `decodePresenceTyping()` / `decodeUnread()` helpers on `ChatStreamPayload`.
+
+const OMNI_EVENT_METADATA_SCHEMA = {
+  type: "object",
+  additionalProperties: {},
+  properties: {
+    instanceId: { type: "string" },
+    channelType: { type: "string" },
+    personId: { type: "string" },
+    source: { type: "string" },
+    ingestMode: { type: "string" },
+  },
+} as const;
+
+const OMNI_MESSAGE_CONTENT_SCHEMA = {
+  type: "object",
+  required: ["type"],
+  additionalProperties: {},
+  properties: {
+    type: { type: "string" },
+    text: { type: "string" },
+    mediaUrl: { type: "string" },
+    mimeType: { type: "string" },
+    localPath: { type: "string" },
+    isVoiceNote: { type: "boolean" },
+  },
+} as const;
+
+const OMNI_MESSAGE_RECEIVED_PAYLOAD_SCHEMA = {
+  type: "object",
+  required: ["externalId", "chatId", "from", "content"],
+  additionalProperties: {},
+  properties: {
+    externalId: { type: "string" },
+    chatId: { type: "string" },
+    from: { type: "string" },
+    content: OMNI_MESSAGE_CONTENT_SCHEMA,
+    replyToId: { type: "string" },
+  },
+} as const;
+
+const OMNI_MESSAGE_RECEIVED_ENVELOPE_SCHEMA = {
+  type: "object",
+  required: ["id", "type", "payload", "timestamp"],
+  additionalProperties: {},
+  properties: {
+    id: { type: "string" },
+    type: { type: "string" },
+    payload: OMNI_MESSAGE_RECEIVED_PAYLOAD_SCHEMA,
+    metadata: OMNI_EVENT_METADATA_SCHEMA,
+    timestamp: { type: "number" },
+  },
+} as const;
+
+const OMNI_REACTION_RECEIVED_PAYLOAD_SCHEMA = {
+  type: "object",
+  required: ["messageId", "chatId", "from", "emoji"],
+  additionalProperties: {},
+  properties: {
+    messageId: { type: "string" },
+    chatId: { type: "string" },
+    from: { type: "string" },
+    emoji: { type: "string" },
+  },
+} as const;
+
+const OMNI_REACTION_RECEIVED_ENVELOPE_SCHEMA = {
+  type: "object",
+  required: ["id", "type", "payload", "timestamp"],
+  additionalProperties: {},
+  properties: {
+    id: { type: "string" },
+    type: { type: "string" },
+    payload: OMNI_REACTION_RECEIVED_PAYLOAD_SCHEMA,
+    metadata: OMNI_EVENT_METADATA_SCHEMA,
+    timestamp: { type: "number" },
+  },
+} as const;
+
+// presence.typing and chat.unread-updated come straight from omni-v2 without
+// going through a documented internal envelope. The shapes here are
+// best-effort, surfacing the fields we can rely on across providers;
+// channels that need more reach for the raw `data` (RaviJSON) directly.
+
+const CHAT_PRESENCE_TYPING_SCHEMA = {
+  type: "object",
+  additionalProperties: {},
+  properties: {
+    chatId: { type: "string" },
+    from: { type: "string" },
+    isTyping: { type: "boolean" },
+    timestamp: { type: "number" },
+  },
+} as const;
+
+const CHAT_UNREAD_UPDATED_SCHEMA = {
+  type: "object",
+  additionalProperties: {},
+  properties: {
+    chatId: { type: "string" },
+    unreadCount: { type: "integer" },
+    lastReadMessageId: { type: "string" },
+    timestamp: { type: "number" },
+  },
+} as const;
+
 export const defaultStreamChannels: StreamChannel[] = [
   {
     name: "events",
+    meta: {
+      methodName: "events",
+      pathPattern: "events",
+      description:
+        "Subscribe to the full NATS event bus. Mirrors `ravi events stream` and " +
+        "suppresses the same noisy topics (message.*, reaction.*, instance.*, " +
+        "presence.typing, chat.unread-updated, .stream, claude stream chunks).",
+      optionsTypeName: "EventsStreamOptions",
+      payloadTypeName: "GatewayTopicEvent",
+      optionsSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          subject: { type: "string" },
+          filter: { type: "string" },
+          only: { type: "string" },
+          noClaude: { type: "boolean" },
+          noHeartbeat: { type: "boolean" },
+        },
+      },
+      payloadSchema: TOPIC_EVENT_SCHEMA,
+    },
     match: exact("events", { permission: "view", objectType: "system", objectId: "events" }),
     subscribe: subscribeEvents,
   },
   {
     name: "tasks",
+    meta: {
+      methodName: "tasks",
+      pathPattern: "tasks",
+      description: "Subscribe to task lifecycle events (`ravi.task.<id>.event`).",
+      optionsTypeName: "TasksStreamOptions",
+      payloadTypeName: "TaskStreamPayload",
+      optionsSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          taskId: { type: "string" },
+        },
+      },
+      payloadSchema: TASK_EVENT_SCHEMA,
+    },
     match: exact("tasks", { permission: "view", objectType: "system", objectId: "tasks" }),
     subscribe: subscribeTasks,
   },
   {
     name: "sessions",
+    meta: {
+      methodName: "session",
+      pathPattern: "sessions/{name}",
+      description:
+        "Subscribe to runtime debug events for a single session: prompts, responses, " +
+        "streamed chunks, tool calls, provider runtime events, claude SDK events, " +
+        "delivery telemetry, and approval request/response.",
+      optionsTypeName: "SessionStreamOptions",
+      payloadTypeName: "SessionStreamPayload",
+      optionsSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          timeout: {
+            type: "number",
+            description: "Seconds before the stream emits `event: end` and closes. `0` means no natural timeout.",
+          },
+        },
+      },
+      payloadSchema: SESSION_EVENT_SCHEMA,
+    },
     match(segments) {
       if (segments.length !== 2 || segments[0] !== "sessions" || !segments[1]) return null;
       const sessionName = segments[1];
@@ -30,6 +271,42 @@ export const defaultStreamChannels: StreamChannel[] = [
   },
   {
     name: "chats",
+    meta: {
+      methodName: "chat",
+      pathPattern: "chats/{chatId}",
+      description:
+        "Subscribe to the live event stream for a single chat: new messages, " +
+        "reactions, presence/typing, and unread updates. The server filters by " +
+        "`chatId` against the upstream omni payload — events for other chats are " +
+        "discarded before reaching the client.",
+      optionsTypeName: "ChatStreamOptions",
+      payloadTypeName: "ChatStreamPayload",
+      optionsSchema: EMPTY_OPTIONS_SCHEMA,
+      payloadSchema: CHAT_EVENT_SCHEMA,
+      eventNames: ["message", "reaction", "presence", "unread"],
+      eventPayloads: {
+        message: {
+          typeName: "OmniMessageReceivedEnvelope",
+          schema: OMNI_MESSAGE_RECEIVED_ENVELOPE_SCHEMA,
+          helperName: "decodeMessage",
+        },
+        reaction: {
+          typeName: "OmniReactionReceivedEnvelope",
+          schema: OMNI_REACTION_RECEIVED_ENVELOPE_SCHEMA,
+          helperName: "decodeReaction",
+        },
+        presence: {
+          typeName: "PresenceTypingPayload",
+          schema: CHAT_PRESENCE_TYPING_SCHEMA,
+          helperName: "decodePresenceTyping",
+        },
+        unread: {
+          typeName: "ChatUnreadUpdatedPayload",
+          schema: CHAT_UNREAD_UPDATED_SCHEMA,
+          helperName: "decodeUnread",
+        },
+      },
+    },
     match(segments) {
       if (segments.length !== 2 || segments[0] !== "chats" || !segments[1]) return null;
       const chatId = segments[1];
@@ -42,6 +319,18 @@ export const defaultStreamChannels: StreamChannel[] = [
   },
   {
     name: "instances",
+    meta: {
+      methodName: "instance",
+      pathPattern: "instances/{instanceId}",
+      description:
+        "Subscribe to lifecycle events for a single omni instance: QR code, " +
+        "connected, disconnected. Filtered server-side.",
+      optionsTypeName: "InstanceStreamOptions",
+      payloadTypeName: "InstanceStreamPayload",
+      optionsSchema: EMPTY_OPTIONS_SCHEMA,
+      payloadSchema: INSTANCE_EVENT_SCHEMA,
+      eventNames: ["instance"],
+    },
     match(segments) {
       if (segments.length !== 2 || segments[0] !== "instances" || !segments[1]) return null;
       const instanceId = segments[1];
@@ -54,6 +343,15 @@ export const defaultStreamChannels: StreamChannel[] = [
   },
   {
     name: "audit",
+    meta: {
+      methodName: "audit",
+      pathPattern: "audit",
+      description: "Subscribe to the global audit event stream (`ravi.audit.>`).",
+      optionsTypeName: "AuditStreamOptions",
+      payloadTypeName: "GatewayTopicEvent",
+      optionsSchema: EMPTY_OPTIONS_SCHEMA,
+      payloadSchema: TOPIC_EVENT_SCHEMA,
+    },
     match: exact("audit", { permission: "view", objectType: "system", objectId: "audit" }),
     subscribe: subscribeAudit,
   },

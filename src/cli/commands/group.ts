@@ -3,13 +3,17 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
-import { fail } from "../context.js";
+import { Group, Command, Arg, Option, Scope } from "../decorators.js";
+import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { requestReply } from "../../utils/request-reply.js";
 import { findContactsByTag, getContact, searchContacts } from "../../contacts.js";
 import { dbCreateRoute, dbGetInstance, dbUpsertChat, getFirstAccountName } from "../../router/router-db.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { resolveOmniGroupMetadata } from "../../omni/group-metadata-cache.js";
+import { prepareOmniMentionMessage } from "../../omni/mentions.js";
+import { OmniSender } from "../../omni/sender.js";
+import { resolveOmniConnection } from "../../omni-config.js";
 import { buildSessionKey } from "../../router/session-key.js";
 import { getOrCreateSession, updateSessionSource, updateSessionName } from "../../router/sessions.js";
 import { generateSessionName, ensureUniqueName } from "../../router/session-name.js";
@@ -17,6 +21,7 @@ import { getAgent } from "../../router/config.js";
 import { expandHome } from "../../router/resolver.js";
 
 const TOPIC_PREFIX = "ravi.whatsapp.group";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Operations that may take longer (write operations on WhatsApp) */
 const SLOW_OPS = new Set(["create", "leave", "add", "remove", "join"]);
@@ -27,6 +32,44 @@ function printJson(payload: unknown): void {
 
 function resolveGroupAccount(account?: string): string {
   return account ?? getFirstAccountName() ?? "";
+}
+
+function resolveGroupSendAccount(account?: string): string {
+  return account ?? getContext()?.source?.accountId ?? getFirstAccountName() ?? "";
+}
+
+function normalizeGroupJid(groupId: string): string {
+  const trimmed = groupId.trim();
+  if (trimmed.startsWith("group:")) return `${trimmed.slice("group:".length)}@g.us`;
+  if (trimmed.includes("@")) return trimmed;
+  return `${trimmed}@g.us`;
+}
+
+function resolveGroupSendChatId(groupId: string): string {
+  const trimmed = groupId.trim();
+  if (trimmed === "." || trimmed === "here" || trimmed === "current") {
+    const chatId = getContext()?.source?.chatId;
+    if (!chatId) fail("No current chat context available. Pass a group ID or JID.");
+    return chatId;
+  }
+  return trimmed;
+}
+
+function resolveGroupSendInstanceId(accountId: string): string | null {
+  const instance = dbGetInstance(accountId);
+  return instance?.instanceId ?? (UUID_RE.test(accountId) ? accountId : null);
+}
+
+function parseMentionTargets(value: string | string[] | undefined): string[] {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return values
+    .flatMap((item) => item.split(","))
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function cleanCliText(value: string): string {
+  return value.replace(/\\([!#$&*?])/g, "$1");
 }
 
 /**
@@ -202,6 +245,81 @@ export class GroupCommands {
     }
 
     return result;
+  }
+
+  @Command({ name: "send", description: "Send a message to a WhatsApp group" })
+  @Scope("open")
+  async send(
+    @Arg("groupId", { description: "Group ID, JID, or 'here' for the current chat" }) groupId: string,
+    @Arg("message", { description: "Message text" }) message: string,
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
+    @Option({
+      flags: "--mention <target...>",
+      description: "Mention group participant by name, phone, LID, or JID. Can be repeated or comma-separated.",
+    })
+    mentionTargetsRaw?: string[] | string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const accountId = resolveGroupSendAccount(account);
+    if (!accountId) fail("No WhatsApp account configured.");
+
+    const instanceId = resolveGroupSendInstanceId(accountId);
+    if (!instanceId) fail(`No omni instance mapped for account "${accountId}".`);
+
+    const connection = resolveOmniConnection();
+    if (!connection) fail("Omni API is not configured. Set OMNI_API_URL/OMNI_API_KEY or ~/.omni/config.json.");
+
+    const rawGroupId = resolveGroupSendChatId(groupId);
+    const groupJid = normalizeGroupJid(rawGroupId);
+    const cleanMessage = cleanCliText(message);
+    const mentionTargets = parseMentionTargets(mentionTargetsRaw);
+    const shouldResolveParticipants = mentionTargets.length > 0 || cleanMessage.includes("@");
+    const metadata = shouldResolveParticipants
+      ? await resolveOmniGroupMetadata({
+          omniApiUrl: connection.apiUrl,
+          omniApiKey: connection.apiKey,
+          accountId,
+          instanceId,
+          chatId: groupJid,
+          channel: "whatsapp",
+        })
+      : null;
+
+    const prepared = prepareOmniMentionMessage({
+      text: cleanMessage,
+      explicitTargets: mentionTargets,
+      participants: metadata?.participants,
+    });
+
+    const sender = new OmniSender(connection.apiUrl, connection.apiKey);
+    const result = await sender.send(instanceId, groupJid, prepared.text, { mentions: prepared.mentions });
+    const payload = {
+      status: "sent" as const,
+      channel: "whatsapp" as const,
+      accountId,
+      instanceId,
+      groupId: rawGroupId,
+      to: groupJid,
+      text: prepared.text,
+      mentionCount: prepared.mentions.length,
+      mentions: prepared.mentions,
+      resolvedMentions: prepared.resolved,
+      messageId: result.messageId,
+      changedCount: 1,
+    };
+
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Message sent to ${groupJid}`);
+      if (prepared.resolved.length > 0) {
+        console.log(
+          `  Mentions:     ${prepared.resolved.map((mention) => mention.displayName ?? mention.id).join(", ")}`,
+        );
+      }
+    }
+
+    return payload;
   }
 
   @Command({ name: "create", description: "Create a new group" })

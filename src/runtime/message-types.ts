@@ -1,4 +1,4 @@
-import type { DeliveryBarrier } from "../delivery-barriers.js";
+import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -16,6 +16,13 @@ export interface MessageActorMetadata {
   identityProvenance?: Record<string, unknown>;
 }
 
+export interface MentionedContactPromptContext {
+  /** Safe display label only. Do not put raw contact/platform ids here. */
+  displayName: string;
+  /** Natural-language CRM/contact facts ready to render into the runtime prompt. */
+  summaryLines: string[];
+}
+
 /** Message context for structured prompts */
 export interface MessageContext extends MessageActorMetadata {
   channelId: string;
@@ -31,6 +38,7 @@ export interface MessageContext extends MessageActorMetadata {
   groupName?: string;
   groupId?: string;
   groupMembers?: string[];
+  mentionedContactsContext?: MentionedContactPromptContext[];
   isEditedMessage?: boolean;
   editedMessageId?: string;
   editedAt?: number;
@@ -85,6 +93,11 @@ export interface ObservationPromptMetadata {
   eventIds: string[];
 }
 
+export interface DaemonRestartResumePromptMetadata {
+  restartEpoch: string;
+  sessionKey?: string;
+}
+
 /** Prompt message structure */
 export interface PromptMessage {
   prompt: string;
@@ -98,6 +111,8 @@ export interface PromptMessage {
    * - after_task: wait until the session has no active task assignment
    */
   deliveryBarrier?: DeliveryBarrier;
+  /** Whether the barrier came from caller intent, a producer default, or runtime inference. */
+  deliveryBarrierSource?: DeliveryBarrierSource;
   /** Task ID exempted from after_task blocking (used by task dispatch to avoid self-deadlock) */
   taskBarrierTaskId?: string;
   source?: MessageTarget;
@@ -119,6 +134,8 @@ export interface PromptMessage {
    * were already persisted and stashed by the previous runtime session.
    */
   _resumeStashedMessages?: boolean;
+  /** Internal daemon restart resume envelope used for idempotent fan-out. */
+  _daemonRestartResume?: DaemonRestartResumePromptMetadata;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

@@ -38,12 +38,16 @@ This distinction is required because the same chat can be handled by multiple ag
 - `session`: runtime state for a specific Ravi agent, route, or workflow bound to a chat.
 - `session_participant`: actor observed in a specific runtime session. This is not the canonical membership list.
 - `actor`: who produced a message/event: contact, agent, system, or unknown.
+- `source_chat`: the chat that produced the current inbound turn.
+- `output_chat`: the chat selected to receive external responses for the current session.
 
 ## Core Rule
 
 Participants belong primarily to `chat`.
 
 `session_participants` MAY exist, but only to represent who participated in that agent runtime session. It MUST NOT replace `chat_participants`.
+
+Prompt and runtime context MUST NOT expose a single unqualified participant list as if it belonged to the session. Any participant list injected into a prompt MUST be nested under the specific chat it describes.
 
 ## Chat To Session Relationship
 
@@ -58,6 +62,10 @@ Examples:
 A session SHOULD reference its chat through a stable `chat_id` or equivalent binding.
 
 A session name/key MUST NOT be treated as the chat identity.
+
+A session MAY receive input from multiple attached chats or channels. The current inbound chat and the current output chat MUST be represented independently when they differ.
+
+The source chat that produced a turn MUST NOT be treated as the output chat unless the session output attachment resolves to that same canonical chat.
 
 ## Data Model
 
@@ -122,6 +130,81 @@ Fields:
 - `updated_at`
 
 The binding records which chat a runtime session belongs to. It does not define who participates in the chat.
+
+## Prompt Chat Context
+
+When Ravi injects chat context into a runtime prompt, it MUST project chat data by role.
+
+Required shape:
+
+```ts
+{
+  session: {
+    key: string;
+    name?: string;
+    agentId: string;
+  };
+  sourceChat: ChatPromptContext;
+  outputChat?: ChatPromptContext | { sameAsSource: true };
+}
+```
+
+`ChatPromptContext` SHOULD contain:
+
+```ts
+{
+  canonicalChatId: string;
+  channel: string;
+  accountId: string;
+  instanceId?: string;
+  platformChatId: string;
+  threadId?: string;
+  chatType: "dm" | "group" | "room" | "thread";
+  title?: string;
+  participants?: ChatParticipantPromptContext[];
+}
+```
+
+`ChatParticipantPromptContext` SHOULD contain only safe addressing and identity metadata:
+
+```ts
+{
+  displayName?: string;
+  role?: string;
+  status?: string;
+  contactId?: string;
+  agentId?: string;
+  platformIdentityId?: string;
+  platformUserId?: string;
+}
+```
+
+Rules:
+
+- `sourceChat` MUST describe the chat that produced the current inbound message.
+- `outputChat` MUST describe the chat that will receive the session response when that chat differs from `sourceChat`.
+- If source and output are the same canonical chat, `outputChat` MAY be omitted or represented as `{ sameAsSource: true }`.
+- Participant lists MUST be scoped to their containing chat object.
+- The prompt builder MUST NOT merge participants from multiple chats into one flat `groupMembers` or equivalent session-level list.
+- Legacy `context.groupMembers` MAY remain as a compatibility projection for the current source chat only. New code MUST prefer `sourceChat.participants` and `outputChat.participants`.
+- Prompt rendering SHOULD use explicit section labels such as "Current inbound chat" and "Current output chat" when both roles are present.
+- Prompt rendering MUST NOT include real user examples in specs, tests, or generated normative docs. Use placeholders such as `<display-name>`, `<source-chat-id>`, and `<output-chat-id>`.
+
+Example rendered shape:
+
+```text
+## Current inbound chat
+Channel: <channel>
+Chat: <source-chat-title> (<source-chat-id>)
+Participants: <display-name>, <display-name>
+
+## Current output chat
+Channel: <channel>
+Chat: <output-chat-title> (<output-chat-id>)
+Participants: <display-name>, <display-name>
+```
+
+This projection is prompt context only. It MUST NOT create contacts, merge identities, or redefine chat membership.
 
 ## Migration From Current Ravi State
 

@@ -1,0 +1,558 @@
+---
+title: First-Time Runbook
+description: End-to-end setup for Omni, Ravi, WhatsApp instances, the main agent, and a REBAC audit group.
+---
+
+This runbook is the operational path for taking a fresh machine from zero to a
+working Ravi environment:
+
+1. Install and verify Omni.
+2. Install and verify Ravi.
+3. Configure the main WhatsApp instance.
+4. Configure the main agent.
+5. Create a REBAC audit group and route it to a dedicated audit agent.
+6. Add permission audit triggers.
+7. Run smoke checks.
+
+Ravi is installed as a global CLI. Use `ravi` directly throughout this runbook.
+Do not create wrapper variables for first-time setup.
+
+## 0. Operating Assumptions
+
+- Bun is installed and its global bin directory is on `PATH`.
+- Omni is the channel gateway.
+- Ravi owns agents, sessions, routing, policies, permissions, triggers, cron,
+  and durable runtime state.
+- The Ravi source repo is only needed for development. A normal install uses the
+  published global CLI.
+- Secrets stay in local environment files or a secret manager. Never paste them
+  into chats, docs, or committed files.
+
+Useful state locations:
+
+```text
+~/.ravi/.env
+~/.ravi/ravi.db
+~/.omni/config.json
+```
+
+Before starting, check what is already installed:
+
+```bash
+bun --version
+git --version
+bun pm bin -g
+command -v omni || echo "omni not installed yet"
+command -v ravi || echo "ravi not installed yet"
+```
+
+## 1. Install Omni
+
+Omni must be installed before Ravi can connect WhatsApp, Telegram, Discord,
+Slack, or other channel accounts.
+
+```bash
+bun add -g @automagik/omni
+omni install
+```
+
+`omni install` is the interactive setup wizard. It handles server setup, process
+manager setup, API key generation, and startup. For scripted installs:
+
+```bash
+omni install --non-interactive
+```
+
+If this machine still has the old Omni CLI package:
+
+```bash
+bun remove -g @omni/cli
+bun add -g @automagik/omni
+```
+
+Alternative install paths from the [Omni repo](https://github.com/automagik-dev/omni):
+
+```bash
+# CLI install script: npm first, git fallback
+curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install-client.sh | bash
+
+# Full server install script
+curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install.sh | bash -s -- --server
+
+# Manual source install
+git clone https://github.com/automagik-dev/omni.git
+cd omni
+make setup
+```
+
+Verify Omni:
+
+```bash
+omni auth status
+omni status
+omni instances list
+```
+
+If `omni auth status` is not authenticated but the server is running, login with
+the API key printed by the install/startup banner:
+
+```bash
+omni auth login --api-key <omni-api-key>
+```
+
+Optional raw Omni WhatsApp smoke test:
+
+```bash
+omni instances create --name "omni-smoke-whatsapp" --channel whatsapp-baileys
+omni instances qr <instance-id> --watch
+omni instances list
+```
+
+Use that raw Omni smoke only to prove the gateway works. The real Ravi-owned
+WhatsApp setup later should go through `ravi instances create` and
+`ravi instances connect`.
+
+Keep the boundary clear:
+
+- Omni owns transport and provider connection.
+- Ravi owns semantic runtime concepts: `agent`, `instance`, `route`, `session`,
+  `contact`, `chat`, `policy`, and `permission`.
+
+## 2. Install Ravi
+
+Install the global CLI:
+
+```bash
+bun install -g ravi.bot
+command -v ravi
+ravi --version
+```
+
+Configure local environment:
+
+```bash
+ravi daemon env
+```
+
+At minimum, configure:
+
+- the runtime provider credentials used by this deployment;
+- `OMNI_API_URL`;
+- `OMNI_API_KEY`;
+- `NATS_URL`, if not using the default local NATS endpoint.
+
+Start the daemon:
+
+```bash
+ravi daemon start
+ravi daemon status
+```
+
+If something fails, check logs before changing configuration:
+
+```bash
+ravi daemon logs -f
+```
+
+## 3. Create the Main Agent
+
+Recommended convention:
+
+- agent id: `main`
+- display name: `Ravi`
+- workspace: `~/ravi/main`
+
+Create the workspace:
+
+```bash
+mkdir -p ~/ravi/main
+```
+
+Create `~/ravi/main/AGENTS.md` with the operating identity and rules for the
+main assistant. Minimal bootstrap shape:
+
+```md
+# Ravi
+
+You are Ravi.
+
+## Role
+
+- Help the operator run their personal and work operating system.
+- Prefer direct, useful answers.
+- Use tools only when needed.
+
+## Boundaries
+
+- Keep private data private.
+- Do not expose secrets.
+- Ask before external irreversible actions.
+
+## Messaging
+
+- Normal text responses are delivered to the current conversation.
+- Do not use channel-send CLIs to duplicate normal replies.
+```
+
+Register the agent:
+
+```bash
+ravi agents create main ~/ravi/main --provider codex
+ravi agents set main name "Ravi"
+ravi agents set main model gpt-5.5
+```
+
+For a trusted personal bootstrap, the main agent usually needs broad operator
+access:
+
+```bash
+ravi permissions grant agent:main admin system:*
+ravi permissions init agent:main tool-groups
+ravi permissions init agent:main safe-executables
+```
+
+For a customer or shared deployment, do not grant broad access by default. Start
+with the narrowest grants required for that agent's job.
+
+## 4. Create and Connect the Main Instance
+
+Create the WhatsApp instance with conservative defaults:
+
+```bash
+ravi instances create main \
+  --channel whatsapp \
+  --agent main \
+  --dm-policy pairing \
+  --group-policy allowlist \
+  --contact-intake-mode discovered
+
+ravi instances set main dmScope per-account-channel-peer
+```
+
+Connect the account:
+
+```bash
+ravi instances connect main
+```
+
+Scan the QR code from WhatsApp.
+
+Verify:
+
+```bash
+ravi instances status main
+ravi instances show main --json
+```
+
+### First DM Smoke Test
+
+Send a WhatsApp DM to the connected account. Because `dmPolicy` is `pairing`,
+the sender should appear as pending:
+
+```bash
+ravi instances pending list main
+ravi instances pending approve main <pending-id>
+```
+
+Send another DM and verify the main agent responds.
+
+## 5. Add a REBAC Audit Group
+
+The REBAC audit group should be handled by a dedicated agent. Do not overload
+the main agent with permission audit work.
+
+Recommended convention:
+
+- group name: `ravi - rebac`
+- agent id: `ravi-rebac`
+- workspace: `~/ravi/ravi-rebac`
+
+Create the agent workspace:
+
+```bash
+mkdir -p ~/ravi/ravi-rebac
+```
+
+Create `~/ravi/ravi-rebac/AGENTS.md`:
+
+```md
+# Ravi REBAC
+
+You audit Ravi permissions, policies, and routing.
+
+## Mandate
+
+- Detect permission denials.
+- Distinguish expected denials from mapping gaps.
+- Report concise findings to the audit group.
+- Suggest exact next commands when useful.
+
+## Rules
+
+- Do not change permissions unless explicitly asked.
+- Do not expose secrets.
+- Prefer short reports:
+  - what happened;
+  - why it matters;
+  - expected vs unexpected;
+  - suggested fix.
+```
+
+Register it:
+
+```bash
+ravi agents create ravi-rebac ~/ravi/ravi-rebac --provider codex
+ravi agents set ravi-rebac name "Ravi REBAC"
+ravi agents set ravi-rebac model gpt-5.5
+```
+
+### Permission Profile
+
+Start with an observer profile:
+
+```bash
+ravi permissions grant agent:ravi-rebac use toolgroup:read-only
+ravi permissions grant agent:ravi-rebac use tool:Bash
+ravi permissions grant agent:ravi-rebac execute executable:ravi
+ravi permissions grant agent:ravi-rebac execute executable:sqlite3
+ravi permissions grant agent:ravi-rebac execute executable:jq
+ravi permissions grant agent:ravi-rebac execute executable:rg
+ravi permissions grant agent:ravi-rebac execute executable:sed
+ravi permissions grant agent:ravi-rebac execute executable:cat
+ravi permissions grant agent:ravi-rebac execute executable:find
+ravi permissions grant agent:ravi-rebac execute executable:ls
+ravi permissions grant agent:ravi-rebac execute executable:head
+```
+
+If this audit agent must use `ravi permissions list`, `grant`, or `revoke`, it
+currently needs superadmin access because the permissions CLI group is protected
+as superadmin:
+
+```bash
+ravi permissions grant agent:ravi-rebac admin system:*
+```
+
+Only use that profile for a private, trusted operations group.
+
+### Route the Audit Group
+
+In WhatsApp:
+
+1. Create the group.
+2. Add the connected Ravi account.
+3. Send a message in the group.
+
+Then approve and route it:
+
+```bash
+ravi instances pending list main
+ravi instances pending approve main <audit-group-id>
+ravi instances routes add main "<audit-group-id>" ravi-rebac \
+  --priority 100 \
+  --policy allowlist \
+  --channel whatsapp
+
+ravi instances routes show main "<audit-group-id>"
+```
+
+The group id usually looks like:
+
+```text
+group:120363000000000000
+```
+
+Send a test message in the group and confirm `ravi-rebac` answers there.
+
+## 6. Add Permission Audit Triggers
+
+Important delivery rule: triggers capture their reply session and outbound
+source from the context that creates them. If you create a trigger from a plain
+shell with no chat context, the trigger can run but may not know which WhatsApp
+group should receive the report.
+
+Preferred setup:
+
+1. Route the audit group to `ravi-rebac`.
+2. Send a message in that group asking `ravi-rebac` to create its own triggers.
+3. The trigger creation command runs inside the audit group context, so future
+   trigger reports return to that group.
+
+Use these trigger definitions.
+
+### Permission Denials
+
+```bash
+ravi triggers add "REBAC denied audit" \
+  --topic "ravi.audit.denied" \
+  --agent ravi-rebac \
+  --account main \
+  --session isolated \
+  --cooldown 1m \
+  --message "A permission denial happened. Inspect the event, classify it as expected policy or mapping gap, and report briefly. Include agent, denied relation/object, likely cause, and exact suggested next command if there is one. Topic: {{topic}}"
+```
+
+### Permission CLI Changes From Sessions
+
+```bash
+ravi triggers add "REBAC session permission CLI audit" \
+  --topic "ravi.*.cli.permissions.*" \
+  --agent ravi-rebac \
+  --account main \
+  --session isolated \
+  --cooldown 30s \
+  --message "A permissions CLI command ran from a Ravi session. Audit whether the change is consistent with policy. Report only if it is risky, surprising, or useful. Topic: {{topic}}"
+```
+
+### Permission CLI Changes From Shell
+
+```bash
+ravi triggers add "REBAC shell permission CLI audit" \
+  --topic "ravi._cli.cli.permissions.*" \
+  --agent ravi-rebac \
+  --account main \
+  --session isolated \
+  --cooldown 30s \
+  --message "A standalone permissions CLI command ran. Audit whether the change is consistent with policy. Report only if it is risky, surprising, or useful. Topic: {{topic}}"
+```
+
+### Unknown Instance Events
+
+```bash
+ravi triggers add "REBAC unregistered instance audit" \
+  --topic "ravi.instances.unregistered" \
+  --agent ravi-rebac \
+  --account main \
+  --session isolated \
+  --cooldown 2m \
+  --message "An event arrived for an unregistered instance. Check whether this is a setup gap, stale Omni account, or unexpected inbound source. Report the likely fix. Topic: {{topic}}"
+```
+
+If you must create triggers from a shell, immediately test one and confirm where
+the report lands:
+
+```bash
+ravi triggers list --json
+ravi triggers test <trigger-id>
+```
+
+If the report does not appear in the audit group, create or repair it from the
+audit group context instead of assuming `--account` is enough. `--account`
+selects the channel account; it is not a chat destination.
+
+## 7. Smoke Checks
+
+Run the cross-checks before calling setup complete:
+
+```bash
+ravi daemon status
+ravi instances list --json
+ravi instances show main --json
+ravi agents list --json
+ravi permissions list --subject agent:main --json
+ravi permissions list --subject agent:ravi-rebac --json
+ravi triggers list --json
+```
+
+Check live logs while sending one DM and one group message:
+
+```bash
+ravi daemon logs -f
+```
+
+Check recent events:
+
+```bash
+ravi events replay --stream RAVI_EVENTS --since 15m --json
+```
+
+Expected outcomes:
+
+- Omni is connected.
+- Ravi daemon is running.
+- `main` instance is connected to WhatsApp.
+- DM policy is not accidentally open unless this is intentional.
+- Group policy is not accidentally open unless this is intentional.
+- Main DM replies work.
+- Audit group replies work.
+- Permission denial trigger fires to the audit group.
+
+## 8. Recommended Baseline After First Setup
+
+Once the first environment works, add these next:
+
+- A `dev` agent for Ravi core development.
+- A `ravi-rebac` audit agent for permission and route mapping.
+- A metrics observer agent for runtime KPIs.
+- A daily or hourly observer cron for system health.
+- A backup routine for `~/.ravi/ravi.db`.
+- A documented list of connected Omni accounts and their owning agents.
+- A route inventory exported from:
+
+```bash
+ravi instances routes list main --json
+```
+
+## 9. Troubleshooting
+
+### Messages arrive but no agent responds
+
+Check instance policy and pending entries:
+
+```bash
+ravi instances show main --json
+ravi instances pending list main
+```
+
+If the chat is a group and `groupPolicy=allowlist`, it needs an explicit route:
+
+```bash
+ravi instances routes add main "group:<id>" <agent-id> --channel whatsapp
+```
+
+### A route exists but the wrong session replies
+
+Routes select agents. Session subscriptions can keep an existing session attached
+to a chat. Inspect sessions and routes together before changing policies.
+
+```bash
+ravi instances routes list main --json
+ravi sessions list --json
+```
+
+### Trigger fires but does not post to WhatsApp
+
+The trigger probably lacks a deliverable reply source. Recreate it from inside
+the audit group context after the group is routed and responding.
+
+### Permission check says allowed but Bash still fails
+
+REBAC is one permission layer. Runtime hooks, workspace policies, or local
+provider rules can still block execution. Read the denial text before adding
+broader grants.
+
+### Omni is connected but Ravi cannot see channels
+
+Verify Ravi can read Omni config or environment:
+
+```bash
+omni status
+ravi daemon env
+ravi daemon logs -f
+```
+
+## 10. Bootstrap Completion Record
+
+At the end of setup, record:
+
+- machine hostname;
+- Ravi source path;
+- Omni account names;
+- connected Ravi instance names;
+- main agent id and workspace;
+- audit agent id and workspace;
+- audit group id;
+- trigger ids;
+- permission profile chosen for each agent;
+- known intentional broad grants.
+
+That record is the handoff artifact for the next operator.

@@ -52,6 +52,13 @@
     sans-serif;
 }
 
+#ravi-wa-overlay-root.ravi-wa-overlay-root--collapsed {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  flex: 0 0 0;
+}
+
 #ravi-wa-overlay-root[data-workspace="omni"],
 #ravi-wa-overlay-root[data-workspace="crm"],
 #ravi-wa-overlay-root[data-workspace="insights"],
@@ -61,6 +68,16 @@
   min-height: 0;
   max-width: none;
   flex: 1 1 auto;
+}
+
+#ravi-wa-overlay-root.ravi-wa-overlay-root--collapsed[data-workspace="omni"],
+#ravi-wa-overlay-root.ravi-wa-overlay-root--collapsed[data-workspace="crm"],
+#ravi-wa-overlay-root.ravi-wa-overlay-root--collapsed[data-workspace="insights"],
+#ravi-wa-overlay-root.ravi-wa-overlay-root--collapsed[data-workspace="tasks"] {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  flex: 0 0 0;
 }
 
 .ravi-wa-main-pane-hidden {
@@ -512,38 +529,256 @@
   gap: 2px;
 }
 
-.ravi-wa-toggle {
+.ravi-wa-drawer-actions {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.ravi-wa-profile-toggle {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 74px;
+  width: 30px;
   height: 30px;
-  padding: 0 12px;
+  padding: 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 50% !important;
+  background: linear-gradient(135deg, rgba(37, 211, 102, 0.18), rgba(96, 165, 250, 0.12)) !important;
+  color: #aebac1 !important;
+  font-size: 11px !important;
+  font-weight: 650;
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+.ravi-wa-profile-toggle:hover,
+.ravi-wa-profile-toggle--open {
+  background: rgba(255, 255, 255, 0.075) !important;
+  color: #e9edef !important;
+}
+
+.ravi-wa-profile-toggle--connected {
+  border-color: rgba(37, 211, 102, 0.28) !important;
+}
+
+.ravi-wa-profile-toggle--active {
+  border-color: rgba(250, 204, 21, 0.28) !important;
+}
+
+.ravi-wa-profile-toggle__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #e9edef;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.ravi-wa-profile-toggle__dot {
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border: 2px solid #111b21;
+  border-radius: 50%;
+  background: #667781;
+}
+
+.ravi-wa-profile-row__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #667781;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.04);
+}
+
+.ravi-wa-profile-toggle__dot--connected,
+.ravi-wa-profile-row__dot--connected {
+  background: #25d366;
+}
+
+.ravi-wa-profile-toggle__dot--active,
+.ravi-wa-profile-row__dot--active {
+  background: #facc15;
+}
+
+.ravi-wa-panel-toggle,
+.ravi-wa-panel-rail-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #aebac1 !important;
+  font-size: 18px !important;
+  line-height: 1;
+}
+
+.ravi-wa-panel-toggle:hover,
+.ravi-wa-panel-rail-toggle:hover {
+  background: rgba(37, 211, 102, 0.12) !important;
+  color: #d8fdd2 !important;
+}
+
+.ravi-wa-panel-rail-toggle {
+  position: fixed;
+  top: 72px;
+  right: 14px;
+  z-index: 2147482100;
+  width: 28px;
+  height: 28px;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(17, 27, 33, 0.72) !important;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(12px);
+  opacity: 0.82;
+  pointer-events: auto;
+  font-size: 11px !important;
+  font-weight: 800;
+}
+
+.ravi-wa-panel-rail-toggle:hover {
+  opacity: 1;
+}
+
+.ravi-wa-profile-menu {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  z-index: 2147482100;
+  width: min(292px, calc(100vw - 24px));
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(17, 27, 33, 0.98);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px);
+}
+
+.ravi-wa-profile-menu__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 8px;
+}
+
+.ravi-wa-profile-menu__head div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ravi-wa-profile-menu__head strong {
+  color: #e9edef;
+  font-size: 12px;
+  line-height: 1.2;
+  text-transform: lowercase;
+}
+
+.ravi-wa-profile-menu__head span,
+.ravi-wa-profile-menu__empty {
+  color: #8696a0;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.ravi-wa-profile-menu__head button {
+  padding: 4px 7px !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
   border-radius: 999px !important;
   background: rgba(255, 255, 255, 0.04) !important;
-  color: #8696a0 !important;
-  font-size: 11px !important;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  text-transform: lowercase;
-  transition:
-    background 140ms ease,
-    color 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease;
+  color: #aebac1 !important;
+  font-size: 10px !important;
+  line-height: 1;
 }
 
-.ravi-wa-toggle:hover {
-  background: rgba(255, 255, 255, 0.07) !important;
+.ravi-wa-profile-menu__rows {
+  display: flex;
+  max-height: 232px;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+}
+
+.ravi-wa-profile-row {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 7px 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.055) !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.025) !important;
   color: #d1d7db !important;
-  transform: translateY(-1px);
+  text-align: left;
 }
 
-.ravi-wa-toggle--active {
-  background: rgba(37, 211, 102, 0.12) !important;
-  border-color: rgba(37, 211, 102, 0.24) !important;
-  color: #d8fdd2 !important;
+.ravi-wa-profile-row:hover,
+.ravi-wa-profile-row--selected {
+  border-color: rgba(37, 211, 102, 0.22) !important;
+  background: rgba(37, 211, 102, 0.08) !important;
+}
+
+.ravi-wa-profile-row__body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ravi-wa-profile-row__body strong {
+  overflow: hidden;
+  color: #f0f2f5;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-profile-row__body small {
+  overflow: hidden;
+  color: #8696a0;
+  font-size: 10px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-profile-row__state {
+  color: #aebac1;
+  font-size: 9px;
+  text-transform: lowercase;
+}
+
+.ravi-wa-profile-menu__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 2px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: #aebac1;
+  font-size: 10px;
+  text-transform: lowercase;
 }
 
 .ravi-wa-drawer-header button {
@@ -2442,13 +2677,19 @@ button.ravi-wa-nav-group__label:hover {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 118px;
   padding: 2px 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   color: #9fb0b8;
   font-size: 10px;
   font-weight: 700;
-  text-transform: lowercase;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .ravi-wa-nav-row__subline {
@@ -6577,8 +6818,8 @@ button.ravi-wa-task-gate-card:hover {
 
 .ravi-wa-chat-session-editor__agent {
   appearance: none;
-  min-width: 76px;
-  max-width: 116px;
+  min-width: 88px;
+  max-width: 132px;
   display: grid;
   gap: 1px;
   padding: 5px 7px;
@@ -6589,6 +6830,19 @@ button.ravi-wa-task-gate-card:hover {
   cursor: pointer;
   font: inherit;
   text-align: left;
+}
+
+.ravi-wa-chat-session-editor__agent-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ravi-wa-chat-session-editor__agent-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
 }
 
 .ravi-wa-chat-session-editor__agent strong,
@@ -6708,6 +6962,74 @@ button.ravi-wa-task-gate-card:hover {
   font-weight: 700;
 }
 
+.ravi-wa-provider-avatar {
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.18);
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.ravi-wa-provider-avatar--codex {
+  background: linear-gradient(180deg, rgba(20, 83, 45, 0.98), rgba(6, 78, 59, 0.98));
+  border-color: rgba(134, 239, 172, 0.24);
+  color: #dcfce7;
+}
+
+.ravi-wa-provider-avatar--claude {
+  background: linear-gradient(180deg, rgba(82, 51, 24, 0.98), rgba(55, 36, 24, 0.98));
+  border-color: rgba(251, 191, 36, 0.24);
+  color: #fde68a;
+}
+
+.ravi-wa-provider-avatar--openai {
+  background: linear-gradient(180deg, rgba(30, 64, 175, 0.98), rgba(30, 41, 59, 0.98));
+  border-color: rgba(147, 197, 253, 0.24);
+  color: #dbeafe;
+}
+
+.ravi-wa-provider-avatar--gemini {
+  background: linear-gradient(180deg, rgba(76, 29, 149, 0.98), rgba(49, 46, 129, 0.98));
+  border-color: rgba(196, 181, 253, 0.24);
+  color: #ede9fe;
+}
+
+.ravi-wa-provider-avatar--pi {
+  background: linear-gradient(180deg, rgba(131, 24, 67, 0.98), rgba(80, 7, 36, 0.98));
+  border-color: rgba(249, 168, 212, 0.24);
+  color: #fce7f3;
+}
+
+.ravi-wa-provider-avatar--unknown {
+  background: linear-gradient(180deg, rgba(55, 74, 82, 0.98), rgba(32, 44, 51, 0.98));
+  border-color: rgba(134, 150, 160, 0.22);
+  color: #d1d7db;
+}
+
+.ravi-wa-chat-session-editor__agent-avatar.ravi-wa-provider-avatar {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  font-size: 9px;
+}
+
+.ravi-wa-chat-session-editor__avatar.ravi-wa-provider-avatar {
+  font-size: 9px;
+}
+
+.ravi-wa-nav-row__avatar.ravi-wa-provider-avatar {
+  font-size: 11px;
+}
+
+.sw-header__avatar.ravi-wa-provider-avatar {
+  font-size: 13px;
+}
+
 .ravi-wa-chat-session-editor__body {
   min-width: 0;
   display: grid;
@@ -6783,44 +7105,40 @@ button.ravi-wa-task-gate-card:hover {
   position: relative;
   display: inline-flex;
   align-items: center;
-  margin-left: 6px;
+  margin-left: 4px;
   vertical-align: middle;
 }
 
 .ravi-wa-message-chip__button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 18px;
-  padding: 0 7px;
-  border: 1px solid rgba(134, 150, 160, 0.14);
-  border-radius: 999px;
-  background: rgba(17, 27, 33, 0.06);
+  justify-content: center;
+  width: 18px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #8696a0;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 0;
+  font-weight: 400;
   line-height: 1;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   cursor: pointer;
   transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease,
     transform 140ms ease;
 }
 
 .ravi-wa-message-chip__button:hover {
-  background: rgba(17, 27, 33, 0.1);
-  border-color: rgba(134, 150, 160, 0.22);
-  color: #d1d7db;
   transform: translateY(-1px);
 }
 
 .ravi-wa-message-chip__dot {
+  display: block;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
   flex-shrink: 0;
+  border-radius: 50%;
   background: #94a3b8;
   box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.1);
 }
@@ -6853,15 +7171,6 @@ button.ravi-wa-task-gate-card:hover {
 .ravi-wa-message-chip__dot--blocked {
   background: #f87171;
   box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12);
-}
-
-.ravi-wa-message-chip__label {
-  text-transform: lowercase;
-}
-
-.ravi-wa-message-chip__time,
-.ravi-wa-message-chip__separator {
-  display: none;
 }
 
 #ravi-wa-message-popover {
@@ -7007,69 +7316,21 @@ button.ravi-wa-task-gate-card:hover {
   word-break: break-word;
 }
 
-.ravi-wa-message-chip--idle .ravi-wa-message-chip__button {
-  border-color: rgba(148, 163, 184, 0.16);
-}
-
-.ravi-wa-message-chip--thinking .ravi-wa-message-chip__button {
-  border-color: rgba(96, 165, 250, 0.16);
-  color: #93c5fd;
-}
-
-.ravi-wa-message-chip--streaming .ravi-wa-message-chip__button {
-  border-color: rgba(74, 222, 128, 0.18);
-  color: #86efac;
-}
-
-.ravi-wa-message-chip--approval .ravi-wa-message-chip__button {
-  border-color: rgba(250, 204, 21, 0.18);
-  color: #fcd34d;
-}
-
-.ravi-wa-message-chip--compacting .ravi-wa-message-chip__button {
-  border-color: rgba(196, 181, 253, 0.18);
-  color: #c4b5fd;
-}
-
-.ravi-wa-message-chip--blocked .ravi-wa-message-chip__button {
-  border-color: rgba(252, 165, 165, 0.18);
-  color: #fca5a5;
-}
-
 .ravi-wa-message-chip--timestamp {
-  margin-left: 4px;
+  margin-left: 3px;
 }
 
 .ravi-wa-message-chip--timestamp .ravi-wa-message-chip__button {
-  gap: 4px;
-  height: auto;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #8696a0;
-  font-size: 11px;
-  font-weight: 500;
-  box-shadow: none;
+  width: 16px;
 }
 
 .ravi-wa-message-chip--timestamp .ravi-wa-message-chip__button:hover {
-  background: transparent;
-  border-color: transparent;
-  color: #d1d7db;
   transform: none;
 }
 
-.ravi-wa-message-chip--timestamp .ravi-wa-message-chip__separator {
-  display: inline;
-}
-
-.ravi-wa-message-chip--timestamp .ravi-wa-message-chip__separator {
-  color: #8696a0;
-}
-
-.ravi-wa-message-chip--timestamp .ravi-wa-message-chip__label {
-  color: inherit;
+.ravi-wa-message-chip--timestamp .ravi-wa-message-chip__dot {
+  width: 5px;
+  height: 5px;
 }
 
 .ravi-wa-message-popover--thinking {

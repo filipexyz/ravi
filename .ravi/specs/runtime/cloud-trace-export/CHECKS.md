@@ -1,0 +1,44 @@
+---
+id: runtime/cloud-trace-export
+title: "Cloud Trace Export Checks"
+kind: checks
+domain: runtime
+capability: cloud-trace-export
+owners:
+  - ravi-dev
+status: draft
+normative: true
+---
+
+# Checks
+
+- Exporter is disabled or no-op when cloud auth is absent.
+- Export failure does not block `turn.complete`, `turn.failed`, or
+  `turn.interrupted`.
+- Export payload includes `session.runtimeProvider`.
+- Export payload includes positive `sequence` on every exported turn.
+- Export payload preserves local turn hash metadata as `userPromptSha256`,
+  `systemPromptSha256`, and `requestBlobSha256` without adding `blobs[]`.
+- Export payload includes event id and positive sequence on every exported
+  event.
+- Export payload treats event id as the idempotency key; repeated local
+  sequence values across restarts must not require dropping distinct events.
+- Routed inbound channel messages export as canonical `message.user` events with
+  safe previews.
+- Generic/rejected channel-message mirror rows are not exported as user chat
+  messages.
+- Provider raw export is opt-in.
+- Secrets are redacted before upload.
+- Local `session_trace_blobs` without remote `r2Key` or `blobRef` are omitted
+  from top-level `blobs[]`.
+- Hash-only local blob metadata may remain in safe payload fields.
+- A generated payload with local `request_blob_sha256` / `session_trace_blobs`
+  still passes the Console runtime-trace normalizer.
+- Initial or severely stale export cursors baseline to a bounded recent window
+  by default instead of replaying unbounded historical `session_events`.
+- Cursor metadata records skipped historical ranges when the exporter advances
+  past old local-only history.
+- The sync runner can enqueue and upload multiple bounded trace batches per tick
+  so interleaved sessions catch up fast enough for current Console visibility.
+- Automatic trace export is disabled by default because the daemon sync runner
+  only starts when `RAVI_SYNC_RUNNER_ENABLED=1`.

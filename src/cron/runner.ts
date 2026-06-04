@@ -22,9 +22,11 @@ import {
 import { getAgent } from "../router/config.js";
 import { dbGetDueJobs, dbGetNextDueJob, dbUpdateJobState, dbDeleteCronJob, dbGetCronJob } from "./cron-db.js";
 import { calculateNextRun } from "./schedule.js";
+import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "./shell-executor.js";
 import type { CronJob } from "./types.js";
 
 const log = logger.child("cron:runner");
+const MAX_NOTIFY_OUTPUT_CHARS = 4000;
 
 /**
  * CronRunner - manages scheduled job execution
@@ -140,7 +142,17 @@ export class CronRunner {
    */
   private async executeJob(job: CronJob): Promise<void> {
     const startTime = Date.now();
-    log.info("Executing job", { jobId: job.id, jobName: job.name, sessionTarget: job.sessionTarget });
+    log.info("Executing job", {
+      jobId: job.id,
+      jobName: job.name,
+      executionType: job.executionType,
+      sessionTarget: job.sessionTarget,
+    });
+
+    if (job.executionType === "shell") {
+      await this.executeShellJob(job, startTime);
+      return;
+    }
 
     try {
       if (job.sessionTarget === "main") {
@@ -184,6 +196,164 @@ export class CronRunner {
       });
 
       log.error("Job failed", { jobId: job.id, jobName: job.name, error: errorMessage });
+    }
+  }
+
+  private calculateFollowupRun(job: CronJob, startTime: number): number | undefined {
+    const baseTime = job.schedule.type === "every" && job.nextRunAt ? job.nextRunAt : startTime;
+    return calculateNextRun(job.schedule, baseTime);
+  }
+
+  private truncateForPrompt(value: string): string {
+    if (value.length <= MAX_NOTIFY_OUTPUT_CHARS) return value;
+    return `${value.slice(0, MAX_NOTIFY_OUTPUT_CHARS)}\n...[truncated]`;
+  }
+
+  private formatShellError(result: ShellCronRunResult): string {
+    if (result.timedOut) {
+      return `Shell command timed out after ${result.durationMs}ms`;
+    }
+    const exit = result.exitCode === null ? `signal ${result.signal ?? "unknown"}` : `exit code ${result.exitCode}`;
+    const stderr = result.stderr.trim();
+    return stderr
+      ? `Shell command failed with ${exit}: ${this.truncateForPrompt(stderr)}`
+      : `Shell command failed with ${exit}`;
+  }
+
+  private async notifyShellError(job: CronJob, result: ShellCronRunResult, errorMessage: string): Promise<void> {
+    if (!job.onError) return;
+    const prefix = "notify-session:";
+    if (!job.onError.startsWith(prefix)) {
+      log.warn("Unsupported cron on-error action", { jobId: job.id, onError: job.onError });
+      return;
+    }
+
+    const sessionRef = job.onError.slice(prefix.length).trim();
+    if (!sessionRef) {
+      log.warn("Cron on-error notify-session missing target", { jobId: job.id });
+      return;
+    }
+
+    const resolved = resolveSession(sessionRef);
+    const sessionName = resolved?.name ?? sessionRef;
+    const stdout = result.stdout.trim();
+    const stderr = result.stderr.trim();
+    const prompt = [
+      `[System] Inform: [from: cron:${job.id}] Cron shell job failed.`,
+      "",
+      `Job: ${job.name}`,
+      `Command: ${job.shellCommand ?? result.command}`,
+      `Error: ${errorMessage}`,
+      `Exit code: ${result.exitCode ?? "(none)"}`,
+      `Signal: ${result.signal ?? "(none)"}`,
+      `Duration: ${result.durationMs}ms`,
+      stderr ? `\nStderr:\n${this.truncateForPrompt(stderr)}` : "",
+      stdout ? `\nStdout:\n${this.truncateForPrompt(stdout)}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await publishSessionPrompt(sessionName, {
+      prompt,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _cron: true,
+      _jobId: job.id,
+      _cronOnError: true,
+    });
+  }
+
+  private async executeShellJob(job: CronJob, startTime: number): Promise<void> {
+    try {
+      if (!job.shellCommand?.trim()) {
+        throw new Error("Shell cron job is missing shellCommand");
+      }
+
+      const result = await runShellCronCommand(job.shellCommand, {
+        timeoutMs: job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
+        envFile: job.shellEnvFile,
+      });
+
+      if (result.stdout.trim()) {
+        log.info("Shell job stdout", { jobId: job.id, output: this.truncateForPrompt(result.stdout.trim()) });
+      }
+      if (result.stderr.trim()) {
+        log.warn("Shell job stderr", { jobId: job.id, output: this.truncateForPrompt(result.stderr.trim()) });
+      }
+
+      const ok = !result.timedOut && result.exitCode === 0;
+      const errorMessage = ok ? undefined : this.formatShellError(result);
+      const nextRunAt = this.calculateFollowupRun(job, startTime);
+
+      dbUpdateJobState(job.id, {
+        lastRunAt: startTime,
+        lastStatus: ok ? "ok" : "error",
+        lastError: errorMessage,
+        lastDurationMs: result.durationMs,
+        nextRunAt,
+        lastExitCode: result.exitCode ?? undefined,
+      });
+
+      if (!ok && errorMessage) {
+        try {
+          await this.notifyShellError(job, result, errorMessage);
+        } catch (notifyError) {
+          log.error("Failed to notify session about cron shell error", {
+            jobId: job.id,
+            error: notifyError instanceof Error ? notifyError.message : String(notifyError),
+          });
+        }
+      }
+
+      log.info("Shell job completed", {
+        jobId: job.id,
+        jobName: job.name,
+        status: ok ? "ok" : "error",
+        exitCode: result.exitCode,
+        signal: result.signal,
+        durationMs: result.durationMs,
+      });
+
+      if (ok && (job.deleteAfterRun || job.schedule.type === "at")) {
+        log.info("Deleting one-shot shell job", { jobId: job.id });
+        dbDeleteCronJob(job.id);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const nextRunAt = this.calculateFollowupRun(job, startTime);
+
+      dbUpdateJobState(job.id, {
+        lastRunAt: startTime,
+        lastStatus: "error",
+        lastError: errorMessage,
+        lastDurationMs: Date.now() - startTime,
+        nextRunAt,
+      });
+
+      if (job.onError) {
+        try {
+          await this.notifyShellError(
+            job,
+            {
+              command: job.shellCommand ?? "",
+              exitCode: null,
+              signal: null,
+              stdout: "",
+              stderr: errorMessage,
+              durationMs: Date.now() - startTime,
+              timedOut: false,
+            },
+            errorMessage,
+          );
+        } catch (notifyError) {
+          log.error("Failed to notify session about cron shell exception", {
+            jobId: job.id,
+            error: notifyError instanceof Error ? notifyError.message : String(notifyError),
+          });
+        }
+      }
+
+      log.error("Shell job failed", { jobId: job.id, jobName: job.name, error: errorMessage });
     }
   }
 
@@ -270,6 +440,8 @@ export class CronRunner {
     await publishSessionPrompt(sessionName, {
       prompt,
       source,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
     });
@@ -324,6 +496,8 @@ export class CronRunner {
     await publishSessionPrompt(sessionName, {
       prompt,
       source,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
     });

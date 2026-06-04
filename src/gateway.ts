@@ -11,6 +11,8 @@
  *   ravi.session.*.stream      → typing heartbeat renewal on streamed chunks
  *   ravi.outbound.deliver      → direct channel delivery
  *   ravi.outbound.reaction     → emoji reactions
+ *   ravi.outbound.message.delete → delete own channel messages
+ *   ravi.outbound.message.edit → edit own channel messages
  *   ravi.media.send            → media files
  *   ravi.stickers.send         → WhatsApp stickers
  *   ravi.config.changed        → reload router config + REBAC sync
@@ -28,7 +30,17 @@ import { SessionTypingTracker } from "./gateway-typing.js";
 import { assertChannelSupportsStickers } from "./channels/capabilities.js";
 import type { StickerSendEvent } from "./stickers/send.js";
 import { getSessionByName } from "./router/index.js";
-import { dbGetChat, dbGetSessionChatBinding, dbSaveMessageMeta } from "./router/router-db.js";
+import {
+  dbGetChat,
+  dbGetSessionChatBinding,
+  dbMarkChatMessageDeleted,
+  dbMarkChatMessageEdited,
+  dbSaveMessageMeta,
+  dbUpsertChatMessage,
+} from "./router/router-db.js";
+import { prepareOmniMentionMessage, type OmniUserMention } from "./omni/mentions.js";
+import { resolveOmniConnection } from "./omni-config.js";
+import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -51,6 +63,21 @@ function normalizeOutboundJid(chatId: string): string {
   return chatId;
 }
 
+function isWhatsAppGroupJid(chatId: string): boolean {
+  return chatId.endsWith("@g.us");
+}
+
+function mergeMentions(...lists: Array<readonly OmniUserMention[] | undefined>): OmniUserMention[] | undefined {
+  const byId = new Map<string, OmniUserMention>();
+  for (const list of lists) {
+    for (const mention of list ?? []) {
+      byId.set(mention.id, mention);
+    }
+  }
+  const mentions = Array.from(byId.values());
+  return mentions.length ? mentions : undefined;
+}
+
 /** Silent reply token — when response contains this, don't send to channel */
 export const SILENT_TOKEN = "@@SILENT@@";
 
@@ -62,6 +89,24 @@ export interface GatewayOptions {
 }
 
 type PresenceTarget = { channel: string; accountId: string; chatId: string; threadId?: string };
+type MessageDeleteRequest = {
+  channel?: string;
+  accountId: string;
+  chatId: string;
+  messageId: string;
+  canonicalMessageId?: string;
+  replyTopic?: string;
+};
+
+type MessageEditRequest = {
+  channel?: string;
+  accountId: string;
+  chatId: string;
+  messageId: string;
+  text: string;
+  canonicalMessageId?: string;
+  replyTopic?: string;
+};
 
 export class Gateway {
   private running = false;
@@ -93,6 +138,8 @@ export class Gateway {
     this.subscribeToRuntimeEvents();
     this.subscribeToDirectSend();
     this.subscribeToReactions();
+    this.subscribeToMessageDelete();
+    this.subscribeToMessageEdit();
     this.subscribeToMediaSend();
     this.subscribeToStickerSend();
     this.subscribeToConfigChanges();
@@ -122,6 +169,43 @@ export class Gateway {
     if (iid) {
       await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
     }
+  }
+
+  private async prepareOutboundMentionMessage(input: {
+    accountId: string;
+    instanceId: string;
+    chatId: string;
+    channel: string;
+    text: string;
+    mentions?: readonly OmniUserMention[];
+  }): Promise<{ text: string; mentions?: OmniUserMention[] }> {
+    if (!input.text.includes("@") || !isWhatsAppGroupJid(input.chatId)) {
+      return { text: input.text, mentions: mergeMentions(input.mentions) };
+    }
+
+    const connection = resolveOmniConnection();
+    if (!connection) {
+      return { text: input.text, mentions: mergeMentions(input.mentions) };
+    }
+
+    const metadata = await resolveOmniGroupMetadata({
+      omniApiUrl: connection.apiUrl,
+      omniApiKey: connection.apiKey,
+      accountId: input.accountId,
+      instanceId: input.instanceId,
+      chatId: input.chatId,
+      channel: input.channel,
+    });
+
+    const prepared = prepareOmniMentionMessage({
+      text: input.text,
+      participants: metadata?.participants,
+    });
+
+    return {
+      text: prepared.text,
+      mentions: mergeMentions(input.mentions, prepared.mentions),
+    };
   }
 
   private presenceTargetKey(target: PresenceTarget | undefined): string | undefined {
@@ -357,8 +441,26 @@ export class Gateway {
     });
 
     try {
-      const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
-      this.saveOutboundMessageActorMetadata(sessionName, target, instanceId, chatId, delivered.messageId);
+      const prepared = await this.prepareOutboundMentionMessage({
+        accountId: target.accountId,
+        instanceId,
+        chatId,
+        channel: target.channel,
+        text,
+      });
+      const sendOptions =
+        prepared.mentions?.length || target.threadId
+          ? { threadId: target.threadId, mentions: prepared.mentions }
+          : undefined;
+      const delivered = await this.omniSender.send(instanceId, chatId, prepared.text, sendOptions);
+      this.saveOutboundMessageActorMetadata(
+        sessionName,
+        target,
+        instanceId,
+        chatId,
+        delivered.messageId,
+        prepared.text,
+      );
       this.recordOutboundContactInteraction(sessionName, target);
       this.schedulePostDeliveryPresenceRenewal(sessionName, target);
       await emitDelivery({
@@ -368,7 +470,7 @@ export class Gateway {
         target,
         deliveredAt: Date.now(),
         durationMs: Date.now() - t0,
-        textLen: text.length,
+        textLen: prepared.text.length,
       });
       log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
     } catch (err) {
@@ -392,12 +494,14 @@ export class Gateway {
     instanceId: string,
     chatId: string,
     messageId?: string,
+    text?: string,
   ): void {
     if (!messageId) return;
     try {
       const session = getSessionByName(sessionName);
       const agentId = session?.agentId;
       const binding = session?.sessionKey ? dbGetSessionChatBinding(session.sessionKey) : null;
+      const canonicalChatId = target.canonicalChatId ?? binding?.chatId;
       const agentIdentity = agentId
         ? getAgentPlatformIdentity({
             agentId,
@@ -406,7 +510,7 @@ export class Gateway {
           })
         : null;
       dbSaveMessageMeta(messageId, chatId, {
-        canonicalChatId: target.canonicalChatId ?? binding?.chatId,
+        canonicalChatId,
         actorType: "agent",
         agentId,
         platformIdentityId: agentIdentity?.id,
@@ -422,6 +526,32 @@ export class Gateway {
           channel: target.channel,
         },
       });
+      if (canonicalChatId && agentId) {
+        dbUpsertChatMessage({
+          chatId: canonicalChatId,
+          channel: target.channel,
+          instanceId,
+          providerMessageId: messageId,
+          rawChatId: chatId,
+          rawSenderId: agentIdentity?.platformUserId,
+          normalizedSenderId: agentIdentity?.normalizedPlatformUserId,
+          actorType: "agent",
+          agentId,
+          platformIdentityId: agentIdentity?.id,
+          messageType: "text",
+          content: { type: "text", text: text ?? "" },
+          rawProvenance: {
+            source: "ravi.gateway.response",
+            sessionName,
+            agentId,
+            accountId: target.accountId,
+            instanceId,
+            channel: target.channel,
+            providerMessageId: messageId,
+          },
+          providerTimestamp: Date.now(),
+        });
+      }
     } catch (error) {
       log.warn("Failed to save outbound message actor metadata", { sessionName, messageId, error });
     }
@@ -582,6 +712,7 @@ export class Gateway {
           accountId: string;
           to: string;
           text?: string;
+          mentions?: OmniUserMention[];
           poll?: { name: string; values: string[]; selectableCount?: number };
           typingDelayMs?: number;
           pauseMs?: number;
@@ -634,15 +765,23 @@ export class Gateway {
               messageId = res.messageId;
             }
           } else if (data.text) {
+            const prepared = await this.prepareOutboundMentionMessage({
+              accountId: data.accountId,
+              instanceId,
+              chatId: to,
+              channel: data.channel,
+              text: data.text,
+              mentions: data.mentions,
+            });
             const sendStart = Date.now();
             if (typingDelayMs > 0) {
               await this.omniSender.sendTyping(instanceId, to, true);
               await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
-              const res = await this.omniSender.send(instanceId, to, data.text);
+              const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
               messageId = res.messageId;
               await this.omniSender.sendTyping(instanceId, to, false);
             } else {
-              const res = await this.omniSender.send(instanceId, to, data.text);
+              const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
               messageId = res.messageId;
             }
             log.info("Send HTTP completed", { to, durationMs: Date.now() - sendStart });
@@ -695,6 +834,135 @@ export class Gateway {
       },
       { queue: "ravi-gateway" },
     );
+  }
+
+  /**
+   * Subscribe to message deletion requests from session tooling.
+   * Queue group: only one gateway daemon processes each delete request.
+   */
+  private subscribeToMessageDelete(): void {
+    this.subscribe(
+      "messageDelete",
+      ["ravi.outbound.message.delete"],
+      async (event) => {
+        await this.handleMessageDeleteEvent(event.data as MessageDeleteRequest);
+      },
+      { queue: "ravi-gateway" },
+    );
+  }
+
+  /**
+   * Subscribe to message edit requests from session tooling.
+   * Queue group: only one gateway daemon processes each edit request.
+   */
+  private subscribeToMessageEdit(): void {
+    this.subscribe(
+      "messageEdit",
+      ["ravi.outbound.message.edit"],
+      async (event) => {
+        await this.handleMessageEditEvent(event.data as MessageEditRequest);
+      },
+      { queue: "ravi-gateway" },
+    );
+  }
+
+  private async handleMessageEditEvent(data: MessageEditRequest): Promise<void> {
+    const emitReply = async (payload: Record<string, unknown>) => {
+      if (!data.replyTopic) return;
+      await this.emitEvent(data.replyTopic, payload);
+    };
+
+    const messageId = data.messageId?.trim();
+    const text = data.text?.trim();
+    const instanceId = configStore.resolveInstanceId(data.accountId);
+    if (!messageId || !text || !instanceId) {
+      await emitReply({
+        success: false,
+        error: !messageId ? "Missing message id" : !text ? "Missing edit text" : "No instance for account",
+      });
+      return;
+    }
+
+    const chatId = normalizeOutboundJid(data.chatId);
+    try {
+      await this.omniSender.editMessage(instanceId, chatId, messageId, text);
+      let editedRecord: unknown = null;
+      if (data.canonicalMessageId) {
+        editedRecord = dbMarkChatMessageEdited(data.canonicalMessageId, text);
+      }
+      log.info("Message edited", {
+        channel: data.channel,
+        accountId: data.accountId,
+        instanceId,
+        chatId,
+        messageId,
+        canonicalMessageId: data.canonicalMessageId,
+      });
+      await emitReply({
+        success: true,
+        messageId,
+        canonicalMessageId: data.canonicalMessageId,
+        editedRecord,
+        target: { channel: data.channel, accountId: data.accountId, chatId },
+      });
+    } catch (err) {
+      log.error("Failed to edit message", { instanceId, chatId, messageId, error: err });
+      await emitReply({
+        success: false,
+        messageId,
+        canonicalMessageId: data.canonicalMessageId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private async handleMessageDeleteEvent(data: MessageDeleteRequest): Promise<void> {
+    const emitReply = async (payload: Record<string, unknown>) => {
+      if (!data.replyTopic) return;
+      await this.emitEvent(data.replyTopic, payload);
+    };
+
+    const messageId = data.messageId?.trim();
+    const instanceId = configStore.resolveInstanceId(data.accountId);
+    if (!messageId || !instanceId) {
+      await emitReply({
+        success: false,
+        error: !messageId ? "Missing message id" : "No instance for account",
+      });
+      return;
+    }
+
+    const chatId = normalizeOutboundJid(data.chatId);
+    try {
+      await this.omniSender.deleteMessage(instanceId, chatId, messageId);
+      let deletedRecord: unknown = null;
+      if (data.canonicalMessageId) {
+        deletedRecord = dbMarkChatMessageDeleted(data.canonicalMessageId);
+      }
+      log.info("Message deleted", {
+        channel: data.channel,
+        accountId: data.accountId,
+        instanceId,
+        chatId,
+        messageId,
+        canonicalMessageId: data.canonicalMessageId,
+      });
+      await emitReply({
+        success: true,
+        messageId,
+        canonicalMessageId: data.canonicalMessageId,
+        deletedRecord,
+        target: { channel: data.channel, accountId: data.accountId, chatId },
+      });
+    } catch (err) {
+      log.error("Failed to delete message", { instanceId, chatId, messageId, error: err });
+      await emitReply({
+        success: false,
+        messageId,
+        canonicalMessageId: data.canonicalMessageId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

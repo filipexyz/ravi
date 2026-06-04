@@ -34,6 +34,10 @@ inputs and outputs across the gateway and the generated `@ravi-os/sdk`
 client, and register the **binary escape hatch** (`@Returns.binary()`) used
 by commands that cannot be encoded as JSON (file blobs, raw streams).
 
+Return-shape coverage is a first-class schema concern. Generated clients can
+only expose strong return types when commands declare `@Returns(zod)` or
+`@Returns.binary()`. See `sdk/schema/returns-coverage`.
+
 ## JSON-safe baseline
 
 The registry projection (`src/cli/registry-snapshot.ts`) produces a flat,
@@ -50,6 +54,10 @@ By default, every command is JSON-safe end-to-end:
 2. Handler return: validated by the optional `@Returns(zod)` schema.
 3. Wire: `application/json` charset utf-8.
 4. SDK type: `Promise<DerivedType>` from `z.toJSONSchema(returns)`.
+
+Commands without `@Returns` remain valid SDK operations, but clients MUST treat
+their return payload as unknown or generic JSON. That fallback is compatibility
+behavior, not the target typed SDK experience.
 
 ## Escape hatch — `@Returns.binary()`
 

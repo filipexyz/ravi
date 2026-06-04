@@ -10,6 +10,10 @@ const DEFAULT_FETCH_TIMEOUT_MS = 5_000;
 export interface OmniGroupParticipant {
   id?: string | null;
   platformUserId: string;
+  normalizedPlatformUserId?: string | null;
+  mentionUserId?: string | null;
+  phoneJid?: string | null;
+  phoneNumber?: string | null;
   displayName?: string | null;
   role?: string | null;
 }
@@ -76,10 +80,22 @@ interface OmniChatRecord {
 interface OmniParticipantRecord {
   id?: string | null;
   platformUserId?: string | null;
+  normalizedPlatformUserId?: string | null;
+  normalizedUserId?: string | null;
+  mentionUserId?: string | null;
+  phoneJid?: string | null;
+  phoneNumber?: string | null;
+  phone?: string | null;
   userId?: string | null;
   displayName?: string | null;
   name?: string | null;
   role?: string | null;
+}
+
+interface ChatParticipantAddressRow {
+  raw_platform_user_id: string | null;
+  normalized_platform_user_id: string | null;
+  metadata_json: string | null;
 }
 
 interface OmniListEnvelope<T> {
@@ -122,7 +138,7 @@ function parseParticipants(value: string | null): OmniGroupParticipant[] {
 }
 
 function rowToMetadata(row: OmniGroupMetadataRow): OmniGroupMetadata {
-  return {
+  const metadata = {
     accountId: row.account_id,
     instanceId: row.instance_id,
     chatId: row.chat_id,
@@ -138,6 +154,7 @@ function rowToMetadata(row: OmniGroupMetadataRow): OmniGroupMetadata {
     platformMetadata: parseJsonRecord(row.platform_metadata_json),
     fetchedAt: row.fetched_at,
   };
+  return enrichParticipantsFromChatModel(metadata);
 }
 
 function getCachedOmniGroupMetadata(input: {
@@ -251,6 +268,114 @@ function normalizeParticipantIdentity(value: string): string {
   return value.includes("@") ? value.slice(0, value.indexOf("@")) : value;
 }
 
+function normalizeParticipantKey(value: string | null | undefined): string | null {
+  const cleaned = cleanString(value);
+  if (!cleaned) return null;
+  const base = normalizeParticipantIdentity(cleaned).replace(/^lid:/i, "");
+  const digits = base.replace(/\D+/g, "");
+  return digits || base.toLowerCase();
+}
+
+function participantAddressKeys(value: string | null | undefined): string[] {
+  const cleaned = cleanString(value);
+  if (!cleaned) return [];
+  const keys = new Set<string>();
+  for (const candidate of [cleaned, normalizeParticipantIdentity(cleaned), cleaned.replace(/^lid:/i, "")]) {
+    const key = normalizeParticipantKey(candidate);
+    if (key) keys.add(key);
+  }
+  return Array.from(keys);
+}
+
+function normalizedChatKey(chatId: string): string {
+  const normalized = normalizeChatId(chatId);
+  return normalized.startsWith("group:") ? normalized : `group:${normalized}`;
+}
+
+function parseParticipantMetadata(value: string | null): Record<string, unknown> | null {
+  return parseJsonRecord(value);
+}
+
+function stringFromMetadata(metadata: Record<string, unknown> | null, key: string): string | undefined {
+  const value = metadata?.[key];
+  return cleanString(value);
+}
+
+function usablePhoneAlias(row: ChatParticipantAddressRow, chatId: string): string | undefined {
+  const raw = normalizeParticipantKey(row.raw_platform_user_id);
+  const normalized = normalizeParticipantKey(row.normalized_platform_user_id);
+  if (!normalized || normalized === raw || normalized === normalizeChatId(chatId)) return undefined;
+  return /^\d{10,15}$/.test(normalized) ? normalized : undefined;
+}
+
+function findChatParticipantAddressRows(
+  metadata: Pick<OmniGroupMetadata, "instanceId" | "chatId">,
+): ChatParticipantAddressRow[] {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT id
+      FROM chats
+      WHERE instance_id = ?
+        AND (
+          platform_chat_id = ?
+          OR normalized_chat_id = ?
+          OR normalized_chat_id = ?
+        )
+      ORDER BY last_seen_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(metadata.instanceId, metadata.chatId, normalizeChatId(metadata.chatId), normalizedChatKey(metadata.chatId)) as
+    | { id: string }
+    | undefined;
+
+  if (!row) return [];
+  return getDb()
+    .prepare(
+      `
+      SELECT raw_platform_user_id, normalized_platform_user_id, metadata_json
+      FROM chat_participants
+      WHERE chat_id = ?
+        AND status = 'active'
+        AND raw_platform_user_id IS NOT NULL
+    `,
+    )
+    .all(row.id) as ChatParticipantAddressRow[];
+}
+
+function enrichParticipantsFromChatModel(metadata: OmniGroupMetadata): OmniGroupMetadata {
+  if (metadata.participants.length === 0) return metadata;
+  const rows = findChatParticipantAddressRows(metadata);
+  if (rows.length === 0) return metadata;
+
+  const byRawKey = new Map<string, ChatParticipantAddressRow[]>();
+  for (const row of rows) {
+    for (const key of participantAddressKeys(row.raw_platform_user_id)) {
+      const bucket = byRawKey.get(key) ?? [];
+      bucket.push(row);
+      byRawKey.set(key, bucket);
+    }
+  }
+
+  const participants = metadata.participants.map((participant) => {
+    const matchingRows = participantAddressKeys(participant.platformUserId).flatMap((key) => byRawKey.get(key) ?? []);
+    const phoneAlias = matchingRows.map((row) => usablePhoneAlias(row, metadata.chatId)).find(Boolean);
+    const metadataDisplayName = matchingRows
+      .map((row) => stringFromMetadata(parseParticipantMetadata(row.metadata_json), "displayName"))
+      .find(Boolean);
+
+    if (!phoneAlias && !metadataDisplayName) return participant;
+    return {
+      ...participant,
+      ...(phoneAlias ? { normalizedPlatformUserId: phoneAlias, mentionUserId: `${phoneAlias}@s.whatsapp.net` } : {}),
+      ...(participant.displayName ? {} : metadataDisplayName ? { displayName: metadataDisplayName } : {}),
+    };
+  });
+
+  return { ...metadata, participants };
+}
+
 function normalizeParticipantRole(role: string | null | undefined): "member" | "admin" | "owner" | "unknown" {
   const normalized = role?.trim().toLowerCase();
   if (normalized === "member" || normalized === "admin" || normalized === "owner") return normalized;
@@ -308,6 +433,17 @@ function normalizeParticipant(value: unknown): OmniGroupParticipant | null {
   return {
     ...(cleanString(record.id) ? { id: cleanString(record.id) } : {}),
     platformUserId,
+    ...((cleanString(record.normalizedPlatformUserId) ?? cleanString(record.normalizedUserId))
+      ? {
+          normalizedPlatformUserId:
+            cleanString(record.normalizedPlatformUserId) ?? cleanString(record.normalizedUserId),
+        }
+      : {}),
+    ...(cleanString(record.mentionUserId) ? { mentionUserId: cleanString(record.mentionUserId) } : {}),
+    ...(cleanString(record.phoneJid) ? { phoneJid: cleanString(record.phoneJid) } : {}),
+    ...((cleanString(record.phoneNumber) ?? cleanString(record.phone))
+      ? { phoneNumber: cleanString(record.phoneNumber) ?? cleanString(record.phone) }
+      : {}),
     ...((cleanString(record.displayName) ?? cleanString(record.name))
       ? { displayName: cleanString(record.displayName) ?? cleanString(record.name) }
       : {}),
@@ -369,7 +505,7 @@ async function fetchOmniGroupMetadata(input: ResolveOmniGroupMetadataInput): Pro
     .map(normalizeParticipant)
     .filter((participant): participant is OmniGroupParticipant => Boolean(participant));
 
-  return {
+  return enrichParticipantsFromChatModel({
     accountId: input.accountId,
     instanceId: input.instanceId,
     chatId: input.chatId,
@@ -384,7 +520,7 @@ async function fetchOmniGroupMetadata(input: ResolveOmniGroupMetadataInput): Pro
     settings: selectedChat.settings ?? null,
     platformMetadata: selectedChat.platformMetadata ?? null,
     fetchedAt: Date.now(),
-  };
+  });
 }
 
 export async function resolveOmniGroupMetadata(

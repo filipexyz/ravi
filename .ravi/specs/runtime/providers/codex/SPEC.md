@@ -81,6 +81,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - The global Codex Bash hook command MUST resolve to a stable Ravi CLI entrypoint such as `bin/ravi` or the bundled CLI, never to a test file or transient runner script.
 - The global Codex Bash hook matcher MUST cover both Codex tool names currently observed for shell execution: `Bash` and `shell`.
 - The global Codex Bash hook MUST enforce Ravi shell permissions and runtime skill gates only. It MUST NOT rely on `PreToolUse.updatedInput` to inject env because current Codex rejects unsupported updated input for this hook.
+- Ravi REBAC grants such as `full-access` authorize Ravi's permission layer only. They MUST NOT be documented as a bypass for provider-native hooks, global Codex hooks, or external PreToolUse transforms that may still deny a shell command after Ravi allows it.
 - The shell env bridge MUST NOT print or embed `RAVI_CONTEXT_KEY` directly in user-visible command text or traces.
 - Ravi operations requested by the model MUST execute through the shell/CLI path under the current Ravi context.
 - Command/file/permission/user-input approval requests MUST route through Ravi approval handlers.

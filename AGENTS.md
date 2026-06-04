@@ -209,10 +209,10 @@ ravi triggers add "Contato alterado" \
   --agent main \
   --cooldown 30s
 
-# Add trigger: alert on agent tool errors
-ravi triggers add "Agent Error Alert" \
-  --topic "ravi.*.tool" \
-  --message "Um tool deu erro. Analise o que aconteceu e me avise se precisa de ação." \
+# Add trigger: alert on permission denials
+ravi triggers add "Permission Alert" \
+  --topic "ravi.audit.denied" \
+  --message "Uma permissão foi negada. Analise o que aconteceu e me avise se precisa de ação." \
   --agent main \
   --cooldown 1m
 
@@ -245,15 +245,17 @@ ravi triggers test <id>
 ravi triggers rm <id>
 ```
 
-**Available Topics:**
-- `ravi.*.cli.{group}.{command}` - CLI tool executions (e.g., `ravi.*.cli.contacts.add`)
-- `ravi.*.tool` - SDK tool executions (Bash, Read, etc.)
-- `message.received.{channelType}.{instanceId}` - Inbound channel messages (from omni)
+**Topic Catalog:**
+- `ravi triggers topics` - Inspect built-in topic templates, payload schemas, examples, and notes
+- `ravi.*.cli.{group}.{command}` - CLI command audit events emitted from an agent session
+- `ravi._cli.cli.{group}.{command}` - CLI command audit events emitted outside an agent session
+- `ravi.inbound.reaction` - Normalized emoji reactions
+- `ravi.audit.denied` - Permission or policy denial events
+- The catalog is hints/templates, not a whitelist. Custom publisher subjects are allowed when emitted by local code or another NATS publisher.
 
-**Blocked Topics (anti-loop):**
-- `ravi.*.prompt` - Would create trigger→prompt→trigger loops
-- `ravi.*.response` - Would create trigger→response self-fire loops
-- `ravi.*.claude` - Internal SDK events, same risk
+**Topic Warnings:**
+- Unknown topics are accepted, but the CLI may warn when they are not in the built-in templates.
+- `ravi.session.*` topics are accepted by the CLI, but the trigger runner skips internal session subscriptions to prevent loops.
 
 **Options:**
 - `--topic <pattern>` - NATS topic pattern to subscribe to (required)
@@ -280,7 +282,7 @@ Um contato foi alterado. Notifica o grupo do Slack e atualiza o CRM.
 - `main`: `agent:{agentId}:main`
 
 **Anti-Loop Protection:**
-1. Blocked topics: `.prompt`, `.response`, `.claude` topics are rejected at subscription time
+1. Internal session topics: `ravi.session.*` can be configured, but the runner skips those subscriptions to prevent loops
 2. Session filter: events from trigger sessions (`:trigger:` in topic) are skipped
 3. Data flag: events with `_trigger: true` are skipped
 4. Cooldown: per-trigger cooldown (default 5s) prevents rapid re-firing

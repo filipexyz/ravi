@@ -96,6 +96,77 @@ function systemCommandsText(): string {
 }
 
 /**
+ * Session attach/detach tools text.
+ *
+ * Documents the CLI surface for sessions/attach.
+ * Kept as CLI documentation rather than native tools to match the existing
+ * pattern used by sessions send/ask/answer/execute/inform.
+ *
+ * Includes the Silent vs Detach distinction so agents pick the right tool
+ * for the intent (transient quiet vs persistent disengage).
+ *
+ * See .ravi/specs/sessions/attach/SPEC.md
+ */
+function sessionAttachText(): string {
+  return `Sessões podem participar de múltiplos chats ao mesmo tempo. Cada chat atachado alimenta o mesmo histórico da sessão, mas cada superfície tem um estado de fala:
+
+- \`speech=speak\` — a sessão pode emitir resposta externa nesse chat.
+- \`speech=muted\` — a sessão escuta esse chat em modo listen-only; inbound entra no histórico, mas uma resposta normal sai pelo chat default com fala habilitada.
+
+**Quando usar:**
+- "Fazer esta sessão participar e responder em um chat específico" → \`attach\`
+- "Escutar um chat sem falar nele" → \`mute\`
+- "Permitir fala em um chat já inscrito" → \`unmute\`
+- "Parar participação externa em um chat" → \`detach\`
+- "Listar/inspecionar wiring e fala" → \`subscriptions\`
+
+**Comandos:**
+
+- \`ravi sessions attach <session> --chat <chat-id> [--reason "..."]\` — inscreve o chat no mesmo histórico, habilita fala nele e o seleciona como default output.
+- \`ravi sessions mute <session> --chat <chat-id>\` — mantém a inscrição como listen-only; inbound continua entrando, mas respostas normais não saem nesse chat.
+- \`ravi sessions unmute <session> --chat <chat-id>\` — habilita fala em um chat já inscrito. Use internamente antes da resposta final se o header indicar que o \`source_chat\` está muted e a resposta precisa sair ali.
+- \`ravi sessions detach <session> --chat <chat-id>\` — remove a inscrição quando possível; se for o primary único, o input fica, mas a resposta externa para. **Detach é durável** até novo attach explícito.
+- \`ravi sessions subscriptions <session>\` — lista chats inscritos, qual é default output e o \`speech\` de cada um.
+
+**Resposta em múltiplas superfícies:**
+
+- Cada inbound traz um header interno com \`source_chat\`, \`source_speech\`, default output e subscriptions.
+- Se \`source_speech=speak\`, uma resposta normal pode sair no chat de origem.
+- Se \`source_speech=muted\`, uma resposta normal sai pelo default output. Se for necessário responder publicamente no chat de origem, rode \`ravi sessions unmute <session> --chat <source_chat>\` antes da resposta final.
+- Não explique mute, unmute, attach, subscriptions, routing ou output mechanics para usuários; trate isso como controle interno transparente.
+
+**${SILENT_TOKEN} vs \`mute\` vs \`detach\`** (complementares, não substitutos):
+
+- \`${SILENT_TOKEN}\` = **one-shot**, esse turn específico não fala. Próxima inbound, agent volta a responder normalmente. Use quando "li, mas não tenho nada a dizer agora".
+- \`mute\` = **estado durável listen-only**, a sessão continua escutando o chat, mas não fala nele até \`unmute\`.
+- \`detach\` = **estado durável de remoção**, a sessão deixa de participar daquele chat quando possível.
+
+**Anti-patterns:**
+
+- ❌ Adicionar route pra "mover" chat já atachado em outra sessão — subscription override puxa de volta. Detach (ou \`sessions delete\` da sessão antiga) primeiro.
+- ❌ Tentar redirecionar output com \`focus\` — focus não existe; use \`attach\` para escolher o chat que recebe as respostas da sessão.
+- ❌ Externalizar para o usuário que você está mutando, desmutando ou roteando uma resposta.
+- ❌ Esperar attach trocar o agent. Attach decide sessão; agent vem da route ou default da instance.`;
+}
+
+function sessionActionsText(sessionName?: string): string {
+  const sessionRef = sessionName ?? "<session>";
+  return `Use \`ravi sessions actions --json\` para inspecionar as ações disponíveis nesta sessão, as superfícies atuais e os IDs recentes das mensagens que você mesmo enviou.
+
+Essa é a fonte canônica para descobrir operações conversacionais do chat, como apagar ou editar suas próprias mensagens, reagir, responder, enviar stickers e novas capacidades expostas pelo runtime. Não assuma que uma ação existe: consulte esta superfície quando precisar trabalhar sobre uma mensagem ou canal.
+
+Leia os campos \`promptHint\` e \`usage.tools\` retornados por \`actions --json\`; eles explicam quais ferramentas estão disponíveis, de onde tirar o ID da mensagem e quais restrições aplicar antes de apagar ou editar.
+
+O CLI infere a sessão pelo contexto de execução do agent. Não passe o nome da sessão quando estiver rodando dentro do Ravi; use \`ravi sessions actions ${sessionRef} --json\` apenas para depuração fora do runtime.
+
+Para apagar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions delete-message <message-id>\`.
+
+Para editar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions edit-message <message-id> "novo texto"\`.
+
+Só apague ou edite mensagens próprias quando estiver corrigindo ou removendo uma saída acidental. Não exponha IDs internos ao usuário a menos que isso seja útil para depuração.`;
+}
+
+/**
  * Build group context section for system prompt
  */
 export function buildGroupContext(ctx: ChannelContext): string {
@@ -176,7 +247,7 @@ function sessionBoundaryText(sessionName?: string): string {
   return [
     `Treat the ${sessionRef} as the only conversational context for this reply.`,
     `DMs, groups, channels, and threads are separate contexts even when the same people participate.`,
-    `If local context looks incomplete, use same-session history tools such as \`ravi sessions read ${sessionName ?? "<session>"}\` or \`ravi sessions trace ${sessionName ?? "<session>"}\`.`,
+    `If local context looks incomplete, use same-session history tools such as \`ravi sessions read --json\` or \`ravi sessions trace ${sessionName ?? "<session>"}\`.`,
     `Never recover missing context from another DM/group/session or from unrelated filesystem notes.`,
     `If same-session durable history is unavailable, ask the user for the missing context instead of guessing.`,
   ].join("\n");
@@ -279,6 +350,11 @@ export function buildSystemPromptSections(
   // System commands for all agents (sentinel needs them for cross-send execute/ask)
   add("system.commands", "System Commands", systemCommandsText(), 20);
 
+  // Sessions attach/detach CLI surface. Added for all agents so the
+  // multi-input primitive is discoverable. See sessions/attach spec.
+  add("session.attach", "Session Attach", sessionAttachText(), 25);
+  add("session.actions", "Session Actions", sessionActionsText(sessionName), 30);
+
   // Sentinel: add explicit channel messaging instructions
   if (isSentinel) {
     add(
@@ -293,7 +369,7 @@ When instructed via [System] Execute or [System] Ask, you CAN send messages expl
 
 The env var $RAVI_ACCOUNT_ID is set automatically with your WhatsApp account. Always use it.
 Your text output is NOT sent to the channel. Use these tools to send explicitly.`,
-      30,
+      35,
     );
   }
 

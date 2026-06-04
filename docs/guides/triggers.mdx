@@ -48,32 +48,40 @@ ravi triggers add "<name>" \
 - `--filter` — Expression that must match for the trigger to fire
 - `--account` — Account for channel delivery (auto-detected from agent if not set)
 
-## Available Topics
+## Topic Catalog
 
-### Inbound Messages and Channels
+Use `ravi triggers topics` to inspect the trigger-ready topic catalog with payload schemas, examples, and notes. Triggers may still subscribe to custom subjects published by your own code, but Ravi-maintained subjects should be registered in the catalog before being used in docs, skills, or examples.
+
+### Inbound Channel Events
 
 | Pattern | Description |
 |---------|-------------|
-| `whatsapp.*.inbound` | WhatsApp messages received |
-| `matrix.*.inbound` | Matrix messages received |
-| `ravi.inbound.reaction` | Emoji reactions received |
-| `ravi.inbound.reply` | Replies to bot messages |
-| `ravi.inbound.pollVote` | Poll vote events |
+| `ravi.inbound.reaction` | Emoji reactions received. Payload: `{ targetMessageId, emoji, senderId }` |
+| `ravi.inbound.reply` | Replies to bot messages. Payload: `{ targetMessageId, text, senderId }` |
+| `ravi.inbound.pollVote` | Poll vote events. Payload: `{ pollMessageId, votes: [{ name, voters[] }] }` |
+
+Channel message aliases such as `whatsapp.*.inbound` and channel reaction aliases such as `whatsapp.*.reaction` are not trigger-ready subjects. Inbound channel messages are consumed by the session router from Omni streams; reaction triggers use `ravi.inbound.reaction`.
+
+Reaction payloads are correlation events, not full message records. `ravi.inbound.reaction` currently carries `targetMessageId`, `emoji`, and `senderId`; it does not guarantee `chatId`, caption, media metadata, or business/domain state. If a routine needs that state, persist a mapping keyed by the outbound message id before waiting for the reaction.
 
 ### Contacts and Approvals
 
 | Pattern | Description |
 |---------|-------------|
 | `ravi.contacts.pending` | New contact or group pending approval |
+| `ravi.chats.pending` | New chat/group pending approval |
 | `ravi.approval.request` | Cascading approval request |
 | `ravi.approval.response` | Approval response |
 
-### Agent and Tool Events
+### CLI, Watch, and Task Events
 
 | Pattern | Description |
 |---------|-------------|
-| `ravi.*.cli.{group}.{command}` | CLI tool executions (e.g., `ravi.*.cli.contacts.add`) |
-| `ravi.*.tool` | SDK tool executions (Bash, Read, etc.) |
+| `ravi.*.cli.*.*` | CLI command audit events emitted from an agent session |
+| `ravi._cli.cli.*.*` | CLI command audit events emitted outside an agent session |
+| `ravi.console.inbox.item` | Console inbox item delivery |
+| `ravi.watch.*.*` | Normalized watch events |
+| `ravi.task.*.event` | Task lifecycle events |
 
 ### Delivery / Receipts
 
@@ -87,6 +95,7 @@ ravi triggers add "<name>" \
 | Pattern | Description |
 |---------|-------------|
 | `ravi.audit.denied` | Permission denied events |
+| `ravi.instances.unregistered` | Inbound event from an unregistered Omni instance |
 
 ## Anti-Loop Protection
 
@@ -94,7 +103,7 @@ The trigger system includes multiple layers of protection against infinite loops
 
 ### 1. Blocked Topic Prefixes
 
-Topics starting with `ravi.session.` are rejected at subscription time. This prevents triggers from reacting to internal session events that could create prompt-trigger-prompt loops.
+Topics starting with `ravi.session.` are accepted by the CLI for persistence compatibility, but the runner refuses to arm them. This prevents triggers from reacting to internal session events that could create prompt-trigger-prompt loops.
 
 ### 2. Session Filter
 
@@ -108,12 +117,14 @@ Events with `_trigger: true` in their data payload are skipped. This flag is set
 
 Each trigger has a configurable cooldown (default: 5 seconds). After a trigger fires, it will not fire again until the cooldown period elapses, regardless of how many matching events arrive.
 
-### Warning on Risky Topics
+### Topic Alias Warnings
 
-When creating or updating a trigger with a topic containing `.prompt`, `.response`, or `.claude`, the CLI warns about potential loop risk:
+The CLI accepts custom NATS subjects, but warns when a topic looks like an inferred alias rather than a Ravi publisher. Prefer the canonical built-in subjects in maintained examples:
 
 ```
-Warning: triggers on .prompt, .response, and .claude topics are skipped to prevent loops
+whatsapp.*.reaction     # use ravi.inbound.reaction
+whatsapp.*.inbound      # channel messages are routed to sessions, not trigger subjects
+ravi.*.tool             # session runtime subjects are blocked for triggers
 ```
 
 ## Filter Syntax
@@ -124,7 +135,10 @@ Filters are optional expressions that evaluate against the event data. If the fi
 
 ```
 data.<path> <operator> "<value>"
+data.<path> <operator> "<value>" && (data.<path> <operator> "<value>" || !data.<path> <operator> "<value>")
 ```
+
+Use `&&`, `||`, unary `!`, and parentheses for boolean composition. Precedence is `!`, then `&&`, then `||`.
 
 ### Operators
 
@@ -142,9 +156,9 @@ The `data.<path>` notation uses dot-separated keys to traverse into the event da
 
 Values are coerced to strings for comparison. If the path does not exist in the event data, the filter evaluates to false (trigger does not fire).
 
-### Fail-Open Behavior
+### Invalid Syntax
 
-If a filter expression has invalid syntax (does not match the expected format), the trigger fires anyway and a warning is logged. This prevents misconfigured filters from silently disabling triggers.
+`ravi triggers add --filter ...` and `ravi triggers set <id> filter ...` reject invalid syntax before saving it. Existing legacy filters that are already persisted still fail open at runtime and log a warning, which prevents old bad filters from silently disabling triggers.
 
 ### Filter Examples
 
@@ -163,6 +177,12 @@ ravi triggers set <id> filter 'data.output includes "error"'
 
 # Match events ending with a suffix
 ravi triggers set <id> filter 'data.tool endsWith "_list"'
+
+# Match an approval reaction from one sender
+ravi triggers set <id> filter 'data.senderId == "5511999999999" && (data.emoji == "👍" || data.emoji == "👍🏻")'
+
+# Exclude one source
+ravi triggers set <id> filter '!(data.source == "test")'
 
 # Remove a filter
 ravi triggers set <id> filter -
@@ -189,8 +209,8 @@ Unresolved variables (paths that do not exist in the event data) are left as-is 
 ```bash
 # Simple template
 ravi triggers add "Session Monitor" \
-  --topic "ravi.*.tool" \
-  --message "Tool executed in {{data.cwd}}. Check if the result looks correct."
+  --topic "ravi.*.cli.sessions.*" \
+  --message "Session CLI command executed. Check if the result looks correct."
 
 # Template with truncated content
 ravi triggers add "Copilot Watcher" \
@@ -223,7 +243,7 @@ The `Data` section contains the full event payload as JSON, giving the agent con
 Each trigger gets its own session: `agent:<agentId>:trigger:<triggerId>`. This isolates trigger conversations from the agent's main context.
 
 ```bash
-ravi triggers add "Error Alert" --topic "ravi.*.tool" --message "..." --session isolated
+ravi triggers add "Error Alert" --topic "ravi.audit.denied" --message "..." --session isolated
 ```
 
 ### Main
@@ -242,7 +262,7 @@ Cooldown prevents a trigger from firing too rapidly. The default is 5 seconds.
 
 ```bash
 # Set cooldown when creating
-ravi triggers add "Monitor" --topic "ravi.*.tool" --message "..." --cooldown 1m
+ravi triggers add "Monitor" --topic "ravi.audit.denied" --message "..." --cooldown 1m
 
 # Update cooldown on existing trigger
 ravi triggers set <id> cooldown 30s
@@ -261,6 +281,15 @@ ravi triggers list
 ```
 
 Shows all triggers with their ID, name, enabled status, topic, and fire count.
+
+### List trigger topics
+
+```bash
+ravi triggers topics
+ravi triggers topics --json
+```
+
+Shows the catalog of trigger-ready topics with payload schemas, examples, filters, and notes.
 
 ### Show trigger details
 
@@ -326,14 +355,14 @@ ravi triggers rm <id>
 
 ## Practical Examples
 
-### Alert on Tool Failure
+### Permission Denied Alert
 
-Monitor SDK tool executions and alert when something goes wrong:
+Monitor permission denials and alert when something needs review:
 
 ```bash
-ravi triggers add "Tool Error Alert" \
-  --topic "ravi.*.tool" \
-  --message "A tool execution may have failed. Review the event data and notify me if action is needed." \
+ravi triggers add "Permission Alert" \
+  --topic "ravi.audit.denied" \
+  --message "Permission denied for {{data.agentId}} on {{data.denied}}. Review if this agent needs additional permissions." \
   --cooldown 1m \
   --session isolated
 ```
@@ -366,23 +395,38 @@ Only fire for events in a specific project directory:
 
 ```bash
 ravi triggers add "Project Watcher" \
-  --topic "ravi.*.tool" \
+  --topic "ravi.*.cli.*.*" \
   --message "Activity detected in the project. Last action: {{data.last_assistant_message}}" \
   --filter 'data.cwd startsWith "/workspace/ravi/copilot"' \
   --cooldown 30s
 ```
 
-### WhatsApp Message Logger
+### Reaction Approval
 
-Log all incoming WhatsApp messages:
+Trigger on approved reactions:
 
 ```bash
-ravi triggers add "WhatsApp Logger" \
-  --topic "whatsapp.*.inbound" \
-  --message "New WhatsApp message received. Process and log accordingly." \
+ravi triggers add "Reaction Approval" \
+  --topic "ravi.inbound.reaction" \
+  --filter 'data.emoji includes "👍"' \
+  --message "Reaction received for {{data.targetMessageId}}. Resolve local state by targetMessageId and continue only if a pending item matches." \
   --session isolated \
   --cooldown 5s
 ```
+
+For approval-by-reaction workflows, store enough state before posting the review message:
+
+```json
+{
+  "external_msg_123": {
+    "domainId": "item_123",
+    "destinationChatId": "chat_public",
+    "status": "pending"
+  }
+}
+```
+
+The trigger agent should load that state by `{{data.targetMessageId}}`, publish at most once, mark the item processed, and stay silent when there is no match.
 
 ## Debugging Triggers
 
@@ -438,16 +482,19 @@ ravi daemon logs -f
 
 ### Verify filter syntax
 
-The filter must match the regex pattern `data.<path> <operator> "<value>"`. Double or single quotes around the value are both accepted:
+The filter must match the restricted parser syntax. Double or single quotes around the value are both accepted, and boolean expressions can be composed with `&&`, `||`, `!`, and parentheses:
 
 ```bash
 # Valid
 data.cwd == "/workspace/ravi"
 data.tool startsWith "contacts"
 data.output includes 'error'
+data.senderId == "5511999999999" && (data.emoji == "👍" || data.emoji == "👍🏻")
+!(data.source == "test")
 
-# Invalid (will fail open with a warning)
+# Invalid (CLI add/set reject these)
 cwd == "/workspace"          # Missing data. prefix
 data.cwd = "/workspace"      # Single = is not valid
 data.cwd == /workspace       # Missing quotes around value
+data.cwd == "/workspace" &&  # Missing right side
 ```

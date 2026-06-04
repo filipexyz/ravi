@@ -39,11 +39,11 @@ Individual calendars are personal resources. In a group chat, an agent must not 
 
 The current speaker is the safest default authority boundary:
 
-- when Luis is speaking, the agent can see Luis's approved calendar surface
-- when Rafa starts speaking, the active personal-resource scope switches to Rafa
+- when `<speaker-a>` is speaking, the agent can see `<speaker-a>`'s approved calendar surface
+- when `<speaker-b>` starts speaking, the active personal-resource scope switches to `<speaker-b>`
 - when a system event arrives, it does not create or expand personal-resource authority
 
-Cross-person scheduling needs explicit authorization because "put it on Beltrano's calendar" from another speaker is not sufficient proof that Beltrano authorized access.
+Cross-person scheduling needs explicit authorization because "put it on <speaker-b>'s calendar" from another speaker is not sufficient proof that `<speaker-b>` authorized access.
 
 ## Rejected Alternatives
 

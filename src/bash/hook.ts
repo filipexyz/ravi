@@ -177,6 +177,7 @@ interface BashHookOptions {
 
 export interface BashPermissionContext {
   agentId?: string;
+  kind?: string | null;
   sessionKey?: string;
   sessionName?: string;
   capabilities?: ContextCapability[];

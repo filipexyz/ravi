@@ -20,6 +20,8 @@ let mockContext:
   | {
       agentId?: string;
       context?: {
+        kind?: string;
+        agentId?: string;
         capabilities: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
       };
     }
@@ -152,6 +154,38 @@ describe("REBAC Engine", () => {
       expect(canWithCapabilityContext(context, "execute", "executable", "rg")).toBe(true);
       expect(canWithCapabilityContext(context, "access", "session", "main")).toBe(true);
       expect(canWithCapabilityContext(context, "modify", "session", "main")).toBe(true);
+    });
+
+    it("lets live grants augment stale agent runtime context capabilities", () => {
+      mockContext = {
+        agentId: "dev",
+        context: {
+          kind: "agent-runtime",
+          agentId: "dev",
+          capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+        },
+      };
+
+      expect(agentCan("dev", "execute", "group", "agents_create")).toBe(false);
+
+      grant("agent", "dev", "execute", "group", "agents_create");
+
+      expect(agentCan("dev", "execute", "group", "agents_create")).toBe(true);
+    });
+
+    it("keeps derived contexts snapshot-based after live grants", () => {
+      mockContext = {
+        agentId: "dev",
+        context: {
+          kind: "cli-runtime",
+          agentId: "dev",
+          capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+        },
+      };
+
+      grant("agent", "dev", "execute", "group", "agents_create");
+
+      expect(agentCan("dev", "execute", "group", "agents_create")).toBe(false);
     });
 
     it("ignores scoped capabilities from another agent", () => {

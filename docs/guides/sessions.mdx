@@ -314,6 +314,8 @@ ravi sessions send <name> -i
 
 By default, `send` is still fire-and-forget. Internally it injects an informational prompt with source attribution. Use `-w` only when the caller needs to wait for and stream the response.
 
+`sessions send` is not a direct external-message primitive. It prompts a Ravi session; it does not itself publish visible text to WhatsApp, Telegram, Matrix, or another channel. For visible channel delivery, use the session's normal response path or an explicit channel/media/outbound command.
+
 Use `-a <agent>` to auto-create the session if it does not exist:
 
 ```bash
@@ -367,6 +369,8 @@ All messaging commands support channel and target overrides:
 ```bash
 ravi sessions send <name> "message" --channel whatsapp --to 5511999999999
 ```
+
+These overrides describe the prompt/source context used to resolve or create the session. They should not be treated as "send this literal text to that phone number".
 
 ### Source Attribution
 

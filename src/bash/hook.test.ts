@@ -199,6 +199,7 @@ describe("createBashPermissionHook", () => {
     it("allows pwd and rg for live superadmin with stale runtime capabilities", () => {
       const decision = evaluateBashPermission("pwd && rg foo", {
         agentId: "dev",
+        kind: "agent-runtime",
         capabilities: [],
       });
 
@@ -208,10 +209,31 @@ describe("createBashPermissionHook", () => {
 
       const superadminDecision = evaluateBashPermission("pwd && rg foo", {
         agentId: "dev",
+        kind: "agent-runtime",
         capabilities: [],
       });
 
       expect(superadminDecision.allowed).toBe(true);
+    });
+
+    it("allows specific executable grants added after a stale agent-runtime context was issued", () => {
+      const decision = evaluateBashPermission("git status", {
+        agentId: "dev",
+        kind: "agent-runtime",
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+      });
+
+      expect(decision.allowed).toBe(false);
+
+      grant("agent", "dev", "execute", "executable", "git");
+
+      const liveGrantDecision = evaluateBashPermission("git status", {
+        agentId: "dev",
+        kind: "agent-runtime",
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+      });
+
+      expect(liveGrantDecision.allowed).toBe(true);
     });
   });
 
@@ -253,6 +275,7 @@ describe("createBashPermissionHook", () => {
     it("allows session access for live superadmin with stale runtime capabilities", () => {
       const decision = evaluateBashPermission("ravi sessions send main 'hello'", {
         agentId: "dev",
+        kind: "agent-runtime",
         sessionName: "dev-own",
         capabilities: [],
       });
@@ -263,6 +286,7 @@ describe("createBashPermissionHook", () => {
 
       const superadminDecision = evaluateBashPermission("ravi sessions send main 'hello'", {
         agentId: "dev",
+        kind: "agent-runtime",
         sessionName: "dev-own",
         capabilities: [],
       });

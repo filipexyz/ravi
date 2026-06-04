@@ -7,7 +7,27 @@
 
 import type { Statement } from "bun:sqlite";
 import type { SessionEntry } from "./types.js";
-import { dbRenameRouteSessionName, getDb, getDbChanges, getRaviDbPath } from "./router-db.js";
+import {
+  dbCreateSessionChatSubscription,
+  dbClearSessionOutputAttachment,
+  dbDetachSessionChatSubscription,
+  dbFindActiveSubscriptionByChat,
+  dbGetChat,
+  dbGetSessionOutputAttachment,
+  dbGetInstanceByInstanceId,
+  dbListSessionChatSubscriptions,
+  dbRenameRouteSessionName,
+  dbSetSessionChatSpeechMode,
+  dbSetSessionOutputAttachment,
+  getDb,
+  getDbChanges,
+  getRaviDbPath,
+  SubscriptionChatConflictError,
+  type AttachedByType,
+  type CreateSessionChatSubscriptionInput,
+  type SessionChatSubscriptionRecord,
+  type SubscriptionSpeechMode,
+} from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
 
@@ -832,4 +852,229 @@ export function resolveSession(nameOrKey: string): SessionEntry | null {
   if (byName) return byName;
   // Fall back to session_key
   return getSession(nameOrKey);
+}
+
+// ============================================================================
+// sessions/attach — subscriptions
+// See .ravi/specs/sessions/attach/SPEC.md
+// ============================================================================
+
+export class SessionAttachConflictError extends Error {
+  readonly code = "SESSION_ATTACH_CONFLICT" as const;
+  constructor(
+    public readonly chatId: string,
+    public readonly currentSessionKey: string,
+    public readonly requestedSessionKey: string,
+  ) {
+    super(
+      `Chat ${chatId} is already attached to session ${currentSessionKey}; cannot attach to ${requestedSessionKey}. Detach from the current owner first.`,
+    );
+    this.name = "SessionAttachConflictError";
+  }
+}
+
+export class SessionAttachInstanceMismatchError extends Error {
+  readonly code = "SESSION_ATTACH_INSTANCE_MISMATCH" as const;
+  constructor(
+    public readonly chatId: string,
+    public readonly chatInstance: string,
+    public readonly sessionInstance: string,
+  ) {
+    super(
+      `Cross-instance attach not allowed: chat ${chatId} lives on instance '${chatInstance}', session is on instance '${sessionInstance}'. Outbound via a chat's instance must use a session that also belongs to that instance (see sessions/attach spec: Instance Isolation).`,
+    );
+    this.name = "SessionAttachInstanceMismatchError";
+  }
+}
+
+/**
+ * Returns true when the chat and the session live on the same Omni
+ * instance. Cross-instance attach is forbidden because output
+ * would be sent via the chat's instance — which may be a different
+ * account entirely (e.g. an "observer" instance bound to the operator's
+ * personal WhatsApp number rather than the bot's number). The 2026-05-21
+ * production loop was caused by exactly this jump.
+ *
+ * The session_key encodes `agent:<agent>:<channel>:<account>:...` where
+ * `<account>` is the instance NAME. The chat row stores `instance_id`
+ * (UUID). We resolve the chat's UUID back to its instance name and
+ * compare. Sessions with no `accountId` (e.g. `main`-scoped agents with
+ * no per-account binding) are treated as instance-agnostic and the
+ * check is a no-op.
+ */
+function isChatOnSameInstanceAsSession(
+  chatId: string,
+  sessionKey: string,
+): { ok: true } | { ok: false; chatInstance: string; sessionInstance: string } {
+  const session = getSession(sessionKey);
+  const sessionInstance = session?.accountId;
+  if (!sessionInstance) return { ok: true };
+  const chat = dbGetChat(chatId);
+  if (!chat) return { ok: true };
+  const chatInstanceRow = dbGetInstanceByInstanceId(chat.instanceId);
+  const chatInstance = chatInstanceRow?.name ?? chat.instanceId;
+  if (chatInstance === sessionInstance) return { ok: true };
+  return { ok: false, chatInstance, sessionInstance };
+}
+
+/**
+ * Throwing wrapper for attach write paths.
+ */
+function assertChatInstanceMatchesSession(chatId: string, sessionKey: string): void {
+  const check = isChatOnSameInstanceAsSession(chatId, sessionKey);
+  if (!check.ok) {
+    throw new SessionAttachInstanceMismatchError(chatId, check.chatInstance, check.sessionInstance);
+  }
+}
+
+/**
+ * Soft check for the consumer subscription override: returns false when
+ * applying the subscription would jump instances, so the caller can fall
+ * back to the route-derived sessionKey instead of crossing the boundary.
+ */
+export function subscriptionAllowsCrossInstance(chatId: string, sessionKey: string): boolean {
+  return isChatOnSameInstanceAsSession(chatId, sessionKey).ok;
+}
+
+export interface AttachChatToSessionInput {
+  sessionKey: string;
+  chatId: string;
+  role?: "primary" | "input" | "mirror";
+  attachedByType?: AttachedByType;
+  attachedById?: string | null;
+  attachedReason?: string | null;
+  contextSnapshotAtAttach?: Record<string, unknown> | null;
+  setOutputTarget?: boolean;
+  speechMode?: SubscriptionSpeechMode;
+  speechReason?: string | null;
+}
+
+export interface AttachChatToSessionResult {
+  subscription: SessionChatSubscriptionRecord;
+  created: boolean;
+  outputAttached: boolean;
+}
+
+/**
+ * Attach a chat to a session. Enforces the cross-session uniqueness rule:
+ * a canonical chat can only be attached to one session at a time. Re-attach
+ * is idempotent — the existing active row is returned.
+ *
+ * Caller is expected to validate that the session and chat exist; this
+ * function does not check referential integrity, since the SQL foreign
+ * keys do that on insert.
+ */
+export function attachChatToSession(input: AttachChatToSessionInput): AttachChatToSessionResult {
+  // Instance isolation: a chat may only be attached to a session that
+  // belongs to the chat's own instance. Cross-instance attach was the
+  // root cause of the 2026-05-21 production loop. Checked before the
+  // idempotent path so legacy bad rows still throw on re-attach attempts
+  // (operator must detach + re-attach to the correct session).
+  assertChatInstanceMatchesSession(input.chatId, input.sessionKey);
+
+  // Idempotent path: if this session already has an active row for
+  // this chat, return it. Avoids the cross-session probe and short-circuits
+  // re-attach calls cheaply.
+  const ownActive = dbListSessionChatSubscriptions(input.sessionKey).find((s) => s.chatId === input.chatId);
+  if (ownActive) {
+    if (input.setOutputTarget ?? true) {
+      const subscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
+      return { subscription, created: false, outputAttached: true };
+    }
+    if (input.speechMode && input.speechMode !== ownActive.speechMode) {
+      const subscription = dbSetSessionChatSpeechMode(
+        input.sessionKey,
+        input.chatId,
+        input.speechMode,
+        input.speechReason ?? input.attachedReason ?? "attach-speech-update",
+      );
+      return { subscription, created: false, outputAttached: subscription.outputAttachedAt !== undefined };
+    }
+    return { subscription: ownActive, created: false, outputAttached: false };
+  }
+
+  // Enforce the spec's single-owner rule with a clear error. The DB also
+  // enforces it via UNIQUE(chat_id) WHERE detached_at IS NULL, but the
+  // app-layer check provides a typed error pointing at the current owner.
+  const existingOwner = dbFindActiveSubscriptionByChat(input.chatId);
+  if (existingOwner) {
+    throw new SessionAttachConflictError(input.chatId, existingOwner.sessionKey, input.sessionKey);
+  }
+  try {
+    const setOutputTarget = input.setOutputTarget ?? true;
+    const speechMode = input.speechMode ?? (setOutputTarget || input.role === "primary" ? "speak" : "muted");
+    const subscription = dbCreateSessionChatSubscription({
+      ...(input as CreateSessionChatSubscriptionInput),
+      speechMode,
+      speechReason: input.speechReason ?? input.attachedReason ?? null,
+    });
+    if (setOutputTarget) {
+      const outputSubscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
+      return { subscription: outputSubscription, created: true, outputAttached: true };
+    }
+    if (input.role === "primary" && !dbGetSessionOutputAttachment(input.sessionKey)) {
+      const outputSubscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
+      return { subscription: outputSubscription, created: true, outputAttached: true };
+    }
+    return { subscription, created: true, outputAttached: false };
+  } catch (err) {
+    // The pre-INSERT existingOwner check is racy: another consumer turn
+    // may have inserted between the SELECT and the INSERT. Translate the
+    // DB-level conflict into the typed app-layer error so callers stay
+    // on the same error contract regardless of which path lost the race.
+    if (err instanceof SubscriptionChatConflictError) {
+      throw new SessionAttachConflictError(err.chatId, err.currentSessionKey, err.requestedSessionKey);
+    }
+    throw err;
+  }
+}
+
+export function setSessionChatSpeechMode(input: {
+  sessionKey: string;
+  chatId: string;
+  speechMode: SubscriptionSpeechMode;
+  reason?: string | null;
+}): SessionChatSubscriptionRecord {
+  return dbSetSessionChatSpeechMode(input.sessionKey, input.chatId, input.speechMode, input.reason ?? null);
+}
+
+/**
+ * Detach a chat from a session. Prevents removing the last active primary
+ * subscription (which would orphan the session).
+ */
+export function detachChatFromSession(
+  sessionKey: string,
+  chatId: string,
+): { detached: boolean; outputDetached: boolean } {
+  const active = dbListSessionChatSubscriptions(sessionKey);
+  const target = active.find((s) => s.chatId === chatId);
+  if (!target) return { detached: false, outputDetached: false };
+
+  const remainingPrimaries = active.filter((s) => s.role === "primary" && s.chatId !== chatId).length;
+  if (target.role === "primary" && remainingPrimaries === 0) {
+    return {
+      detached: false,
+      outputDetached: dbClearSessionOutputAttachment(sessionKey, chatId),
+    };
+  }
+
+  return {
+    detached: dbDetachSessionChatSubscription(sessionKey, chatId),
+    outputDetached: target.outputAttachedAt !== undefined,
+  };
+}
+
+/**
+ * List active subscriptions for a session, primary first.
+ */
+export function listSessionSubscriptions(sessionKey: string): SessionChatSubscriptionRecord[] {
+  return dbListSessionChatSubscriptions(sessionKey);
+}
+
+/**
+ * Find the session that currently owns a given chat (if any). Used by the
+ * consumer to route inbound from attached chats into the owner session.
+ */
+export function findSessionByAttachedChat(chatId: string): SessionChatSubscriptionRecord | null {
+  return dbFindActiveSubscriptionByChat(chatId);
 }

@@ -104,16 +104,16 @@ Event-driven triggers that subscribe to NATS topics and fire agent prompts when 
 
 **Anti-loop protection:**
 
-- Blocked prefixes: topics starting with `ravi.session.` are rejected at subscription time
+- Blocked prefixes: topics starting with `ravi.session.` can be saved by the CLI for compatibility, but the runner refuses to arm them
 - Session filter: events from trigger sessions (`:trigger:` in topic) are skipped
 - Data flag: events with `_trigger: true` are skipped
 - Cooldown: per-trigger cooldown (default 5s) prevents rapid re-firing. Cooldown is set in-memory immediately on first match to prevent race conditions with concurrent events
 
 ### Trigger Filters
 
-A restricted expression syntax for filtering events. No `eval` or `new Function()` — uses a safe regex-based parser.
+A restricted expression syntax for filtering events. No `eval` or `new Function()` — uses a safe parser.
 
-**Syntax:** `data.<path> <operator> "<value>"`
+**Syntax:** `data.<path> <operator> "<value>"`, optionally composed with `&&`, `||`, unary `!`, and parentheses.
 
 **Operators:** `==`, `!=`, `startsWith`, `endsWith`, `includes`
 
@@ -123,9 +123,10 @@ data.permission_mode != "bypassPermissions"
 data.cwd startsWith "/workspace/ravi"
 data.hook_event_name endsWith "Submit"
 data.tool includes "Bash"
+data.senderId == "5511999999999" && (data.emoji == "👍" || data.emoji == "👍🏻")
 ```
 
-If the filter is empty or missing, the trigger always fires. If the filter syntax is invalid, it fails open (fires with a warning logged). If the data path doesn't exist, the filter returns false (no match).
+Precedence is `!` before `&&` before `||`. If the filter is empty or missing, the trigger always fires. CLI commands reject invalid filter syntax before persisting it. Runtime evaluation still fails open for legacy invalid filters and logs a warning. If the data path doesn't exist, the filter returns false (no match).
 
 ### Message Templates
 

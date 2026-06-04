@@ -9,7 +9,7 @@
 Given a session with no `floor_actor`, when a resolved contact sends a message, Ravi should inject a `speaker_annotation` equivalent to:
 
 ```text
-Fulano começou a falar.
+<speaker-a> começou a falar.
 ```
 
 The prompt envelope should also carry `active_actor_context.contact_id` and `platform_identity_id` when available.
@@ -20,25 +20,25 @@ Given the same contact sends multiple contiguous messages, Ravi should inject th
 
 ### Speaker Switch
 
-Given `floor_actor = Luis` and `Rafa` sends the next human-authored message, Ravi should inject a speaker-switch annotation equivalent to:
+Given `floor_actor = <speaker-a>` and `<speaker-b>` sends the next human-authored message, Ravi should inject a speaker-switch annotation equivalent to:
 
 ```text
-Agora Rafa está com a palavra.
+Agora <speaker-b> está com a palavra.
 ```
 
-The active actor context should switch to Rafa.
+The active actor context should switch to `<speaker-b>`.
 
 ### System Interruption
 
-Given `floor_actor = Luis`, when a `[System] Inform`, task event, daemon notice, trigger, or recovery notice is injected, the floor actor should remain Luis.
+Given `floor_actor = <speaker-a>`, when a `[System] Inform`, task event, daemon notice, trigger, or recovery notice is injected, the floor actor should remain `<speaker-a>`.
 
-If Luis speaks next, Ravi should inject a continuation annotation equivalent to:
+If `<speaker-a>` speaks next, Ravi should inject a continuation annotation equivalent to:
 
 ```text
-Continuando com Luis.
+Continuando com <speaker-a>.
 ```
 
-If Rafa speaks next, Ravi should inject a speaker-switch annotation for Rafa.
+If `<speaker-b>` speaks next, Ravi should inject a speaker-switch annotation for `<speaker-b>`.
 
 ### Unresolved Speaker
 
@@ -46,11 +46,11 @@ Given a message actor cannot be resolved to a contact/platform identity, Ravi ma
 
 ### Calendar Scope
 
-Given Luis is the active speaker, a calendar tool should only see calendars authorized for Luis's contact/platform identity.
+Given `<speaker-a>` is the active speaker, a calendar tool should only see calendars authorized for `<speaker-a>`'s contact/platform identity.
 
-Given Rafa is present in the same group but is not the active speaker, Luis's prompt should not grant access to Rafa's calendar.
+Given `<speaker-b>` is present in the same group but is not the active speaker, `<speaker-a>`'s prompt should not grant access to `<speaker-b>`'s calendar.
 
-Given a system event occurs after Luis speaks, the system event itself should not create new calendar authority.
+Given a system event occurs after `<speaker-a>` speaks, the system event itself should not create new calendar authority.
 
 ## Suggested Test Areas
 

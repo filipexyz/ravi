@@ -44,6 +44,19 @@ Com intervalo:
 ravi cron add "Check Emails" --every 30m --message "Verifique novos emails"
 ```
 
+Shell direto, sem invocar agent/LLM:
+```bash
+ravi cron add "ETL" --cron "*/15 * * * *" --shell "python3 /home/ravi/job.py"
+```
+
+Shell com agent apenas em erro:
+```bash
+ravi cron add "ETL" \
+  --cron "*/15 * * * *" \
+  --shell "python3 /home/ravi/job.py" \
+  --on-error notify-session:admin-group
+```
+
 One-shot (executa uma vez):
 ```bash
 ravi cron add "Lembrete" --at "2025-02-01T15:00" --message "Lembrar de X" --delete-after
@@ -56,8 +69,14 @@ Opções:
 - `--isolated` - Roda em sessão isolada
 - `--delete-after` - Deleta após primeira execução
 - `--description <text>` - Descrição do job
+- `--shell <cmd>` / `--exec <cmd>` - Executa comando shell direto sem prompt LLM
+- `--timeout <seconds|duration>` - Timeout para shell jobs, ex: `60`, `30s`, `10m`
+- `--env-file <path>` - Arquivo dotenv simples para shell jobs
+- `--on-error notify-session:<session>` - Notifica sessão só quando shell job falhar
 
 Depois de criar job que deve responder em um chat/sessão específica, sempre rode `ravi cron show <id>` e confira `agent`, `account`, `session`/`reply-session` antes de considerar pronto. Não confie no account herdado do contexto atual: se o cron entregar pelo account errado, o agent pode trabalhar e falhar no delivery com `chat not found`.
+
+Para trabalho determinístico (ETL, scraping, sync, scripts idempotentes), prefira `--shell` em vez de pedir para um agent usar Bash. Isso mantém tracking em `ravi cron list/show`, evita custo de tokens em runs bem-sucedidos e só envolve agent quando houver `--on-error`.
 
 Para jobs de monitoramento, faça o prompt comparar o estado atual com a última checagem e responder só quando houver mudança material. Não transforme o mesmo bloqueio em alerta a cada tick: se a causa, impacto e próximo passo continuam iguais, o job deve registrar localmente ou ficar silencioso. Se a repetição do bloqueio indicar risco novo, como retry infinito ou consumo inútil de tentativas, reporte esse risco como decisão operacional necessária em vez de recontar o mesmo erro.
 
@@ -72,7 +91,7 @@ ravi cron disable <id>
 ravi cron set <id> <key> <value>
 ```
 
-Keys: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after
+Keys: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after
 
 ### Executar manualmente
 ```bash

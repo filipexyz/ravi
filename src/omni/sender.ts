@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { createOmniClient, type OmniClient } from "./client.js";
 import { logger } from "../utils/logger.js";
+import type { OmniUserMention } from "./mentions.js";
 
 const log = logger.child("omni:sender");
 
@@ -57,10 +58,24 @@ export class OmniSender {
   /**
    * Send a text message via omni.
    */
-  async send(instanceId: string, to: string, text: string, threadId?: string): Promise<{ messageId?: string }> {
+  async send(
+    instanceId: string,
+    to: string,
+    text: string,
+    optionsOrThreadId?: string | { threadId?: string; mentions?: OmniUserMention[] },
+  ): Promise<{ messageId?: string }> {
     try {
+      const options =
+        typeof optionsOrThreadId === "string" ? { threadId: optionsOrThreadId } : (optionsOrThreadId ?? {});
       const result = (await this.withRetry(
-        () => this.client.messages.send({ instanceId, to, text, ...(threadId ? { threadId } : {}) }),
+        () =>
+          this.client.messages.send({
+            instanceId,
+            to,
+            text,
+            ...(options.threadId ? { threadId: options.threadId } : {}),
+            ...(options.mentions?.length ? { mentions: options.mentions } : {}),
+          }),
         `send(${instanceId})`,
       )) as { messageId?: string };
       return { messageId: result.messageId };
@@ -99,6 +114,36 @@ export class OmniSender {
       );
     } catch (err) {
       log.error("Failed to send reaction", { instanceId, to, messageId, emoji, error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Delete a channel message sent by the current instance.
+   */
+  async deleteMessage(instanceId: string, to: string, messageId: string): Promise<void> {
+    try {
+      await this.withRetry(
+        () => this.client.messages.deleteChannel({ instanceId, channelId: to, messageId }),
+        `deleteMessage(${instanceId})`,
+      );
+    } catch (err) {
+      log.error("Failed to delete message", { instanceId, to, messageId, error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Edit a channel message sent by the current instance.
+   */
+  async editMessage(instanceId: string, to: string, messageId: string, text: string): Promise<void> {
+    try {
+      await this.withRetry(
+        () => this.client.messages.editChannel({ instanceId, channelId: to, messageId, text }),
+        `editMessage(${instanceId})`,
+      );
+    } catch (err) {
+      log.error("Failed to edit message", { instanceId, to, messageId, error: err });
       throw err;
     }
   }

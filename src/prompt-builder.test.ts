@@ -51,6 +51,8 @@ describe("buildSystemPrompt", () => {
     expect(sections.map((section) => section.id)).toEqual([
       "identity",
       "system.commands",
+      "session.attach",
+      "session.actions",
       "session.runtime",
       "session.boundary",
       "channel.output_formatting",
@@ -61,6 +63,15 @@ describe("buildSystemPrompt", () => {
     const prompt = renderPromptSections(sections);
     expect(prompt.startsWith("## Identidade\n\nVocê é Ravi.")).toBe(true);
     expect(prompt).toContain("## Extra Context\n\nInjected context text.");
+    expect(prompt).toContain("ravi sessions unmute");
+    expect(prompt).toContain("ravi sessions actions --json");
+    expect(prompt).toContain("ravi sessions delete-message <message-id>");
+    expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(prompt).toContain("O CLI infere a sessão pelo contexto de execução do agent.");
+    expect(prompt).toContain("Leia os campos `promptHint` e `usage.tools` retornados por `actions --json`");
+    expect(prompt).toContain("apagar ou editar suas próprias mensagens, reagir, responder, enviar stickers");
+    expect(prompt).not.toContain("ravi sessions focus");
+    expect(prompt).not.toContain("focus_chat");
     expect(prompt).not.toContain('"id"');
     expect(prompt).not.toContain('"priority"');
   });
@@ -92,7 +103,32 @@ describe("buildSystemPrompt", () => {
 
     expect(prompt).toContain("## Session Boundary");
     expect(prompt).toContain("current session (main-dm-615153)");
-    expect(prompt).toContain("ravi sessions read main-dm-615153");
+    expect(prompt).toContain("ravi sessions read --json");
     expect(prompt).toContain("Never recover missing context from another DM/group/session");
+  });
+
+  it("does not render mentioned contact metadata into the system prompt", () => {
+    const context = {
+      channelId: "whatsapp-baileys",
+      channelName: "WhatsApp",
+      isGroup: true,
+      groupName: "Projeto",
+      mentionedContactsContext: [
+        {
+          displayName: "Thiago Freire",
+          summaryLines: [
+            "No CRM, aparece com lifecycle active, relacionamento good.",
+            "Próxima ação no CRM: alinhar arquitetura.",
+          ],
+        },
+      ],
+    };
+
+    const prompt = buildSystemPrompt("main", context);
+    expect(prompt).not.toContain("## Pessoas Mencionadas");
+    expect(prompt).not.toContain("Nota privada de identidade");
+    expect(prompt).not.toContain("Thiago Freire");
+    expect(prompt).not.toContain("No CRM, aparece com lifecycle active");
+    expect(prompt).not.toContain('"summaryLines"');
   });
 });

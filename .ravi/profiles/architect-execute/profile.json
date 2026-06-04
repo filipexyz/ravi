@@ -1,0 +1,102 @@
+{
+  "id": "architect-execute",
+  "version": "1",
+  "label": "Architect: Execute",
+  "description": "Run a previously generated plan one batch at a time, emit setup spec and task profiles, and register cron entries. Stages 4-5 of an architect run.",
+  "sessionNameTemplate": "architect-<task-id>-execute",
+  "runtimeDefaults": {
+    "effort": "low"
+  },
+  "workspaceBootstrap": {
+    "mode": "task_dir",
+    "ensureTaskDir": true
+  },
+  "sync": {
+    "artifactFirst": true,
+    "taskDocument": {
+      "mode": "optional"
+    }
+  },
+  "rendererHints": {
+    "label": "architect execute",
+    "showTaskDoc": false,
+    "showWorkspace": true
+  },
+  "defaultTags": [
+    "task.profile.architect-execute",
+    "architect.stage.execute",
+    "onboarding"
+  ],
+  "inputs": [
+    {
+      "key": "run_id",
+      "label": "Architect run id",
+      "required": true
+    },
+    {
+      "key": "plan_artifact",
+      "label": "Plan artifact path",
+      "description": "Path to plan.json produced by the Plan stage.",
+      "required": true
+    },
+    {
+      "key": "execution_mode",
+      "label": "Execution mode",
+      "description": "dry-run | apply-with-confirmation | apply-non-interactive. Defaults to apply-with-confirmation.",
+      "defaultValue": "apply-with-confirmation"
+    },
+    {
+      "key": "from_step",
+      "label": "Start at step",
+      "description": "Resume from operation index (0-based). Use to continue an interrupted run.",
+      "defaultValue": "0"
+    }
+  ],
+  "completion": {
+    "summaryRequired": true,
+    "summaryLabel": "Execution summary",
+    "notes": "Summarize operations applied, irreversible operations confirmed, errors encountered, recovery state if any, and the setup spec path."
+  },
+  "progress": {
+    "requireMessage": true,
+    "notes": "Report after each batch boundary. Verbosity required when running with non-interactive mode."
+  },
+  "artifacts": [
+    {
+      "kind": "architect-setup-spec",
+      "label": "Setup spec (final)",
+      "pathTemplate": "{{task.taskDir}}/setup-spec.md",
+      "primary": true
+    },
+    {
+      "kind": "architect-execute-log",
+      "label": "Execution log (per-op)",
+      "pathTemplate": "{{task.taskDir}}/execute.log.json"
+    },
+    {
+      "kind": "architect-summary",
+      "label": "Run summary",
+      "pathTemplate": "{{task.taskDir}}/summary.md"
+    },
+    {
+      "kind": "architect-recovery",
+      "label": "Recovery instructions (when execution stalls)",
+      "pathTemplate": "{{task.taskDir}}/recovery.md"
+    }
+  ],
+  "state": [
+    {
+      "path": "architect.runId",
+      "valueTemplate": "{{input.run_id}}"
+    }
+  ],
+  "templates": {
+    "create": "## Architect Execute\n\nRun id: {{input.run_id}}\n\nPlan: {{input.plan_artifact}}\n\nExecute the plan one batch at a time. Pause on irreversible operations for confirmation. Emit setup spec when done.",
+    "dispatch": "[System] Execute: You are Stage 4-5 of architect run {{input.run_id}}. Execute the plan at {{input.plan_artifact}} in mode {{input.execution_mode}} starting at step {{input.from_step}}. On success, write {{artifacts.primary.path}} and a summary. On failure, write recovery.md and stop.",
+    "resume": "[System] The daemon restarted. Resume architect execute task {{task.id}}. Run id: {{input.run_id}}. Re-check the last applied step in execute.log.json before proceeding.",
+    "dispatchSummary": "Execute stage started for architect run {{input.run_id}} (mode: {{input.execution_mode}}).",
+    "reportDoneMessage": "{{report.text}}",
+    "reportBlockedMessage": "{{report.text}}",
+    "reportFailedMessage": "{{report.text}}"
+  }
+}

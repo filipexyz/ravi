@@ -87,6 +87,7 @@ mock.module("../../triggers/index.js", () => ({
       accountId: input.accountId,
       cooldownMs: input.cooldownMs,
       session: input.session,
+      filter: input.filter,
       enabled: true,
       fireCount: 0,
       createdAt: 1,
@@ -144,30 +145,160 @@ async function captureJson(run: () => Promise<unknown>): Promise<Record<string, 
   return JSON.parse(lines.join("\n")) as Record<string, unknown>;
 }
 
-describe("TriggersCommands topic validation", () => {
+async function captureWarnings(run: () => Promise<unknown>): Promise<string[]> {
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map((arg) => String(arg)).join(" "));
+  };
+
+  try {
+    await run();
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  return warnings;
+}
+
+describe("TriggersCommands topic guidance", () => {
   beforeEach(() => {
     createdTriggers.length = 0;
     updatedTriggers.length = 0;
   });
 
-  it("rejects ravi.session topics on add", async () => {
+  it("allows ravi.session topics on add but prints an internal topic warning", async () => {
     const commands = new TriggersCommands();
 
-    await expect(commands.add("loop", "ravi.session.agent-main.prompt", "hello")).rejects.toThrow(
-      "Triggers cannot subscribe",
-    );
+    const warnings = await captureWarnings(() => commands.add("loop", "ravi.session.agent-main.prompt", "hello"));
 
-    expect(createdTriggers).toHaveLength(0);
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "loop",
+        topic: "ravi.session.agent-main.prompt",
+      }),
+    );
+    expect(warnings.join("\n")).toContain("runner skips ravi.session.*");
   });
 
-  it("rejects ravi.session topics on set", async () => {
+  it("allows channel reaction aliases with canonical topic warning", async () => {
     const commands = new TriggersCommands();
 
-    await expect(commands.set("trg_1", "topic", "ravi.session.agent-main.runtime")).rejects.toThrow(
-      "Triggers cannot subscribe",
+    const warnings = await captureWarnings(() => commands.add("reaction", "whatsapp.*.reaction", "hello"));
+
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "reaction",
+        topic: "whatsapp.*.reaction",
+      }),
+    );
+    expect(warnings.join("\n")).toContain("ravi.inbound.reaction");
+  });
+
+  it("allows session CLI topics", async () => {
+    const commands = new TriggersCommands();
+
+    await commands.add("cli", "ravi.*.cli.contacts.*", "hello");
+
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "cli",
+        topic: "ravi.*.cli.contacts.*",
+      }),
+    );
+  });
+
+  it("uses the catalog default message template when --message is omitted", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(() =>
+      commands.add(
+        "local mail watcher",
+        "ravi.inbox.mail.received",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
     );
 
-    expect(updatedTriggers).toHaveLength(0);
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "local mail watcher",
+        topic: "ravi.inbox.mail.received",
+        message: expect.stringContaining("ravi mail messages read {{data.mail.messageId}}"),
+      }),
+    );
+    expect(payload).toMatchObject({
+      status: "created",
+      messageTemplate: {
+        source: "catalog_default",
+        topicId: "inbox.mail.received",
+        templateId: "mail-inbox-default",
+      },
+    });
+  });
+
+  it("still requires --message for custom topics without a catalog template", async () => {
+    const commands = new TriggersCommands();
+
+    await expect(commands.add("custom", "custom.mail.received")).rejects.toThrow("--message is required");
+    expect(createdTriggers).toEqual([]);
+  });
+
+  it("accepts composed boolean filters on add", async () => {
+    const commands = new TriggersCommands();
+
+    await commands.add(
+      "filtered",
+      "ravi.inbound.reaction",
+      "hello",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      `data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")`,
+    );
+
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "filtered",
+        filter: `data.chatId == "120363424@g.us" && (data.emoji == "👍" || data.emoji == "👍🏻")`,
+      }),
+    );
+  });
+
+  it("rejects invalid filters on add before persisting", async () => {
+    const commands = new TriggersCommands();
+
+    await expect(
+      commands.add(
+        "bad",
+        "ravi.inbound.reaction",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "data.ok == true",
+      ),
+    ).rejects.toThrow("Invalid filter");
+    expect(createdTriggers).toEqual([]);
+  });
+
+  it("allows ravi.session topics on set but prints an internal topic warning", async () => {
+    const commands = new TriggersCommands();
+
+    const warnings = await captureWarnings(() => commands.set("trg_1", "topic", "ravi.session.agent-main.runtime"));
+
+    expect(updatedTriggers).toContainEqual({
+      id: "trg_1",
+      patch: { topic: "ravi.session.agent-main.runtime" },
+    });
+    expect(warnings.join("\n")).toContain("runner skips ravi.session.*");
   });
 
   it("prints created trigger data in --json mode", async () => {
@@ -191,6 +322,7 @@ describe("TriggersCommands topic validation", () => {
       status: "created",
       target: { type: "trigger", id: "trg_1" },
       changedCount: 1,
+      warnings: [expect.stringContaining("custom NATS subject")],
       trigger: {
         id: "trg_1",
         name: "json trigger",
@@ -200,21 +332,49 @@ describe("TriggersCommands topic validation", () => {
     });
   });
 
+  it("prints trigger topic catalog in --json mode", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(async () => commands.topics(true));
+
+    expect(payload).toMatchObject({
+      topics: expect.arrayContaining([
+        expect.objectContaining({
+          pattern: "ravi.inbound.reaction",
+          payload: "{ targetMessageId, emoji, senderId }",
+        }),
+        expect.objectContaining({
+          pattern: "ravi.*.cli.*.*",
+        }),
+        expect.objectContaining({
+          pattern: "ravi._cli.cli.*.*",
+        }),
+      ]),
+    });
+  });
+
   it("prints updated trigger data in --json mode", async () => {
     const commands = new TriggersCommands();
 
-    const payload = await captureJson(() => commands.set("trg_1", "filter", "data.ok == true", true));
+    const payload = await captureJson(() => commands.set("trg_1", "filter", `data.ok == "true"`, true));
 
     expect(payload).toMatchObject({
       status: "updated",
       target: { type: "trigger", id: "trg_1" },
       changedCount: 1,
       property: "filter",
-      value: "data.ok == true",
+      value: `data.ok == "true"`,
       trigger: {
         id: "trg_1",
-        filter: "data.ok == true",
+        filter: `data.ok == "true"`,
       },
     });
+  });
+
+  it("rejects invalid filters on set before updating", async () => {
+    const commands = new TriggersCommands();
+
+    await expect(commands.set("trg_1", "filter", `data.ok == "true" &&`)).rejects.toThrow("Invalid filter");
+    expect(updatedTriggers).toEqual([]);
   });
 });

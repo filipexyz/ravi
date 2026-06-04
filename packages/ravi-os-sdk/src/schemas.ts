@@ -263,6 +263,607 @@ export const AgentsSyncInstructionsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.check`. */
+export const AppsCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Optional app id. Omit to check all discovered apps.",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.check`. */
+export const AppsCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "checked": {
+      "type": "number"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "results": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "repo",
+              "plugin",
+              "state"
+            ],
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "source",
+          "ok",
+          "errors",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ok",
+    "checked",
+    "results"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.list`. */
+export const AppsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching apps to skip (default: 0)",
+      "type": "string"
+    },
+    "source": {
+      "description": "Filter by source: repo|plugin|state",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.list`. */
+export const AppsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interfaceNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "permissions": {
+            "additionalProperties": false,
+            "properties": {
+              "mutating": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "optional": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "required": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "required",
+              "optional",
+              "mutating"
+            ],
+            "type": "object"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "rootPath": {
+            "type": "string"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "repo",
+              "plugin",
+              "state"
+            ],
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "description",
+          "schema",
+          "source",
+          "path",
+          "relativePath",
+          "rootPath",
+          "interfaceNames",
+          "permissions",
+          "valid",
+          "errors",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interfaceNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "permissions": {
+            "additionalProperties": false,
+            "properties": {
+              "mutating": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "optional": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "required": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "required",
+              "optional",
+              "mutating"
+            ],
+            "type": "object"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "rootPath": {
+            "type": "string"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "repo",
+              "plugin",
+              "state"
+            ],
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "description",
+          "schema",
+          "source",
+          "path",
+          "relativePath",
+          "rootPath",
+          "interfaceNames",
+          "permissions",
+          "valid",
+          "errors",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "apps"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.show`. */
+export const AppsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "App id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.show`. */
+export const AppsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "app": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "interfaceNames": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "manifest": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "permissions": {
+          "additionalProperties": false,
+          "properties": {
+            "mutating": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "optional": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "required": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "required",
+            "optional",
+            "mutating"
+          ],
+          "type": "object"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "rootPath": {
+          "type": "string"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "repo",
+            "plugin",
+            "state"
+          ],
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "description",
+        "schema",
+        "source",
+        "path",
+        "relativePath",
+        "rootPath",
+        "interfaceNames",
+        "permissions",
+        "valid",
+        "errors",
+        "warnings",
+        "manifest"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "app"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.archive`. */
 export const ArtifactsArchiveInputSchema = {
   "additionalProperties": false,
@@ -922,6 +1523,26 @@ export const AudioGenerateInputSchema = {
   "required": [
     "text"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.backfill-provider-timestamps`. */
+export const ChatsBackfillProviderTimestampsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Write corrected provider timestamps. Without this, runs dry-run.",
+      "type": "boolean"
+    },
+    "dryRun": {
+      "description": "Force preview mode even if --apply is present",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum matching messages to inspect/apply",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2437,7 +3058,16 @@ export const CrmAccountShowInputSchema = {
 /** JSON Schema for the input body of `crm.board`. */
 export const CrmBoardInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "includeEmptyStages": {
+      "description": "Include configured stages with no opportunities",
+      "type": "boolean"
+    },
+    "pipeline": {
+      "description": "Filter by CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2664,6 +3294,18 @@ export const CrmNextInputSchema = {
       "description": "Filter by contact",
       "type": "string"
     },
+    "dueAfter": {
+      "description": "Only actions with due_at >= <ts>",
+      "type": "string"
+    },
+    "dueBefore": {
+      "description": "Only actions with due_at < <ts>",
+      "type": "string"
+    },
+    "dueToday": {
+      "description": "Only actions whose due_at is today",
+      "type": "boolean"
+    },
     "limit": {
       "description": "Page size (default: 25, max: 500)",
       "type": "string"
@@ -2678,6 +3320,10 @@ export const CrmNextInputSchema = {
     },
     "owner": {
       "description": "Filter by owner, e.g. agent:main",
+      "type": "string"
+    },
+    "taskType": {
+      "description": "Filter by task_type (e.g. commitment, follow_up, call)",
       "type": "string"
     }
   },
@@ -2828,12 +3474,420 @@ export const CrmOpportunityShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.pipeline.create`. */
+export const CrmPipelineCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "default": {
+      "description": "Mark as default pipeline for the entity type",
+      "type": "boolean"
+    },
+    "entityType": {
+      "description": "CRM entity type (default: opportunity)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated create attempts",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Metadata JSON object",
+      "type": "string"
+    },
+    "name": {
+      "description": "Pipeline name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.list`. */
+export const CrmPipelineListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "entityType": {
+      "description": "Filter by CRM entity type",
+      "type": "string"
+    },
+    "includeArchived": {
+      "description": "Include archived pipelines",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching pipelines to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.set`. */
+export const CrmPipelineSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "field": {
+      "description": "name|entity-type|default|status|metadata",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "value": {
+      "description": "New value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "pipeline",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.show`. */
+export const CrmPipelineShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.add`. */
+export const CrmPipelineStageAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "description": "new|active|waiting|terminal_won|terminal_lost",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated create attempts",
+      "type": "string"
+    },
+    "key": {
+      "description": "Stage key",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Metadata JSON object",
+      "type": "string"
+    },
+    "name": {
+      "description": "Stage display name",
+      "type": "string"
+    },
+    "order": {
+      "description": "Stage sort order",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "probability": {
+      "description": "Default probability between 0 and 1",
+      "type": "string"
+    },
+    "terminal": {
+      "description": "Mark stage as terminal",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "key",
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.archive`. */
+export const CrmPipelineStageArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline",
+    "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.list`. */
+export const CrmPipelineStageListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeArchived": {
+      "description": "Include archived stages",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching stages to skip (default: 0)",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.set`. */
+export const CrmPipelineStageSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "field": {
+      "description": "key|name|order|category|probability|terminal|status|metadata",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    },
+    "value": {
+      "description": "New value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "pipeline",
+    "stage",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.show`. */
+export const CrmPipelineStageShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline",
+    "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.topic.add`. */
+export const CrmPipelineStageTopicAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "Topic description",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated create attempts",
+      "type": "string"
+    },
+    "key": {
+      "description": "Topic key",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Metadata JSON object",
+      "type": "string"
+    },
+    "order": {
+      "description": "Topic sort order",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    },
+    "title": {
+      "description": "Topic title",
+      "type": "string"
+    },
+    "type": {
+      "description": "subject|objection|qualification|proposal|pricing|next_action|risk",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "pipeline",
+    "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.topic.archive`. */
+export const CrmPipelineStageTopicArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    },
+    "topic": {
+      "description": "Topic key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline",
+    "stage",
+    "topic"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.topic.set`. */
+export const CrmPipelineStageTopicSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "field": {
+      "description": "key|title|description|type|order|status|metadata",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    },
+    "topic": {
+      "description": "Topic key or ID",
+      "type": "string"
+    },
+    "value": {
+      "description": "New value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "pipeline",
+    "stage",
+    "topic",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.stage.topics`. */
+export const CrmPipelineStageTopicsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeArchived": {
+      "description": "Include archived topics",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching topics to skip (default: 0)",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Stage key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline",
+    "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.task.cancel`. */
+export const CrmTaskCancelInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "description": "Reason for cancellation (stored in event payload)",
+      "type": "string"
+    },
+    "task": {
+      "description": "CRM task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.task.create`. */
 export const CrmTaskCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "account": {
       "description": "CRM account ID",
+      "type": "string"
+    },
+    "body": {
+      "description": "Task body / longer description",
+      "type": "string"
+    },
+    "confidence": {
+      "description": "Confidence in the task (0.0–1.0)",
       "type": "string"
     },
     "contact": {
@@ -2844,8 +3898,16 @@ export const CrmTaskCreateInputSchema = {
       "description": "Due date/time",
       "type": "string"
     },
+    "evidence": {
+      "description": "Evidence JSON array attached to the task event",
+      "type": "string"
+    },
     "idempotencyKey": {
       "description": "Deduplicate repeated task creation",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Metadata JSON object stored on the task",
       "type": "string"
     },
     "opportunity": {
@@ -2858,6 +3920,14 @@ export const CrmTaskCreateInputSchema = {
     },
     "priority": {
       "description": "low|normal|high|urgent",
+      "type": "string"
+    },
+    "source": {
+      "description": "Source label (default: cli)",
+      "type": "string"
+    },
+    "taskType": {
+      "description": "Task type (e.g. follow_up, commitment, call)",
       "type": "string"
     },
     "title": {
@@ -2886,12 +3956,87 @@ export const CrmTaskDoneInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.task.list`. */
+export const CrmTaskListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Filter by account",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Filter by contact",
+      "type": "string"
+    },
+    "dueAfter": {
+      "description": "Only tasks with due_at >= <ts>",
+      "type": "string"
+    },
+    "dueBefore": {
+      "description": "Only tasks with due_at < <ts>",
+      "type": "string"
+    },
+    "dueToday": {
+      "description": "Only tasks whose due_at is today",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 25, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching tasks to skip (default: 0)",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "Filter by opportunity",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner, e.g. agent:main",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by status (open, scheduled, done, canceled, snoozed)",
+      "type": "string"
+    },
+    "taskType": {
+      "description": "Filter by task_type",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.task.show`. */
 export const CrmTaskShowInputSchema = {
   "additionalProperties": false,
   "properties": {
     "task": {
       "description": "CRM task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.task.snooze`. */
+export const CrmTaskSnoozeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "description": "Reason for snoozing",
+      "type": "string"
+    },
+    "task": {
+      "description": "CRM task ID",
+      "type": "string"
+    },
+    "until": {
+      "description": "New due_at / snoozed_until (ISO timestamp)",
       "type": "string"
     }
   },
@@ -2929,8 +4074,16 @@ export const CronAddInputSchema = {
       "description": "Job description",
       "type": "string"
     },
+    "envFile": {
+      "description": "Env file loaded for shell jobs",
+      "type": "string"
+    },
     "every": {
       "description": "Interval (e.g., 30m, 1h)",
+      "type": "string"
+    },
+    "exec": {
+      "description": "Alias for --shell",
       "type": "string"
     },
     "isolated": {
@@ -2943,6 +4096,18 @@ export const CronAddInputSchema = {
     },
     "name": {
       "description": "Job name",
+      "type": "string"
+    },
+    "onError": {
+      "description": "Error action, e.g. notify-session:<session>",
+      "type": "string"
+    },
+    "shell": {
+      "description": "Run a shell command directly without invoking an agent",
+      "type": "string"
+    },
+    "timeout": {
+      "description": "Shell timeout, e.g. 60 or 5m",
       "type": "string"
     },
     "tz": {
@@ -3045,7 +4210,7 @@ export const CronSetInputSchema = {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after",
       "type": "string"
     },
     "value": {
@@ -3939,6 +5104,165 @@ export const ImageGenerateInputSchema = {
   "required": [
     "prompt"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.archive`. */
+export const InboxArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "description": "Local inbox item id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.disable`. */
+export const InboxDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.done`. */
+export const InboxDoneInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "description": "Local inbox item id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.enable`. */
+export const InboxEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.items`. */
+export const InboxItemsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum items to return (default: 25, max: 500)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.list`. */
+export const InboxListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeArchived": {
+      "description": "Include done/archive/dismissed items",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum items to return (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip before returning results",
+      "type": "string"
+    },
+    "source": {
+      "description": "Filter by source domain",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.poll`. */
+export const InboxPollInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "once": {
+      "description": "Run one cycle and exit (default)",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.read`. */
+export const InboxReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "description": "Local inbox item id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.replay`. */
+export const InboxReplayInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "ref": {
+      "description": "Local row id (number) or remote item id (uuid)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.snooze`. */
+export const InboxSnoozeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "description": "Local inbox item id",
+      "type": "string"
+    },
+    "until": {
+      "description": "Unix ms or ISO timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.sources`. */
+export const InboxSourcesInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.status`. */
+export const InboxStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6359,6 +7683,345 @@ export const RoutesShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `rules.import`. */
+export const RulesImportInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cwd": {
+      "description": "Workspace cwd to import into (default: current directory)",
+      "type": "string"
+    },
+    "force": {
+      "description": "Overwrite existing imported rule files",
+      "type": "boolean"
+    },
+    "includeUser": {
+      "description": "Also import user-level ~/.claude/rules and ~/.agents/rules",
+      "type": "boolean"
+    },
+    "source": {
+      "default": "all",
+      "description": "Source provider: all, claude, agents",
+      "type": "string"
+    },
+    "write": {
+      "description": "Write files. Without this, import runs as dry-run",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `rules.sources`. */
+export const RulesSourcesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cwd": {
+      "description": "Workspace cwd to inspect (default: current directory)",
+      "type": "string"
+    },
+    "includeUser": {
+      "description": "Also include user-level ~/.claude/rules and ~/.agents/rules",
+      "type": "boolean"
+    },
+    "source": {
+      "default": "all",
+      "description": "Source provider: all, claude, agents",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.add`. */
+export const RuntimeCredentialsAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Comma-separated agent allowlist",
+      "type": "string"
+    },
+    "authMethod": {
+      "description": "Auth method, e.g. claude-oauth, api-key, codex-profile",
+      "type": "string"
+    },
+    "authProfile": {
+      "description": "Provider-native auth profile path",
+      "type": "string"
+    },
+    "label": {
+      "description": "Human label that does not contain secrets",
+      "type": "string"
+    },
+    "models": {
+      "description": "Comma-separated model allowlist",
+      "type": "string"
+    },
+    "notes": {
+      "description": "Operator notes, without secrets",
+      "type": "string"
+    },
+    "priority": {
+      "description": "Selection priority (higher first)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id, e.g. claude, codex, pi",
+      "type": "string"
+    },
+    "readOnly": {
+      "description": "Mark the source as external/read-only in notes",
+      "type": "boolean"
+    },
+    "remoteForward": {
+      "description": "Allow selected target env vars to be forwarded to remote workers",
+      "type": "boolean"
+    },
+    "secretEnv": {
+      "description": "Comma-separated source env vars holding secrets",
+      "type": "string"
+    },
+    "targetEnv": {
+      "description": "Comma-separated provider-facing env vars",
+      "type": "string"
+    },
+    "taskProfiles": {
+      "description": "Comma-separated task profile allowlist",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Upstream provider id, e.g. anthropic, openai",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.classify`. */
+export const RuntimeCredentialsClassifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credential": {
+      "description": "Credential id to update",
+      "type": "string"
+    },
+    "headers": {
+      "description": "Provider response headers as JSON object",
+      "type": "string"
+    },
+    "message": {
+      "description": "Provider error message",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id",
+      "type": "string"
+    },
+    "providerCode": {
+      "description": "Provider error code",
+      "type": "string"
+    },
+    "providerType": {
+      "description": "Provider error type",
+      "type": "string"
+    },
+    "record": {
+      "description": "Record the failure against --credential",
+      "type": "boolean"
+    },
+    "status": {
+      "description": "HTTP status code",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Upstream provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.disable`. */
+export const RuntimeCredentialsDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.enable`. */
+export const RuntimeCredentialsEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.import`. */
+export const RuntimeCredentialsImportInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fromClaudeCode": {
+      "description": "Reference the default Claude Code OAuth profile",
+      "type": "boolean"
+    },
+    "fromCodexHome": {
+      "description": "Reference a Codex CODEX_HOME profile",
+      "type": "string"
+    },
+    "label": {
+      "description": "Human label that does not contain secrets",
+      "type": "string"
+    },
+    "managedRefresh": {
+      "description": "Allow future provider-specific refresh/write-back",
+      "type": "boolean"
+    },
+    "provider": {
+      "description": "Runtime provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.list`. */
+export const RuntimeCredentialsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include disabled credentials",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching credentials to skip (default: 0)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by runtime provider",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by credential status",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Filter by upstream provider",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.refresh`. */
+export const RuntimeCredentialsRefreshInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id for pool refresh",
+      "type": "string"
+    },
+    "force": {
+      "description": "Attempt provider hook even when health does not require it",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model selector for pool refresh",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id for pool refresh",
+      "type": "string"
+    },
+    "taskProfile": {
+      "description": "Task profile id for pool refresh",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Upstream provider id for pool refresh",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.reset-health`. */
+export const RuntimeCredentialsResetHealthInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.select`. */
+export const RuntimeCredentialsSelectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model selector",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id",
+      "type": "string"
+    },
+    "taskProfile": {
+      "description": "Task profile id",
+      "type": "string"
+    },
+    "upstream": {
+      "description": "Upstream provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.credentials.status`. */
+export const RuntimeCredentialsStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sdk.client.check`. */
 export const SdkClientCheckInputSchema = {
   "additionalProperties": false,
@@ -6556,17 +8219,37 @@ export const ServiceWaInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.actions`. */
+export const SessionsActionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Recent own messages to include (default: 10)",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Optional session name/key override (defaults to current session)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.answer`. */
 export const SessionsAnswerInputSchema = {
   "additionalProperties": false,
   "properties": {
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
+    },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
     },
     "message": {
       "description": "Answer to send back",
@@ -6575,6 +8258,10 @@ export const SessionsAnswerInputSchema = {
     "sender": {
       "description": "Who is answering (for attribution)",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "target": {
       "description": "Target session name (the one that asked)",
@@ -6597,12 +8284,16 @@ export const SessionsAskInputSchema = {
   "additionalProperties": false,
   "properties": {
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
+    },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
     },
     "message": {
       "description": "Question to ask",
@@ -6611,6 +8302,10 @@ export const SessionsAskInputSchema = {
     "sender": {
       "description": "Who originally asked (for attribution)",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "target": {
       "description": "Target session name",
@@ -6624,6 +8319,29 @@ export const SessionsAskInputSchema = {
   "required": [
     "message",
     "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.attach`. */
+export const SessionsAttachInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "description": "Canonical chat id (or platform/normalized id)",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why the chat is being attached (audit)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6643,21 +8361,94 @@ export const SessionsDeleteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.delete-message`. */
+export const SessionsDeleteMessageInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "messageRef": {
+      "description": "Canonical or provider message id",
+      "type": "string"
+    },
+    "sessionOrMessage": {
+      "description": "Session name/key, or message id when running inside a session",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sessionOrMessage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.detach`. */
+export const SessionsDetachInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "description": "Canonical chat id (or platform/normalized id)",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.edit-message`. */
+export const SessionsEditMessageInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "messageOrText": {
+      "description": "Message id, or new text when running inside a session",
+      "type": "string"
+    },
+    "sessionOrMessage": {
+      "description": "Session name/key, or message id when running inside a session",
+      "type": "string"
+    },
+    "text": {
+      "description": "New text content",
+      "type": "string"
+    },
+    "textArg": {
+      "description": "New text for explicit session mode",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sessionOrMessage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.execute`. */
 export const SessionsExecuteInputSchema = {
   "additionalProperties": false,
   "properties": {
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
     },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
+    },
     "message": {
       "description": "Task to execute",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "target": {
       "description": "Target session name",
@@ -6758,16 +8549,24 @@ export const SessionsInformInputSchema = {
   "additionalProperties": false,
   "properties": {
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
     },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
+    },
     "message": {
       "description": "Information to send",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "target": {
       "description": "Target session name",
@@ -6832,6 +8631,25 @@ export const SessionsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.mute`. */
+export const SessionsMuteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "description": "Canonical chat id (or platform/normalized id)",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.prune`. */
 export const SessionsPruneInputSchema = {
   "additionalProperties": false,
@@ -6873,7 +8691,7 @@ export const SessionsReadInputSchema = {
       "type": "string"
     },
     "nameOrKey": {
-      "description": "Session name or key",
+      "description": "Optional session name/key override (defaults to current session)",
       "type": "string"
     },
     "workspace": {
@@ -6881,9 +8699,6 @@ export const SessionsReadInputSchema = {
       "type": "boolean"
     }
   },
-  "required": [
-    "nameOrKey"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7126,12 +8941,16 @@ export const SessionsSendInputSchema = {
       "type": "string"
     },
     "barrier": {
-      "description": "Delivery barrier: p0|p1|p2|p3",
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
       "type": "string"
     },
     "channel": {
       "description": "Override delivery channel",
       "type": "string"
+    },
+    "immediate": {
+      "description": "Deliver immediately instead of queueing as a follow-up",
+      "type": "boolean"
     },
     "interactive": {
       "description": "Interactive mode",
@@ -7144,6 +8963,10 @@ export const SessionsSendInputSchema = {
     "prompt": {
       "description": "Prompt to send (omit for interactive mode)",
       "type": "string"
+    },
+    "steer": {
+      "description": "Steer the active turn after safe tool barriers",
+      "type": "boolean"
     },
     "thread": {
       "description": "Attach or auto-create a Ravi thread",
@@ -7260,6 +9083,21 @@ export const SessionsSetTtlInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.subscriptions`. */
+export const SessionsSubscriptionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.trace`. */
 export const SessionsTraceInputSchema = {
   "additionalProperties": false,
@@ -7318,6 +9156,25 @@ export const SessionsTraceInputSchema = {
     },
     "until": {
       "description": "End time: ISO, epoch ms, or duration like 30m",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.unmute`. */
+export const SessionsUnmuteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "description": "Canonical chat id (or platform/normalized id)",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
       "type": "string"
     }
   },
@@ -9570,7 +11427,7 @@ export const TriggersAddInputSchema = {
       "type": "string"
     },
     "message": {
-      "description": "Prompt message",
+      "description": "Prompt message (defaults to catalog template when available)",
       "type": "string"
     },
     "name": {
@@ -9712,6 +11569,13 @@ export const TriggersTestInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `triggers.topics`. */
+export const TriggersTopicsInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `video.analyze`. */
 export const VideoAnalyzeInputSchema = {
   "additionalProperties": false,
@@ -9731,6 +11595,200 @@ export const VideoAnalyzeInputSchema = {
   },
   "required": [
     "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.connectors`. */
+export const WatchConnectorsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "description": "Filter by provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.create`. */
+export const WatchCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "description": "Event type; comma-separated for multiple",
+      "type": "string"
+    },
+    "installation": {
+      "description": "Console provider installation id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human name for this watch",
+      "type": "string"
+    },
+    "placement": {
+      "description": "auto|local|console (default: auto)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Connector id: github or npm",
+      "type": "string"
+    },
+    "resource": {
+      "description": "Watched resource, e.g. owner/repo or npm package",
+      "type": "string"
+    },
+    "resourceId": {
+      "description": "Console provider resource id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider",
+    "resource"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.disable`. */
+export const WatchDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.enable`. */
+export const WatchEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.events`. */
+export const WatchEventsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.list`. */
+export const WatchListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of watches to skip",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider",
+      "type": "string"
+    },
+    "status": {
+      "description": "active|disabled|error|all",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.rm`. */
+export const WatchRmInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.show`. */
+export const WatchShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `watch.trigger`. */
+export const WatchTriggerInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Outbound account id",
+      "type": "string"
+    },
+    "agent": {
+      "description": "Agent id (default: current/default agent)",
+      "type": "string"
+    },
+    "cooldown": {
+      "description": "Cooldown between fires (default: 5s)",
+      "type": "string"
+    },
+    "event": {
+      "description": "Specific event type for multi-event watches",
+      "type": "string"
+    },
+    "id": {
+      "description": "Watch id",
+      "type": "string"
+    },
+    "message": {
+      "description": "Prompt to run when the watch fires",
+      "type": "string"
+    },
+    "session": {
+      "description": "main or isolated (default: isolated)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10094,6 +12152,37 @@ export const WhatsappGroupRevokeInviteInputSchema = {
   },
   "required": [
     "groupId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `whatsapp.group.send`. */
+export const WhatsappGroupSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "WhatsApp account ID",
+      "type": "string"
+    },
+    "groupId": {
+      "description": "Group ID, JID, or 'here' for the current chat",
+      "type": "string"
+    },
+    "mention": {
+      "description": "Mention group participant by name, phone, LID, or JID. Can be repeated or comma-separated.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "message": {
+      "description": "Message text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "groupId",
+    "message"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

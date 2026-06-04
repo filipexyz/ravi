@@ -31,7 +31,7 @@ final class RaviStreamingTests: XCTestCase {
     """.utf8)
 
     let payload = try JSONDecoder().decode(SessionStreamPayload.self, from: raw)
-    XCTAssertEqual(payload.type, "stream.end")
+    XCTAssertEqual(payload.type, .string("stream.end"))
     XCTAssertEqual(payload.reason, "timeout")
     XCTAssertEqual(payload.sessionName, "wa-overlay-dev")
     XCTAssertEqual(payload.timeoutMs, 60000)
@@ -43,10 +43,10 @@ final class RaviStreamingTests: XCTestCase {
     """.utf8)
 
     let payload = try JSONDecoder().decode(TaskStreamPayload.self, from: raw)
-    XCTAssertEqual(payload.type, "task.event")
+    XCTAssertEqual(payload.type, .string("task.event"))
     XCTAssertEqual(payload.topic, "ravi.task.t1.event")
-    XCTAssertEqual(payload["status"], .string("done"))
-    XCTAssertEqual(payload["progress"], .number(100))
+    XCTAssertEqual(payload.extraFields["status"], .string("done"))
+    XCTAssertEqual(payload.extraFields["progress"], .number(100))
   }
 
   func testBuildsSseRequestWithAuthHeadersAndEncodedQuery() throws {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { saveMessage } from "../db.js";
 import {
   getOrCreateSession,
   getSession,
@@ -8,14 +9,23 @@ import {
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
+import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
+import {
+  bindRuntimeCredentialAttemptTurn,
+  createRuntimeCredential,
+  getRuntimeCredentialHealth,
+  markRuntimeCredentialAttemptStarted,
+  reserveRuntimeCredentialAttempt,
+} from "./credential-store.js";
+import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
-import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
+import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
 import type {
   RuntimeCapabilities,
   RuntimeEvent,
@@ -189,6 +199,51 @@ function makeLoadedRaviTaskSkillVisibility(): RuntimeSkillVisibilitySnapshot {
   };
 }
 
+function seedRuntimeCredentialAttempt(id: string) {
+  const credential = createRuntimeCredential({
+    id,
+    label: `Credential ${id}`,
+    runtimeProvider: PROVIDER,
+    upstreamProvider: "openai",
+    authMethod: "api-key",
+    bindings: [
+      {
+        sourceKind: "env",
+        targetKind: "env",
+        targetName: "OPENAI_API_KEY",
+        secretRef: `env:${id.toUpperCase()}_SECRET`,
+        sourceHint: `${id.toUpperCase()}_SECRET`,
+        sensitive: true,
+        remoteForward: false,
+      },
+    ],
+  });
+  const attemptId = reserveRuntimeCredentialAttempt({
+    credentialId: credential.id,
+    sessionKey: SESSION_KEY,
+    sessionName: SESSION_NAME,
+    runId: "run-1",
+    runtimeProvider: credential.runtimeProvider,
+    upstreamProvider: credential.upstreamProvider,
+    model: MODEL,
+  });
+
+  return {
+    attemptId,
+    credentialId: credential.id,
+    label: credential.label,
+    fingerprint: credential.fingerprint,
+    runtimeProvider: credential.runtimeProvider,
+    ...(credential.upstreamProvider ? { upstreamProvider: credential.upstreamProvider } : {}),
+    ...(credential.authMethod ? { authMethod: credential.authMethod } : {}),
+    ...(credential.sessionCompatibilityKey ? { sessionCompatibilityKey: credential.sessionCompatibilityKey } : {}),
+    resolvedEnv: {},
+    sensitiveEnvKeys: credential.sensitiveEnvKeys,
+    remoteForwardEnvKeys: credential.remoteForwardEnvKeys,
+    bindings: credential.bindings,
+  };
+}
+
 function seedAdapterTrace(streaming: RuntimeHostStreamingSession, turnId = "turn-1"): void {
   const trace = recordAdapterRequestTrace({
     sessionKey: SESSION_KEY,
@@ -223,6 +278,8 @@ function seedAdapterTrace(streaming: RuntimeHostStreamingSession, turnId = "turn
   streaming.currentTraceSystemPromptSha256 = trace.systemPromptSha256;
   streaming.currentTraceRequestBlobSha256 = trace.requestBlobSha256;
   streaming.currentTraceTurnTerminalRecorded = false;
+  bindRuntimeCredentialAttemptTurn(streaming.currentRuntimeCredential?.attemptId, turnId);
+  markRuntimeCredentialAttemptStarted(streaming.currentRuntimeCredential?.attemptId);
 }
 
 async function runTraceLoop(
@@ -261,7 +318,10 @@ describe("runtime session trace instrumentation", () => {
   });
 
   it("records adapter.request with prompt blobs when the runtime prompt generator yields", async () => {
+    const rulesDir = join(stateDir ?? "/tmp", ".ravi", "rules");
+    mkdirSync(rulesDir, { recursive: true });
     writeFileSync(join(stateDir ?? "/tmp", "AGENTS.md"), "# Trace Workspace\n\nTrace workspace instruction.\n");
+    writeFileSync(join(rulesDir, "project-tracking.md"), "Trace Ravi rule.\n");
 
     const streaming = makeStreamingSession({
       pendingMessages: [
@@ -354,6 +414,8 @@ describe("runtime session trace instrumentation", () => {
     expect(systemPrompt).toContain("## Identidade");
     expect(systemPrompt).toContain("## Workspace Instructions");
     expect(systemPrompt).toContain("Trace workspace instruction.");
+    expect(systemPrompt).toContain("## Ravi Rules");
+    expect(systemPrompt).toContain("Trace Ravi rule.");
     expect(systemPrompt).toContain("## Agent Instructions");
     expect(systemPrompt).toContain("Trace agent instruction.");
     expect(getSessionTraceBlob(turn?.userPromptSha256 ?? "")?.contentText).toBe("hello trace");
@@ -370,6 +432,13 @@ describe("runtime session trace instrumentation", () => {
           sha256: expect.any(String),
         }),
         expect.objectContaining({
+          id: "ravi.rules",
+          title: "Ravi Rules",
+          source: rulesDir,
+          chars: expect.any(Number),
+          sha256: expect.any(String),
+        }),
+        expect.objectContaining({
           id: "agent.system_prompt_append",
           title: "Agent Instructions",
           source: "agent:main:systemPromptAppend",
@@ -378,6 +447,177 @@ describe("runtime session trace instrumentation", () => {
         }),
       ]),
     });
+  });
+
+  it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {
+    createRuntimeCredential({
+      id: "rcred_trace_missing",
+      label: "Trace missing secret",
+      runtimeProvider: PROVIDER,
+      upstreamProvider: "openai",
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "OPENAI_API_KEY",
+          secretRef: "env:RAVI_TRACE_MISSING_OPENAI_KEY",
+          sourceHint: "RAVI_TRACE_MISSING_OPENAI_KEY",
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+
+    const streaming = makeStreamingSession({
+      pendingMessages: [
+        createQueuedRuntimeUserMessage({
+          prompt: "hello trace",
+          deliveryBarrier: "after_tool",
+        }),
+      ],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+
+    await expect(
+      buildRuntimeStartRequest({
+        runId: "run-build-missing-credential",
+        sessionName: SESSION_NAME,
+        prompt: {
+          prompt: "hello trace",
+          source,
+          deliveryBarrier: "after_tool",
+        },
+        session: makeSession(),
+        agent: makeAgent(),
+        runtimeProviderId: PROVIDER,
+        runtimeProvider: provider,
+        runtimeCapabilities: capabilities,
+        sessionCwd: stateDir ?? "/tmp",
+        dbSessionKey: SESSION_KEY,
+        model: MODEL,
+        runtimeResolution: {
+          options: { model: MODEL },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        resolvedSource: source,
+        streamingSession: streaming,
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: "claude",
+      }),
+    ).rejects.toThrow("No managed runtime credential could be resolved");
+  });
+
+  it("infers upstream provider and maps Codex auth profiles into the runtime env", async () => {
+    const previousCodexProvider = process.env.RAVI_CODEX_PROVIDER;
+    const previousPiProvider = process.env.RAVI_PI_PROVIDER;
+    const previousClaudeProvider = process.env.RAVI_CLAUDE_UPSTREAM_PROVIDER;
+    delete process.env.RAVI_CODEX_PROVIDER;
+    delete process.env.RAVI_PI_PROVIDER;
+    delete process.env.RAVI_CLAUDE_UPSTREAM_PROVIDER;
+
+    createRuntimeCredential({
+      id: "rcred_codex_profile",
+      label: "Codex profile",
+      runtimeProvider: "codex",
+      upstreamProvider: "openai",
+      authMethod: "codex-profile",
+      sourceKind: "provider-profile",
+      authProfileRef: "~/ravi-test-codex-home",
+      bindings: [
+        {
+          sourceKind: "provider-profile",
+          targetKind: "auth-profile",
+          targetName: "profile",
+          secretRef: "file:~/ravi-test-codex-home",
+          sourceHint: "~/ravi-test-codex-home",
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+
+    const streaming = makeStreamingSession({
+      pendingMessages: [
+        createQueuedRuntimeUserMessage({
+          prompt: "hello codex profile",
+          deliveryBarrier: "after_tool",
+        }),
+      ],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: "codex",
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+
+    try {
+      const { runtimeRequest, runtimeCredentialAttempt } = await buildRuntimeStartRequest({
+        runId: "run-build-codex-profile",
+        sessionName: SESSION_NAME,
+        prompt: {
+          prompt: "hello codex profile",
+          source,
+          deliveryBarrier: "after_tool",
+        },
+        session: makeSession(),
+        agent: makeAgent({ provider: "codex" }),
+        runtimeProviderId: "codex",
+        runtimeProvider: provider,
+        runtimeCapabilities: capabilities,
+        sessionCwd: stateDir ?? "/tmp",
+        dbSessionKey: SESSION_KEY,
+        model: "gpt-5",
+        runtimeResolution: {
+          options: { model: "gpt-5" },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        resolvedSource: source,
+        streamingSession: streaming,
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: "claude",
+      });
+
+      expect(resolveRuntimeCredentialUpstreamProvider("codex", "gpt-5")).toBe("openai");
+      expect(resolveRuntimeCredentialUpstreamProvider("pi", "kimi-coding/kimi-for-coding")).toBe("kimi-coding");
+      expect(resolveRuntimeCredentialUpstreamProvider("claude", "sonnet")).toBe("anthropic");
+      expect(runtimeCredentialAttempt?.credentialId).toBe("rcred_codex_profile");
+      expect(runtimeRequest.env?.CODEX_HOME).toContain("ravi-test-codex-home");
+
+      const yielded = await runtimeRequest.prompt.next();
+      expect(yielded.value?.message.content).toBe("hello codex profile");
+      streaming.done = true;
+      streaming.onTurnComplete?.();
+      await runtimeRequest.prompt.return?.(undefined);
+
+      const attemptRow = getDb()
+        .prepare("SELECT id, turn_id, status FROM runtime_credential_attempts WHERE credential_id = ?")
+        .get("rcred_codex_profile") as { id: string; turn_id: string | null; status: string } | undefined;
+      expect(attemptRow?.id).toBe(runtimeCredentialAttempt?.attemptId);
+      expect(attemptRow?.turn_id).toBe(streaming.currentTraceTurnId);
+      expect(attemptRow?.status).toBe("started");
+
+      const adapterRequest = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "adapter.request");
+      expect(adapterRequest?.payloadJson).toMatchObject({
+        runtime_credential: "[REDACTED]",
+      });
+    } finally {
+      if (previousCodexProvider === undefined) delete process.env.RAVI_CODEX_PROVIDER;
+      else process.env.RAVI_CODEX_PROVIDER = previousCodexProvider;
+      if (previousPiProvider === undefined) delete process.env.RAVI_PI_PROVIDER;
+      else process.env.RAVI_PI_PROVIDER = previousPiProvider;
+      if (previousClaudeProvider === undefined) delete process.env.RAVI_CLAUDE_UPSTREAM_PROVIDER;
+      else process.env.RAVI_CLAUDE_UPSTREAM_PROVIDER = previousClaudeProvider;
+    }
   });
 
   it("records tool events and terminal turn.complete state from the runtime event loop", async () => {
@@ -438,6 +678,32 @@ describe("runtime session trace instrumentation", () => {
       contactId: "contact_1",
     });
     expect(streaming.currentTraceTurnId).toBeUndefined();
+  });
+
+  it("marks the active credential attempt succeeded on a successful terminal turn", async () => {
+    const streaming = makeStreamingSession({
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_success"),
+    });
+    seedAdapterTrace(streaming, "turn-success");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 2, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    const attempt = getDb()
+      .prepare("SELECT turn_id, status, completed_at FROM runtime_credential_attempts WHERE credential_id = ?")
+      .get("rcred_success") as { turn_id: string | null; status: string; completed_at: number | null } | undefined;
+    expect(attempt?.turn_id).toBe("turn-success");
+    expect(attempt?.status).toBe("succeeded");
+    expect(typeof attempt?.completed_at).toBe("number");
+    expect(streaming.currentRuntimeCredential?.attemptId).toBeUndefined();
   });
 
   it("resets loaded skill visibility when compaction starts", async () => {
@@ -743,6 +1009,219 @@ describe("runtime session trace instrumentation", () => {
       rawEvent: { type: "error", message: "provider down" },
     });
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
+  });
+
+  it("stashes the current turn and restarts after retryable credential failure before tools", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "retry this credential turn",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_retry_before_tool"),
+    });
+    seedAdapterTrace(streaming, "turn-credential-retry");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const before = Date.now();
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "rate limited",
+          recoverable: true,
+          rawEvent: {
+            type: "error",
+            status: 429,
+            headers: {
+              "retry-after": "2",
+              "x-request-id": "req_credential_retry",
+            },
+          },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "retry this credential turn",
+    ]);
+    expect(restartRequests).toEqual([
+      {
+        sessionName: SESSION_NAME,
+        reason: "runtime_credential_rate_limited",
+      },
+    ]);
+    const health = getRuntimeCredentialHealth("rcred_retry_before_tool");
+    expect(health?.lastRequestId).toBe("req_credential_retry");
+    expect(health?.cooldownUntil ?? 0).toBeGreaterThanOrEqual(before + 1_500);
+    const attempt = getDb()
+      .prepare("SELECT status, completed_at FROM runtime_credential_attempts WHERE credential_id = ?")
+      .get("rcred_retry_before_tool") as { status: string; completed_at: number | null } | undefined;
+    expect(attempt?.status).toBe("failed");
+    expect(typeof attempt?.completed_at).toBe("number");
+  });
+
+  it("resets provider state and restarts with a recovery prompt after context window exhaustion", async () => {
+    saveMessage(SESSION_NAME, "user", "abre a issue 123 e investiga", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      sourceMessageId: "wamid-old",
+    });
+    saveMessage(SESSION_NAME, "assistant", "Vou investigar e editar os specs.", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+    });
+    saveMessage(SESSION_NAME, "user", "continua de onde parou", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      sourceMessageId: "wamid-latest",
+    });
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "thread-old",
+      runtimeSessionDisplayId: "thread-old",
+      runtimeSessionParams: { sessionId: "thread-old" },
+    });
+
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "continua de onde parou",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-context-limit");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error:
+            "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",
+          recoverable: false,
+          rawEvent: { type: "turn.failed", result: "context window exhausted" },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON }]);
+
+    const stashed = stashedMessages.get(SESSION_NAME);
+    expect(stashed).toHaveLength(1);
+    expect(stashed?.[0]?.message.content).toContain("# Runtime Context Recovery");
+    expect(stashed?.[0]?.message.content).toContain("Latest User Request");
+    expect(stashed?.[0]?.message.content).toContain("continua de onde parou");
+    expect(stashed?.[0]?.message.content).not.toContain("Codex ran out of room");
+
+    const persisted = getSession(SESSION_KEY);
+    expect(persisted?.providerSessionId).toBeUndefined();
+    expect(persisted?.runtimeProvider).toBeUndefined();
+    expect(persisted?.runtimeSessionParams).toBeUndefined();
+
+    const eventTypes = listSessionEvents(SESSION_KEY).map((event) => event.eventType);
+    expect(eventTypes).toContain("turn.failed");
+    expect(eventTypes).toContain("session.context_window_exhausted");
+    expect(getSessionTurn("turn-context-limit")?.status).toBe("failed");
+  });
+
+  it("does not auto-replay retryable credential failures after a tool started", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not replay after tool",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_retry_after_tool"),
+    });
+    seedAdapterTrace(streaming, "turn-credential-no-replay");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-credential", name: "Bash", input: { cmd: "touch /tmp/replay-risk" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-credential",
+          toolName: "Bash",
+          content: "ok",
+        },
+        {
+          type: "turn.failed",
+          error: "rate limited",
+          recoverable: true,
+          rawEvent: {
+            type: "error",
+            status: 429,
+            headers: {
+              "retry-after": "2",
+              "x-request-id": "req_after_tool",
+            },
+          },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeCredentialHealth("rcred_retry_after_tool")?.lastRequestId).toBe("req_after_tool");
+    const attempt = getDb()
+      .prepare("SELECT status, completed_at FROM runtime_credential_attempts WHERE credential_id = ?")
+      .get("rcred_retry_after_tool") as { status: string; completed_at: number | null } | undefined;
+    expect(attempt?.status).toBe("failed");
+    expect(typeof attempt?.completed_at).toBe("number");
   });
 
   it("stashes and restarts after a recoverable interrupt failure", async () => {

@@ -5,7 +5,8 @@
  * No child process spawning — all infrastructure is external.
  */
 
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { RaviBot } from "./bot.js";
@@ -15,15 +16,24 @@ import { loadConfig } from "./utils/config.js";
 import { connectNats, closeNats } from "./nats.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
-import { dbGetSetting } from "./router/router-db.js";
-import { getMainSession } from "./router/sessions.js";
+import {
+  dbGetSetting,
+  dbHasDaemonRestartResumeDelivery,
+  dbListEligibleDaemonRestartSessionSnapshots,
+  dbMarkDaemonRestartResumeDelivered,
+  dbUpsertDaemonRestartEpoch,
+  type DaemonRestartSessionSnapshotRecord,
+} from "./router/router-db.js";
+import { getMainSession, getSession, getSessionByName } from "./router/sessions.js";
 import { closeAllRaviDbs } from "./db/close-all.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
+import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
+import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
@@ -71,6 +81,81 @@ function loadEnvFile() {
 loadEnvFile();
 
 const RESTART_REASON_FILE = join(homedir(), ".ravi", "restart-reason.txt");
+const RESTART_RESUME_WINDOW_MS = 60 * 60 * 1000;
+
+type RestartReasonInfo = {
+  reason: string;
+  sessionName?: string;
+  restartEpoch: string;
+  createdAt: number;
+};
+
+type RestartReasonFile = {
+  reason?: string;
+  sessionName?: string;
+  restartEpoch?: string;
+  createdAt?: number;
+};
+
+function newRestartEpoch(createdAt = Date.now()): string {
+  return `restart_${createdAt}_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+}
+
+function readRestartReasonInfo(options: { consume?: boolean; ensureEpoch?: boolean } = {}): RestartReasonInfo | null {
+  if (!existsSync(RESTART_REASON_FILE)) {
+    return null;
+  }
+
+  try {
+    const raw = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
+    if (options.consume) {
+      unlinkSync(RESTART_REASON_FILE);
+    }
+    if (!raw) {
+      return null;
+    }
+
+    let parsed: RestartReasonFile;
+    try {
+      parsed = JSON.parse(raw) as RestartReasonFile;
+    } catch {
+      parsed = { reason: raw };
+    }
+
+    if (!parsed.reason) {
+      return null;
+    }
+
+    const createdAt = parsed.createdAt ?? Date.now();
+    const restartEpoch = parsed.restartEpoch ?? newRestartEpoch(createdAt);
+    const info: RestartReasonInfo = {
+      reason: parsed.reason,
+      sessionName: parsed.sessionName,
+      restartEpoch,
+      createdAt,
+    };
+
+    if (options.ensureEpoch && (!parsed.restartEpoch || !parsed.createdAt)) {
+      const payload = {
+        reason: info.reason,
+        restartEpoch: info.restartEpoch,
+        createdAt: info.createdAt,
+        ...(info.sessionName ? { sessionName: info.sessionName } : {}),
+      };
+      writeRestartReasonInfo(payload);
+    }
+
+    return info;
+  } catch (err) {
+    log.error("Failed to read restart reason file", err);
+    return null;
+  }
+}
+
+function writeRestartReasonInfo(info: RestartReasonInfo): void {
+  mkdirSync(join(homedir(), ".ravi"), { recursive: true });
+  writeFileSync(RESTART_REASON_FILE, JSON.stringify(info));
+}
 
 // Handle signals
 process.on("SIGINT", () => shutdown("SIGINT"));
@@ -111,14 +196,36 @@ async function shutdown(signal: string) {
   }, 15_000);
 
   try {
+    const restartInfo = readRestartReasonInfo({ ensureEpoch: true });
+    if (restartInfo) {
+      dbUpsertDaemonRestartEpoch({
+        restartEpoch: restartInfo.restartEpoch,
+        reason: restartInfo.reason,
+        callerSessionName: restartInfo.sessionName,
+        createdAt: restartInfo.createdAt,
+        updatedAt: Date.now(),
+      });
+    }
+
     // Stop bot FIRST to abort SDK subprocesses
     if (bot) {
       log.info("Stopping bot (aborting SDK subprocesses)...");
-      await bot.stop();
+      await bot.stop(
+        restartInfo
+          ? {
+              restart: {
+                restartEpoch: restartInfo.restartEpoch,
+                reason: restartInfo.reason,
+              },
+            }
+          : undefined,
+      );
       log.info("Bot stopped");
     }
 
     // Stop runners and release leadership so another daemon can take over
+    await stopInboxRunner();
+    await stopSyncRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
@@ -280,6 +387,12 @@ export async function startDaemon() {
   await startEphemeralRunner();
   log.info("Ephemeral runner started");
 
+  await startInboxRunner();
+  log.info("Inbox runner started");
+
+  await startSyncRunner();
+  log.info("Sync runner started");
+
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
   log.info("Session adapter bus started");
@@ -323,6 +436,8 @@ function createStubSender(): OmniSender {
     },
     sendTyping: async () => {},
     sendReaction: async () => {},
+    deleteMessage: async () => {},
+    editMessage: async () => {},
     sendMedia: async () => {
       return {};
     },
@@ -351,47 +466,91 @@ function createStubConsumer(): OmniConsumer {
  * Check if there's a restart reason file and notify the originating session.
  */
 async function notifyRestartReason() {
-  if (!existsSync(RESTART_REASON_FILE)) {
+  const restartInfo = readRestartReasonInfo({ consume: true });
+  if (!restartInfo) {
     return;
   }
 
-  let reason: string;
-  let sessionName: string | undefined;
-  try {
-    const raw = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
-    unlinkSync(RESTART_REASON_FILE);
+  dbUpsertDaemonRestartEpoch({
+    restartEpoch: restartInfo.restartEpoch,
+    reason: restartInfo.reason,
+    callerSessionName: restartInfo.sessionName,
+    createdAt: restartInfo.createdAt,
+    updatedAt: Date.now(),
+  });
 
-    try {
-      const data = JSON.parse(raw);
-      reason = data.reason;
-      sessionName = data.sessionName;
-    } catch {
-      reason = raw;
-    }
-  } catch (err) {
-    log.error("Failed to read restart reason file", err);
-    return;
+  const callerSessionName = restartInfo.sessionName ?? resolveFallbackRestartSessionName();
+  if (callerSessionName) {
+    await publishRestartResumeEvent(callerSessionName, restartInfo, { kind: "caller" });
   }
 
-  if (!reason) return;
+  const snapshots = dbListEligibleDaemonRestartSessionSnapshots({
+    restartEpoch: restartInfo.restartEpoch,
+    now: Date.now(),
+    windowMs: RESTART_RESUME_WINDOW_MS,
+  });
 
-  // Resolve target session.
-  if (!sessionName) {
-    const defaultAgent = dbGetSetting("defaultAgent") || "main";
-    const fallbackSession = getMainSession(defaultAgent);
-    sessionName = fallbackSession?.name ?? defaultAgent;
+  for (const snapshot of snapshots) {
+    await publishRestartResumeEvent(snapshot.sessionName, restartInfo, { kind: "active", snapshot });
+  }
+}
+
+function resolveFallbackRestartSessionName(): string | undefined {
+  const defaultAgent = dbGetSetting("defaultAgent") || "main";
+  const fallbackSession = getMainSession(defaultAgent);
+  return fallbackSession?.name ?? defaultAgent;
+}
+
+function resolveRestartSessionKey(sessionName: string): string {
+  const session = getSessionByName(sessionName) ?? getSession(sessionName);
+  return session?.sessionKey ?? sessionName;
+}
+
+async function publishRestartResumeEvent(
+  sessionName: string,
+  restartInfo: RestartReasonInfo,
+  options: { kind: "caller" | "active"; snapshot?: DaemonRestartSessionSnapshotRecord } = { kind: "active" },
+): Promise<boolean> {
+  const sessionKey = options.snapshot?.sessionKey ?? resolveRestartSessionKey(sessionName);
+  if (dbHasDaemonRestartResumeDelivery(restartInfo.restartEpoch, sessionKey)) {
+    log.info("Restart resume event already delivered", {
+      restartEpoch: restartInfo.restartEpoch,
+      sessionKey,
+      sessionName,
+      kind: options.kind,
+    });
+    return false;
   }
 
   const payload: Record<string, unknown> = {
-    prompt: `[System] Daemon reiniciou (${reason}). Continue de onde parou.`,
+    prompt: `[System] Daemon reiniciou (${restartInfo.reason}). Continue de onde parou.`,
+    deliveryBarrier: "after_response",
+    deliveryBarrierSource: "default",
+    _daemonRestartResume: {
+      restartEpoch: restartInfo.restartEpoch,
+      sessionKey,
+    },
   };
 
   try {
-    log.info("Publishing restart reason", { reason, sessionName });
+    log.info("Publishing restart resume event", {
+      restartEpoch: restartInfo.restartEpoch,
+      reason: restartInfo.reason,
+      sessionName,
+      sessionKey,
+      kind: options.kind,
+    });
     await publishSessionPrompt(sessionName, payload);
-    log.info("Restart reason prompt published", { sessionName });
+    dbMarkDaemonRestartResumeDelivered({
+      restartEpoch: restartInfo.restartEpoch,
+      sessionKey,
+      sessionName,
+    });
+    log.info("Restart resume event published", { sessionName, sessionKey, kind: options.kind });
+    return true;
   } catch (err) {
-    log.error("Failed to publish restart reason", { error: err });
+    log.error("Failed to publish restart resume event", { sessionName, sessionKey, error: err });
+    return false;
   }
 }
 

@@ -1,8 +1,14 @@
 import { configStore } from "../config-store.js";
 import { saveMessage } from "../db.js";
-import { chooseMoreUrgentBarrier, describeDeliveryBarrier, type DeliveryBarrier } from "../delivery-barriers.js";
+import {
+  chooseMoreUrgentBarrier,
+  describeDeliveryBarrier,
+  type DeliveryBarrier,
+  type DeliveryBarrierSource,
+} from "../delivery-barriers.js";
 import { nats } from "../nats.js";
-import { getSession, getSessionByName } from "../router/index.js";
+import { getSession, getSessionByName, type SessionEntry } from "../router/index.js";
+import { dbGetDaemonRestartPendingMessages, dbRecordDaemonRestartSessionSnapshot } from "../router/router-db.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
@@ -52,6 +58,25 @@ interface DebounceState {
   debounceMs: number;
 }
 
+interface DaemonRestartSnapshotOptions {
+  restartEpoch: string;
+  reason: string;
+  stoppedAt?: number;
+}
+
+interface RestartSnapshotAccumulator {
+  sessionKey: string;
+  sessionName: string;
+  agentId?: string;
+  runtimeProvider?: string;
+  activity: string;
+  nonIdle: boolean;
+  lastActivityAt: number;
+  stoppedAt: number;
+  pendingMessages: RuntimeUserMessage[];
+  metadata: Record<string, unknown>;
+}
+
 export interface RuntimeSessionDispatcherOptions {
   instanceId: string;
   maxConcurrentSessions: number;
@@ -76,6 +101,7 @@ export class RuntimeSessionDispatcher {
   readonly pendingStarts: PendingRuntimeSessionStart[] = [];
   readonly startReservations = new Set<string>();
   readonly stashedMessages = new Map<string, RuntimeUserMessage[]>();
+  readonly inFlightStartPrompts = new Map<string, RuntimeLaunchPrompt>();
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
 
@@ -99,6 +125,143 @@ export class RuntimeSessionDispatcher {
     return this.hasRuntimeSessionPoolSlotForStart(sessionName);
   }
 
+  recordDaemonRestartSnapshot(options: DaemonRestartSnapshotOptions): number {
+    const stoppedAt = options.stoppedAt ?? Date.now();
+    const snapshots = new Map<string, RestartSnapshotAccumulator>();
+
+    const getAccumulator = (sessionName: string, overrides: Partial<RestartSnapshotAccumulator> = {}) => {
+      const sessionEntry = getSessionByName(sessionName) ?? getSession(sessionName);
+      const sessionKey = sessionEntry?.sessionKey ?? sessionName;
+      const existing = snapshots.get(sessionKey);
+      if (existing) {
+        if (overrides.agentId) existing.agentId = overrides.agentId;
+        if (overrides.runtimeProvider) existing.runtimeProvider = overrides.runtimeProvider;
+        if (overrides.activity && existing.activity === "idle") existing.activity = overrides.activity;
+        existing.nonIdle = existing.nonIdle || Boolean(overrides.nonIdle);
+        existing.lastActivityAt = Math.max(
+          existing.lastActivityAt,
+          overrides.lastActivityAt ?? existing.lastActivityAt,
+        );
+        Object.assign(existing.metadata, overrides.metadata ?? {});
+        return existing;
+      }
+
+      const next: RestartSnapshotAccumulator = {
+        sessionKey,
+        sessionName,
+        agentId: overrides.agentId ?? sessionEntry?.agentId,
+        runtimeProvider: overrides.runtimeProvider ?? sessionEntry?.runtimeProvider,
+        activity: overrides.activity ?? "idle",
+        nonIdle: Boolean(overrides.nonIdle),
+        lastActivityAt: overrides.lastActivityAt ?? stoppedAt,
+        stoppedAt,
+        pendingMessages: [],
+        metadata: {
+          reason: options.reason,
+          ...(overrides.metadata ?? {}),
+        },
+      };
+      snapshots.set(sessionKey, next);
+      return next;
+    };
+
+    const addPrompt = (sessionName: string, prompt: RuntimeLaunchPrompt, source: string) => {
+      const queued = createQueuedRuntimeUserMessage(prompt);
+      queued.queuedAt = prompt.context?.timestamp ?? queued.queuedAt;
+      const snapshot = getAccumulator(sessionName, {
+        activity: "queued",
+        nonIdle: true,
+        lastActivityAt: queued.queuedAt ?? stoppedAt,
+        metadata: { [source]: true },
+      });
+      appendRestartPendingMessages(snapshot, [queued]);
+    };
+
+    for (const [sessionName, session] of this.streamingSessions) {
+      const pendingMessages = session.pendingMessages.map(cloneRuntimeUserMessage);
+      const nonIdle = isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
+      const snapshot = getAccumulator(sessionName, {
+        agentId: session.agentId,
+        runtimeProvider: session.queryHandle.provider,
+        activity: describeDaemonRestartActivity(session),
+        nonIdle,
+        lastActivityAt: session.lastActivity || stoppedAt,
+        metadata: {
+          live: true,
+          turnActive: session.turnActive,
+          starting: session.starting,
+          compacting: session.compacting,
+          toolRunning: session.toolRunning,
+          pendingAbort: session.pendingAbort,
+          pendingWake: session.pendingWake,
+          currentToolName: session.currentToolName ?? null,
+          currentTurnPendingIds: session.currentTurnPendingIds ?? [],
+        },
+      });
+      appendRestartPendingMessages(snapshot, pendingMessages);
+    }
+
+    for (const pendingStart of this.pendingStarts) {
+      if (pendingStart.cancelled) continue;
+      addPrompt(pendingStart.sessionName, pendingStart.prompt, "pendingStart");
+    }
+
+    for (const [sessionName, prompt] of this.inFlightStartPrompts) {
+      if (this.streamingSessions.has(sessionName)) continue;
+      addPrompt(sessionName, prompt, "inFlightStart");
+    }
+
+    for (const [sessionName, messages] of this.stashedMessages) {
+      const snapshot = getAccumulator(sessionName, {
+        activity: "queued",
+        nonIdle: messages.length > 0,
+        lastActivityAt: newestRuntimeMessageQueuedAt(messages, stoppedAt),
+        metadata: { stashed: true },
+      });
+      appendRestartPendingMessages(snapshot, messages.map(cloneRuntimeUserMessage));
+    }
+
+    for (const [sessionName, state] of this.debounceStates) {
+      for (const prompt of state.messages) {
+        addPrompt(sessionName, prompt, "debounce");
+      }
+    }
+
+    for (const [sessionName, prompts] of this.deferredAfterTaskStarts) {
+      for (const prompt of prompts) {
+        addPrompt(sessionName, prompt, "deferredAfterTask");
+      }
+    }
+
+    let recorded = 0;
+    for (const snapshot of snapshots.values()) {
+      if (!snapshot.nonIdle) continue;
+      dbRecordDaemonRestartSessionSnapshot({
+        restartEpoch: options.restartEpoch,
+        sessionKey: snapshot.sessionKey,
+        sessionName: snapshot.sessionName,
+        agentId: snapshot.agentId,
+        runtimeProvider: snapshot.runtimeProvider,
+        activity: snapshot.activity,
+        nonIdle: snapshot.nonIdle,
+        lastActivityAt: snapshot.lastActivityAt,
+        stoppedAt: snapshot.stoppedAt,
+        pendingMessages: snapshot.pendingMessages,
+        metadata: snapshot.metadata,
+        recordedAt: stoppedAt,
+      });
+      recorded++;
+    }
+
+    if (recorded > 0) {
+      log.info("Recorded daemon restart session snapshots", {
+        restartEpoch: options.restartEpoch,
+        count: recorded,
+      });
+    }
+    return recorded;
+  }
+
   shutdownAll(): void {
     if (this.pendingStarts.length > 0) {
       log.info("Clearing pending session starts", { count: this.pendingStarts.length });
@@ -119,6 +282,11 @@ export class RuntimeSessionDispatcher {
     if (this.deferredAfterTaskStarts.size > 0) {
       log.info("Clearing deferred after-task starts", { count: this.deferredAfterTaskStarts.size });
       this.deferredAfterTaskStarts.clear();
+    }
+
+    if (this.inFlightStartPrompts.size > 0) {
+      log.info("Clearing in-flight session start prompts", { count: this.inFlightStartPrompts.size });
+      this.inFlightStartPrompts.clear();
     }
 
     if (this.startingSessions.size > 0) {
@@ -437,6 +605,10 @@ export class RuntimeSessionDispatcher {
   async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
+    const existing = this.streamingSessions.get(sessionName);
+    if (!existing && prompt._daemonRestartResume) {
+      prompt = this.prepareDaemonRestartResumePrompt(sessionName, prompt, sessionEntry);
+    }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
     if (!agent) {
@@ -447,7 +619,6 @@ export class RuntimeSessionDispatcher {
       prompt._observation && prompt._runtimeProviderId
         ? prompt._runtimeProviderId
         : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
-    const existing = this.streamingSessions.get(sessionName);
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
@@ -625,6 +796,7 @@ export class RuntimeSessionDispatcher {
           payloadJson: {
             queueSize: existing.pendingMessages.length,
             barrier: describeDeliveryBarrier(barrier),
+            barrierSource: prompt.deliveryBarrierSource ?? null,
             taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
           },
         });
@@ -662,6 +834,7 @@ export class RuntimeSessionDispatcher {
               payloadJson: {
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 reason: "waiting_for_barrier",
               },
             });
@@ -671,6 +844,7 @@ export class RuntimeSessionDispatcher {
                 provider: existing.queryHandle.provider,
                 reason: "waiting_for_barrier",
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 queueSize: existing.pendingMessages.length,
                 sessionState: describeSessionState(existing),
                 timestamp: new Date().toISOString(),
@@ -705,6 +879,7 @@ export class RuntimeSessionDispatcher {
               payloadJson: {
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 reason: decision.reason,
                 tool: existing.currentToolName ?? null,
               },
@@ -715,6 +890,7 @@ export class RuntimeSessionDispatcher {
                 provider: existing.queryHandle.provider,
                 reason: decision.reason,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 queueSize: existing.pendingMessages.length,
                 tool: existing.currentToolName ?? null,
                 sessionState: describeSessionState(existing),
@@ -734,6 +910,7 @@ export class RuntimeSessionDispatcher {
                 sessionName,
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 reason: decision.reason,
                 source: prompt.source,
                 context: prompt.context,
@@ -765,6 +942,7 @@ export class RuntimeSessionDispatcher {
               payloadJson: {
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
+                barrierSource: prompt.deliveryBarrierSource ?? null,
                 reason: decision.reason,
                 taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
               },
@@ -818,6 +996,7 @@ export class RuntimeSessionDispatcher {
           interactiveReserved: this.options.interactiveReservedSessions,
           backgroundLimit: this.getBackgroundStartLimit(),
           deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
         },
       });
@@ -868,6 +1047,7 @@ export class RuntimeSessionDispatcher {
           queueSize: queued.length,
           reason: "cold_start_inflight",
           deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
         },
       });
@@ -908,6 +1088,8 @@ export class RuntimeSessionDispatcher {
         messageId: prompt.context?.messageId,
         payloadJson: {
           queued: queued.length,
+          deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
         },
       });
@@ -928,9 +1110,48 @@ export class RuntimeSessionDispatcher {
         provider: requestedProvider,
         taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
         deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+        deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
       },
     });
     await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
+  }
+
+  private prepareDaemonRestartResumePrompt(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    sessionEntry: SessionEntry | null,
+  ): RuntimeLaunchPrompt {
+    const restartResume = prompt._daemonRestartResume;
+    if (!restartResume) {
+      return prompt;
+    }
+
+    const sessionKey = restartResume.sessionKey ?? sessionEntry?.sessionKey ?? sessionName;
+    const pendingMessages = normalizePersistedRuntimeMessages(
+      dbGetDaemonRestartPendingMessages(restartResume.restartEpoch, sessionKey),
+    );
+    if (pendingMessages.length === 0) {
+      return prompt;
+    }
+
+    const resumeMessage = createQueuedRuntimeUserMessage(prompt);
+    const combined = [...pendingMessages, resumeMessage];
+    const restartPrompt = buildStashedRestartPrompt(combined);
+    if (!restartPrompt) {
+      return prompt;
+    }
+
+    this.stashedMessages.set(sessionName, combined);
+    log.info("Prepared daemon restart resume with persisted pending messages", {
+      sessionName,
+      sessionKey,
+      restartEpoch: restartResume.restartEpoch,
+      pendingMessages: pendingMessages.length,
+    });
+    return {
+      ...restartPrompt,
+      _daemonRestartResume: restartResume,
+    };
   }
 
   async startStreamingSession(
@@ -947,6 +1168,7 @@ export class RuntimeSessionDispatcher {
       }
       this.pendingStartSessions.delete(sessionName);
       this.startingSessions.add(sessionName);
+      this.inFlightStartPrompts.set(sessionName, prompt);
       await startRuntimeSession({
         sessionName,
         prompt,
@@ -960,6 +1182,7 @@ export class RuntimeSessionDispatcher {
           this.restartStashedSession(stashedSessionName, reason),
       });
     } finally {
+      this.inFlightStartPrompts.delete(sessionName);
       this.startingSessions.delete(sessionName);
       this.pendingStartSessions.delete(sessionName);
       if (reserved) {
@@ -1074,6 +1297,7 @@ export class RuntimeSessionDispatcher {
           lane,
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
           deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
         },
       });
       this.options
@@ -1321,6 +1545,7 @@ export class RuntimeSessionDispatcher {
         messageId: prompt.context?.messageId,
         payloadJson: {
           barrier: describeDeliveryBarrier(barrier),
+          barrierSource: prompt.deliveryBarrierSource ?? null,
           error: result?.error ?? "runtime control did not return a result",
         },
       });
@@ -1342,6 +1567,7 @@ export class RuntimeSessionDispatcher {
       messageId: prompt.context?.messageId,
       payloadJson: {
         barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
         operation: "turn.steer",
       },
     });
@@ -1413,16 +1639,18 @@ function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeL
 
 function combineDebounceBatch(batch: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt {
   const last = batch[batch.length - 1];
-  const [first, ...rest] = batch;
-  const deliveryBarrier = rest.reduce<DeliveryBarrier>(
-    (current, prompt) => chooseMoreUrgentBarrier(current, getRuntimePromptDeliveryBarrier(prompt)),
-    getRuntimePromptDeliveryBarrier(first),
+  const delivery = combineDeliveryBarrierMetadata(
+    batch.map((prompt) => ({
+      barrier: getRuntimePromptDeliveryBarrier(prompt),
+      source: prompt.deliveryBarrierSource,
+    })),
   );
 
   return {
     ...last,
     prompt: batch.map((entry) => entry.prompt).join("\n\n"),
-    deliveryBarrier,
+    deliveryBarrier: delivery.barrier,
+    deliveryBarrierSource: delivery.source,
     commands: batch.flatMap((entry) => entry.commands ?? []),
   };
 }
@@ -1470,9 +1698,11 @@ function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunc
     return null;
   }
 
-  const deliveryBarrier = messages.reduce<DeliveryBarrier>(
-    (current, message) => chooseMoreUrgentBarrier(current, message.deliveryBarrier ?? "after_tool"),
-    first.deliveryBarrier ?? "after_tool",
+  const delivery = combineDeliveryBarrierMetadata(
+    messages.map((message) => ({
+      barrier: message.deliveryBarrier ?? "after_tool",
+      source: message.deliveryBarrierSource ?? message.launchPrompt?.deliveryBarrierSource,
+    })),
   );
   const combinedPrompt = messages
     .map((message) => message.message.content)
@@ -1482,18 +1712,120 @@ function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunc
   return {
     ...(newestLaunchPrompt ?? {
       prompt: combinedPrompt,
-      deliveryBarrier,
+      deliveryBarrier: delivery.barrier,
+      deliveryBarrierSource: delivery.source,
       taskBarrierTaskId: first.taskBarrierTaskId,
       commands: messages.flatMap((message) => message.commands ?? []),
     }),
     prompt: combinedPrompt || newestLaunchPrompt?.prompt || first.message.content,
-    deliveryBarrier,
+    deliveryBarrier: delivery.barrier,
+    deliveryBarrierSource: delivery.source,
     commands:
       launchPrompts.length > 0
         ? messages.flatMap((message) => message.commands ?? message.launchPrompt?.commands ?? [])
         : messages.flatMap((message) => message.commands ?? []),
     _resumeStashedMessages: true,
   };
+}
+
+function combineDeliveryBarrierMetadata(entries: Array<{ barrier: DeliveryBarrier; source?: DeliveryBarrierSource }>): {
+  barrier: DeliveryBarrier;
+  source?: DeliveryBarrierSource;
+} {
+  const [first, ...rest] = entries;
+  let selected: { barrier: DeliveryBarrier; source?: DeliveryBarrierSource } = first ?? { barrier: "after_tool" };
+
+  for (const entry of rest) {
+    const chosenBarrier = chooseMoreUrgentBarrier(selected.barrier, entry.barrier);
+    if (chosenBarrier !== selected.barrier) {
+      selected = entry;
+      continue;
+    }
+    if (chosenBarrier === entry.barrier && compareDeliveryBarrierSource(entry.source, selected.source) < 0) {
+      selected = entry;
+    }
+  }
+
+  return selected;
+}
+
+function compareDeliveryBarrierSource(left?: DeliveryBarrierSource, right?: DeliveryBarrierSource): number {
+  return deliveryBarrierSourceRank(left) - deliveryBarrierSourceRank(right);
+}
+
+function deliveryBarrierSourceRank(source?: DeliveryBarrierSource): number {
+  switch (source) {
+    case "explicit":
+      return 0;
+    case "default":
+      return 1;
+    case "inferred":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function isDaemonRestartNonIdleSession(session: RuntimeHostStreamingSession): boolean {
+  if (session.done) return false;
+  return (
+    session.starting ||
+    session.turnActive ||
+    session.compacting ||
+    session.toolRunning ||
+    session.pendingAbort ||
+    session.pendingWake ||
+    session.pendingMessages.length > 0 ||
+    Boolean(session.currentTurnPendingIds?.length)
+  );
+}
+
+function describeDaemonRestartActivity(session: RuntimeHostStreamingSession): string {
+  if (session.done) return "idle";
+  if (session.compacting) return "compacting";
+  if (session.toolRunning) return "blocked";
+  if (session.pendingAbort) return "blocked";
+  if (session.starting) return "thinking";
+  if (session.turnActive) return "thinking";
+  if (session.pendingMessages.length > 0 || session.pendingWake) return "queued";
+  return "idle";
+}
+
+function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessage {
+  return JSON.parse(JSON.stringify(message)) as RuntimeUserMessage;
+}
+
+function appendRestartPendingMessages(snapshot: RestartSnapshotAccumulator, messages: RuntimeUserMessage[]): void {
+  const seen = new Set(snapshot.pendingMessages.map((message) => message.pendingId).filter(Boolean));
+  for (const message of messages) {
+    if (message.pendingId && seen.has(message.pendingId)) continue;
+    snapshot.pendingMessages.push(message);
+    if (message.pendingId) seen.add(message.pendingId);
+    snapshot.lastActivityAt = Math.max(snapshot.lastActivityAt, message.queuedAt ?? snapshot.lastActivityAt);
+  }
+  if (messages.length > 0) {
+    snapshot.nonIdle = true;
+  }
+}
+
+function newestRuntimeMessageQueuedAt(messages: RuntimeUserMessage[], fallback: number): number {
+  return messages.reduce((newest, message) => Math.max(newest, message.queuedAt ?? newest), fallback);
+}
+
+function normalizePersistedRuntimeMessages(messages: unknown[]): RuntimeUserMessage[] {
+  return messages.filter(isRuntimeUserMessage).map((message) => cloneRuntimeUserMessage(message));
+}
+
+function isRuntimeUserMessage(value: unknown): value is RuntimeUserMessage {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<RuntimeUserMessage>;
+  return (
+    candidate.type === "user" &&
+    candidate.message !== undefined &&
+    typeof candidate.message === "object" &&
+    (candidate.message as { role?: unknown; content?: unknown }).role === "user" &&
+    typeof (candidate.message as { content?: unknown }).content === "string"
+  );
 }
 
 function recordStreamingAbortTrace(

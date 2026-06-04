@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import type { ConsoleApiClient } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
-import { createMailDomain, listMailDomains, listMessages, readMessage, sendMail } from "./client.js";
+import { createMailDomain, disableMailbox, listMailDomains, listMessages, readMessage, sendMail } from "./client.js";
 
 describe("Ravi Mail Console client", () => {
   it("requires Ravi Cloud auth before calling mail endpoints", async () => {
@@ -92,6 +92,37 @@ describe("Ravi Mail Console client", () => {
       { method: "POST", path: "/api/cli/mail/messages/msg_1/read", body: { payloadKind: "raw_mime" } },
     ]);
     expect(JSON.stringify(result)).toContain("explicit read body");
+  });
+
+  it("disables managed mailboxes through the Console endpoint", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const client = makeClient(async (method, path, body, accessToken) => {
+      calls.push({ method, path, body, accessToken });
+      return {
+        mailbox: { address: "agent@ravi.bot", status: "disabled" },
+        disabledRoutes: 1,
+        providerSynced: true,
+      };
+    });
+
+    const result = await disableMailbox(
+      { mailbox: "agent@ravi.bot" },
+      { client, readCredentials: makeReadCredentials() },
+    );
+
+    expect(calls).toEqual([
+      {
+        method: "POST",
+        path: "/api/cli/mail/mailboxes/agent%40ravi.bot/disable",
+        body: undefined,
+        accessToken: "access-secret",
+      },
+    ]);
+    expect(result).toEqual({
+      mailbox: { address: "agent@ravi.bot", status: "disabled" },
+      disabledRoutes: 1,
+      providerSynced: true,
+    });
   });
 
   it("sends without --from so Console can resolve the default mailbox", async () => {

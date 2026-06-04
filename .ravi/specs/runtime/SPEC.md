@@ -12,6 +12,7 @@ capabilities:
   - context-keys
   - observation-plane
   - traces
+  - cloud-trace-export
 tags:
   - runtime
   - providers
@@ -51,6 +52,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - `RuntimeSessionContinuity`: resume, fork, rebase, and replay planning from Ravi-owned prompt atoms and provider state.
 - `RuntimeEvent`: canonical event stream consumed by the Ravi host event loop.
 - `RuntimeEventLoop`: canonical event consumer that emits NATS events, traces, tool events, responses, cost/tokens, and provider state.
+- `CloudTraceExport`: optional exporter that mirrors selected local runtime traces to a linked remote control plane without making remote storage required for local execution.
 
 ## Lifecycle
 
@@ -76,6 +78,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - `adapter.request` trace MUST be recorded before provider handoff, including prompt hashes, system prompt hashes, model, provider, resume/fork state, delivery barrier, source, and capability summary.
 - Runtime pool backpressure MUST be represented as its own dispatch state. A session waiting for a pool slot MUST NOT be reported as an in-flight cold start until a slot has actually been reserved.
 - Dispatch trace rows MUST use the canonical `session_key` when a session row exists. `session_name` MAY be included as a secondary lookup field, but MUST NOT replace the canonical key.
+- Cloud trace export MUST be asynchronous and best-effort by default. A failed export MUST NOT fail, block, or delay local runtime execution.
 - Background starts such as task and observation sessions MUST NOT be able to consume all runtime start capacity when interactive channel sessions are waiting. The dispatcher SHOULD reserve a small configurable capacity lane for interactive sessions.
 - Stalled-turn watchdog recovery MUST NOT be used. Missing terminal events are provider/adapter bugs and MUST be fixed at that boundary.
 - New providers MUST add provider contract tests, event normalization tests, and runtime capability matrix coverage before live use.

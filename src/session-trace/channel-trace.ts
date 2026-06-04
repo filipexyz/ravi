@@ -43,6 +43,29 @@ export interface RecordRouteResolvedTraceInput {
   payloadJson?: unknown;
 }
 
+/**
+ * Reason for a `route.rejected` trace. Lets dashboards/`sessions trace`
+ * tell apart the different gates that drop an inbound message before
+ * dispatch.
+ */
+export type RouteRejectionReason =
+  | "group_closed"
+  | "group_allowlist_pending"
+  | "dm_closed"
+  | "dm_pairing_pending"
+  | "agent_contact_scope_denied"
+  | "agent_actor_observed";
+
+export interface RecordRouteRejectedTraceInput {
+  sessionKey: string;
+  sessionName?: string | null;
+  agentId?: string | null;
+  timestamp?: number;
+  source: NormalizedSessionTraceSource;
+  reason: RouteRejectionReason;
+  payloadJson?: unknown;
+}
+
 export interface RecordPromptPublishedTraceInput {
   sessionName: string;
   payload: Record<string, unknown>;
@@ -384,6 +407,34 @@ export function recordRouteResolvedTrace(input: RecordRouteResolvedTraceInput): 
   });
 }
 
+/**
+ * Emit a `route.rejected` event when an inbound message matched a route
+ * but was dropped before dispatch by a policy / contact-scope check.
+ *
+ * The session row may not exist when this fires (lazy session commit on
+ * the inbound path) — `session_events` has no FK to `sessions`, so the
+ * trace is keyed only by the candidate `sessionKey`. `sessions trace
+ * <sessionKey>` still surfaces these rows when an operator investigates
+ * a chat that "never replied".
+ */
+export function recordRouteRejectedTrace(input: RecordRouteRejectedTraceInput): SessionEventRecord {
+  const payload =
+    input.payloadJson && typeof input.payloadJson === "object" && !Array.isArray(input.payloadJson)
+      ? { ...(input.payloadJson as Record<string, unknown>), reason: input.reason }
+      : { reason: input.reason };
+  return recordSourceEvent({
+    sessionKey: input.sessionKey,
+    sessionName: input.sessionName,
+    agentId: input.agentId,
+    eventType: "route.rejected",
+    eventGroup: "routing",
+    status: "rejected",
+    timestamp: input.timestamp,
+    source: input.source,
+    payloadJson: payload,
+  });
+}
+
 export function recordPromptPublishedTrace(input: RecordPromptPublishedTraceInput): SessionEventRecord | null {
   const session = getSessionByName(input.sessionName);
   if (!session) return null;
@@ -407,6 +458,7 @@ export function recordPromptPublishedTrace(input: RecordPromptPublishedTraceInpu
     ...sourceFields,
     payloadJson: {
       deliveryBarrier: payload.deliveryBarrier,
+      deliveryBarrierSource: payload.deliveryBarrierSource,
       taskBarrierTaskId: payload.taskBarrierTaskId,
       source: payload.source,
       context: payload.context,

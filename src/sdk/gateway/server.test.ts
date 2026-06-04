@@ -52,6 +52,14 @@ const deniedContext: ContextRecord = {
 const testStreamChannels: StreamChannel[] = [
   {
     name: "events",
+    meta: {
+      methodName: "events",
+      pathPattern: "events",
+      optionsTypeName: "EventsStreamOptions",
+      payloadTypeName: "GatewayTopicEvent",
+      optionsSchema: { type: "object", additionalProperties: false, properties: {} },
+      payloadSchema: { type: "object", required: ["type"], properties: { type: { type: "string" } } },
+    },
     match(segments) {
       return segments.length === 1 && segments[0] === "events"
         ? { channelPath: "events", scope: { permission: "view", objectType: "system", objectId: "events" } }

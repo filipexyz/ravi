@@ -1,4 +1,4 @@
-import { parseDeliveryBarrier } from "../delivery-barriers.js";
+import { requireDeliveryBarrier } from "../delivery-barriers.js";
 import { saveMessage } from "../db.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { commentTask } from "../tasks/index.js";
@@ -41,7 +41,10 @@ async function handleInjectContext(
 
   await publishSessionPrompt(sessionName, {
     prompt: `[System] Inform: ${message}`,
-    ...(payload.deliveryBarrier ? { deliveryBarrier: parseDeliveryBarrier(payload.deliveryBarrier) } : {}),
+    deliveryBarrier: payload.deliveryBarrier
+      ? requireDeliveryBarrier(payload.deliveryBarrier, "hook deliveryBarrier")
+      : "after_response",
+    deliveryBarrierSource: payload.deliveryBarrier ? "explicit" : "default",
     _hook: true,
     _hookId: hook.id,
   });
@@ -65,7 +68,10 @@ async function handleSendSessionEvent(
 
   await publishSessionPrompt(sessionName, {
     prompt: message,
-    ...(payload.deliveryBarrier ? { deliveryBarrier: parseDeliveryBarrier(payload.deliveryBarrier) } : {}),
+    deliveryBarrier: payload.deliveryBarrier
+      ? requireDeliveryBarrier(payload.deliveryBarrier, "hook deliveryBarrier")
+      : "after_response",
+    deliveryBarrierSource: payload.deliveryBarrier ? "explicit" : "default",
     _hook: true,
     _hookId: hook.id,
   });

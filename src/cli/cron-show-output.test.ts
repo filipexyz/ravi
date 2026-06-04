@@ -11,6 +11,7 @@ describe("buildCronShowOutput", () => {
         schedule: { type: "every", every: 1_800_000 },
         sessionTarget: "main",
         replySession: "agent:main:whatsapp:main:group:123456",
+        executionType: "agent",
         description: "Reconnect with warm leads",
         deleteAfterRun: false,
         message: "Ping the queue\nShare status",

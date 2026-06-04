@@ -15,6 +15,7 @@ import {
 
 const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
+import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import { buildCodexSkillVisibilitySnapshot, markLoadedFromInstructionSources } from "./skill-visibility.js";
 import type {
   RuntimeApprovalEvent,
@@ -267,7 +268,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
 
       return {
         provider: "codex",
-        concurrentInputStrategy: "native_steer",
+        concurrentInputStrategy: "interrupt",
         skillVisibility,
         events: normalizeCodexEvents(
           input,
@@ -1890,10 +1891,13 @@ async function buildCodexSystemPromptAppend(
   syncedSkillNames: string[],
 ): Promise<string> {
   const sections = [buildCodexSkillCatalogInstruction(syncedSkillNames)];
-  const runtimeInstructions = runtimeSystemPromptAppend.trim();
+  let runtimeInstructions = runtimeSystemPromptAppend.trim();
   const workspaceInstructions = runtimePromptIncludesWorkspaceInstructions(runtimeInstructions)
     ? null
     : await loadWorkspaceInstructions(cwd);
+  const raviRulesSection = runtimePromptIncludesRaviRules(runtimeInstructions)
+    ? null
+    : await buildRaviRulesPromptSection(cwd);
   if (workspaceInstructions) {
     sections.push(
       [
@@ -1905,6 +1909,15 @@ async function buildCodexSystemPromptAppend(
     );
   }
 
+  if (raviRulesSection) {
+    const raviRulesInstructions = `## ${raviRulesSection.title}\n\n${raviRulesSection.content}`;
+    if (runtimeInstructions) {
+      runtimeInstructions = insertRaviRulesIntoRuntimeInstructions(runtimeInstructions, raviRulesInstructions);
+    } else {
+      sections.push(raviRulesInstructions);
+    }
+  }
+
   if (runtimeInstructions) {
     sections.push(runtimeInstructions);
   }
@@ -1914,6 +1927,50 @@ async function buildCodexSystemPromptAppend(
 
 function runtimePromptIncludesWorkspaceInstructions(runtimeSystemPromptAppend: string): boolean {
   return /^## Workspace Instructions$/m.test(runtimeSystemPromptAppend);
+}
+
+function runtimePromptIncludesRaviRules(runtimeSystemPromptAppend: string): boolean {
+  return /^## Ravi Rules$/m.test(runtimeSystemPromptAppend);
+}
+
+function insertRaviRulesIntoRuntimeInstructions(runtimeInstructions: string, raviRulesInstructions: string): string {
+  const workspaceSectionEnd = findMarkdownSectionEnd(runtimeInstructions, "Workspace Instructions");
+  if (workspaceSectionEnd !== null) {
+    return insertMarkdownBlock(runtimeInstructions, workspaceSectionEnd, raviRulesInstructions);
+  }
+
+  const agentSectionStart = findMarkdownSectionStart(runtimeInstructions, "Agent Instructions");
+  if (agentSectionStart !== null) {
+    return insertMarkdownBlock(runtimeInstructions, agentSectionStart, raviRulesInstructions);
+  }
+
+  return `${raviRulesInstructions}\n\n${runtimeInstructions}`;
+}
+
+function findMarkdownSectionStart(markdown: string, title: string): number | null {
+  const pattern = new RegExp(`^## ${escapeRegExp(title)}$`, "m");
+  const match = pattern.exec(markdown);
+  return match ? match.index : null;
+}
+
+function findMarkdownSectionEnd(markdown: string, title: string): number | null {
+  const sectionStart = findMarkdownSectionStart(markdown, title);
+  if (sectionStart === null) {
+    return null;
+  }
+
+  const nextSectionPattern = /^## .+$/gm;
+  nextSectionPattern.lastIndex = sectionStart + `## ${title}`.length;
+  const nextSectionMatch = nextSectionPattern.exec(markdown);
+  return nextSectionMatch ? nextSectionMatch.index : markdown.length;
+}
+
+function insertMarkdownBlock(markdown: string, index: number, block: string): string {
+  return `${markdown.slice(0, index).trimEnd()}\n\n${block}\n\n${markdown.slice(index).trimStart()}`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildCodexSkillCatalogInstruction(syncedSkillNames: string[]): string {

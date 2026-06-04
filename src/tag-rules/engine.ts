@@ -3,7 +3,7 @@ import { nats } from "../nats.js";
 import { dbDeleteTagBinding } from "../tags/tag-db.js";
 import { attachTagSlugsToAsset, canonicalTagSlugsForAsset } from "../tags/helpers.js";
 import { tryNormalizeTagSlug } from "../tags/tag-db.js";
-import { evaluateChatConditions, evaluateContactConditions } from "./conditions.js";
+import { evaluateChatConditions, evaluateContactConditions, type TagRuleEvaluationContext } from "./conditions.js";
 import type { AppliedTagAction, ApplyAction, ChatCondition, ContactCondition, TagRule } from "./types.js";
 
 export interface ApplyRuleOptions {
@@ -13,6 +13,7 @@ export interface ApplyRuleOptions {
   visited?: Set<string>;
   apply?: boolean;
   now?: number;
+  evaluationContext?: TagRuleEvaluationContext;
   cause: { evaluation: "reactive" | "periodic" | "manual"; triggerType?: string };
 }
 
@@ -80,6 +81,7 @@ export function applyContactRule(options: ApplyRuleOptions): ApplyRuleResult {
     conditions: rule.conditions as ContactCondition[],
     contact,
     now,
+    context: options.evaluationContext,
   });
   const applied: AppliedTagAction[] = [];
 
@@ -309,6 +311,7 @@ export interface EvaluateRulesForContactOptions {
   cause: { evaluation: "reactive" | "periodic" | "manual"; triggerType?: string };
   apply?: boolean;
   now?: number;
+  evaluationContext?: TagRuleEvaluationContext;
 }
 
 export function evaluateRulesForContact(options: EvaluateRulesForContactOptions): ApplyRuleResult[] {
@@ -335,6 +338,7 @@ export function evaluateRulesForContact(options: EvaluateRulesForContactOptions)
       apply: options.apply,
       now: options.now,
       visited,
+      evaluationContext: options.evaluationContext,
       cause: options.cause,
     });
     results.push(result);

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "bun:test";
+import { findTriggerTopicCatalogEntry } from "../topic-catalog.js";
 import { resolveTemplate } from "../template.js";
 
 const context = {
@@ -109,6 +110,28 @@ describe("resolveTemplate", () => {
       const ctx = { topic: "t", data: { obj: { a: 1 } } };
       const result = resolveTemplate("{{data.obj}}", ctx);
       expect(result).toBe('{"a":1}');
+    });
+  });
+
+  describe("catalog default templates", () => {
+    it("renders the native mail inbox default message", () => {
+      const entry = findTriggerTopicCatalogEntry("ravi.inbox.mail.received");
+      const template = entry?.messageTemplate?.template;
+
+      expect(template).toBeDefined();
+      expect(
+        resolveTemplate(template as string, {
+          topic: "ravi.inbox.mail.received",
+          data: {
+            mail: {
+              messageId: "mail_msg_123",
+              subject: "Contrato assinado",
+            },
+          },
+        }),
+      ).toBe(
+        "[ravi mail] novo email no inbox: mail_msg_123. Assunto: Contrato assinado. Use ravi mail messages read mail_msg_123 para ler.",
+      );
     });
   });
 });

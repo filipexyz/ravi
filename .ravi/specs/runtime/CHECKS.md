@@ -29,6 +29,13 @@
 - Runtime pool backpressure trace events use the canonical session key when the session exists.
 - Background/task starts respect reserved interactive capacity; interactive starts may use that reserved capacity.
 
+## Provider Logs
+
+- Provider stderr remains buffered for crash diagnostics even when selected lines
+  are not forwarded as WARN daemon logs.
+- Known benign Codex skill loader and MCP cleanup warnings are debug-only; real
+  provider errors and unknown warnings remain visible.
+
 ## Gaps To Close Before Adding Another Provider
 
 - Add a capability for native runtime control operations instead of assuming only one provider supports them.

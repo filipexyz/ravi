@@ -71,6 +71,7 @@ describe("runtime delivery queue", () => {
     const queuedMessage = createQueuedRuntimeUserMessage({
       prompt: "continua",
       deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
       taskBarrierTaskId: "task-1",
       source: {
         channel: "whatsapp",
@@ -94,6 +95,7 @@ describe("runtime delivery queue", () => {
     expect(queuedMessage.launchPrompt).toMatchObject({
       prompt: "continua",
       deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
       taskBarrierTaskId: "task-1",
       source: {
         channel: "whatsapp",
@@ -107,6 +109,7 @@ describe("runtime delivery queue", () => {
       },
       _agentId: "e2-filipe",
     });
+    expect(queuedMessage.deliveryBarrierSource).toBe("default");
   });
 
   it("does not request provider interrupt while the runtime is between turns", () => {
