@@ -1,0 +1,96 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "apps",
+  "name": "Ravi Apps",
+  "version": "0.1.0",
+  "description": "Discover and validate Ravi app manifests.",
+  "interfaces": {
+    "cli": {
+      "command": "ravi apps",
+      "json": true,
+      "health": "ravi apps check apps --json"
+    },
+    "sdk": {
+      "namespace": "apps"
+    },
+    "ui": {
+      "routes": [
+        {
+          "id": "main",
+          "path": "/apps/apps",
+          "label": "Apps",
+          "icon": "boxes",
+          "view": "registry"
+        }
+      ],
+      "views": [
+        {
+          "id": "registry",
+          "type": "table",
+          "title": "Apps",
+          "density": "compact",
+          "query": {
+            "operation": "apps.list"
+          },
+          "refreshOn": [
+            "ravi.apps.changed",
+            "ravi.apps.checked"
+          ],
+          "actions": [
+            {
+              "id": "check",
+              "label": "Check",
+              "icon": "shield-check",
+              "operation": "apps.check",
+              "placement": "toolbar"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "operations": {
+    "apps.list": {
+      "interface": "cli",
+      "command": "ravi apps list --json",
+      "mutating": false,
+      "outputSchema": "schemas/apps-list.v1.json"
+    },
+    "apps.check": {
+      "interface": "cli",
+      "command": "ravi apps check {id} --json",
+      "mutating": false,
+      "outputSchema": "schemas/apps-check.v1.json"
+    }
+  },
+  "permissions": {
+    "required": [],
+    "optional": [],
+    "mutating": []
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [],
+    "consumes": []
+  },
+  "skills": [
+    "ravi-dev-cli-creator",
+    "ravi-system-specs"
+  ],
+  "health": {
+    "checks": [
+      {
+        "type": "cli",
+        "command": "ravi apps check apps --json"
+      }
+    ]
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  }
+}
