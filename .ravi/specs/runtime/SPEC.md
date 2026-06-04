@@ -10,6 +10,7 @@ capabilities:
   - event-loop
   - session-continuity
   - context-keys
+  - product-runtime-layer
   - observation-plane
   - traces
   - cloud-trace-export
@@ -52,6 +53,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - `RuntimeSessionContinuity`: resume, fork, rebase, and replay planning from Ravi-owned prompt atoms and provider state.
 - `RuntimeEvent`: canonical event stream consumed by the Ravi host event loop.
 - `RuntimeEventLoop`: canonical event consumer that emits NATS events, traces, tool events, responses, cost/tokens, and provider state.
+- `ProductRuntimePort`: product-facing runtime contract for consumers such as Jarvis; it carries cognitive bounded context but does not make Ravi own product semantics.
 - `CloudTraceExport`: optional exporter that mirrors selected local runtime traces to a linked remote control plane without making remote storage required for local execution.
 
 ## Lifecycle
@@ -75,6 +77,10 @@ The runtime abstraction exists so new execution engines can be added without cop
 - User prompts MUST be saved before provider handoff; assistant messages MUST be saved only after a non-interrupted terminal turn.
 - Tool start/end lifecycle MUST be recorded through canonical `tool.started` and `tool.completed` events.
 - Runtime permissions MUST flow through Ravi host services or host hooks. Providers MUST NOT create a parallel permission model.
+- Product-facing runtime calls MUST go through a port/contract and MUST NOT depend on router/session/database internals.
+- Product-facing runtime requests MUST carry cognitive bounded context and ubiquitous language metadata when crossing product or agent semantic boundaries.
+- Product-facing runtime requests that cross cognitive bounded contexts SHOULD carry Bridge Contract, Semantic Abstraction Layer and Semantic Event refs as envelope metadata.
+- Ravi MUST validate product runtime envelopes for presence/correlation but MUST NOT interpret product-specific semantics.
 - `adapter.request` trace MUST be recorded before provider handoff, including prompt hashes, system prompt hashes, model, provider, resume/fork state, delivery barrier, source, and capability summary.
 - Runtime pool backpressure MUST be represented as its own dispatch state. A session waiting for a pool slot MUST NOT be reported as an in-flight cold start until a slot has actually been reserved.
 - Dispatch trace rows MUST use the canonical `session_key` when a session row exists. `session_name` MAY be included as a secondary lookup field, but MUST NOT replace the canonical key.
@@ -86,6 +92,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 ## Validation
 
 - `bun test src/runtime/provider-contract.test.ts`
+- `bun test src/runtime/product-runtime-contract.test.ts`
 - `bun test src/runtime/session-dispatcher.test.ts src/runtime/delivery-queue.test.ts`
 - `bun test src/runtime/session-trace.test.ts`
 - `bun test src/runtime/runtime-session-continuity.test.ts src/runtime/session-resolver.test.ts`

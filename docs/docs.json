@@ -105,7 +105,7 @@
           },
           {
             "group": "Architecture",
-            "pages": ["architecture"]
+            "pages": ["architecture", "product-runtime-layer"]
           },
           {
             "group": "NATS",
