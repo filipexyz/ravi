@@ -56,6 +56,15 @@ function parsePositiveInteger(value: string | undefined, label: string): number 
   return parsed;
 }
 
+function parseNonNegativeInteger(value: string | undefined, label: string): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    fail(`${label} must be a non-negative integer`);
+  }
+  return parsed;
+}
+
 function parseTimestamp(value: string | undefined, label: string): number {
   if (!value?.trim()) fail(`Missing ${label}`);
   const numeric = Number(value);
@@ -79,6 +88,8 @@ export class InboxCommands {
     includeArchived?: boolean,
     @Option({ flags: "--limit <n>", description: "Maximum items to return (default: 50, max: 500)" })
     limit?: string,
+    @Option({ flags: "--offset <n>", description: "Items to skip before returning results" })
+    offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const items = listLocalInboxItems({
@@ -86,6 +97,7 @@ export class InboxCommands {
       sourceDomain,
       includeArchived,
       limit: parsePositiveInteger(limit, "--limit"),
+      offset: parseNonNegativeInteger(offset, "--offset"),
     });
     const payload = { items };
     if (asJson) {

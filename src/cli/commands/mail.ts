@@ -369,6 +369,7 @@ export class MailOutboxCommands {
     @Option({ flags: "--mailbox <mailbox>", description: "Local mailbox id or address" }) mailbox?: string,
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--offset <n>", description: "Records to skip before returning results" }) offset?: string,
   ) {
     return runMailCommand(asJson, async () => {
       if (mailbox) {
@@ -382,6 +383,7 @@ export class MailOutboxCommands {
         status: parseOutboxStatus(status),
         mailbox,
         limit: parseOptionalInteger(limit, "--limit"),
+        offset: parseOptionalInteger(offset, "--offset"),
       }).filter((row) => canUseRowMailbox("send", row.mailboxId));
       const payload = { outbox: safeOutboxRows(outbox) };
       printPayload(payload, asJson, () => printItems("Outbox", payload, ["id", "status", "operation", "messageId"]));
@@ -435,15 +437,22 @@ export class MailOutboxCommands {
 export class MailProvidersCommands {
   @Command({ name: "list", description: "List known mail providers and local account counts" })
   @CliOnly()
-  async list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  async list(
+    @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Records to skip before returning results" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     return runMailCommand(asJson, async () => {
       const accounts = listMailAccounts({ limit: 500 });
-      const providers = ["ravi-mail", "gmail", "imap-smtp"].map((provider) => ({
+      const providerRows = ["ravi-mail", "gmail", "imap-smtp"].map((provider) => ({
         provider,
         accounts: accounts.filter((account) => account.provider === provider).length,
         default: provider === "ravi-mail",
         localFirst: true,
       }));
+      const start = parseOptionalInteger(offset, "--offset") ?? 0;
+      const count = parseOptionalInteger(limit, "--limit") ?? providerRows.length;
+      const providers = providerRows.slice(start, start + count);
       const payload = { providers };
       printPayload(payload, asJson, () => printItems("Providers", payload, ["provider", "accounts", "default"]));
       return payload;
