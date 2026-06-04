@@ -33,6 +33,11 @@ export interface InboundMentionReplacement {
   displayName: string;
 }
 
+export interface InboundMentionTarget {
+  id: string;
+  displayName?: string;
+}
+
 interface ParticipantCandidate {
   participant: OmniMentionParticipant;
   keys: Set<string>;
@@ -163,6 +168,29 @@ function collectMentionedContacts(
   }
 
   return contacts;
+}
+
+export function extractInboundMentionTargets(rawPayload: Record<string, unknown> | undefined): InboundMentionTarget[] {
+  const byId = new Map<string, InboundMentionTarget>();
+  const add = (id: string | null | undefined, displayName?: string | null) => {
+    const cleanId = id?.trim();
+    if (!cleanId) return;
+    const existing = byId.get(cleanId);
+    const safeName = safeDisplayName(displayName ?? undefined);
+    byId.set(cleanId, {
+      id: cleanId,
+      displayName: existing?.displayName ?? safeName,
+    });
+  };
+
+  for (const contact of collectMentionedContacts(rawPayload)) {
+    add(contact.id, contact.name);
+  }
+  for (const jid of collectMentionedJids(rawPayload)) {
+    add(jid);
+  }
+
+  return Array.from(byId.values());
 }
 
 function mentionLookupKeys(id: string): string[] {

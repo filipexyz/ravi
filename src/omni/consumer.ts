@@ -35,6 +35,7 @@ import { configStore } from "../config-store.js";
 import {
   getContact,
   getContactName,
+  buildMentionedContactPromptContexts,
   ensureContactFromInbound,
   isContactAllowedForAgent,
   recordInbound,
@@ -83,7 +84,7 @@ import {
 import type { AgentConfig } from "../router/types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
-import { normalizeInboundMentionText } from "./mentions.js";
+import { extractInboundMentionTargets, normalizeInboundMentionText } from "./mentions.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
 import { runTagRulesForContact } from "../tag-rules/index.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
@@ -1441,6 +1442,13 @@ export class OmniConsumer {
     const groupName = groupMetadata?.name ?? rawGroupName;
     const groupMembers =
       formatGroupMembers(groupMetadata) ?? (isGroup ? this.resolveGroupMembers(rawPayload) : undefined);
+    const mentionedContactsContext = isGroup
+      ? buildMentionedContactPromptContexts({
+          channel: sessionChannel,
+          instanceId,
+          mentions: extractInboundMentionTargets(rawPayload),
+        })
+      : [];
 
     // Process media (download from omni disk → agent attachments, transcribe audio)
     const agentCwd = expandHome(agent.cwd);
@@ -1500,6 +1508,7 @@ export class OmniConsumer {
       senderName,
       groupName,
       groupMembers,
+      mentionedContactsContext,
       chatJid,
       event,
       effectiveActorMetadata,
@@ -2534,6 +2543,7 @@ export class OmniConsumer {
     senderName: string,
     groupName: string | undefined,
     groupMembers: string[] | undefined,
+    mentionedContactsContext: MessageContext["mentionedContactsContext"] | undefined,
     chatJid: string,
     event: OmniEvent,
     actorMetadata?: MessageActorMetadata,
@@ -2556,6 +2566,7 @@ export class OmniConsumer {
       ...(groupName ? { groupName } : {}),
       ...(groupId ? { groupId } : {}),
       ...(groupMembers && groupMembers.length > 0 ? { groupMembers } : {}),
+      ...(mentionedContactsContext && mentionedContactsContext.length > 0 ? { mentionedContactsContext } : {}),
       ...(editInfo
         ? {
             isEditedMessage: true,

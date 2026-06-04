@@ -2142,6 +2142,16 @@ export interface CrmContactProfileCard {
   facts: CrmFact[];
 }
 
+export interface MentionedContactContextInput {
+  id: string;
+  displayName?: string | null;
+}
+
+export interface MentionedContactPromptContext {
+  displayName: string;
+  summaryLines: string[];
+}
+
 export interface CrmAccountDetail {
   account: CrmAccount;
   contacts: Array<CrmAccountContact & { contact: CanonicalContact | null }>;
@@ -4542,6 +4552,248 @@ export function getCrmContactProfile(contactRef: string): CrmContactProfileCard 
     nextActions: listCrmNextActions({ contactRef: contactId, limit: 20 }).items,
     facts: listCrmFacts({ contactRef: contactId, limit: 20 }).items,
   };
+}
+
+export function buildMentionedContactPromptContexts(input: {
+  channel: string;
+  instanceId?: string | null;
+  mentions: readonly MentionedContactContextInput[];
+  maxContacts?: number;
+}): MentionedContactPromptContext[] {
+  const maxContacts = Math.max(1, Math.min(input.maxContacts ?? 3, 5));
+  const database = ensureDb();
+  const seenContactIds = new Set<string>();
+  const contexts: MentionedContactPromptContext[] = [];
+
+  for (const mention of input.mentions) {
+    if (contexts.length >= maxContacts) break;
+    const contactId = resolveMentionedContactId(database, {
+      channel: input.channel,
+      instanceId: input.instanceId,
+      mentionId: mention.id,
+    });
+    if (!contactId || seenContactIds.has(contactId)) continue;
+    seenContactIds.add(contactId);
+
+    const card = getCrmContactProfile(contactId);
+    if (!card) continue;
+    const context = buildMentionedContactPromptContextFromCard(card, mention.displayName);
+    if (context.summaryLines.length > 0) contexts.push(context);
+  }
+
+  return contexts;
+}
+
+function resolveMentionedContactId(
+  database: Database,
+  input: { channel: string; instanceId?: string | null; mentionId: string },
+): string | null {
+  const channel = normalizePlatformIdentityChannel(input.channel);
+  const mentionCandidates = mentionIdentityCandidates(input.mentionId);
+  const instanceIds = Array.from(new Set([input.instanceId?.trim() ?? "", ""]));
+  const channels = Array.from(
+    new Set([channel, channel === "whatsapp" ? "phone" : undefined].filter(Boolean)),
+  ) as string[];
+
+  for (const candidate of mentionCandidates) {
+    for (const lookupChannel of channels) {
+      for (const instanceId of lookupChannel === "phone" ? [""] : instanceIds) {
+        const identity = findPlatformIdentityByChannelRef(database, {
+          channel: lookupChannel,
+          instanceId,
+          platformUserId: candidate,
+        });
+        if (identity?.owner_type === "contact" && identity.owner_id) return identity.owner_id;
+        if (identity?.owner_type === "agent") return null;
+      }
+    }
+  }
+
+  for (const candidate of mentionCandidates) {
+    const identity = findDefaultPlatformIdentityForIdentity(database, candidate);
+    if (identity?.owner_type === "contact" && identity.owner_id) return identity.owner_id;
+    if (identity?.owner_type === "agent") return null;
+  }
+
+  for (const candidate of mentionCandidates) {
+    if (!isStrongMentionContactRef(candidate)) continue;
+    const contactId = resolveCanonicalContactId(database, candidate);
+    if (contactId) return contactId;
+  }
+
+  return null;
+}
+
+function mentionIdentityCandidates(mentionId: string): string[] {
+  const raw = mentionId.trim().replace(/^@+/, "");
+  if (!raw) return [];
+  const base = raw.includes("@") ? raw.slice(0, raw.indexOf("@")) : raw;
+  const normalized = normalizePhone(raw);
+  const candidates = new Set<string>();
+  for (const value of [raw, base, normalized]) {
+    if (value.trim()) candidates.add(value.trim());
+  }
+  if (/^\d{6,}$/.test(base)) {
+    candidates.add(`${base}@s.whatsapp.net`);
+    candidates.add(`${base}@lid`);
+    candidates.add(`lid:${base}`);
+  }
+  if (normalized.startsWith("lid:")) {
+    candidates.add(`${normalized.slice(4)}@lid`);
+  }
+  return Array.from(candidates);
+}
+
+function isStrongMentionContactRef(value: string): boolean {
+  const normalized = normalizePhone(value);
+  return normalized.startsWith("lid:") || /^\d{8,}$/.test(normalized) || value.includes("@");
+}
+
+function buildMentionedContactPromptContextFromCard(
+  card: CrmContactProfileCard,
+  mentionDisplayName?: string | null,
+): MentionedContactPromptContext {
+  const displayName =
+    sanitizeMentionedContactPromptValue(card.contact.displayName, 80) ||
+    sanitizeMentionedContactPromptValue(mentionDisplayName, 80) ||
+    sanitizeMentionedContactPromptValue(card.card?.displayName, 80) ||
+    "Contato mencionado";
+  const summaryLines: string[] = [];
+
+  const crmStatus = formatMentionedContactCrmStatus(card);
+  if (crmStatus) summaryLines.push(crmStatus);
+
+  const nextAction = card.profile?.nextActionSummary?.trim() || card.nextActions[0]?.title?.trim();
+  const nextActionText = quoteMentionedContactPromptValue(nextAction);
+  if (nextActionText) {
+    const nextActionAt = card.profile?.nextActionAt || card.nextActions[0]?.dueAt;
+    summaryLines.push(
+      `Próxima ação no CRM: ${nextActionText}${nextActionAt ? ` (${formatCompactDate(nextActionAt)})` : ""}.`,
+    );
+  }
+
+  const account =
+    card.accountMemberships.find((membership) => membership.isPrimary && membership.account)?.account ??
+    card.accountMemberships.find((membership) => membership.account)?.account;
+  const accountName = quoteMentionedContactPromptValue(account?.name, 120);
+  if (accountName) {
+    summaryLines.push(`Conta associada: ${accountName}.`);
+  }
+
+  const openOpportunities = card.opportunities
+    .filter((opportunity) => opportunity.status === "open" && !opportunity.archivedAt)
+    .slice(0, 2)
+    .map((opportunity) => quoteMentionedContactPromptValue(opportunity.title, 140))
+    .filter((opportunity): opportunity is string => Boolean(opportunity));
+  if (openOpportunities.length > 0) {
+    summaryLines.push(`Oportunidades abertas: ${openOpportunities.join("; ")}.`);
+  }
+
+  const openTasks = card.tasks
+    .filter((task) => task.status !== "done" && task.status !== "canceled")
+    .slice(0, 2)
+    .map((task) => quoteMentionedContactPromptValue(task.title, 140))
+    .filter((task): task is string => Boolean(task));
+  if (openTasks.length > 0) {
+    summaryLines.push(`Tarefas abertas: ${openTasks.join("; ")}.`);
+  }
+
+  const facts = card.facts
+    .filter((fact) => fact.status === "confirmed")
+    .slice(0, 3)
+    .map(formatMentionedContactFact)
+    .filter((fact): fact is string => Boolean(fact));
+  if (facts.length > 0) {
+    summaryLines.push(`Fatos confirmados: ${facts.join("; ")}.`);
+  }
+
+  if (summaryLines.length === 0) {
+    summaryLines.push("Há um contato CRM vinculado, mas sem resumo operacional recente.");
+  }
+
+  return {
+    displayName,
+    summaryLines,
+  };
+}
+
+function formatMentionedContactCrmStatus(card: CrmContactProfileCard): string | null {
+  const parts: string[] = [];
+  const profile = card.profile;
+  const lifecycle = profile?.lifecycle && profile.lifecycle !== "unknown" ? humanizeCrmValue(profile.lifecycle) : null;
+  const health =
+    profile?.relationshipHealth && profile.relationshipHealth !== "unknown"
+      ? humanizeCrmValue(profile.relationshipHealth)
+      : null;
+  const priority = profile?.priority && profile.priority !== "normal" ? humanizeCrmValue(profile.priority) : null;
+  if (lifecycle) parts.push(`lifecycle ${lifecycle}`);
+  if (health) parts.push(`relacionamento ${health}`);
+  if (priority) parts.push(`prioridade ${priority}`);
+  const persona = quoteMentionedContactPromptValue(profile?.persona, 100);
+  if (persona) parts.push(`persona ${persona}`);
+  const buyingRole = quoteMentionedContactPromptValue(profile?.buyingRole, 100);
+  if (buyingRole) parts.push(`papel ${buyingRole}`);
+  const tags = (card.policy?.tags ?? [])
+    .slice(0, 4)
+    .map((tag) => quoteMentionedContactPromptValue(tag, 50))
+    .filter((tag): tag is string => Boolean(tag));
+  if (tags.length > 0) parts.push(`tags ${tags.join(", ")}`);
+  if (parts.length === 0) return null;
+  return `No CRM, aparece com ${parts.join(", ")}.`;
+}
+
+function formatMentionedContactFact(fact: CrmFact): string | null {
+  const key = sanitizeMentionedContactPromptValue(humanizeCrmValue(fact.key), 80);
+  const value = formatMentionedContactFactValue(fact.value);
+  const quotedValue = quoteMentionedContactPromptValue(value, 180);
+  if (!key || !quotedValue) return null;
+  return `${key}: ${quotedValue}`;
+}
+
+function formatMentionedContactFactValue(value: unknown): string | null {
+  if (typeof value === "string") return sanitizeMentionedContactPromptValue(value);
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "boolean") return value ? "sim" : "não";
+  if (Array.isArray(value)) {
+    const items = value
+      .map(formatMentionedContactFactValue)
+      .filter((item): item is string => Boolean(item))
+      .slice(0, 3);
+    return items.length > 0 ? items.join(", ") : null;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of ["summary", "text", "title", "name", "value"]) {
+      const formatted = formatMentionedContactFactValue(record[key]);
+      if (formatted) return formatted;
+    }
+  }
+  return null;
+}
+
+function humanizeCrmValue(value: string): string {
+  return value.replace(/[._-]+/g, " ").trim();
+}
+
+function sanitizeMentionedContactPromptValue(value: string | null | undefined, maxLength = 180): string | null {
+  const normalized = value
+    ?.replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/[`"]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return null;
+  return normalized.length > maxLength ? `${normalized.slice(0, Math.max(1, maxLength - 3)).trim()}...` : normalized;
+}
+
+function quoteMentionedContactPromptValue(value: string | null | undefined, maxLength = 180): string | null {
+  const sanitized = sanitizeMentionedContactPromptValue(value, maxLength);
+  return sanitized ? `"${sanitized}"` : null;
+}
+
+function formatCompactDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 10);
 }
 
 export function listCrmContactCards(options: ListCrmContactCardsOptions = {}): ListPage<CrmContactCard> {

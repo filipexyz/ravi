@@ -106,4 +106,29 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("ravi sessions read --json");
     expect(prompt).toContain("Never recover missing context from another DM/group/session");
   });
+
+  it("does not render mentioned contact metadata into the system prompt", () => {
+    const context = {
+      channelId: "whatsapp-baileys",
+      channelName: "WhatsApp",
+      isGroup: true,
+      groupName: "Projeto",
+      mentionedContactsContext: [
+        {
+          displayName: "Thiago Freire",
+          summaryLines: [
+            "No CRM, aparece com lifecycle active, relacionamento good.",
+            "Próxima ação no CRM: alinhar arquitetura.",
+          ],
+        },
+      ],
+    };
+
+    const prompt = buildSystemPrompt("main", context);
+    expect(prompt).not.toContain("## Pessoas Mencionadas");
+    expect(prompt).not.toContain("Nota privada de identidade");
+    expect(prompt).not.toContain("Thiago Freire");
+    expect(prompt).not.toContain("No CRM, aparece com lifecycle active");
+    expect(prompt).not.toContain('"summaryLines"');
+  });
 });

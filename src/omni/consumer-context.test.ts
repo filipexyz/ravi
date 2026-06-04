@@ -137,6 +137,12 @@ mock.module("../config-store.js", () => ({
 mock.module("../contacts.js", () => ({
   isContactAllowedForAgent: () => true,
   saveAccountPending: () => false,
+  buildMentionedContactPromptContexts: mock((input: { mentions?: Array<{ id: string; displayName?: string }> }) =>
+    (input.mentions ?? []).map((mention) => ({
+      displayName: mention.displayName ?? "Contato mencionado",
+      summaryLines: ["Contexto CRM de teste para a pessoa mencionada."],
+    })),
+  ),
   recordInbound: mock((contactRef: string) => {
     recordInboundCalls.push(contactRef);
   }),
@@ -498,6 +504,19 @@ describe("OmniConsumer channel context", () => {
     const [, prompt] = promptCalls[0];
     expect(prompt.prompt).toContain("@ravi viu quem marquei aqui?");
     expect(prompt.prompt).not.toContain("@91015272759397 viu quem marquei aqui?");
+    expect(prompt.prompt).not.toContain("Contexto CRM de teste");
+    expect(prompt.prompt).not.toContain("[Nota privada do Ravi");
+    expect(prompt.prompt).not.toContain("Nota privada de identidade");
+    expect(prompt.prompt).not.toContain("## Pessoas Mencionadas");
+    expect(prompt.prompt).not.toContain("foi mencionado nesta mensagem");
+    expect(prompt.context).toMatchObject({
+      mentionedContactsContext: [
+        {
+          displayName: "ravi",
+          summaryLines: ["Contexto CRM de teste para a pessoa mencionada."],
+        },
+      ],
+    });
     expect(chatMessageCalls[0].content).toMatchObject({
       type: "text",
       text: "@ravi viu quem marquei aqui?",

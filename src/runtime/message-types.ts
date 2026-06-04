@@ -16,6 +16,13 @@ export interface MessageActorMetadata {
   identityProvenance?: Record<string, unknown>;
 }
 
+export interface MentionedContactPromptContext {
+  /** Safe display label only. Do not put raw contact/platform ids here. */
+  displayName: string;
+  /** Natural-language CRM/contact facts ready to render into the runtime prompt. */
+  summaryLines: string[];
+}
+
 /** Message context for structured prompts */
 export interface MessageContext extends MessageActorMetadata {
   channelId: string;
@@ -31,6 +38,7 @@ export interface MessageContext extends MessageActorMetadata {
   groupName?: string;
   groupId?: string;
   groupMembers?: string[];
+  mentionedContactsContext?: MentionedContactPromptContext[];
   isEditedMessage?: boolean;
   editedMessageId?: string;
   editedAt?: number;

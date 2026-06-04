@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { mentionPlaceholderForId, normalizeInboundMentionText, prepareOmniMentionMessage } from "./mentions.js";
+import {
+  extractInboundMentionTargets,
+  mentionPlaceholderForId,
+  normalizeInboundMentionText,
+  prepareOmniMentionMessage,
+} from "./mentions.js";
 
 const participants = [
   { platformUserId: "91015272759397@lid", displayName: "Ravi Bot" },
@@ -168,5 +173,24 @@ describe("Omni mention preparation", () => {
     });
 
     expect(normalized.text).toBe("oi @Luis Filipe");
+  });
+
+  it("extracts formal inbound mention targets from WhatsApp raw payload", () => {
+    const targets = extractInboundMentionTargets({
+      mentionedJids: ["91015272759397@lid"],
+      mentionedContacts: [{ jid: "91015272759397@lid", name: "Ravi Bot" }],
+      message: {
+        extendedTextMessage: {
+          contextInfo: {
+            mentionedJid: ["5511947879044@s.whatsapp.net"],
+          },
+        },
+      },
+    });
+
+    expect(targets).toEqual([
+      { id: "91015272759397@lid", displayName: "Ravi Bot" },
+      { id: "5511947879044@s.whatsapp.net", displayName: undefined },
+    ]);
   });
 });
