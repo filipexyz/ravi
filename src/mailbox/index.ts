@@ -1,0 +1,60 @@
+export type {
+  CreateMailAccountInput,
+  CreateMailMailboxInput,
+  EnqueueMailReplyInput,
+  EnqueueMailSendInput,
+  ImportMailMessageInput,
+  ListMailMessagesInput,
+  MailAccount,
+  MailAccountStatus,
+  MailAddress,
+  MailAddressInput,
+  MailMailbox,
+  MailMailboxRole,
+  MailMailboxStatus,
+  MailMessage,
+  MailMessageStatus,
+  MailMessageWithAddresses,
+  MailOutboxRow,
+  MailOutboxStatus,
+  MailProvider,
+  MailThread,
+} from "./types.js";
+
+export {
+  createMailAccount,
+  createMailMailbox,
+  enqueueMailReply,
+  enqueueMailSend,
+  ensureMailSchema,
+  getMailAccount,
+  getMailMailbox,
+  getMailOutbox,
+  getMailThread,
+  importMailMessage,
+  listMailAccounts,
+  listMailMailboxes,
+  listMailMessages,
+  listMailOutbox,
+  normalizeEmailAddress,
+  readMailMessage,
+  retryMailOutbox,
+  setMailMailboxStatus,
+} from "./db.js";
+
+export {
+  canUseMailMailbox,
+  canUseAnyMailbox,
+  canUseMailProvider,
+  getMailScopeContext,
+  type MailboxRebacPermission,
+  type MailProviderRebacPermission,
+  type MailScopeContext,
+} from "./access.js";
+
+export {
+  annotateConsoleMailPayloadWithLocalIngest,
+  ingestConsoleMailReceivedEvent,
+  type ConsoleMailIngestResult,
+  type ConsoleMailIngestStatus,
+} from "./console-ingest.js";

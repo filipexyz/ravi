@@ -1,4 +1,13 @@
-export type TriggerTopicCategory = "inbound" | "cli" | "approval" | "audit" | "delivery" | "watch" | "tasks" | "custom";
+export type TriggerTopicCategory =
+  | "inbound"
+  | "cli"
+  | "approval"
+  | "audit"
+  | "delivery"
+  | "inbox"
+  | "watch"
+  | "tasks"
+  | "custom";
 
 export interface TriggerTopicCatalogEntry {
   id: string;
@@ -144,15 +153,27 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     examples: ['ravi triggers add "Unknown instance" --topic "ravi.instances.unregistered" --message "..."'],
   },
   {
+    id: "inbox.mail.received",
+    category: "inbox",
+    pattern: "ravi.inbox.mail.received",
+    title: "Local inbox mail received",
+    description: "New email projected into the native local inbox.",
+    payload:
+      "{ version, eventType, inboxItemId, sourceDomain, sourceType, sourceId, mail: { messageId, threadId, mailboxId, subject, snippet, ... }, inbox, occurredAt, createdAt }",
+    examples: ['ravi triggers add "New local email" --topic "ravi.inbox.mail.received" --message "..."'],
+    notes: [
+      "Use this for email automations. ravi.console.inbox.item is only the Console delivery mirror and should not be the durable email trigger.",
+    ],
+  },
+  {
     id: "console.inbox.item",
     category: "watch",
     pattern: "ravi.console.inbox.item",
     title: "Console inbox item",
     description: "Delivered Console inbox item, including watch events.",
     payload: "{ eventId, eventType, source, payload, links, occurredAt, createdAt, ... }",
-    examples: [
-      'ravi triggers add "New mail" --topic "ravi.console.inbox.item" --filter \'data.eventType == "mail.message.received"\' --message "..."',
-    ],
+    examples: ['ravi triggers add "Console watch item" --topic "ravi.console.inbox.item" --message "..."'],
+    notes: ["For local email, listen to ravi.inbox.mail.received instead."],
   },
   {
     id: "watch.event",

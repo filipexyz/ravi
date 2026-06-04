@@ -17,6 +17,11 @@ export type {
   InboxSubscriptionStatus,
 } from "./types.js";
 export { INBOX_NATS_SUBJECT } from "./types.js";
+export {
+  LOCAL_INBOX_MAIL_RECEIVED_SUBJECT,
+  setLocalInboxEventPublisherForTests,
+  type LocalInboxMailReceivedPayload,
+} from "./local-events.js";
 
 export {
   ackInboxItems,
@@ -45,3 +50,23 @@ export {
   startInboxRunner,
   stopInboxRunner,
 } from "./inbox-runner.js";
+
+export type {
+  LocalInboxActorType,
+  LocalInboxEvent,
+  LocalInboxItem,
+  LocalInboxPriority,
+  LocalInboxStatus,
+  UpsertLocalInboxItemInput,
+} from "./local-db.js";
+
+export {
+  ensureLocalInboxSchema,
+  listLocalInboxEvents,
+  listLocalInboxItems,
+  listLocalInboxSources,
+  markLocalInboxItem,
+  projectMailMessageToInbox,
+  readLocalInboxItem,
+  upsertLocalInboxItem,
+} from "./local-db.js";

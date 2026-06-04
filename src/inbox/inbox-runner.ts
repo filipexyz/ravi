@@ -21,6 +21,10 @@ import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
 import { RaviMailClient } from "../mail/client.js";
+import {
+  annotateConsoleMailPayloadWithLocalIngest,
+  ingestConsoleMailReceivedEvent,
+} from "../mailbox/console-ingest.js";
 import { publish } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { watchEventFromInboxPayload } from "../watch/events.js";
@@ -461,13 +465,15 @@ class InboxRunner {
     if (input.item.eventType !== "mail.message.received") return natsPayload;
     const mailClient = new RaviMailClient(input.client);
     let lastError: unknown = null;
+    let enrichedPayload: InboxNatsPayload | null = null;
     for (let attempt = 1; attempt <= MAIL_ENRICHMENT_ATTEMPTS; attempt += 1) {
       try {
-        return await enrichMailMessageReceivedPayload(natsPayload, (messageId, payloadKind) =>
+        enrichedPayload = await enrichMailMessageReceivedPayload(natsPayload, (messageId, payloadKind) =>
           this.withAutoRefresh(input.client, input.credentials, (token) =>
             mailClient.readMessage(token, messageId, { payloadKind }),
           ),
         );
+        break;
       } catch (error) {
         lastError = error;
         if (attempt < MAIL_ENRICHMENT_ATTEMPTS) {
@@ -476,12 +482,27 @@ class InboxRunner {
       }
     }
 
+    if (enrichedPayload) {
+      return this.ingestLocalMailPayload(enrichedPayload);
+    }
+
     log.warn("Mail inbox payload enrichment failed; publishing metadata-only payload", {
       itemId: input.item.itemId,
       attempts: MAIL_ENRICHMENT_ATTEMPTS,
       error: errMessage(lastError),
     });
-    return withMailEnrichmentFailure(natsPayload, "mail_read_failed");
+    return this.ingestLocalMailPayload(withMailEnrichmentFailure(natsPayload, "mail_read_failed"));
+  }
+
+  private ingestLocalMailPayload(natsPayload: InboxNatsPayload): InboxNatsPayload {
+    const ingest = ingestConsoleMailReceivedEvent(natsPayload);
+    if (ingest.status === "skipped") {
+      log.warn("Mail inbox payload was not ingested into local mailbox", {
+        itemId: natsPayload.eventId,
+        reason: ingest.reason,
+      });
+    }
+    return annotateConsoleMailPayloadWithLocalIngest(natsPayload, ingest);
   }
 
   private async withAutoRefresh<T>(

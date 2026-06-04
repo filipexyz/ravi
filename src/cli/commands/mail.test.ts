@@ -1,89 +1,228 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
-import { MailCommands, MailDomainsCommands, MailMailboxesCommands, MailMessagesCommands } from "./mail.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { listMailMailboxes, listMailMessages } from "../../mailbox/index.js";
+import {
+  MailAccountsCommands,
+  MailCommands,
+  MailMailboxesCommands,
+  MailMessagesCommands,
+  MailOutboxCommands,
+  MailRaviMailCommands,
+  MailRaviMailMailboxesCommands,
+  MailThreadsCommands,
+} from "./mail.js";
+
+let stateDir: string | null = null;
+let previousAgentId: string | undefined;
+let previousSessionKey: string | undefined;
+let previousSessionName: string | undefined;
+
+setDefaultTimeout(20_000);
 
 describe("mail CLI commands", () => {
-  it("registers a managed domain through mail domains create", async () => {
-    const bodies: unknown[] = [];
-    const client = makeClient(async (_method, _path, body) => {
-      bodies.push(body);
-      return { domain: { domain: "ravi.bot", status: "verified" } };
-    });
-    const command = new MailDomainsCommands({ client, readCredentials: makeReadCredentials() });
-
-    const { output } = await captureConsole(() => command.create("ravi.bot", undefined, true));
-    const payload = JSON.parse(output);
-
-    expect(bodies).toEqual([{ domain: "ravi.bot" }]);
-    expect(payload.domain.domain).toBe("ravi.bot");
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-mail-cli-test-");
+    previousAgentId = process.env.RAVI_AGENT_ID;
+    previousSessionKey = process.env.RAVI_SESSION_KEY;
+    previousSessionName = process.env.RAVI_SESSION_NAME;
+    delete process.env.RAVI_AGENT_ID;
+    delete process.env.RAVI_SESSION_KEY;
+    delete process.env.RAVI_SESSION_NAME;
   });
 
-  it("prints message list metadata without body content", async () => {
-    const client = makeClient(async () => ({
-      messages: [
-        {
-          id: "msg_1",
-          from: "alice@example.com",
-          subject: "Hello",
-          body: "hidden body",
-          decryptedBody: "hidden decrypted body",
-        },
-      ],
-    }));
-    const command = new MailMessagesCommands({ client, readCredentials: makeReadCredentials() });
+  afterEach(async () => {
+    restoreEnv("RAVI_AGENT_ID", previousAgentId);
+    restoreEnv("RAVI_SESSION_KEY", previousSessionKey);
+    restoreEnv("RAVI_SESSION_NAME", previousSessionName);
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("creates local accounts and mailboxes with JSON output", async () => {
+    const accounts = new MailAccountsCommands();
+    const mailboxes = new MailMailboxesCommands();
+
+    const { output: accountOutput } = await captureConsole(() =>
+      accounts.create("ravi-mail", "acct_1", "Ravi Mail", "cloud-auth:ravi-mail", true),
+    );
+    const accountPayload = JSON.parse(accountOutput);
+
+    const { output: mailboxOutput } = await captureConsole(() =>
+      mailboxes.create("Luis@Ravi.Bot", "acct_1", "Luis", "primary", "remote_box_1", true, true),
+    );
+    const mailboxPayload = JSON.parse(mailboxOutput);
+
+    expect(accountPayload.account.provider).toBe("ravi-mail");
+    expect(mailboxPayload.mailbox.normalizedAddress).toBe("luis@ravi.bot");
+    expect(mailboxPayload.mailbox.isDefault).toBe(true);
+  });
+
+  it("imports local messages and projects them into the real inbox", async () => {
+    const accounts = new MailAccountsCommands();
+    const mailboxes = new MailMailboxesCommands();
+    const messages = new MailMessagesCommands();
+
+    await captureConsole(() => accounts.create("ravi-mail", "acct_1", undefined, undefined, true));
+    await captureConsole(() =>
+      mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true),
+    );
 
     const { output } = await captureConsole(() =>
-      command.list("box_1", undefined, undefined, undefined, undefined, true),
+      messages.importMessage(
+        "luis@ravi.bot",
+        "alice@example.com",
+        "luis@ravi.bot",
+        "Hello",
+        "Local body",
+        "ravi-mail",
+        "remote_msg_1",
+        "remote_thr_1",
+        "<msg-1@ravi.bot>",
+        true,
+      ),
     );
     const payload = JSON.parse(output);
 
-    expect(payload.messages[0].id).toBe("msg_1");
-    expect(JSON.stringify(payload)).not.toContain("hidden body");
-    expect(JSON.stringify(payload)).not.toContain("hidden decrypted body");
+    expect(payload.message.subject).toBe("Hello");
+    expect(payload.message.bodyText).toBeUndefined();
+    expect(payload.inboxItem.sourceDomain).toBe("mail");
+    expect(payload.inboxCreated).toBe(true);
+
+    const { output: listOutput } = await captureConsole(() =>
+      messages.list("luis@ravi.bot", undefined, undefined, true, undefined, undefined, true),
+    );
+    const listPayload = JSON.parse(listOutput);
+    expect(listPayload.messages).toHaveLength(1);
+    expect(listPayload.messages[0].bodyText).toBeUndefined();
+    expect(listPayload.messages[0].bodyHtml).toBeUndefined();
+    expect(listPayload.messages[0].rawHeaders).toBeUndefined();
   });
 
-  it("requests address summaries only when --addresses is explicit", async () => {
-    const paths: string[] = [];
+  it("queues mail locally instead of sending directly to provider", async () => {
+    const accounts = new MailAccountsCommands();
+    const mailboxes = new MailMailboxesCommands();
+    const mail = new MailCommands();
+    const outbox = new MailOutboxCommands();
+
+    await captureConsole(() => accounts.create("ravi-mail", "acct_1", undefined, undefined, true));
+    await captureConsole(() =>
+      mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true),
+    );
+
+    const { output } = await captureConsole(() =>
+      mail.send("bob@example.com", "Subject", "Body", "luis@ravi.bot", "idem-1", true),
+    );
+    const payload = JSON.parse(output);
+    const { output: statusOutput } = await captureConsole(() => outbox.status(true));
+    const statusPayload = JSON.parse(statusOutput);
+    const { output: outboxOutput } = await captureConsole(() =>
+      outbox.list(undefined, "luis@ravi.bot", undefined, true),
+    );
+    const outboxPayload = JSON.parse(outboxOutput);
+
+    expect(payload.queued).toBe(true);
+    expect(payload.message.bodyText).toBeUndefined();
+    expect(payload.outbox.status).toBe("pending");
+    expect(payload.outbox.payload.body).toBe("[redacted]");
+    expect(statusPayload.counts.pending).toBe(1);
+    expect(outboxPayload.outbox[0].payload.body).toBe("[redacted]");
+    expect(JSON.stringify(outboxPayload)).not.toContain('"Body"');
+  });
+
+  it("queues replies and reads a safe local thread timeline", async () => {
+    const accounts = new MailAccountsCommands();
+    const mailboxes = new MailMailboxesCommands();
+    const messages = new MailMessagesCommands();
+    const mail = new MailCommands();
+    const threads = new MailThreadsCommands();
+
+    await captureConsole(() => accounts.create("ravi-mail", "acct_1", undefined, undefined, true));
+    await captureConsole(() =>
+      mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true),
+    );
+    const { output: importOutput } = await captureConsole(() =>
+      messages.importMessage(
+        "luis@ravi.bot",
+        "alice@example.com",
+        "luis@ravi.bot",
+        "Question",
+        "Can you help?",
+        "ravi-mail",
+        "remote_msg_1",
+        undefined,
+        "<msg-1@example.com>",
+        true,
+      ),
+    );
+    const imported = JSON.parse(importOutput);
+
+    const { output: replyOutput } = await captureConsole(() =>
+      mail.reply(imported.message.id, "Yes.", undefined, undefined, undefined, undefined, undefined, "reply-1", true),
+    );
+    const reply = JSON.parse(replyOutput);
+    const { output: threadOutput } = await captureConsole(() => threads.read(imported.message.threadId, true, true));
+    const thread = JSON.parse(threadOutput);
+
+    expect(reply.outbox.operation).toBe("reply");
+    expect(reply.outbox.payload.body).toBe("[redacted]");
+    expect(reply.message.threadId).toBe(imported.message.threadId);
+    expect(thread.messages).toHaveLength(2);
+    expect(thread.messages.every((message: Record<string, unknown>) => message.bodyText === undefined)).toBe(true);
+    expect(thread.messages.every((message: Record<string, unknown>) => message.bodyHtml === undefined)).toBe(true);
+    expect(thread.messages.every((message: Record<string, unknown>) => message.rawHeaders === undefined)).toBe(true);
+  });
+
+  it("syncs Ravi Mail provider metadata into the local mailbox", async () => {
+    const calls: string[] = [];
     const client = makeClient(async (_method, path) => {
-      paths.push(path);
-      return {
-        messages: [
-          {
-            id: "msg_1",
-            addressSummary: {
-              schemaVersion: 1,
-              from: [{ name: "Alice", address: "alice@example.com" }],
-              to: [{ address: "agent@ravi.bot" }],
+      calls.push(path);
+      if (path.startsWith("/api/cli/mail/mailboxes")) {
+        return {
+          mailboxes: [{ id: "remote_box_1", address: "luis@ravi.bot", isDefault: true, status: "active" }],
+        };
+      }
+      if (path.startsWith("/api/cli/mail/messages")) {
+        return {
+          messages: [
+            {
+              id: "remote_msg_1",
+              threadId: "remote_thr_1",
+              subject: "Hello",
+              snippet: "Preview only",
+              receivedAt: "2026-06-04T10:00:00.000Z",
+              addressSummary: {
+                from: [{ address: "alice@example.com" }],
+                to: [{ address: "luis@ravi.bot" }],
+              },
             },
-          },
-        ],
-      };
+          ],
+        };
+      }
+      return {};
     });
-    const command = new MailMessagesCommands({ client, readCredentials: makeReadCredentials() });
+    const accounts = new MailAccountsCommands({ client, readCredentials: makeReadCredentials() });
 
-    const { output } = await captureConsole(() => command.list("box_1", undefined, undefined, undefined, true, false));
+    await captureConsole(() => accounts.create("ravi-mail", "acct_1", undefined, undefined, true));
+    const { output } = await captureConsole(() => accounts.sync("acct_1", true, true));
+    const payload = JSON.parse(output);
+    const mailboxes = listMailMailboxes();
+    const messages = listMailMessages();
 
-    expect(paths[0]).toContain("addresses=1");
-    expect(output).toContain("from=Alice <alice@example.com>");
+    expect(payload.status).toBe("synced");
+    expect(payload.mailboxesImported).toBe(1);
+    expect(payload.messagesImported).toBe(1);
+    expect(mailboxes[0].providerMailboxId).toBe("remote_box_1");
+    expect(messages[0].bodyText).toBeNull();
+    expect(messages[0].bodyRedactionStatus).toBe("preview_only");
+    expect(calls).toEqual([
+      "/api/cli/mail/mailboxes",
+      "/api/cli/mail/messages?limit=50&mailbox=remote_box_1&addresses=1",
+    ]);
   });
 
-  it("prints explicit read payload only through messages read", async () => {
-    const client = makeClient(async () => ({
-      message: {
-        id: "msg_1",
-        subject: "Hello",
-        body: "explicit body",
-      },
-    }));
-    const command = new MailMessagesCommands({ client, readCredentials: makeReadCredentials() });
-
-    const { output } = await captureConsole(() => command.read("msg_1", undefined, undefined, true));
-
-    expect(output).toContain("explicit body");
-  });
-
-  it("disables mailboxes through mail mailboxes disable", async () => {
+  it("keeps Ravi Mail provider operations explicit under mail providers ravi-mail", async () => {
     const calls: Array<{ method: string; path: string; body: unknown }> = [];
     const client = makeClient(async (method, path, body) => {
       calls.push({ method, path, body });
@@ -93,7 +232,7 @@ describe("mail CLI commands", () => {
         providerSynced: true,
       };
     });
-    const command = new MailMailboxesCommands({ client, readCredentials: makeReadCredentials() });
+    const command = new MailRaviMailMailboxesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() => command.disable("agent@ravi.bot", undefined, true));
     const payload = JSON.parse(output);
@@ -106,25 +245,19 @@ describe("mail CLI commands", () => {
     expect(payload.providerSynced).toBe(true);
   });
 
-  it("sends without from unless --from is provided", async () => {
+  it("can still send directly through Ravi Mail provider when explicitly requested", async () => {
     const bodies: unknown[] = [];
     const client = makeClient(async (_method, _path, body) => {
       bodies.push(body);
       return { sent: { id: "out_1", status: "queued" } };
     });
-    const command = new MailCommands({ client, readCredentials: makeReadCredentials() });
+    const command = new MailRaviMailCommands({ client, readCredentials: makeReadCredentials() });
 
-    await captureConsole(() =>
-      command.send("bob@example.com", "Subject", "Body", undefined, undefined, undefined, true),
-    );
     await captureConsole(() =>
       command.send("bob@example.com", "Subject", "Body", "agent@example.com", undefined, undefined, true),
     );
 
-    expect(bodies).toEqual([
-      { to: ["bob@example.com"], subject: "Subject", body: "Body" },
-      { from: "agent@example.com", to: ["bob@example.com"], subject: "Subject", body: "Body" },
-    ]);
+    expect(bodies).toEqual([{ from: "agent@example.com", to: ["bob@example.com"], subject: "Subject", body: "Body" }]);
   });
 });
 
@@ -175,4 +308,12 @@ function makeCredentials(): CloudCredentials {
     createdAt: "2026-05-09T00:00:00.000Z",
     updatedAt: "2026-05-09T00:00:00.000Z",
   };
+}
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
 }
