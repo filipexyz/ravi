@@ -20,7 +20,11 @@ import {
   type TriggerInput,
   type Trigger,
 } from "../../triggers/index.js";
-import { getTriggerTopicCatalog, type TriggerTopicCatalogEntry } from "../../triggers/topic-catalog.js";
+import {
+  findTriggerTopicCatalogEntry,
+  getTriggerTopicCatalog,
+  type TriggerTopicCatalogEntry,
+} from "../../triggers/topic-catalog.js";
 import { getTriggerTopicWarnings } from "../../triggers/topic-policy.js";
 import { validateFilter } from "../../triggers/filter.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
@@ -42,7 +46,7 @@ function printTopicSummary(): void {
   for (const entry of getTriggerTopicCatalog().slice(0, 8)) {
     console.log(`  ${entry.pattern.padEnd(30)} ${entry.description}`);
   }
-  console.log("  ... run `ravi triggers topics` for schemas, examples, and notes");
+  console.log("  ... run `ravi triggers topics` for schemas, default messages, examples, and notes");
 }
 
 function printTopicCatalog(topics: TriggerTopicCatalogEntry[]): void {
@@ -56,6 +60,13 @@ function printTopicCatalog(topics: TriggerTopicCatalogEntry[]): void {
     console.log(`  ${entry.pattern}`);
     console.log(`    ${entry.description}`);
     console.log(`    payload: ${entry.payload}`);
+    if (entry.schema?.fields.length) {
+      const requiredFields = entry.schema.fields.filter((field) => field.required).map((field) => field.path);
+      const optionalFields = entry.schema.fields.filter((field) => !field.required).map((field) => field.path);
+      if (requiredFields.length) console.log(`    required: ${requiredFields.join(", ")}`);
+      if (optionalFields.length) console.log(`    optional: ${optionalFields.slice(0, 8).join(", ")}`);
+    }
+    if (entry.messageTemplate) console.log(`    default message: ${entry.messageTemplate.template}`);
     if (entry.filters?.length) console.log(`    filters: ${entry.filters.join(" | ")}`);
     if (entry.examples[0]) console.log(`    example: ${entry.examples[0]}`);
     if (entry.notes?.length) {
@@ -77,6 +88,31 @@ function assertValidTriggerFilter(filter: string | undefined): void {
       `Invalid filter: ${validation.error}. Use data.<path> <operator> "value"; combine with &&, ||, !, and parentheses.`,
     );
   }
+}
+
+function resolveTriggerMessage(topic: string, message: string | undefined) {
+  const explicitMessage = message?.trim();
+  if (explicitMessage) {
+    return {
+      message: explicitMessage,
+      source: "explicit" as const,
+      topicCatalogEntry: findTriggerTopicCatalogEntry(topic),
+      templateId: undefined,
+    };
+  }
+
+  const topicCatalogEntry = findTriggerTopicCatalogEntry(topic);
+  const template = topicCatalogEntry?.messageTemplate;
+  if (template?.template) {
+    return {
+      message: template.template,
+      source: "catalog_default" as const,
+      topicCatalogEntry,
+      templateId: template.id,
+    };
+  }
+
+  fail("--message is required for topics without a catalog default message template");
 }
 
 @Group({
@@ -225,7 +261,7 @@ export class TriggersCommands {
       description: "Notif topic pattern to subscribe to",
     })
     topic?: string,
-    @Option({ flags: "--message <text>", description: "Prompt message" })
+    @Option({ flags: "--message <text>", description: "Prompt message (defaults to catalog template when available)" })
     message?: string,
     @Option({
       flags: "--agent <id>",
@@ -257,9 +293,7 @@ export class TriggersCommands {
     if (!topic) {
       fail("--topic is required");
     }
-    if (!message) {
-      fail("--message is required");
-    }
+    const resolvedMessage = resolveTriggerMessage(topic, message);
     const topicWarnings = getTriggerTopicWarnings(topic);
     assertValidTriggerFilter(filter);
 
@@ -327,7 +361,7 @@ export class TriggersCommands {
     const input: TriggerInput = {
       name,
       topic,
-      message,
+      message: resolvedMessage.message,
       agentId: resolvedAgent,
       accountId: resolvedAccount,
       replySession,
@@ -347,6 +381,11 @@ export class TriggersCommands {
         target: { type: "trigger" as const, id: trigger.id },
         changedCount: 1,
         trigger: serializeTrigger(trigger),
+        messageTemplate: {
+          source: resolvedMessage.source,
+          topicId: resolvedMessage.topicCatalogEntry?.id ?? null,
+          templateId: resolvedMessage.templateId ?? null,
+        },
         ...(topicWarnings.length ? { warnings: topicWarnings } : {}),
       };
       if (asJson) {
@@ -356,6 +395,9 @@ export class TriggersCommands {
         console.log(`\n✓ Created trigger: ${trigger.id}`);
         console.log(`  Name:       ${trigger.name}`);
         console.log(`  Topic:      ${trigger.topic}`);
+        if (resolvedMessage.source === "catalog_default") {
+          console.log(`  Message:    catalog default (${resolvedMessage.templateId})`);
+        }
         console.log(`  Cooldown:   ${formatDurationMs(trigger.cooldownMs)}`);
         console.log(`  Session:    ${trigger.session}`);
       }

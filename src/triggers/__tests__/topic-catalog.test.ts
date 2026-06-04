@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { getTriggerTopicCatalog, getTriggerTopicDiagnostic } from "../topic-catalog.js";
+import { findTriggerTopicCatalogEntry, getTriggerTopicCatalog, getTriggerTopicDiagnostic } from "../topic-catalog.js";
 
 describe("trigger topic catalog", () => {
   it("registers the canonical inbound reaction subject", () => {
@@ -33,5 +33,31 @@ describe("trigger topic catalog", () => {
 
   it("allows session CLI command subjects", () => {
     expect(getTriggerTopicDiagnostic("ravi.*.cli.contacts.*")).toBeUndefined();
+  });
+
+  it("documents the native mail inbox schema and default trigger message", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.inbox.mail.received");
+
+    expect(entry).toMatchObject({
+      id: "inbox.mail.received",
+      schema: {
+        version: 1,
+        fields: expect.arrayContaining([
+          expect.objectContaining({ path: "inboxItemId", required: true }),
+          expect.objectContaining({ path: "mail.messageId", required: true }),
+          expect.objectContaining({ path: "mail.subject" }),
+        ]),
+      },
+      messageTemplate: {
+        id: "mail-inbox-default",
+        template: expect.stringContaining("ravi mail messages read {{data.mail.messageId}}"),
+      },
+    });
+  });
+
+  it("exposes schemas for built-in trigger-ready topics", () => {
+    for (const entry of getTriggerTopicCatalog()) {
+      expect(entry.schema?.fields.length).toBeGreaterThan(0);
+    }
   });
 });

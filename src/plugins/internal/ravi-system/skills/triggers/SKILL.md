@@ -27,12 +27,14 @@ ravi triggers show <id>
 ### Criar trigger
 ```bash
 ravi triggers add "<nome>" --topic "<pattern>" --message "<prompt>"
+ravi triggers add "Novo email local" --topic "ravi.inbox.mail.received"
 ```
 
 Opções:
 - `--agent <id>` - Agent que processa (default: agent padrão)
 - `--cooldown <duration>` - Intervalo mínimo entre disparos (ex: 5s, 1m, 30s)
 - `--session <main|isolated>` - Sessão (default: isolated)
+- `--message <prompt>` - Prompt/template manual; opcional quando o tópico do catálogo tem `messageTemplate`
 
 ### Ativar/Desativar
 ```bash
@@ -58,7 +60,9 @@ ravi triggers rm <id>
 
 ## Banco de Tópicos
 
-Use `ravi triggers topics` para ver templates built-in com schema de payload, exemplos, filtros comuns e notas operacionais. O catálogo é fonte de hints, não whitelist: topics externos/custom publicados no NATS são aceitos.
+Use `ravi triggers topics` para ver templates built-in com schema de payload, template padrão de mensagem, exemplos, filtros comuns e notas operacionais. O catálogo é fonte de hints, não whitelist: topics externos/custom publicados no NATS são aceitos.
+
+Use `ravi triggers topics --json` quando precisar configurar watchers por programa. Cada tópico catalogado expõe `schema.fields[]` com `path`, `type`, `required` e `description`. Quando existir `messageTemplate`, `ravi triggers add` pode omitir `--message` e salvar esse template como mensagem do trigger.
 
 ### Inbound e Canais
 
@@ -87,7 +91,7 @@ Aliases como `whatsapp.*.reaction`, `whatsapp.*.inbound` e `matrix.*.inbound` n�
 |---------|-----------|
 | `ravi.*.cli.*.*` | Auditoria de comandos CLI emitidos por sessão |
 | `ravi._cli.cli.*.*` | Auditoria de comandos CLI standalone |
-| `ravi.inbox.mail.received` | Novo email projetado no inbox nativo local |
+| `ravi.inbox.mail.received` | Novo email projetado no inbox nativo local. Tem template padrão: `[ravi mail] novo email no inbox: {{data.mail.messageId}}...` |
 | `ravi.console.inbox.item` | Mirror técnico de item entregue pelo Console |
 | `ravi.watch.*.*` | Evento normalizado de watch |
 | `ravi.task.*.event` | Evento de ciclo de vida de task |
@@ -148,6 +152,16 @@ Variáveis não resolvidas ficam como estão (`{{data.inexistente}}`).
 **Exemplo de message com templates:**
 ```
 CC parou em {{data.cwd}}. Última msg: "{{data.last_assistant_message}}". Informe o Luis se relevante, senão @@SILENT@@.
+```
+
+**Exemplo com template padrão do catálogo:**
+```bash
+ravi triggers add "Novo email local" --topic "ravi.inbox.mail.received"
+```
+
+Mensagem salva pelo catálogo:
+```
+[ravi mail] novo email no inbox: {{data.mail.messageId}}. Assunto: {{data.mail.subject}}. Use ravi mail messages read {{data.mail.messageId}} para ler.
 ```
 
 ## Exemplos

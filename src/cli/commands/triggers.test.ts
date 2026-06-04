@@ -208,6 +208,47 @@ describe("TriggersCommands topic guidance", () => {
     );
   });
 
+  it("uses the catalog default message template when --message is omitted", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(() =>
+      commands.add(
+        "local mail watcher",
+        "ravi.inbox.mail.received",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "local mail watcher",
+        topic: "ravi.inbox.mail.received",
+        message: expect.stringContaining("ravi mail messages read {{data.mail.messageId}}"),
+      }),
+    );
+    expect(payload).toMatchObject({
+      status: "created",
+      messageTemplate: {
+        source: "catalog_default",
+        topicId: "inbox.mail.received",
+        templateId: "mail-inbox-default",
+      },
+    });
+  });
+
+  it("still requires --message for custom topics without a catalog template", async () => {
+    const commands = new TriggersCommands();
+
+    await expect(commands.add("custom", "custom.mail.received")).rejects.toThrow("--message is required");
+    expect(createdTriggers).toEqual([]);
+  });
+
   it("accepts composed boolean filters on add", async () => {
     const commands = new TriggersCommands();
 
