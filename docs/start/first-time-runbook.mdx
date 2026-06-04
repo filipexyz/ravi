@@ -14,22 +14,17 @@ working Ravi environment:
 6. Add permission audit triggers.
 7. Run smoke checks.
 
-Use the Ravi wrapper from the source checkout while bootstrapping. This avoids
-accidentally mutating a different runtime bundle.
-
-```bash
-export RAVI=/path/to/ravi.bot/bin/ravi
-```
-
-Replace `/path/to/ravi.bot` with the real checkout path.
+Ravi is installed as a global CLI. Use `ravi` directly throughout this runbook.
+Do not create wrapper variables for first-time setup.
 
 ## 0. Operating Assumptions
 
-- Bun is installed.
-- The Ravi source repo is cloned locally.
+- Bun is installed and its global bin directory is on `PATH`.
 - Omni is the channel gateway.
 - Ravi owns agents, sessions, routing, policies, permissions, triggers, cron,
   and durable runtime state.
+- The Ravi source repo is only needed for development. A normal install uses the
+  published global CLI.
 - Secrets stay in local environment files or a secret manager. Never paste them
   into chats, docs, or committed files.
 
@@ -46,27 +41,76 @@ Before starting, check what is already installed:
 ```bash
 bun --version
 git --version
-which omni || true
-which ravi || true
+bun pm bin -g
+command -v omni || echo "omni not installed yet"
+command -v ravi || echo "ravi not installed yet"
 ```
 
 ## 1. Install Omni
 
-Omni must be installed and authenticated before Ravi can connect WhatsApp,
-Telegram, Discord, Slack, or other channel accounts.
+Omni must be installed before Ravi can connect WhatsApp, Telegram, Discord,
+Slack, or other channel accounts.
 
 ```bash
-omni auth status
+bun add -g @automagik/omni
 omni install
-omni status
-omni instances list
 ```
 
-If this machine is being prepared non-interactively:
+`omni install` is the interactive setup wizard. It handles server setup, process
+manager setup, API key generation, and startup. For scripted installs:
 
 ```bash
 omni install --non-interactive
 ```
+
+If this machine still has the old Omni CLI package:
+
+```bash
+bun remove -g @omni/cli
+bun add -g @automagik/omni
+```
+
+Alternative install paths from the [Omni repo](https://github.com/automagik-dev/omni):
+
+```bash
+# CLI install script: npm first, git fallback
+curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install-client.sh | bash
+
+# Full server install script
+curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install.sh | bash -s -- --server
+
+# Manual source install
+git clone https://github.com/automagik-dev/omni.git
+cd omni
+make setup
+```
+
+Verify Omni:
+
+```bash
+omni auth status
+omni status
+omni instances list
+```
+
+If `omni auth status` is not authenticated but the server is running, login with
+the API key printed by the install/startup banner:
+
+```bash
+omni auth login --api-key <omni-api-key>
+```
+
+Optional raw Omni WhatsApp smoke test:
+
+```bash
+omni instances create --name "omni-smoke-whatsapp" --channel whatsapp-baileys
+omni instances qr <instance-id> --watch
+omni instances list
+```
+
+Use that raw Omni smoke only to prove the gateway works. The real Ravi-owned
+WhatsApp setup later should go through `ravi instances create` and
+`ravi instances connect`.
 
 Keep the boundary clear:
 
@@ -76,19 +120,18 @@ Keep the boundary clear:
 
 ## 2. Install Ravi
 
-Clone and install dependencies:
+Install the global CLI:
 
 ```bash
-git clone https://github.com/filipexyz/ravi.git ravi.bot
-cd ravi.bot
-bun install
-export RAVI="$PWD/bin/ravi"
+bun install -g ravi.bot
+command -v ravi
+ravi --version
 ```
 
 Configure local environment:
 
 ```bash
-$RAVI daemon env
+ravi daemon env
 ```
 
 At minimum, configure:
@@ -101,14 +144,14 @@ At minimum, configure:
 Start the daemon:
 
 ```bash
-$RAVI daemon start
-$RAVI daemon status
+ravi daemon start
+ravi daemon status
 ```
 
 If something fails, check logs before changing configuration:
 
 ```bash
-$RAVI daemon logs -f
+ravi daemon logs -f
 ```
 
 ## 3. Create the Main Agent
@@ -154,18 +197,18 @@ You are Ravi.
 Register the agent:
 
 ```bash
-$RAVI agents create main ~/ravi/main --provider codex
-$RAVI agents set main name "Ravi"
-$RAVI agents set main model gpt-5.5
+ravi agents create main ~/ravi/main --provider codex
+ravi agents set main name "Ravi"
+ravi agents set main model gpt-5.5
 ```
 
 For a trusted personal bootstrap, the main agent usually needs broad operator
 access:
 
 ```bash
-$RAVI permissions grant agent:main admin system:*
-$RAVI permissions init agent:main tool-groups
-$RAVI permissions init agent:main safe-executables
+ravi permissions grant agent:main admin system:*
+ravi permissions init agent:main tool-groups
+ravi permissions init agent:main safe-executables
 ```
 
 For a customer or shared deployment, do not grant broad access by default. Start
@@ -176,20 +219,20 @@ with the narrowest grants required for that agent's job.
 Create the WhatsApp instance with conservative defaults:
 
 ```bash
-$RAVI instances create main \
+ravi instances create main \
   --channel whatsapp \
   --agent main \
   --dm-policy pairing \
   --group-policy allowlist \
   --contact-intake-mode discovered
 
-$RAVI instances set main dmScope per-account-channel-peer
+ravi instances set main dmScope per-account-channel-peer
 ```
 
 Connect the account:
 
 ```bash
-$RAVI instances connect main
+ravi instances connect main
 ```
 
 Scan the QR code from WhatsApp.
@@ -197,8 +240,8 @@ Scan the QR code from WhatsApp.
 Verify:
 
 ```bash
-$RAVI instances status main
-$RAVI instances show main --json
+ravi instances status main
+ravi instances show main --json
 ```
 
 ### First DM Smoke Test
@@ -207,8 +250,8 @@ Send a WhatsApp DM to the connected account. Because `dmPolicy` is `pairing`,
 the sender should appear as pending:
 
 ```bash
-$RAVI instances pending list main
-$RAVI instances pending approve main <pending-id>
+ravi instances pending list main
+ravi instances pending approve main <pending-id>
 ```
 
 Send another DM and verify the main agent responds.
@@ -258,9 +301,9 @@ You audit Ravi permissions, policies, and routing.
 Register it:
 
 ```bash
-$RAVI agents create ravi-rebac ~/ravi/ravi-rebac --provider codex
-$RAVI agents set ravi-rebac name "Ravi REBAC"
-$RAVI agents set ravi-rebac model gpt-5.5
+ravi agents create ravi-rebac ~/ravi/ravi-rebac --provider codex
+ravi agents set ravi-rebac name "Ravi REBAC"
+ravi agents set ravi-rebac model gpt-5.5
 ```
 
 ### Permission Profile
@@ -268,17 +311,17 @@ $RAVI agents set ravi-rebac model gpt-5.5
 Start with an observer profile:
 
 ```bash
-$RAVI permissions grant agent:ravi-rebac use toolgroup:read-only
-$RAVI permissions grant agent:ravi-rebac use tool:Bash
-$RAVI permissions grant agent:ravi-rebac execute executable:ravi
-$RAVI permissions grant agent:ravi-rebac execute executable:sqlite3
-$RAVI permissions grant agent:ravi-rebac execute executable:jq
-$RAVI permissions grant agent:ravi-rebac execute executable:rg
-$RAVI permissions grant agent:ravi-rebac execute executable:sed
-$RAVI permissions grant agent:ravi-rebac execute executable:cat
-$RAVI permissions grant agent:ravi-rebac execute executable:find
-$RAVI permissions grant agent:ravi-rebac execute executable:ls
-$RAVI permissions grant agent:ravi-rebac execute executable:head
+ravi permissions grant agent:ravi-rebac use toolgroup:read-only
+ravi permissions grant agent:ravi-rebac use tool:Bash
+ravi permissions grant agent:ravi-rebac execute executable:ravi
+ravi permissions grant agent:ravi-rebac execute executable:sqlite3
+ravi permissions grant agent:ravi-rebac execute executable:jq
+ravi permissions grant agent:ravi-rebac execute executable:rg
+ravi permissions grant agent:ravi-rebac execute executable:sed
+ravi permissions grant agent:ravi-rebac execute executable:cat
+ravi permissions grant agent:ravi-rebac execute executable:find
+ravi permissions grant agent:ravi-rebac execute executable:ls
+ravi permissions grant agent:ravi-rebac execute executable:head
 ```
 
 If this audit agent must use `ravi permissions list`, `grant`, or `revoke`, it
@@ -286,7 +329,7 @@ currently needs superadmin access because the permissions CLI group is protected
 as superadmin:
 
 ```bash
-$RAVI permissions grant agent:ravi-rebac admin system:*
+ravi permissions grant agent:ravi-rebac admin system:*
 ```
 
 Only use that profile for a private, trusted operations group.
@@ -302,14 +345,14 @@ In WhatsApp:
 Then approve and route it:
 
 ```bash
-$RAVI instances pending list main
-$RAVI instances pending approve main <audit-group-id>
-$RAVI instances routes add main "<audit-group-id>" ravi-rebac \
+ravi instances pending list main
+ravi instances pending approve main <audit-group-id>
+ravi instances routes add main "<audit-group-id>" ravi-rebac \
   --priority 100 \
   --policy allowlist \
   --channel whatsapp
 
-$RAVI instances routes show main "<audit-group-id>"
+ravi instances routes show main "<audit-group-id>"
 ```
 
 The group id usually looks like:
@@ -339,7 +382,7 @@ Use these trigger definitions.
 ### Permission Denials
 
 ```bash
-$RAVI triggers add "REBAC denied audit" \
+ravi triggers add "REBAC denied audit" \
   --topic "ravi.audit.denied" \
   --agent ravi-rebac \
   --account main \
@@ -351,7 +394,7 @@ $RAVI triggers add "REBAC denied audit" \
 ### Permission CLI Changes From Sessions
 
 ```bash
-$RAVI triggers add "REBAC session permission CLI audit" \
+ravi triggers add "REBAC session permission CLI audit" \
   --topic "ravi.*.cli.permissions.*" \
   --agent ravi-rebac \
   --account main \
@@ -363,7 +406,7 @@ $RAVI triggers add "REBAC session permission CLI audit" \
 ### Permission CLI Changes From Shell
 
 ```bash
-$RAVI triggers add "REBAC shell permission CLI audit" \
+ravi triggers add "REBAC shell permission CLI audit" \
   --topic "ravi._cli.cli.permissions.*" \
   --agent ravi-rebac \
   --account main \
@@ -375,7 +418,7 @@ $RAVI triggers add "REBAC shell permission CLI audit" \
 ### Unknown Instance Events
 
 ```bash
-$RAVI triggers add "REBAC unregistered instance audit" \
+ravi triggers add "REBAC unregistered instance audit" \
   --topic "ravi.instances.unregistered" \
   --agent ravi-rebac \
   --account main \
@@ -388,8 +431,8 @@ If you must create triggers from a shell, immediately test one and confirm where
 the report lands:
 
 ```bash
-$RAVI triggers list --json
-$RAVI triggers test <trigger-id>
+ravi triggers list --json
+ravi triggers test <trigger-id>
 ```
 
 If the report does not appear in the audit group, create or repair it from the
@@ -401,25 +444,25 @@ selects the channel account; it is not a chat destination.
 Run the cross-checks before calling setup complete:
 
 ```bash
-$RAVI daemon status
-$RAVI instances list --json
-$RAVI instances show main --json
-$RAVI agents list --json
-$RAVI permissions list --subject agent:main --json
-$RAVI permissions list --subject agent:ravi-rebac --json
-$RAVI triggers list --json
+ravi daemon status
+ravi instances list --json
+ravi instances show main --json
+ravi agents list --json
+ravi permissions list --subject agent:main --json
+ravi permissions list --subject agent:ravi-rebac --json
+ravi triggers list --json
 ```
 
 Check live logs while sending one DM and one group message:
 
 ```bash
-$RAVI daemon logs -f
+ravi daemon logs -f
 ```
 
 Check recent events:
 
 ```bash
-$RAVI events replay --stream RAVI_EVENTS --since 15m --json
+ravi events replay --stream RAVI_EVENTS --since 15m --json
 ```
 
 Expected outcomes:
@@ -446,7 +489,7 @@ Once the first environment works, add these next:
 - A route inventory exported from:
 
 ```bash
-$RAVI instances routes list main --json
+ravi instances routes list main --json
 ```
 
 ## 9. Troubleshooting
@@ -456,14 +499,14 @@ $RAVI instances routes list main --json
 Check instance policy and pending entries:
 
 ```bash
-$RAVI instances show main --json
-$RAVI instances pending list main
+ravi instances show main --json
+ravi instances pending list main
 ```
 
 If the chat is a group and `groupPolicy=allowlist`, it needs an explicit route:
 
 ```bash
-$RAVI instances routes add main "group:<id>" <agent-id> --channel whatsapp
+ravi instances routes add main "group:<id>" <agent-id> --channel whatsapp
 ```
 
 ### A route exists but the wrong session replies
@@ -472,8 +515,8 @@ Routes select agents. Session subscriptions can keep an existing session attache
 to a chat. Inspect sessions and routes together before changing policies.
 
 ```bash
-$RAVI instances routes list main --json
-$RAVI sessions list --json
+ravi instances routes list main --json
+ravi sessions list --json
 ```
 
 ### Trigger fires but does not post to WhatsApp
@@ -493,8 +536,8 @@ Verify Ravi can read Omni config or environment:
 
 ```bash
 omni status
-$RAVI daemon env
-$RAVI daemon logs -f
+ravi daemon env
+ravi daemon logs -f
 ```
 
 ## 10. Bootstrap Completion Record
