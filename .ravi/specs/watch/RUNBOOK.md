@@ -51,7 +51,8 @@ Subscribe broadly while debugging:
 ravi.watch.>
 ```
 
-For Console-produced watches, also inspect inbox delivery:
+For Console-produced watches, also inspect Console delivery. Current commands
+may still be compatibility aliases:
 
 ```bash
 ravi inbox status

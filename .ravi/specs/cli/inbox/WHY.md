@@ -1,11 +1,14 @@
-# Console Inbox CLI / WHY
+# Console Delivery CLI Compatibility / WHY
 
 ## Why This Spec Lives In OSS
 
-`ravi inbox` is a local CLI and daemon bridge for Console-delivered watch
+This spec exists for the local CLI and daemon bridge for Console-delivered watch
 events. It is useful and testable in the open-source repo because it only covers
 local auth reuse, polling orchestration, SQLite durability, NATS publish,
 replay, and debug UX.
+
+The old command name `ravi inbox` is now a compatibility alias. Product inbox
+semantics belong to `inbox/SPEC.md`.
 
 The Console server specs remain private because they define server-side policy,
 authorization, redaction, item creation, producer behavior, and product rules.
@@ -29,10 +32,10 @@ make replay and idempotency ambiguous after a crash.
 ## Why Replay Is Local
 
 Replay is an operator/debug action. It should re-emit the exact local event to
-NATS consumers without mutating Console state or creating a new inbox item.
+NATS consumers without mutating Console state or creating a new delivery item.
 
-## Why Inbox Does Not Create Watches
+## Why Console Delivery Does Not Create Watches
 
 Watch creation belongs to `ravi watch`, because a watch may run locally or in
-Console while exposing the same event contract. Inbox is only the delivery path
-for events that cross the Console boundary.
+Console while exposing the same event contract. Console delivery is only the
+delivery path for events that cross the Console boundary.

@@ -16,15 +16,15 @@
 - Provider installation and repository selection are validated before watch
   matching.
 - Raw webhook body, tokens, secrets, raw headers, diffs, and patch bodies are
-  not persisted in inbox payloads or logs.
+  not persisted in delivery payloads or logs.
 - Drops caused by permission or repo mismatch are auditable with safe metadata.
 
 ## Delivery Checks
 
-- Console creates `ravi.console.inbox.item` for matched watch events.
-- Inbox item `eventType` uses `watch.<provider>.<event>`.
+- Console creates a delivery item for matched watch events.
+- Delivery item `eventType` uses `watch.<provider>.<event>`.
 - Local bridge republishes `ravi.watch.<provider>.<event>`.
 - Dedupe preserves provider delivery identity and prevents duplicate trigger
   fires on webhook retry.
-- A single webhook matching two watches creates two watch-level inbox items, not
-  one collapsed item.
+- A single webhook matching two watches creates two watch-level delivery items,
+  not one collapsed item.

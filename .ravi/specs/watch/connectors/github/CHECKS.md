@@ -6,7 +6,8 @@
 - Private repo watches do not require storing a local PAT.
 - Multiple watches on the same repo reuse the same provider installation stream.
 - Repository webhook creation is not the default path.
-- Console placement uses `/api/cli/watches/*` and `delivery:{type:"inbox"}`.
+- Console placement uses `/api/cli/watches/*` and the current public Console
+  delivery contract. `delivery:{type:"inbox"}` is a legacy wire value only.
 - GitHub App install/repo/permission failures surface stable Console watch error
   codes.
 

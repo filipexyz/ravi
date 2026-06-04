@@ -8,7 +8,7 @@ tags:
   - watch
   - console
   - provider-watch
-  - inbox
+  - delivery
 applies_to:
   - src/cli/commands/watch.ts
   - src/watch
@@ -29,7 +29,7 @@ normalization logic.
 
 For GitHub, the provider watch is backed by the Ravi GitHub App. The app lives
 in Console, receives provider webhooks, verifies them, normalizes them into Ravi
-watch events, and delivers those events to local Ravi through inbox.
+watch events, and delivers those events to local Ravi through Console delivery.
 
 This is not a Console "bridge" domain. In public OSS specs it is the Console
 placement for `ravi watch`.
@@ -40,10 +40,12 @@ placement for `ravi watch`.
   and create trigger bindings.
 - Console owns provider connection state, provider app installation state,
   webhook ingress, signature verification, provider authorization,
-  normalization, provider dedupe, and inbox item creation.
+  normalization, provider dedupe, and delivery item creation.
 - OSS Ravi MUST NOT store GitHub App private keys, webhook secrets, installation
   access tokens, raw webhook bodies, or provider tokens for Console placement.
-- Console-produced watch events MUST be delivered locally through `ravi inbox`.
+- Console-produced watch events MUST be delivered locally through Console
+  delivery. Current `ravi inbox` delivery commands are compatibility aliases
+  only.
 
 ## Public Console Endpoints
 
@@ -88,7 +90,8 @@ type WatchCapabilities = {
   connectUrl?: string;
   missingPermissions?: string[];
   missingCapabilities?: string[];
-  inboxAvailable: boolean;
+  deliveryAvailable: boolean;
+  inboxAvailable?: boolean; // legacy alias
   eventTypes?: Record<
     string,
     {
@@ -106,10 +109,10 @@ type WatchCapabilities = {
 
 For GitHub webhooks, `auto` SHOULD choose `console` when cloud auth exists,
 Console watches are available, the GitHub App installation/repository/permission
-checks pass, and inbox delivery is available.
+checks pass, and Console delivery is available.
 
-If login, installation, repository selection, permission, or inbox delivery is
-missing, `auto` MUST fail with an actionable error. It MUST NOT silently fall
+If login, installation, repository selection, permission, or Console delivery
+is missing, `auto` MUST fail with an actionable error. It MUST NOT silently fall
 back to local polling for webhook-backed GitHub watches.
 
 ## Create Request
@@ -237,8 +240,8 @@ The local inbox bridge MUST preserve `eventId`, `sequence`, `dedupeKey`, and
 watch id across replay.
 
 For observability/replay, normalized watch event delivery metadata SHOULD carry
-safe origin ids such as `inboxItemId`, `subscriptionId`, `pollId`, and `leaseId`
-when available.
+safe origin ids such as `deliveryItemId`, `legacyInboxItemId`,
+`subscriptionId`, `pollId`, and `leaseId` when available.
 
 ## Auth Scopes
 
@@ -247,7 +250,8 @@ Remote watch management SHOULD use watch-specific scopes:
 - `console.watches.read`
 - `console.watches.write`
 
-Inbox delivery keeps the inbox-specific scopes:
+Console delivery keeps the delivery scopes. Existing Console deployments MAY
+still expose them with `console.inbox.*` names:
 
 - `console.inbox.read`
 - `console.inbox.subscribe`
@@ -256,7 +260,7 @@ Inbox delivery keeps the inbox-specific scopes:
 
 Create/update of a Console watch MUST validate active CLI session, active local
 installation, organization membership, provider connection, provider
-installation/resource authorization, and inbox delivery availability.
+installation/resource authorization, and Console delivery availability.
 
 ## Public Errors
 
@@ -272,7 +276,8 @@ Console watch APIs SHOULD use stable coarse error codes:
 - `WATCH_UNSUPPORTED_EVENT`
 - `WATCH_ALREADY_EXISTS`
 - `WEBHOOK_UNHEALTHY`
-- `INBOX_SUBSCRIPTION_MISSING`
+- `DELIVERY_SUBSCRIPTION_MISSING`
+- `INBOX_SUBSCRIPTION_MISSING` as a legacy compatibility alias
 - `LOCAL_INSTALLATION_REVOKED`
 - `RATE_LIMITED`
 

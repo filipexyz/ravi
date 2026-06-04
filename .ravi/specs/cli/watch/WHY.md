@@ -17,6 +17,7 @@ keeps the common path short while preserving the existing trigger runtime.
 
 ## Why Not `inbox watch`
 
-Inbox is implementation plumbing for Console-delivered events. Users should not
-need to know whether a watch runs locally or in Console to create it or attach a
-trigger.
+Inbox is the local attention and triage surface, not watch configuration.
+Users should not need to know whether a watch runs locally or in Console to
+create it or attach a trigger. Console delivery is implementation plumbing for
+remote watch events.

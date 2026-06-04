@@ -32,8 +32,8 @@ Watches are durable event sources that observe external systems and publish
 normalized Ravi events. Humans should be able to create a watch from any chat,
 then attach ordinary triggers to the events that watch produces.
 
-`ravi watch` is the creation and management surface. `ravi inbox` is the local
-delivery path for watch events produced on the Console side.
+`ravi watch` is the creation and management surface. Console delivery is the
+local bridge for watch events produced on the Console side.
 
 ## Definitions
 
@@ -59,7 +59,7 @@ delivery path for watch events produced on the Console side.
   and required credentials are available, then fall back to Console when the
   connector declares Console support.
 - Local and Console placements MUST emit the same watch event contract.
-- Console-produced watch events MUST arrive locally through inbox delivery.
+- Console-produced watch events MUST arrive locally through Console delivery.
 - The public OSS contract for Console-hosted watches lives in
   `watch/console-provider`. Console private policy, provider secrets, webhook
   verification internals, billing, and product rules MUST remain outside this
@@ -111,7 +111,7 @@ ravi.watch.github.pull_request.merged
 
 The payload `subject` field MUST match the subject used for publication.
 
-When a watch event is delivered through Console inbox, the inbox item
+When a watch event is delivered through Console delivery, the delivery item
 `eventType` SHOULD use the Console event namespace `watch.<connector>.<event>`,
 for example `watch.github.pull_request.merged`. The local NATS subject remains
 `ravi.watch.<connector>.<event>`.
@@ -120,17 +120,21 @@ Triggers MAY subscribe broadly with `ravi.watch.>` or narrowly to connector and
 event subjects. Trigger filters SHOULD inspect payload fields such as
 `watchId`, `source.repo`, `source.package`, or `eventType`.
 
-## Inbox Boundary
+## Console Delivery Boundary
 
-Inbox is not a separate event product. Inbox is the local delivery box for watch
-events that were produced outside the local process, especially in Console.
+Console delivery is not a separate event product. It is the local delivery
+bridge for watch events that were produced outside the local process,
+especially in Console.
 
-- Console watch runners MUST deliver watch events through inbox.
-- The local inbox bridge MUST preserve watch event identity when publishing to
-  NATS.
-- All new Console-produced inbox items SHOULD be watch events.
-- Non-watch inbox item types SHOULD be treated as legacy or explicitly
+- Console watch runners MUST deliver watch events through Console delivery.
+- The local delivery bridge MUST preserve watch event identity when publishing
+  to NATS.
+- All new Console-produced delivery items SHOULD be watch events.
+- Non-watch delivery item types SHOULD be treated as legacy or explicitly
   documented exceptions.
+
+The product `inbox` domain MAY project watch events into actionable inbox items,
+but watch events do not need an inbox item to trigger normal automations.
 
 ## Trigger Creation From Chats
 
@@ -154,7 +158,7 @@ second trigger runner.
 - `ravi watch create ...` creates a durable watch and prints trigger-ready
   topics.
 - Local watches and Console watches emit the same watch event shape.
-- Console-produced watch events arrive through inbox and publish normalized
+- Console-produced watch events arrive through Console delivery and publish normalized
   `ravi.watch...` subjects.
 - Ordinary `ravi triggers` subscriptions can react to watch events and reply in
   the chat where the trigger was created.

@@ -13,11 +13,14 @@ The Ravi GitHub App gives a clean provider boundary: installations are selected
 per org/user/repository set, permissions can be scoped by event family, and
 private repos can be watched without persisting personal access tokens locally.
 
-## Why Inbox Delivery
+## Why Console Delivery
 
-Inbox is already the local delivery contract for Console-produced events. It
-lets local Ravi receive remote watch events without exposing local HTTP servers
-or provider webhook secrets.
+Console delivery is the local bridge for Console-produced events. It lets local
+Ravi receive remote watch events without exposing local HTTP servers or provider
+webhook secrets.
+
+The historical `ravi inbox` command name is a compatibility alias. Product
+inbox semantics belong to `inbox/SPEC.md`.
 
 ## Why Keep Trigger Topics Local
 

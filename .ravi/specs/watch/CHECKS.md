@@ -6,8 +6,8 @@
 - Connector specs declare supported placements and event types.
 - Watch event payloads do not include provider access tokens or raw private
   content.
-- Console-produced watch events are delivered through inbox and republished as
-  normalized `ravi.watch...` subjects.
+- Console-produced watch events are delivered through Console delivery and
+  republished as normalized `ravi.watch...` subjects.
 - Trigger creation helpers create normal trigger records.
 
 ## Event Contract Regression

@@ -1,15 +1,17 @@
-# Console Inbox CLI / CHECKS
+# Console Delivery CLI Compatibility / CHECKS
 
 ## Static Checks
 
 - No Console server secrets or proprietary policy are embedded in OSS code.
-- Inbox commands that return bounded snapshots support `--json`.
+- Compatibility delivery commands that return bounded snapshots support
+  `--json`.
 - Local mirror writes happen before NATS publish and Console ack.
 - Console ack is not attempted for an item unless local publish succeeded.
 - Replay republishes local SQLite payloads and does not call Console item
   creation endpoints.
-- The inbox CLI does not expose watch creation or watch connector management;
-  those belong to `ravi watch`.
+- The compatibility delivery CLI does not expose watch creation or watch
+  connector management; those belong to `ravi watch`.
+- New docs and specs do not describe Console delivery as the product inbox.
 
 ## CLI Checks
 
@@ -19,6 +21,9 @@ ravi inbox poll --once --json
 ravi inbox items --limit 25 --json
 ```
 
+These are compatibility commands until the target `ravi console delivery ...`
+surface exists.
+
 Expected:
 
 - JSON output contains no access token or refresh token.
@@ -27,7 +32,7 @@ Expected:
 - item listing is bounded.
 - Console-produced watch events expose a normalized `ravi.watch...` subject for
   ordinary trigger subscriptions.
-- Watch inbox item `eventType` uses `watch.<provider>.<event>`, while the local
+- Watch delivery item `eventType` uses `watch.<provider>.<event>`, while the local
   trigger subject uses `ravi.watch.<provider>.<event>`.
 
 ## Delivery Regression
@@ -51,4 +56,4 @@ Expected:
 - NATS payload preserves `eventId`, `sequence`, `dedupeKey`, `eventType`, and
   original timestamps;
 - replay metadata is additive;
-- Console is not called to create a new inbox item.
+- Console is not called to create a new delivery item.

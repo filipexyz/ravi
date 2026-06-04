@@ -64,7 +64,7 @@ The most efficient complete strategy is:
 4. Verify webhook signature and installation/repository authorization in
    Console.
 5. Normalize the provider event into one or more fine-grained Ravi watch events.
-6. Deliver those watch events to local Ravi through inbox.
+6. Deliver those watch events to local Ravi through Console delivery.
 
 The connector MUST NOT create one GitHub repository webhook per Ravi watch when
 a shared GitHub App installation can serve multiple watches. Watch records
@@ -86,7 +86,8 @@ For `ravi watch create github ... --placement console`, the CLI SHOULD:
    `GET /api/cli/watches/providers/github/installations/:installationId/repos`
    when repo selection/lookup is needed;
 4. call `POST /api/cli/watches` with provider `github`, placement `console`,
-   provider installation/resource ids, event types, filters, and inbox delivery.
+   provider installation/resource ids, event types, filters, and Console
+   delivery.
 
 The Console watch record MUST reference Ravi-owned provider ids
 (`providerInstallationId`, `providerResourceId`) as the durable authority.
@@ -95,7 +96,8 @@ The Console watch record MUST reference Ravi-owned provider ids
 The CLI MUST surface Console errors from `watch/console-provider`, including
 `INSTALLATION_MISSING`, `REPO_NOT_SELECTED`, `PROVIDER_PERMISSION_MISSING`,
 `WATCH_UNSUPPORTED_EVENT`, `WEBHOOK_UNHEALTHY`, and
-`INBOX_SUBSCRIPTION_MISSING`.
+`DELIVERY_SUBSCRIPTION_MISSING`, with `INBOX_SUBSCRIPTION_MISSING` as a legacy
+compatibility alias.
 
 ## Configuration
 
@@ -522,8 +524,8 @@ For `pull_request.merged`, provider provenance SHOULD preserve
 `providerEventType="pull_request"` and `providerAction="closed"`, while the
 normalized payload carries `merged: true`.
 
-When delivered through Console inbox, the inbox item `eventType` SHOULD use the
-Console event namespace:
+When delivered through Console delivery, the delivery item `eventType` SHOULD
+use the Console event namespace:
 
 ```text
 watch.github.pull_request.merged

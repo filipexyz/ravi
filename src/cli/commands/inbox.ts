@@ -1,5 +1,5 @@
 /**
- * Inbox Commands - manage the local Console agent-inbox poller.
+ * Inbox Commands - manage local inbox items and Console delivery compatibility.
  */
 
 import "reflect-metadata";
@@ -11,7 +11,11 @@ import {
   getItemById,
   getItemByItemId,
   getStatusSnapshot,
+  listLocalInboxItems,
+  listLocalInboxSources,
   listRecentItems,
+  markLocalInboxItem,
+  readLocalInboxItem,
   runSingleTick,
   setEnabledForCurrentOrg,
 } from "../../inbox/index.js";
@@ -25,12 +29,169 @@ function formatTimestamp(ms: number | null | undefined): string {
   return new Date(ms).toISOString();
 }
 
+function parseLocalInboxStatus(
+  value: string | undefined,
+): "open" | "seen" | "assigned" | "snoozed" | "done" | "archived" | "dismissed" | undefined {
+  if (!value?.trim()) return undefined;
+  if (
+    value === "open" ||
+    value === "seen" ||
+    value === "assigned" ||
+    value === "snoozed" ||
+    value === "done" ||
+    value === "archived" ||
+    value === "dismissed"
+  ) {
+    return value;
+  }
+  fail("Invalid --status value");
+}
+
+function parsePositiveInteger(value: string | undefined, label: string): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    fail(`${label} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function parseTimestamp(value: string | undefined, label: string): number {
+  if (!value?.trim()) fail(`Missing ${label}`);
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const parsed = Date.parse(value as string);
+  if (Number.isFinite(parsed)) return parsed;
+  fail(`${label} must be a Unix ms timestamp or ISO date`);
+}
+
 @Group({
   name: "inbox",
-  description: "Console agent-inbox bridge (poll Console → publish NATS)",
+  description: "Local Ravi inbox and Console delivery compatibility commands",
   scope: "open",
 })
 export class InboxCommands {
+  @Command({ name: "list", description: "List local inbox items" })
+  list(
+    @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
+    @Option({ flags: "--source <domain>", description: "Filter by source domain" }) sourceDomain?: string,
+    @Option({ flags: "--include-archived", description: "Include done/archive/dismissed items" })
+    includeArchived?: boolean,
+    @Option({ flags: "--limit <n>", description: "Maximum items to return (default: 50, max: 500)" })
+    limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const items = listLocalInboxItems({
+      status: parseLocalInboxStatus(status),
+      sourceDomain,
+      includeArchived,
+      limit: parsePositiveInteger(limit, "--limit"),
+    });
+    const payload = { items };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (items.length === 0) {
+      console.log("No local inbox items found.");
+      return payload;
+    }
+    console.log(`\nInbox items: ${items.length}\n`);
+    for (const item of items) {
+      console.log(`  • ${item.title ?? item.id}`);
+      console.log(`      id       : ${item.id}`);
+      console.log(`      source   : ${item.sourceDomain}/${item.sourceType}`);
+      console.log(`      status   : ${item.status}`);
+      console.log(`      priority : ${item.priority}`);
+      if (item.summary) console.log(`      summary  : ${item.summary}`);
+      console.log("");
+    }
+    return payload;
+  }
+
+  @Command({ name: "read", description: "Read one local inbox item and mark it seen" })
+  read(
+    @Arg("item", { description: "Local inbox item id" }) itemId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const result = readLocalInboxItem(itemId);
+    if (asJson) {
+      printJson(result);
+      return result;
+    }
+    console.log(`\n${result.item.title ?? result.item.id}\n`);
+    console.log(`  id       : ${result.item.id}`);
+    console.log(`  source   : ${result.item.sourceDomain}/${result.item.sourceType}`);
+    console.log(`  sourceId : ${result.item.sourceId}`);
+    console.log(`  status   : ${result.item.status}`);
+    console.log(`  priority : ${result.item.priority}`);
+    if (result.item.summary) console.log(`  summary  : ${result.item.summary}`);
+    console.log(`  events   : ${result.events.length}`);
+    console.log("");
+    return result;
+  }
+
+  @Command({ name: "done", description: "Mark a local inbox item done" })
+  done(
+    @Arg("item", { description: "Local inbox item id" }) itemId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const item = markLocalInboxItem(itemId, "done");
+    const payload = { item };
+    if (asJson) printJson(payload);
+    else console.log(`✓ Marked ${item.id} done.`);
+    return payload;
+  }
+
+  @Command({ name: "snooze", description: "Snooze a local inbox item until a timestamp" })
+  snooze(
+    @Arg("item", { description: "Local inbox item id" }) itemId: string,
+    @Option({ flags: "--until <time>", description: "Unix ms or ISO timestamp" }) until?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const snoozedUntil = parseTimestamp(until, "--until");
+    const item = markLocalInboxItem(itemId, "snoozed", {
+      snoozedUntil,
+      payload: { snoozedUntil },
+    });
+    const payload = { item };
+    if (asJson) printJson(payload);
+    else console.log(`✓ Snoozed ${item.id} until ${formatTimestamp(item.snoozedUntil)}.`);
+    return payload;
+  }
+
+  @Command({ name: "archive", description: "Archive a local inbox item" })
+  archive(
+    @Arg("item", { description: "Local inbox item id" }) itemId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const item = markLocalInboxItem(itemId, "archived");
+    const payload = { item };
+    if (asJson) printJson(payload);
+    else console.log(`✓ Archived ${item.id}.`);
+    return payload;
+  }
+
+  @Command({ name: "sources", description: "List local inbox source domains" })
+  sources(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const sources = listLocalInboxSources();
+    const payload = { sources };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (sources.length === 0) {
+      console.log("No local inbox sources found.");
+      return payload;
+    }
+    console.log("\nInbox sources:\n");
+    for (const source of sources) {
+      console.log(`  • ${source.sourceDomain}: ${source.open} open / ${source.count} total`);
+    }
+    console.log("");
+    return payload;
+  }
+
   @Command({ name: "status", description: "Show inbox poller status and subscriptions" })
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const snapshot = getStatusSnapshot();

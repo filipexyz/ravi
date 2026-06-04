@@ -82,7 +82,7 @@ For Console-hosted watches, the CLI MUST use the public endpoint contract in
 
 For GitHub, `console` placement means the Ravi GitHub App handles webhooks in
 Console. The local CLI creates a provider watch and receives events through
-inbox.
+Console delivery.
 
 ## Trigger Helper
 
@@ -125,7 +125,8 @@ The CLI SHOULD pass through stable Console watch error codes:
 - `WATCH_UNSUPPORTED_EVENT`
 - `WATCH_ALREADY_EXISTS`
 - `WEBHOOK_UNHEALTHY`
-- `INBOX_SUBSCRIPTION_MISSING`
+- `DELIVERY_SUBSCRIPTION_MISSING`
+- `INBOX_SUBSCRIPTION_MISSING` as a legacy compatibility alias
 - `LOCAL_INSTALLATION_REVOKED`
 - `RATE_LIMITED`
 
@@ -139,9 +140,9 @@ Remote watch management SHOULD require:
 - `console.watches.read`
 - `console.watches.write`
 
-These are separate from inbox delivery scopes. A CLI can be allowed to create
-remote watches without changing the inbox polling contract, and inbox can be
-allowed to deliver events without granting watch management.
+These are separate from Console delivery scopes. A CLI can be allowed to create
+remote watches without changing the delivery polling contract, and delivery can
+be allowed to deliver events without granting watch management.
 
 ## Acceptance Criteria
 
@@ -150,7 +151,9 @@ allowed to deliver events without granting watch management.
   watch records and trigger-ready subjects.
 - `ravi watch trigger ...` creates an ordinary trigger that replies to the
   current chat when invoked from a chat.
-- `ravi inbox` remains only a Console watch event delivery surface.
+- Console-hosted watch events are delivered through Console delivery.
+- `ravi inbox` is reserved for the local real inbox; any current Console
+  delivery use of `ravi inbox` is a compatibility alias only.
 - `ravi watch create github ... --placement auto` uses Console/GitHub App when
   available and errors actionably when install/repo/permission/inbox setup is
   missing.

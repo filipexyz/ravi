@@ -1,4 +1,4 @@
-# Console Inbox CLI / RUNBOOK
+# Console Delivery CLI Compatibility / RUNBOOK
 
 ## Status
 
@@ -6,6 +6,9 @@
 ravi inbox status
 ravi inbox status --json
 ```
+
+These are compatibility commands. The target technical command family should be
+`ravi console delivery ...` once the real `ravi inbox` product CLI lands.
 
 Check:
 
@@ -45,7 +48,7 @@ ravi inbox replay <item-id-or-local-row-id>
 ```
 
 Replay should publish to `ravi.console.inbox.item` from the SQLite mirror. It
-must not create a new Console inbox item.
+must not create a new Console delivery item.
 
 If the item contains a watch event, the bridge should also expose the normalized
 watch topic from `ravi watch show <watch-id>` or the event payload.

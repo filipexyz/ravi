@@ -1,6 +1,6 @@
 ---
 id: cli/inbox
-title: "Console Inbox CLI"
+title: "Console Delivery CLI Compatibility"
 kind: capability
 domain: cli
 capability: inbox
@@ -15,41 +15,49 @@ applies_to:
 tags:
   - cli
   - console
-  - inbox
+  - delivery
+  - legacy-inbox
   - nats
 ---
 
-# Console Inbox CLI
+# Console Delivery CLI Compatibility
 
 ## Intent
 
-The inbox CLI delivers Console-produced watch events into local Ravi through
+This legacy CLI delivers Console-produced watch events into local Ravi through
 local polling, a SQLite mirror, NATS publish, and replay/debug commands.
 
 This OSS spec defines only the CLI and local plumbing contract. Console remains
 the source of truth for server policy, auth, redaction, subscriptions, item
 content, leasing, receipts, and watermarks.
 
-`ravi inbox` is not where watches are created. Watches are created and managed
-through `ravi watch`. Inbox is the local delivery box for watch events that were
-produced on the Console side.
+`ravi inbox` is now reserved by `inbox/SPEC.md` for the local real inbox. The
+Console event bridge SHOULD be called `console delivery` in new specs and new
+code.
+
+Existing `ravi inbox` delivery commands MAY remain as compatibility aliases
+until the product inbox CLI exists, but they MUST NOT define the meaning of
+Inbox going forward.
+
+Watches are created and managed through `ravi watch`. Console delivery is the
+technical path for watch events that were produced on the Console side.
 
 ## Boundary
 
 - OSS Ravi MUST NOT embed proprietary Console policy, billing, hosting, or
   product rules.
 - OSS Ravi MAY implement public CLI endpoints for a Console-compatible API.
-- Console MUST remain authoritative for remote watch execution, inbox item
+- Console MUST remain authoritative for remote watch execution, delivery item
   visibility, authorization, redaction, payload shape, leases, and ack validity.
 - Local Ravi owns only cloud-auth reuse, runner orchestration, local SQLite
-  mirror, NATS publish, local replay, status, and trigger integration.
+  delivery mirror, NATS publish, local replay, status, and trigger integration.
 - Local watches that can run on the user's machine SHOULD publish watch events
   directly through the local watch runner. Console watches SHOULD arrive through
-  inbox and be normalized to the same watch event contract.
+  Console delivery and be normalized to the same watch event contract.
 
-## Commands
+## Compatibility Commands
 
-The inbox CLI SHOULD expose:
+The compatibility CLI currently exposes:
 
 ```bash
 ravi inbox status
@@ -59,7 +67,18 @@ ravi inbox poll --once
 ravi inbox replay <item-id|local-row-id>
 ```
 
-`ravi inbox items` MAY exist as a bounded local inspection helper.
+`ravi inbox items` MAY exist as a bounded local inspection helper while the
+compatibility alias remains.
+
+The target technical surface SHOULD be:
+
+```bash
+ravi console delivery status
+ravi console delivery enable
+ravi console delivery disable
+ravi console delivery poll --once
+ravi console delivery replay <item-id|local-row-id>
+```
 
 Commands consumed by agents MUST support machine-readable output.
 
@@ -69,7 +88,7 @@ Commands consumed by agents MUST support machine-readable output.
 - Required scopes are `console.inbox.read`, `console.inbox.subscribe`,
   `console.inbox.deliver`, and `console.inbox.ack`.
 - Remote watch management scopes live in `cli/watch` and are intentionally
-  separate from inbox delivery scopes.
+  separate from Console delivery scopes.
 - The CLI MUST refresh through Console on auth-expired responses.
 - If credentials are missing, invalid, revoked, or lack inbox scopes, the runner
   MUST skip or pause without deleting unrelated local mirror rows.
@@ -97,7 +116,7 @@ Console receipts, or force a full Console inbox scan.
 The runner MUST NOT ack delivered before local persistence and NATS publish have
 completed for that item.
 
-## Local Mirror
+## Local Delivery Mirror
 
 The SQLite mirror MUST store enough data to:
 
@@ -118,10 +137,10 @@ ravi.console.inbox.item
 ```
 
 This subject is the Console delivery envelope. When the item contains a watch
-event, the inbox item `eventType` SHOULD use the Console namespace
+event, the delivery item `eventType` SHOULD use the Console namespace
 `watch.<connector>.<event>`, such as `watch.github.release.published`.
 
-The local inbox bridge SHOULD also publish the normalized watch subject defined
+The local delivery bridge SHOULD also publish the normalized watch subject defined
 by `watch/SPEC.md`, such as `ravi.watch.github.release.published` or
 `ravi.watch.npm.package.version_published`.
 
@@ -147,18 +166,25 @@ including:
 - `occurredAt`
 - `createdAt`
 
-Console inbox items SHOULD carry watch event payloads. Any connector-specific
+Console delivery items SHOULD carry watch event payloads. Any connector-specific
 payload with sensitive content MUST stay restricted by the Console API response:
 no raw MIME, plaintext attachments, provider access tokens, or full unredacted
-message bodies should be returned as ordinary remote inbox metadata.
+message bodies should be returned as ordinary remote delivery metadata.
 
 Ravi Mail is the local exception for operator-owned automations. When a delivered
 `mail.message.received` item references a message id, the local bridge MAY enrich
 the local NATS payload by performing explicit authorized Console Mail `read`
 calls for `subject`, `address_summary`, and `parsed_body` before local
 persistence and publish. That enrichment MUST remain local to the user's runtime:
-Console still owns auth/audit/decryption, the remote inbox item stays metadata
-only, and OSS Ravi MUST NOT implement mail selection or redaction policy.
+Console still owns auth/audit/decryption, and the remote delivery item stays
+metadata-only. Existing Console wire contracts MAY still call it an inbox item,
+but OSS Ravi MUST NOT implement mail selection or redaction policy.
+
+When `mail/local-mailbox` is implemented, mail enrichment through this delivery
+bridge MUST be treated as a compatibility ingestion path or provider event hint.
+The durable agent-facing source of truth for email state MUST be the local
+mailbox, not the delivery mirror. Enriched mail content SHOULD be persisted
+through the local mailbox ingest path before agents rely on it as mailbox state.
 
 When mail enrichment succeeds, the NATS JSON MUST include the complete parsed
 email content at `payload.mail.content.text` and `payload.mail.content.html`
@@ -174,8 +200,9 @@ For GitHub/source-control watches, `category` SHOULD be `source_control`.
 
 ## Replay
 
-Replay is local. `ravi inbox replay` MUST republish the stored NATS payload from
-SQLite and MUST NOT create a new Console inbox item.
+Replay is local. Compatibility `ravi inbox replay` and target
+`ravi console delivery replay` MUST republish the stored NATS payload from
+SQLite and MUST NOT create a new Console delivery item.
 
 Replay MUST preserve `eventId`, `sequence`, `dedupeKey`, `eventType`, and
 original timestamps. Replay MAY add delivery metadata such as `replayed`,
@@ -183,21 +210,24 @@ original timestamps. Replay MAY add delivery metadata such as `replayed`,
 
 ## Daemon Integration
 
-`ravi daemon` SHOULD start the inbox delivery runner automatically when:
+`ravi daemon` SHOULD start the Console delivery runner automatically when:
 
 - cloud credentials exist;
 - required inbox scopes are present;
 - local inbox polling is enabled;
 - NATS is available.
 
-The inbox runner MUST coordinate with itself through a local lock so only one
+The delivery runner MUST coordinate with itself through a local lock so only one
 local loop leases/publishes/acks Console deliveries at a time.
 
 ## Acceptance Criteria
 
-- `ravi inbox status --json` reports credentials, scopes, subscriptions, cursor,
-  generation, last poll/success/error, and pending local counts.
-- `ravi inbox poll --once` runs one foreground tick and exits.
+- `ravi console delivery status --json` reports credentials, scopes,
+  subscriptions, cursor, generation, last poll/success/error, and pending local
+  counts.
+- Compatibility `ravi inbox status --json` MAY expose the same payload until the
+  migration is complete.
+- `ravi console delivery poll --once` runs one foreground tick and exits.
 - No-change pulse does not poll/lease Console rows.
 - Changed pulse leads to bounded poll, local persistence, NATS publish, local
   delivered mark, and Console ack in that order.

@@ -22,7 +22,8 @@ POST /api/cli/watches
 ```
 
 Body includes provider, `placement:"console"`, installation/resource ids,
-event types, filters, and `delivery:{type:"inbox"}`.
+event types, filters, and `delivery:{type:"console"}` or the current public
+contract equivalent.
 
 Expected response includes watch id, status, and trigger-ready
 `ravi.watch.github...` subjects.
@@ -37,8 +38,9 @@ Check in order:
 1. GitHub App installation exists and includes the repo.
 2. GitHub webhook delivery is healthy in Console.
 3. Console matched at least one active watch.
-4. Console created an inbox item.
-5. Local `ravi inbox status` shows recent delivery.
+4. Console created a delivery item.
+5. Local Console delivery status shows recent delivery. Compatibility command:
+   `ravi inbox status`.
 6. Local NATS published `ravi.watch.github.<event>`.
 7. `ravi triggers show <id>` subscribes to that subject and watch filter.
 
