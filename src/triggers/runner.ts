@@ -23,9 +23,9 @@ import {
 import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbUpdateTriggerState } from "./triggers-db.js";
 import { evaluateFilter } from "./filter.js";
-import { resolveTemplate } from "./template.js";
 import type { Trigger } from "./types.js";
 import { isBlockedTriggerTopic } from "./topic-policy.js";
+import { buildTriggerPrompt } from "./prompt.js";
 
 const log = logger.child("triggers:runner");
 
@@ -282,21 +282,7 @@ export class TriggerRunner {
       source.accountId = trigger.accountId;
     }
 
-    // Resolve template variables — inner payload (event.data.data) takes priority
-    const eventData = event.data as Record<string, unknown> | undefined;
-    const templateData = (eventData?.data as Record<string, unknown> | undefined) ?? eventData ?? {};
-    const resolvedMessage = resolveTemplate(trigger.message, {
-      topic: event.topic,
-      data: templateData,
-    });
-
-    const prompt = [
-      `[Trigger: ${trigger.name}]`,
-      `Topic: ${event.topic}`,
-      `Data: ${JSON.stringify(event.data, null, 2)}`,
-      ``,
-      resolvedMessage,
-    ].join("\n");
+    const prompt = buildTriggerPrompt(trigger, event);
 
     log.info("Firing trigger", {
       triggerId: trigger.id,

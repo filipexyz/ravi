@@ -6,6 +6,7 @@
  */
 
 export type SessionTarget = "main" | "isolated";
+export type TriggerMessageSource = "manual" | "catalog";
 
 /**
  * Outbound source captured at trigger creation time.
@@ -31,6 +32,9 @@ export interface Trigger {
   accountId?: string;
   topic: string;
   message: string;
+  /** Provenance for prompt formatting. Catalog templates use standardized trigger prompts. */
+  messageSource?: TriggerMessageSource;
+  messageTemplateId?: string | null;
   session: SessionTarget;
   replySession?: string;
   /** Frozen outbound source captured from the creator's runtime context */
@@ -58,6 +62,8 @@ export interface TriggerInput {
   accountId?: string;
   topic: string;
   message: string;
+  messageSource?: TriggerMessageSource;
+  messageTemplateId?: string | null;
   session?: SessionTarget;
   replySession?: string;
   replySource?: TriggerReplySource;

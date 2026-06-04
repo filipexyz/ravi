@@ -2164,6 +2164,14 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN reply_source TEXT");
     log.info("Added reply_source column to triggers table");
   }
+  if (!triggerColumns.some((c) => c.name === "message_source")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN message_source TEXT DEFAULT 'manual'");
+    log.info("Added message_source column to triggers table");
+  }
+  if (!triggerColumns.some((c) => c.name === "message_template_id")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN message_template_id TEXT");
+    log.info("Added message_template_id column to triggers table");
+  }
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;

@@ -362,6 +362,8 @@ export class TriggersCommands {
       name,
       topic,
       message: resolvedMessage.message,
+      messageSource: resolvedMessage.source === "catalog_default" ? "catalog" : "manual",
+      messageTemplateId: resolvedMessage.templateId ?? null,
       agentId: resolvedAgent,
       accountId: resolvedAccount,
       replySession,
@@ -497,7 +499,7 @@ export class TriggersCommands {
           break;
 
         case "message":
-          updated = dbUpdateTrigger(id, { message: value });
+          updated = dbUpdateTrigger(id, { message: value, messageSource: "manual", messageTemplateId: null });
           logHuman(`✓ Message set: ${id}`);
           break;
 
