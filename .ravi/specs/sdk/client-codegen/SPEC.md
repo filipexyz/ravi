@@ -32,7 +32,9 @@ Client codegen turns the Ravi `RegistrySnapshot` into language-native clients
 that can call the SDK gateway without hand-maintained command bindings.
 
 The existing TypeScript SDK is the first backend. Swift is a second backend
-with the same contract and a platform-native API shape.
+with the same contract and a platform-native API shape. Rust is a planned
+third backend and a proof point that the registry can project to additional
+languages without hand-maintained command bindings.
 
 ## Generator Inputs
 
@@ -54,6 +56,9 @@ with the same contract and a platform-native API shape.
 - Commands with no args and no options SHOULD generate zero-argument methods.
 - Commands with no `@Returns` MUST return a generic JSON/unknown type in that
   language.
+- A language backend MAY ship with generic JSON fallbacks, but the SDK
+  experience is only considered typed for commands that declare `@Returns` or
+  `@Returns.binary()`.
 - Binary commands MUST return that language's raw/binary response abstraction,
   not base64 JSON.
 
@@ -82,6 +87,11 @@ The transport abstraction MUST be small:
 - binary flag;
 - response decode strategy.
 
+Client codegen MUST NOT be described as converting the Ravi core runtime to a
+target language. It converts the public command/client surface. Core runtime,
+daemon, SQLite, NATS, provider adapters, and host services remain separate
+implementation concerns unless a dedicated runtime-port spec exists.
+
 ## Versioning
 
 - Generated SDK version constants SHOULD come from the package manifest version
@@ -98,3 +108,5 @@ The transport abstraction MUST be small:
 - Every backend SHOULD have at least one gateway roundtrip test when the
   language toolchain is available in CI.
 - `ravi sdk <language> check` MUST fail on generated-source drift.
+- Every backend SHOULD report return-shape coverage so typed-client progress is
+  visible. See `sdk/schema/returns-coverage`.

@@ -19,6 +19,10 @@ public final class RaviClient {
     AgentsNamespace(transport: transport)
   }
 
+  public var apps: AppsNamespace {
+    AppsNamespace(transport: transport)
+  }
+
   public var artifacts: ArtifactsNamespace {
     ArtifactsNamespace(transport: transport)
   }
@@ -119,6 +123,14 @@ public final class RaviClient {
     RoutesNamespace(transport: transport)
   }
 
+  public var rules: RulesNamespace {
+    RulesNamespace(transport: transport)
+  }
+
+  public var runtime: RuntimeNamespace {
+    RuntimeNamespace(transport: transport)
+  }
+
   public var sdk: SdkNamespace {
     SdkNamespace(transport: transport)
   }
@@ -185,6 +197,10 @@ public final class RaviClient {
 
   public var video: VideoNamespace {
     VideoNamespace(transport: transport)
+  }
+
+  public var watch: WatchNamespace {
+    WatchNamespace(transport: transport)
   }
 
   public var whatsapp: WhatsappNamespace {
@@ -305,6 +321,34 @@ public struct AgentsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["agents"], command: "sync-instructions", body: requestBody, as: AgentsSyncInstructionsReturn.self)
+  }
+}
+
+public struct AppsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func check(_ id: String? = nil) async throws -> AppsCheckReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    return try await transport.call(groupSegments: ["apps"], command: "check", body: requestBody, as: AppsCheckReturn.self)
+  }
+
+  public func list(_ options: AppsListOptions = .init()) async throws -> AppsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["apps"], command: "list", body: requestBody, as: AppsListReturn.self)
+  }
+
+  public func show(_ id: String) async throws -> AppsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["apps"], command: "show", body: requestBody, as: AppsShowReturn.self)
   }
 }
 
@@ -453,6 +497,12 @@ public struct ChatsNamespace: Sendable {
 
   public var lists: ChatsListsNamespace {
     ChatsListsNamespace(transport: transport)
+  }
+
+  public func backfillProviderTimestamps(_ options: ChatsBackfillProviderTimestampsOptions = .init()) async throws -> ChatsBackfillProviderTimestampsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["chats"], command: "backfill-provider-timestamps", body: requestBody, as: ChatsBackfillProviderTimestampsReturn.self)
   }
 
   public func list(_ options: ChatsListOptions = .init()) async throws -> ChatsListReturn {
@@ -963,6 +1013,10 @@ public struct CrmNamespace: Sendable {
     CrmOpportunityNamespace(transport: transport)
   }
 
+  public var pipeline: CrmPipelineNamespace {
+    CrmPipelineNamespace(transport: transport)
+  }
+
   public var task: CrmTaskNamespace {
     CrmTaskNamespace(transport: transport)
   }
@@ -973,8 +1027,9 @@ public struct CrmNamespace: Sendable {
     return try await transport.call(groupSegments: ["crm"], command: "account", body: requestBody, as: CrmAccountReturn.self)
   }
 
-  public func board() async throws -> CrmBoardReturn {
-    let requestBody: [String: RaviJSON] = [:]
+  public func board(_ options: CrmBoardOptions = .init()) async throws -> CrmBoardReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["crm"], command: "board", body: requestBody, as: CrmBoardReturn.self)
   }
 
@@ -1131,6 +1186,138 @@ public struct CrmOpportunityNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["opportunity"] = try RaviJSON.fromEncodable(opportunity)
     return try await transport.call(groupSegments: ["crm","opportunity"], command: "show", body: requestBody, as: CrmOpportunityShowReturn.self)
+  }
+}
+
+public struct CrmPipelineNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var stage: CrmPipelineStageNamespace {
+    CrmPipelineStageNamespace(transport: transport)
+  }
+
+  public func create(_ name: String, _ options: CrmPipelineCreateOptions = .init()) async throws -> CrmPipelineCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["crm","pipeline"], command: "create", body: requestBody, as: CrmPipelineCreateReturn.self)
+  }
+
+  public func list(_ options: CrmPipelineListOptions = .init()) async throws -> CrmPipelineListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["crm","pipeline"], command: "list", body: requestBody, as: CrmPipelineListReturn.self)
+  }
+
+  public func set(_ pipeline: String, _ field: String, _ value: String) async throws -> CrmPipelineSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    requestBody["field"] = try RaviJSON.fromEncodable(field)
+    requestBody["value"] = try RaviJSON.fromEncodable(value)
+    return try await transport.call(groupSegments: ["crm","pipeline"], command: "set", body: requestBody, as: CrmPipelineSetReturn.self)
+  }
+
+  public func show(_ pipeline: String) async throws -> CrmPipelineShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    return try await transport.call(groupSegments: ["crm","pipeline"], command: "show", body: requestBody, as: CrmPipelineShowReturn.self)
+  }
+}
+
+public struct CrmPipelineStageNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var topic: CrmPipelineStageTopicNamespace {
+    CrmPipelineStageTopicNamespace(transport: transport)
+  }
+
+  public func add(_ pipeline: String, _ key: String, _ options: CrmPipelineStageAddOptions = .init()) async throws -> CrmPipelineStageAddReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    requestBody["key"] = try RaviJSON.fromEncodable(key)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["crm","pipeline","stage"], command: "add", body: requestBody, as: CrmPipelineStageAddReturn.self)
+  }
+
+  public func archive(_ pipeline: String, _ stage: String) async throws -> CrmPipelineStageArchiveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    requestBody["stage"] = try RaviJSON.fromEncodable(stage)
+    return try await transport.call(groupSegments: ["crm","pipeline","stage"], command: "archive", body: requestBody, as: CrmPipelineStageArchiveReturn.self)
+  }
+
+  public func list(_ pipeline: String, _ options: CrmPipelineStageListOptions = .init()) async throws -> CrmPipelineStageListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["crm","pipeline","stage"], command: "list", body: requestBody, as: CrmPipelineStageListReturn.self)
+  }
+
+  public func set(_ pipeline: String, _ stage: String, _ field: String, _ value: String) async throws -> CrmPipelineStageSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    requestBody["stage"] = try RaviJSON.fromEncodable(stage)
+    requestBody["field"] = try RaviJSON.fromEncodable(field)
+    requestBody["value"] = try RaviJSON.fromEncodable(value)
+    return try await transport.call(groupSegments: ["crm","pipeline","stage"], command: "set", body: requestBody, as: CrmPipelineStageSetReturn.self)
+  }
+
+  public func show(_ pipeline: String, _ stage: String) async throws -> CrmPipelineStageShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    requestBody["stage"] = try RaviJSON.fromEncodable(stage)
+    return try await transport.call(groupSegments: ["crm","pipeline","stage"], command: "show", body: requestBody, as: CrmPipelineStageShowReturn.self)
+  }
+
+  public func topics(_ pipeline: String, _ stage: String, _ options: CrmPipelineStageTopicsOptions = .init()) async throws -> CrmPipelineStageTopicsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    requestBody["stage"] = try RaviJSON.fromEncodable(stage)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["crm","pipeline","stage"], command: "topics", body: requestBody, as: CrmPipelineStageTopicsReturn.self)
+  }
+}
+
+public struct CrmPipelineStageTopicNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func add(_ pipeline: String, _ stage: String, _ key: String, _ options: CrmPipelineStageTopicAddOptions = .init()) async throws -> CrmPipelineStageTopicAddReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    requestBody["stage"] = try RaviJSON.fromEncodable(stage)
+    requestBody["key"] = try RaviJSON.fromEncodable(key)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["crm","pipeline","stage","topic"], command: "add", body: requestBody, as: CrmPipelineStageTopicAddReturn.self)
+  }
+
+  public func archive(_ pipeline: String, _ stage: String, _ topic: String) async throws -> CrmPipelineStageTopicArchiveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    requestBody["stage"] = try RaviJSON.fromEncodable(stage)
+    requestBody["topic"] = try RaviJSON.fromEncodable(topic)
+    return try await transport.call(groupSegments: ["crm","pipeline","stage","topic"], command: "archive", body: requestBody, as: CrmPipelineStageTopicArchiveReturn.self)
+  }
+
+  public func set(_ pipeline: String, _ stage: String, _ topic: String, _ field: String, _ value: String) async throws -> CrmPipelineStageTopicSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["pipeline"] = try RaviJSON.fromEncodable(pipeline)
+    requestBody["stage"] = try RaviJSON.fromEncodable(stage)
+    requestBody["topic"] = try RaviJSON.fromEncodable(topic)
+    requestBody["field"] = try RaviJSON.fromEncodable(field)
+    requestBody["value"] = try RaviJSON.fromEncodable(value)
+    return try await transport.call(groupSegments: ["crm","pipeline","stage","topic"], command: "set", body: requestBody, as: CrmPipelineStageTopicSetReturn.self)
   }
 }
 
@@ -1556,9 +1743,21 @@ public struct InboxNamespace: Sendable {
     self.transport = transport
   }
 
+  public func archive(_ item: String) async throws -> InboxArchiveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["item"] = try RaviJSON.fromEncodable(item)
+    return try await transport.call(groupSegments: ["inbox"], command: "archive", body: requestBody, as: InboxArchiveReturn.self)
+  }
+
   public func disable() async throws -> InboxDisableReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["inbox"], command: "disable", body: requestBody, as: InboxDisableReturn.self)
+  }
+
+  public func done(_ item: String) async throws -> InboxDoneReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["item"] = try RaviJSON.fromEncodable(item)
+    return try await transport.call(groupSegments: ["inbox"], command: "done", body: requestBody, as: InboxDoneReturn.self)
   }
 
   public func enable() async throws -> InboxEnableReturn {
@@ -1572,16 +1771,40 @@ public struct InboxNamespace: Sendable {
     return try await transport.call(groupSegments: ["inbox"], command: "items", body: requestBody, as: InboxItemsReturn.self)
   }
 
+  public func list(_ options: InboxListOptions = .init()) async throws -> InboxListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["inbox"], command: "list", body: requestBody, as: InboxListReturn.self)
+  }
+
   public func poll(_ options: InboxPollOptions = .init()) async throws -> InboxPollReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["inbox"], command: "poll", body: requestBody, as: InboxPollReturn.self)
   }
 
+  public func read(_ item: String) async throws -> InboxReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["item"] = try RaviJSON.fromEncodable(item)
+    return try await transport.call(groupSegments: ["inbox"], command: "read", body: requestBody, as: InboxReadReturn.self)
+  }
+
   public func replay(_ ref: String) async throws -> InboxReplayReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["ref"] = try RaviJSON.fromEncodable(ref)
     return try await transport.call(groupSegments: ["inbox"], command: "replay", body: requestBody, as: InboxReplayReturn.self)
+  }
+
+  public func snooze(_ item: String, _ options: InboxSnoozeOptions = .init()) async throws -> InboxSnoozeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["item"] = try RaviJSON.fromEncodable(item)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["inbox"], command: "snooze", body: requestBody, as: InboxSnoozeReturn.self)
+  }
+
+  public func sources() async throws -> InboxSourcesReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["inbox"], command: "sources", body: requestBody, as: InboxSourcesReturn.self)
   }
 
   public func status() async throws -> InboxStatusReturn {
@@ -2470,6 +2693,117 @@ public struct RoutesNamespace: Sendable {
   }
 }
 
+public struct RulesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func import_(_ source: String? = nil, _ options: RulesImportOptions = .init()) async throws -> RulesImportReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let source {
+      requestBody["source"] = try RaviJSON.fromEncodable(source)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["rules"], command: "import", body: requestBody, as: RulesImportReturn.self)
+  }
+
+  public func sources(_ source: String? = nil, _ options: RulesSourcesOptions = .init()) async throws -> RulesSourcesReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let source {
+      requestBody["source"] = try RaviJSON.fromEncodable(source)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["rules"], command: "sources", body: requestBody, as: RulesSourcesReturn.self)
+  }
+}
+
+public struct RuntimeNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var credentials: RuntimeCredentialsNamespace {
+    RuntimeCredentialsNamespace(transport: transport)
+  }
+}
+
+public struct RuntimeCredentialsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func add(_ options: RuntimeCredentialsAddOptions = .init()) async throws -> RuntimeCredentialsAddReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "add", body: requestBody, as: RuntimeCredentialsAddReturn.self)
+  }
+
+  public func classify(_ options: RuntimeCredentialsClassifyOptions = .init()) async throws -> RuntimeCredentialsClassifyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "classify", body: requestBody, as: RuntimeCredentialsClassifyReturn.self)
+  }
+
+  public func disable(_ id: String) async throws -> RuntimeCredentialsDisableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "disable", body: requestBody, as: RuntimeCredentialsDisableReturn.self)
+  }
+
+  public func enable(_ id: String) async throws -> RuntimeCredentialsEnableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "enable", body: requestBody, as: RuntimeCredentialsEnableReturn.self)
+  }
+
+  public func import_(_ options: RuntimeCredentialsImportOptions = .init()) async throws -> RuntimeCredentialsImportReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "import", body: requestBody, as: RuntimeCredentialsImportReturn.self)
+  }
+
+  public func list(_ options: RuntimeCredentialsListOptions = .init()) async throws -> RuntimeCredentialsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "list", body: requestBody, as: RuntimeCredentialsListReturn.self)
+  }
+
+  public func refresh(_ id: String? = nil, _ options: RuntimeCredentialsRefreshOptions = .init()) async throws -> RuntimeCredentialsRefreshReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "refresh", body: requestBody, as: RuntimeCredentialsRefreshReturn.self)
+  }
+
+  public func resetHealth(_ id: String) async throws -> RuntimeCredentialsResetHealthReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "reset-health", body: requestBody, as: RuntimeCredentialsResetHealthReturn.self)
+  }
+
+  public func select(_ options: RuntimeCredentialsSelectOptions = .init()) async throws -> RuntimeCredentialsSelectReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "select", body: requestBody, as: RuntimeCredentialsSelectReturn.self)
+  }
+
+  public func status(_ id: String? = nil) async throws -> RuntimeCredentialsStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "status", body: requestBody, as: RuntimeCredentialsStatusReturn.self)
+  }
+}
+
 public struct SdkNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -2638,6 +2972,15 @@ public struct SessionsNamespace: Sendable {
     SessionsRuntimeNamespace(transport: transport)
   }
 
+  public func actions(_ nameOrKey: String? = nil, _ options: SessionsActionsOptions = .init()) async throws -> SessionsActionsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let nameOrKey {
+      requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "actions", body: requestBody, as: SessionsActionsReturn.self)
+  }
+
   public func answer(_ target: String, _ message: String, _ sender: String? = nil, _ options: SessionsAnswerOptions = .init()) async throws -> SessionsAnswerReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["target"] = try RaviJSON.fromEncodable(target)
@@ -2673,11 +3016,33 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "delete", body: requestBody, as: SessionsDeleteReturn.self)
   }
 
+  public func deleteMessage(_ sessionOrMessage: String, _ messageRef: String? = nil) async throws -> SessionsDeleteMessageReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["sessionOrMessage"] = try RaviJSON.fromEncodable(sessionOrMessage)
+    if let messageRef {
+      requestBody["messageRef"] = try RaviJSON.fromEncodable(messageRef)
+    }
+    return try await transport.call(groupSegments: ["sessions"], command: "delete-message", body: requestBody, as: SessionsDeleteMessageReturn.self)
+  }
+
   public func detach(_ nameOrKey: String, _ options: SessionsDetachOptions = .init()) async throws -> SessionsDetachReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions"], command: "detach", body: requestBody, as: SessionsDetachReturn.self)
+  }
+
+  public func editMessage(_ sessionOrMessage: String, _ messageOrText: String? = nil, _ textArg: String? = nil, _ options: SessionsEditMessageOptions = .init()) async throws -> SessionsEditMessageReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["sessionOrMessage"] = try RaviJSON.fromEncodable(sessionOrMessage)
+    if let messageOrText {
+      requestBody["messageOrText"] = try RaviJSON.fromEncodable(messageOrText)
+    }
+    if let textArg {
+      requestBody["textArg"] = try RaviJSON.fromEncodable(textArg)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "edit-message", body: requestBody, as: SessionsEditMessageReturn.self)
   }
 
   public func execute(_ target: String, _ message: String, _ options: SessionsExecuteOptions = .init()) async throws -> SessionsExecuteReturn {
@@ -2734,15 +3099,24 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "list", body: requestBody, as: SessionsListReturn.self)
   }
 
+  public func mute(_ nameOrKey: String, _ options: SessionsMuteOptions = .init()) async throws -> SessionsMuteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "mute", body: requestBody, as: SessionsMuteReturn.self)
+  }
+
   public func prune(_ options: SessionsPruneOptions = .init()) async throws -> SessionsPruneReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions"], command: "prune", body: requestBody, as: SessionsPruneReturn.self)
   }
 
-  public func read(_ nameOrKey: String, _ options: SessionsReadOptions = .init()) async throws -> SessionsReadReturn {
+  public func read(_ nameOrKey: String? = nil, _ options: SessionsReadOptions = .init()) async throws -> SessionsReadReturn {
     var requestBody: [String: RaviJSON] = [:]
-    requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
+    if let nameOrKey {
+      requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
+    }
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions"], command: "read", body: requestBody, as: SessionsReadReturn.self)
   }
@@ -2809,6 +3183,13 @@ public struct SessionsNamespace: Sendable {
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions"], command: "trace", body: requestBody, as: SessionsTraceReturn.self)
+  }
+
+  public func unmute(_ nameOrKey: String, _ options: SessionsUnmuteOptions = .init()) async throws -> SessionsUnmuteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "unmute", body: requestBody, as: SessionsUnmuteReturn.self)
   }
 
   public func visibility(_ nameOrKey: String) async throws -> SessionsVisibilityReturn {
@@ -3574,6 +3955,11 @@ public struct TriggersNamespace: Sendable {
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     return try await transport.call(groupSegments: ["triggers"], command: "test", body: requestBody, as: TriggersTestReturn.self)
   }
+
+  public func topics() async throws -> TriggersTopicsReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["triggers"], command: "topics", body: requestBody, as: TriggersTopicsReturn.self)
+  }
 }
 
 public struct VideoNamespace: Sendable {
@@ -3588,6 +3974,71 @@ public struct VideoNamespace: Sendable {
     requestBody["url"] = try RaviJSON.fromEncodable(url)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["video"], command: "analyze", body: requestBody, as: VideoAnalyzeReturn.self)
+  }
+}
+
+public struct WatchNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func connectors(_ options: WatchConnectorsOptions = .init()) async throws -> WatchConnectorsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["watch"], command: "connectors", body: requestBody, as: WatchConnectorsReturn.self)
+  }
+
+  public func create(_ provider: String, _ resource: String, _ options: WatchCreateOptions = .init()) async throws -> WatchCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["provider"] = try RaviJSON.fromEncodable(provider)
+    requestBody["resource"] = try RaviJSON.fromEncodable(resource)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["watch"], command: "create", body: requestBody, as: WatchCreateReturn.self)
+  }
+
+  public func disable(_ id: String) async throws -> WatchDisableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["watch"], command: "disable", body: requestBody, as: WatchDisableReturn.self)
+  }
+
+  public func enable(_ id: String) async throws -> WatchEnableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["watch"], command: "enable", body: requestBody, as: WatchEnableReturn.self)
+  }
+
+  public func events(_ id: String) async throws -> WatchEventsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["watch"], command: "events", body: requestBody, as: WatchEventsReturn.self)
+  }
+
+  public func list(_ options: WatchListOptions = .init()) async throws -> WatchListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["watch"], command: "list", body: requestBody, as: WatchListReturn.self)
+  }
+
+  public func rm(_ id: String) async throws -> WatchRmReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["watch"], command: "rm", body: requestBody, as: WatchRmReturn.self)
+  }
+
+  public func show(_ id: String) async throws -> WatchShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["watch"], command: "show", body: requestBody, as: WatchShowReturn.self)
+  }
+
+  public func trigger(_ id: String, _ options: WatchTriggerOptions = .init()) async throws -> WatchTriggerReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["watch"], command: "trigger", body: requestBody, as: WatchTriggerReturn.self)
   }
 }
 
@@ -3740,6 +4191,14 @@ public struct WhatsappGroupNamespace: Sendable {
     requestBody["groupId"] = try RaviJSON.fromEncodable(groupId)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["whatsapp","group"], command: "revoke-invite", body: requestBody, as: WhatsappGroupRevokeInviteReturn.self)
+  }
+
+  public func send(_ groupId: String, _ message: String, _ options: WhatsappGroupSendOptions = .init()) async throws -> WhatsappGroupSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["groupId"] = try RaviJSON.fromEncodable(groupId)
+    requestBody["message"] = try RaviJSON.fromEncodable(message)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["whatsapp","group"], command: "send", body: requestBody, as: WhatsappGroupSendReturn.self)
   }
 
   public func settings(_ groupId: String, _ setting: String, _ options: WhatsappGroupSettingsOptions = .init()) async throws -> WhatsappGroupSettingsReturn {

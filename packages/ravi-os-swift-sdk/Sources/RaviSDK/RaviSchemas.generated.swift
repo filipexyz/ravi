@@ -271,6 +271,613 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AppsCheckInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Optional app id. Omit to check all discovered apps.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let AppsCheckReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "checked": {
+        "type": "number"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "results": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "errors": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "source": {
+              "enum": [
+                "repo",
+                "plugin",
+                "state"
+              ],
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "path",
+            "source",
+            "ok",
+            "errors",
+            "warnings"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "ok",
+      "checked",
+      "results"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AppsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching apps to skip (default: 0)",
+        "type": "string"
+      },
+      "source": {
+        "description": "Filter by source: repo|plugin|state",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let AppsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "apps": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "errors": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "interfaceNames": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "permissions": {
+              "additionalProperties": false,
+              "properties": {
+                "mutating": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "optional": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "required": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "required",
+                "optional",
+                "mutating"
+              ],
+              "type": "object"
+            },
+            "relativePath": {
+              "type": "string"
+            },
+            "rootPath": {
+              "type": "string"
+            },
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "repo",
+                "plugin",
+                "state"
+              ],
+              "type": "string"
+            },
+            "valid": {
+              "type": "boolean"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "version",
+            "description",
+            "schema",
+            "source",
+            "path",
+            "relativePath",
+            "rootPath",
+            "interfaceNames",
+            "permissions",
+            "valid",
+            "errors",
+            "warnings"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "errors": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "interfaceNames": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "permissions": {
+              "additionalProperties": false,
+              "properties": {
+                "mutating": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "optional": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "required": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "required",
+                "optional",
+                "mutating"
+              ],
+              "type": "object"
+            },
+            "relativePath": {
+              "type": "string"
+            },
+            "rootPath": {
+              "type": "string"
+            },
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "repo",
+                "plugin",
+                "state"
+              ],
+              "type": "string"
+            },
+            "valid": {
+              "type": "boolean"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "version",
+            "description",
+            "schema",
+            "source",
+            "path",
+            "relativePath",
+            "rootPath",
+            "interfaceNames",
+            "permissions",
+            "valid",
+            "errors",
+            "warnings"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "apps"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AppsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "App id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AppsShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "app": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interfaceNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "manifest": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "permissions": {
+            "additionalProperties": false,
+            "properties": {
+              "mutating": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "optional": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "required": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "required",
+              "optional",
+              "mutating"
+            ],
+            "type": "object"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "rootPath": {
+            "type": "string"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "repo",
+              "plugin",
+              "state"
+            ],
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "description",
+          "schema",
+          "source",
+          "path",
+          "relativePath",
+          "rootPath",
+          "interfaceNames",
+          "permissions",
+          "valid",
+          "errors",
+          "warnings",
+          "manifest"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "app"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ArtifactsArchiveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -945,6 +1552,27 @@ public enum RaviSchemas {
     "required": [
       "text"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsBackfillProviderTimestampsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "apply": {
+        "description": "Write corrected provider timestamps. Without this, runs dry-run.",
+        "type": "boolean"
+      },
+      "dryRun": {
+        "description": "Force preview mode even if --apply is present",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Maximum matching messages to inspect/apply",
+        "type": "string"
+      }
+    },
     "type": "object"
   }
   """#
@@ -2527,7 +3155,16 @@ public enum RaviSchemas {
   public static let CrmBoardInputSchema = #"""
   {
     "additionalProperties": false,
-    "properties": {},
+    "properties": {
+      "includeEmptyStages": {
+        "description": "Include configured stages with no opportunities",
+        "type": "boolean"
+      },
+      "pipeline": {
+        "description": "Filter by CRM pipeline ID or name",
+        "type": "string"
+      }
+    },
     "type": "object"
   }
   """#
@@ -2950,6 +3587,400 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmPipelineCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "default": {
+        "description": "Mark as default pipeline for the entity type",
+        "type": "boolean"
+      },
+      "entityType": {
+        "description": "CRM entity type (default: opportunity)",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Deduplicate repeated create attempts",
+        "type": "string"
+      },
+      "metadata": {
+        "description": "Metadata JSON object",
+        "type": "string"
+      },
+      "name": {
+        "description": "Pipeline name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "entityType": {
+        "description": "Filter by CRM entity type",
+        "type": "string"
+      },
+      "includeArchived": {
+        "description": "Include archived pipelines",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching pipelines to skip (default: 0)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "field": {
+        "description": "name|entity-type|default|status|metadata",
+        "type": "string"
+      },
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      },
+      "value": {
+        "description": "New value",
+        "type": "string"
+      }
+    },
+    "required": [
+      "field",
+      "pipeline",
+      "value"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "pipeline"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageAddInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "category": {
+        "description": "new|active|waiting|terminal_won|terminal_lost",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Deduplicate repeated create attempts",
+        "type": "string"
+      },
+      "key": {
+        "description": "Stage key",
+        "type": "string"
+      },
+      "metadata": {
+        "description": "Metadata JSON object",
+        "type": "string"
+      },
+      "name": {
+        "description": "Stage display name",
+        "type": "string"
+      },
+      "order": {
+        "description": "Stage sort order",
+        "type": "string"
+      },
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      },
+      "probability": {
+        "description": "Default probability between 0 and 1",
+        "type": "string"
+      },
+      "terminal": {
+        "description": "Mark stage as terminal",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "key",
+      "pipeline"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageArchiveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      },
+      "stage": {
+        "description": "Stage key or ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "pipeline",
+      "stage"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "includeArchived": {
+        "description": "Include archived stages",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching stages to skip (default: 0)",
+        "type": "string"
+      },
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "pipeline"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "field": {
+        "description": "key|name|order|category|probability|terminal|status|metadata",
+        "type": "string"
+      },
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      },
+      "stage": {
+        "description": "Stage key or ID",
+        "type": "string"
+      },
+      "value": {
+        "description": "New value",
+        "type": "string"
+      }
+    },
+    "required": [
+      "field",
+      "pipeline",
+      "stage",
+      "value"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      },
+      "stage": {
+        "description": "Stage key or ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "pipeline",
+      "stage"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageTopicAddInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "description": {
+        "description": "Topic description",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Deduplicate repeated create attempts",
+        "type": "string"
+      },
+      "key": {
+        "description": "Topic key",
+        "type": "string"
+      },
+      "metadata": {
+        "description": "Metadata JSON object",
+        "type": "string"
+      },
+      "order": {
+        "description": "Topic sort order",
+        "type": "string"
+      },
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      },
+      "stage": {
+        "description": "Stage key or ID",
+        "type": "string"
+      },
+      "title": {
+        "description": "Topic title",
+        "type": "string"
+      },
+      "type": {
+        "description": "subject|objection|qualification|proposal|pricing|next_action|risk",
+        "type": "string"
+      }
+    },
+    "required": [
+      "key",
+      "pipeline",
+      "stage"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageTopicArchiveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      },
+      "stage": {
+        "description": "Stage key or ID",
+        "type": "string"
+      },
+      "topic": {
+        "description": "Topic key or ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "pipeline",
+      "stage",
+      "topic"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageTopicSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "field": {
+        "description": "key|title|description|type|order|status|metadata",
+        "type": "string"
+      },
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      },
+      "stage": {
+        "description": "Stage key or ID",
+        "type": "string"
+      },
+      "topic": {
+        "description": "Topic key or ID",
+        "type": "string"
+      },
+      "value": {
+        "description": "New value",
+        "type": "string"
+      }
+    },
+    "required": [
+      "field",
+      "pipeline",
+      "stage",
+      "topic",
+      "value"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageTopicsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "includeArchived": {
+        "description": "Include archived topics",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching topics to skip (default: 0)",
+        "type": "string"
+      },
+      "pipeline": {
+        "description": "CRM pipeline ID or name",
+        "type": "string"
+      },
+      "stage": {
+        "description": "Stage key or ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "pipeline",
+      "stage"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmTaskCancelInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3175,8 +4206,16 @@ public enum RaviSchemas {
         "description": "Job description",
         "type": "string"
       },
+      "envFile": {
+        "description": "Env file loaded for shell jobs",
+        "type": "string"
+      },
       "every": {
         "description": "Interval (e.g., 30m, 1h)",
+        "type": "string"
+      },
+      "exec": {
+        "description": "Alias for --shell",
         "type": "string"
       },
       "isolated": {
@@ -3189,6 +4228,18 @@ public enum RaviSchemas {
       },
       "name": {
         "description": "Job name",
+        "type": "string"
+      },
+      "onError": {
+        "description": "Error action, e.g. notify-session:<session>",
+        "type": "string"
+      },
+      "shell": {
+        "description": "Run a shell command directly without invoking an agent",
+        "type": "string"
+      },
+      "timeout": {
+        "description": "Shell timeout, e.g. 60 or 5m",
         "type": "string"
       },
       "tz": {
@@ -3297,7 +4348,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "key": {
-        "description": "Property: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+        "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after",
         "type": "string"
       },
       "value": {
@@ -4232,10 +5283,42 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InboxArchiveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "item": {
+        "description": "Local inbox item id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InboxDisableInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let InboxDoneInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "item": {
+        "description": "Local inbox item id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item"
+    ],
     "type": "object"
   }
   """#
@@ -4261,6 +5344,31 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InboxListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "includeArchived": {
+        "description": "Include done/archive/dismissed items",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Maximum items to return (default: 50, max: 500)",
+        "type": "string"
+      },
+      "source": {
+        "description": "Filter by source domain",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by status",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
   public static let InboxPollInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4270,6 +5378,22 @@ public enum RaviSchemas {
         "type": "boolean"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let InboxReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "item": {
+        "description": "Local inbox item id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item"
+    ],
     "type": "object"
   }
   """#
@@ -4286,6 +5410,34 @@ public enum RaviSchemas {
     "required": [
       "ref"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let InboxSnoozeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "item": {
+        "description": "Local inbox item id",
+        "type": "string"
+      },
+      "until": {
+        "description": "Unix ms or ISO timestamp",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let InboxSourcesInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
     "type": "object"
   }
   """#
@@ -6812,6 +7964,357 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RulesImportInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "cwd": {
+        "description": "Workspace cwd to import into (default: current directory)",
+        "type": "string"
+      },
+      "force": {
+        "description": "Overwrite existing imported rule files",
+        "type": "boolean"
+      },
+      "includeUser": {
+        "description": "Also import user-level ~/.claude/rules and ~/.agents/rules",
+        "type": "boolean"
+      },
+      "source": {
+        "default": "all",
+        "description": "Source provider: all, claude, agents",
+        "type": "string"
+      },
+      "write": {
+        "description": "Write files. Without this, import runs as dry-run",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let RulesSourcesInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "cwd": {
+        "description": "Workspace cwd to inspect (default: current directory)",
+        "type": "string"
+      },
+      "includeUser": {
+        "description": "Also include user-level ~/.claude/rules and ~/.agents/rules",
+        "type": "boolean"
+      },
+      "source": {
+        "default": "all",
+        "description": "Source provider: all, claude, agents",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsAddInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agents": {
+        "description": "Comma-separated agent allowlist",
+        "type": "string"
+      },
+      "authMethod": {
+        "description": "Auth method, e.g. claude-oauth, api-key, codex-profile",
+        "type": "string"
+      },
+      "authProfile": {
+        "description": "Provider-native auth profile path",
+        "type": "string"
+      },
+      "label": {
+        "description": "Human label that does not contain secrets",
+        "type": "string"
+      },
+      "models": {
+        "description": "Comma-separated model allowlist",
+        "type": "string"
+      },
+      "notes": {
+        "description": "Operator notes, without secrets",
+        "type": "string"
+      },
+      "priority": {
+        "description": "Selection priority (higher first)",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Runtime provider id, e.g. claude, codex, pi",
+        "type": "string"
+      },
+      "readOnly": {
+        "description": "Mark the source as external/read-only in notes",
+        "type": "boolean"
+      },
+      "remoteForward": {
+        "description": "Allow selected target env vars to be forwarded to remote workers",
+        "type": "boolean"
+      },
+      "secretEnv": {
+        "description": "Comma-separated source env vars holding secrets",
+        "type": "string"
+      },
+      "targetEnv": {
+        "description": "Comma-separated provider-facing env vars",
+        "type": "string"
+      },
+      "taskProfiles": {
+        "description": "Comma-separated task profile allowlist",
+        "type": "string"
+      },
+      "upstream": {
+        "description": "Upstream provider id, e.g. anthropic, openai",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsClassifyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "credential": {
+        "description": "Credential id to update",
+        "type": "string"
+      },
+      "headers": {
+        "description": "Provider response headers as JSON object",
+        "type": "string"
+      },
+      "message": {
+        "description": "Provider error message",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Runtime provider id",
+        "type": "string"
+      },
+      "providerCode": {
+        "description": "Provider error code",
+        "type": "string"
+      },
+      "providerType": {
+        "description": "Provider error type",
+        "type": "string"
+      },
+      "record": {
+        "description": "Record the failure against --credential",
+        "type": "boolean"
+      },
+      "status": {
+        "description": "HTTP status code",
+        "type": "string"
+      },
+      "upstream": {
+        "description": "Upstream provider id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsDisableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Credential id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsEnableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Credential id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsImportInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "fromClaudeCode": {
+        "description": "Reference the default Claude Code OAuth profile",
+        "type": "boolean"
+      },
+      "fromCodexHome": {
+        "description": "Reference a Codex CODEX_HOME profile",
+        "type": "string"
+      },
+      "label": {
+        "description": "Human label that does not contain secrets",
+        "type": "string"
+      },
+      "managedRefresh": {
+        "description": "Allow future provider-specific refresh/write-back",
+        "type": "boolean"
+      },
+      "provider": {
+        "description": "Runtime provider id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "all": {
+        "description": "Include disabled credentials",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching credentials to skip (default: 0)",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Filter by runtime provider",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by credential status",
+        "type": "string"
+      },
+      "upstream": {
+        "description": "Filter by upstream provider",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsRefreshInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Agent id for pool refresh",
+        "type": "string"
+      },
+      "force": {
+        "description": "Attempt provider hook even when health does not require it",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Credential id",
+        "type": "string"
+      },
+      "model": {
+        "description": "Model selector for pool refresh",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Runtime provider id for pool refresh",
+        "type": "string"
+      },
+      "taskProfile": {
+        "description": "Task profile id for pool refresh",
+        "type": "string"
+      },
+      "upstream": {
+        "description": "Upstream provider id for pool refresh",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsResetHealthInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Credential id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsSelectInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Agent id",
+        "type": "string"
+      },
+      "model": {
+        "description": "Model selector",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Runtime provider id",
+        "type": "string"
+      },
+      "taskProfile": {
+        "description": "Task profile id",
+        "type": "string"
+      },
+      "upstream": {
+        "description": "Upstream provider id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Credential id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
   public static let SdkClientCheckInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7026,17 +8529,38 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsActionsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Recent own messages to include (default: 10)",
+        "type": "string"
+      },
+      "nameOrKey": {
+        "description": "Optional session name/key override (defaults to current session)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
   public static let SessionsAnswerInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {
       "barrier": {
-        "description": "Delivery barrier: p0|p1|p2|p3",
+        "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
         "type": "string"
       },
       "channel": {
         "description": "Override delivery channel",
         "type": "string"
+      },
+      "immediate": {
+        "description": "Deliver immediately instead of queueing as a follow-up",
+        "type": "boolean"
       },
       "message": {
         "description": "Answer to send back",
@@ -7045,6 +8569,10 @@ public enum RaviSchemas {
       "sender": {
         "description": "Who is answering (for attribution)",
         "type": "string"
+      },
+      "steer": {
+        "description": "Steer the active turn after safe tool barriers",
+        "type": "boolean"
       },
       "target": {
         "description": "Target session name (the one that asked)",
@@ -7068,12 +8596,16 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "barrier": {
-        "description": "Delivery barrier: p0|p1|p2|p3",
+        "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
         "type": "string"
       },
       "channel": {
         "description": "Override delivery channel",
         "type": "string"
+      },
+      "immediate": {
+        "description": "Deliver immediately instead of queueing as a follow-up",
+        "type": "boolean"
       },
       "message": {
         "description": "Question to ask",
@@ -7082,6 +8614,10 @@ public enum RaviSchemas {
       "sender": {
         "description": "Who originally asked (for attribution)",
         "type": "string"
+      },
+      "steer": {
+        "description": "Steer the active turn after safe tool barriers",
+        "type": "boolean"
       },
       "target": {
         "description": "Target session name",
@@ -7140,6 +8676,26 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsDeleteMessageInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "messageRef": {
+        "description": "Canonical or provider message id",
+        "type": "string"
+      },
+      "sessionOrMessage": {
+        "description": "Session name/key, or message id when running inside a session",
+        "type": "string"
+      }
+    },
+    "required": [
+      "sessionOrMessage"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsDetachInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7160,21 +8716,57 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsEditMessageInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "messageOrText": {
+        "description": "Message id, or new text when running inside a session",
+        "type": "string"
+      },
+      "sessionOrMessage": {
+        "description": "Session name/key, or message id when running inside a session",
+        "type": "string"
+      },
+      "text": {
+        "description": "New text content",
+        "type": "string"
+      },
+      "textArg": {
+        "description": "New text for explicit session mode",
+        "type": "string"
+      }
+    },
+    "required": [
+      "sessionOrMessage"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsExecuteInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {
       "barrier": {
-        "description": "Delivery barrier: p0|p1|p2|p3",
+        "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
         "type": "string"
       },
       "channel": {
         "description": "Override delivery channel",
         "type": "string"
       },
+      "immediate": {
+        "description": "Deliver immediately instead of queueing as a follow-up",
+        "type": "boolean"
+      },
       "message": {
         "description": "Task to execute",
         "type": "string"
+      },
+      "steer": {
+        "description": "Steer the active turn after safe tool barriers",
+        "type": "boolean"
       },
       "target": {
         "description": "Target session name",
@@ -7279,16 +8871,24 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "barrier": {
-        "description": "Delivery barrier: p0|p1|p2|p3",
+        "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
         "type": "string"
       },
       "channel": {
         "description": "Override delivery channel",
         "type": "string"
       },
+      "immediate": {
+        "description": "Deliver immediately instead of queueing as a follow-up",
+        "type": "boolean"
+      },
       "message": {
         "description": "Information to send",
         "type": "string"
+      },
+      "steer": {
+        "description": "Steer the active turn after safe tool barriers",
+        "type": "boolean"
       },
       "target": {
         "description": "Target session name",
@@ -7356,6 +8956,26 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsMuteInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "chat": {
+        "description": "Canonical chat id (or platform/normalized id)",
+        "type": "string"
+      },
+      "nameOrKey": {
+        "description": "Session name or key",
+        "type": "string"
+      }
+    },
+    "required": [
+      "nameOrKey"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsPruneInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7398,7 +9018,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "nameOrKey": {
-        "description": "Session name or key",
+        "description": "Optional session name/key override (defaults to current session)",
         "type": "string"
       },
       "workspace": {
@@ -7406,9 +9026,6 @@ public enum RaviSchemas {
         "type": "boolean"
       }
     },
-    "required": [
-      "nameOrKey"
-    ],
     "type": "object"
   }
   """#
@@ -7661,12 +9278,16 @@ public enum RaviSchemas {
         "type": "string"
       },
       "barrier": {
-        "description": "Delivery barrier: p0|p1|p2|p3",
+        "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
         "type": "string"
       },
       "channel": {
         "description": "Override delivery channel",
         "type": "string"
+      },
+      "immediate": {
+        "description": "Deliver immediately instead of queueing as a follow-up",
+        "type": "boolean"
       },
       "interactive": {
         "description": "Interactive mode",
@@ -7679,6 +9300,10 @@ public enum RaviSchemas {
       "prompt": {
         "description": "Prompt to send (omit for interactive mode)",
         "type": "string"
+      },
+      "steer": {
+        "description": "Steer the active turn after safe tool barriers",
+        "type": "boolean"
       },
       "thread": {
         "description": "Attach or auto-create a Ravi thread",
@@ -7874,6 +9499,26 @@ public enum RaviSchemas {
       },
       "until": {
         "description": "End time: ISO, epoch ms, or duration like 30m",
+        "type": "string"
+      }
+    },
+    "required": [
+      "nameOrKey"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsUnmuteInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "chat": {
+        "description": "Canonical chat id (or platform/normalized id)",
+        "type": "string"
+      },
+      "nameOrKey": {
+        "description": "Session name or key",
         "type": "string"
       }
     },
@@ -10205,7 +11850,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "message": {
-        "description": "Prompt message",
+        "description": "Prompt message (defaults to catalog template when available)",
         "type": "string"
       },
       "name": {
@@ -10355,6 +12000,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TriggersTopicsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let VideoAnalyzeInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10374,6 +12027,209 @@ public enum RaviSchemas {
     },
     "required": [
       "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchConnectorsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "provider": {
+        "description": "Filter by provider id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let WatchCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "description": "Event type; comma-separated for multiple",
+        "type": "string"
+      },
+      "installation": {
+        "description": "Console provider installation id",
+        "type": "string"
+      },
+      "name": {
+        "description": "Human name for this watch",
+        "type": "string"
+      },
+      "placement": {
+        "description": "auto|local|console (default: auto)",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Connector id: github or npm",
+        "type": "string"
+      },
+      "resource": {
+        "description": "Watched resource, e.g. owner/repo or npm package",
+        "type": "string"
+      },
+      "resourceId": {
+        "description": "Console provider resource id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "provider",
+      "resource"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchDisableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Watch id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchEnableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Watch id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchEventsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Watch id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of watches to skip",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Filter by provider",
+        "type": "string"
+      },
+      "status": {
+        "description": "active|disabled|error|all",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let WatchRmInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Watch id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Watch id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchTriggerInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "description": "Outbound account id",
+        "type": "string"
+      },
+      "agent": {
+        "description": "Agent id (default: current/default agent)",
+        "type": "string"
+      },
+      "cooldown": {
+        "description": "Cooldown between fires (default: 5s)",
+        "type": "string"
+      },
+      "event": {
+        "description": "Specific event type for multi-event watches",
+        "type": "string"
+      },
+      "id": {
+        "description": "Watch id",
+        "type": "string"
+      },
+      "message": {
+        "description": "Prompt to run when the watch fires",
+        "type": "string"
+      },
+      "session": {
+        "description": "main or isolated (default: isolated)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
     ],
     "type": "object"
   }
@@ -10753,6 +12609,38 @@ public enum RaviSchemas {
     },
     "required": [
       "groupId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WhatsappGroupSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "description": "WhatsApp account ID",
+        "type": "string"
+      },
+      "groupId": {
+        "description": "Group ID, JID, or 'here' for the current chat",
+        "type": "string"
+      },
+      "mention": {
+        "description": "Mention group participant by name, phone, LID, or JID. Can be repeated or comma-separated.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "message": {
+        "description": "Message text",
+        "type": "string"
+      }
+    },
+    "required": [
+      "groupId",
+      "message"
     ],
     "type": "object"
   }

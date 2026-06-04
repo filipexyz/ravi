@@ -263,6 +263,607 @@ export const AgentsSyncInstructionsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.check`. */
+export const AppsCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Optional app id. Omit to check all discovered apps.",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.check`. */
+export const AppsCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "checked": {
+      "type": "number"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "results": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "repo",
+              "plugin",
+              "state"
+            ],
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "source",
+          "ok",
+          "errors",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ok",
+    "checked",
+    "results"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.list`. */
+export const AppsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching apps to skip (default: 0)",
+      "type": "string"
+    },
+    "source": {
+      "description": "Filter by source: repo|plugin|state",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.list`. */
+export const AppsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interfaceNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "permissions": {
+            "additionalProperties": false,
+            "properties": {
+              "mutating": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "optional": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "required": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "required",
+              "optional",
+              "mutating"
+            ],
+            "type": "object"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "rootPath": {
+            "type": "string"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "repo",
+              "plugin",
+              "state"
+            ],
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "description",
+          "schema",
+          "source",
+          "path",
+          "relativePath",
+          "rootPath",
+          "interfaceNames",
+          "permissions",
+          "valid",
+          "errors",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interfaceNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "permissions": {
+            "additionalProperties": false,
+            "properties": {
+              "mutating": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "optional": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "required": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "required",
+              "optional",
+              "mutating"
+            ],
+            "type": "object"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "rootPath": {
+            "type": "string"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "repo",
+              "plugin",
+              "state"
+            ],
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "description",
+          "schema",
+          "source",
+          "path",
+          "relativePath",
+          "rootPath",
+          "interfaceNames",
+          "permissions",
+          "valid",
+          "errors",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "apps"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.show`. */
+export const AppsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "App id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.show`. */
+export const AppsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "app": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "interfaceNames": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "manifest": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "permissions": {
+          "additionalProperties": false,
+          "properties": {
+            "mutating": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "optional": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "required": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "required",
+            "optional",
+            "mutating"
+          ],
+          "type": "object"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "rootPath": {
+          "type": "string"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "repo",
+            "plugin",
+            "state"
+          ],
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "description",
+        "schema",
+        "source",
+        "path",
+        "relativePath",
+        "rootPath",
+        "interfaceNames",
+        "permissions",
+        "valid",
+        "errors",
+        "warnings",
+        "manifest"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "app"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.archive`. */
 export const ArtifactsArchiveInputSchema = {
   "additionalProperties": false,
@@ -4506,10 +5107,40 @@ export const ImageGenerateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `inbox.archive`. */
+export const InboxArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "description": "Local inbox item id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `inbox.disable`. */
 export const InboxDisableInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.done`. */
+export const InboxDoneInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "description": "Local inbox item id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4532,6 +5163,30 @@ export const InboxItemsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `inbox.list`. */
+export const InboxListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeArchived": {
+      "description": "Include done/archive/dismissed items",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum items to return (default: 50, max: 500)",
+      "type": "string"
+    },
+    "source": {
+      "description": "Filter by source domain",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `inbox.poll`. */
 export const InboxPollInputSchema = {
   "additionalProperties": false,
@@ -4541,6 +5196,21 @@ export const InboxPollInputSchema = {
       "type": "boolean"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.read`. */
+export const InboxReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "description": "Local inbox item id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4556,6 +5226,32 @@ export const InboxReplayInputSchema = {
   "required": [
     "ref"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.snooze`. */
+export const InboxSnoozeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "description": "Local inbox item id",
+      "type": "string"
+    },
+    "until": {
+      "description": "Unix ms or ISO timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `inbox.sources`. */
+export const InboxSourcesInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -10727,7 +11423,7 @@ export const TriggersAddInputSchema = {
       "type": "string"
     },
     "message": {
-      "description": "Prompt message",
+      "description": "Prompt message (defaults to catalog template when available)",
       "type": "string"
     },
     "name": {

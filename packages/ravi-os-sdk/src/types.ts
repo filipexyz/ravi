@@ -122,6 +122,116 @@ export type AgentsSyncInstructionsInput = {
 /** Return shape for `agents.sync-instructions`. (no @Returns declared) */
 export type AgentsSyncInstructionsReturn = unknown;
 
+/** Input shape for `apps.check`. */
+export type AppsCheckInput = {
+  id?: string;
+};
+
+/** Return shape for `apps.check`. */
+export type AppsCheckReturn = {
+  checked: number;
+  ok: boolean;
+  results: Array<{
+    errors: string[];
+    id: string;
+    ok: boolean;
+    path: string;
+    source: "repo" | "plugin" | "state";
+    warnings: string[];
+  }>;
+};
+
+/** Input shape for `apps.list`. */
+export type AppsListInput = {
+  limit?: string;
+  offset?: string;
+  source?: string;
+};
+
+/** Return shape for `apps.list`. */
+export type AppsListReturn = {
+  apps: Array<{
+    description: string | null;
+    errors: string[];
+    id: string;
+    interfaceNames: string[];
+    name: string | null;
+    path: string;
+    permissions: {
+      mutating: string[];
+      optional: string[];
+      required: string[];
+    };
+    relativePath: string;
+    rootPath: string;
+    schema: string | null;
+    source: "repo" | "plugin" | "state";
+    valid: boolean;
+    version: string | null;
+    warnings: string[];
+  }>;
+  items: Array<{
+    description: string | null;
+    errors: string[];
+    id: string;
+    interfaceNames: string[];
+    name: string | null;
+    path: string;
+    permissions: {
+      mutating: string[];
+      optional: string[];
+      required: string[];
+    };
+    relativePath: string;
+    rootPath: string;
+    schema: string | null;
+    source: "repo" | "plugin" | "state";
+    valid: boolean;
+    version: string | null;
+    warnings: string[];
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `apps.show`. */
+export type AppsShowInput = {
+  id: string;
+};
+
+/** Return shape for `apps.show`. */
+export type AppsShowReturn = {
+  app: {
+    description: string | null;
+    errors: string[];
+    id: string;
+    interfaceNames: string[];
+    manifest: unknown | null;
+    name: string | null;
+    path: string;
+    permissions: {
+      mutating: string[];
+      optional: string[];
+      required: string[];
+    };
+    relativePath: string;
+    rootPath: string;
+    schema: string | null;
+    source: "repo" | "plugin" | "state";
+    valid: boolean;
+    version: string | null;
+    warnings: string[];
+  };
+};
+
 /** Input shape for `artifacts.archive`. */
 export type ArtifactsArchiveInput = {
   id: string;
@@ -1874,11 +1984,27 @@ export type ImageGenerateInput = {
 /** Return shape for `image.generate`. (no @Returns declared) */
 export type ImageGenerateReturn = unknown;
 
+/** Input shape for `inbox.archive`. */
+export type InboxArchiveInput = {
+  item: string;
+};
+
+/** Return shape for `inbox.archive`. (no @Returns declared) */
+export type InboxArchiveReturn = unknown;
+
 /** Input shape for `inbox.disable`. */
 export type InboxDisableInput = Record<string, never>;
 
 /** Return shape for `inbox.disable`. (no @Returns declared) */
 export type InboxDisableReturn = unknown;
+
+/** Input shape for `inbox.done`. */
+export type InboxDoneInput = {
+  item: string;
+};
+
+/** Return shape for `inbox.done`. (no @Returns declared) */
+export type InboxDoneReturn = unknown;
 
 /** Input shape for `inbox.enable`. */
 export type InboxEnableInput = Record<string, never>;
@@ -1894,6 +2020,17 @@ export type InboxItemsInput = {
 /** Return shape for `inbox.items`. (no @Returns declared) */
 export type InboxItemsReturn = unknown;
 
+/** Input shape for `inbox.list`. */
+export type InboxListInput = {
+  includeArchived?: boolean;
+  limit?: string;
+  source?: string;
+  status?: string;
+};
+
+/** Return shape for `inbox.list`. (no @Returns declared) */
+export type InboxListReturn = unknown;
+
 /** Input shape for `inbox.poll`. */
 export type InboxPollInput = {
   once?: boolean;
@@ -1902,6 +2039,14 @@ export type InboxPollInput = {
 /** Return shape for `inbox.poll`. (no @Returns declared) */
 export type InboxPollReturn = unknown;
 
+/** Input shape for `inbox.read`. */
+export type InboxReadInput = {
+  item: string;
+};
+
+/** Return shape for `inbox.read`. (no @Returns declared) */
+export type InboxReadReturn = unknown;
+
 /** Input shape for `inbox.replay`. */
 export type InboxReplayInput = {
   ref: string;
@@ -1909,6 +2054,21 @@ export type InboxReplayInput = {
 
 /** Return shape for `inbox.replay`. (no @Returns declared) */
 export type InboxReplayReturn = unknown;
+
+/** Input shape for `inbox.snooze`. */
+export type InboxSnoozeInput = {
+  item: string;
+  until?: string;
+};
+
+/** Return shape for `inbox.snooze`. (no @Returns declared) */
+export type InboxSnoozeReturn = unknown;
+
+/** Input shape for `inbox.sources`. */
+export type InboxSourcesInput = Record<string, never>;
+
+/** Return shape for `inbox.sources`. (no @Returns declared) */
+export type InboxSourcesReturn = unknown;
 
 /** Input shape for `inbox.status`. */
 export type InboxStatusInput = Record<string, never>;
