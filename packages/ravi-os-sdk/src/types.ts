@@ -2024,6 +2024,7 @@ export type InboxItemsReturn = unknown;
 export type InboxListInput = {
   includeArchived?: boolean;
   limit?: string;
+  offset?: string;
   source?: string;
   status?: string;
 };

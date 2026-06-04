@@ -5175,6 +5175,10 @@ export const InboxListInputSchema = {
       "description": "Maximum items to return (default: 50, max: 500)",
       "type": "string"
     },
+    "offset": {
+      "description": "Items to skip before returning results",
+      "type": "string"
+    },
     "source": {
       "description": "Filter by source domain",
       "type": "string"

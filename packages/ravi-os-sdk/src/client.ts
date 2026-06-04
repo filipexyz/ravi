@@ -2142,6 +2142,7 @@ export class RaviClient {
     list: async (options?: {
       includeArchived?: boolean;
       limit?: string;
+      offset?: string;
       source?: string;
       status?: string;
     }): Promise<InboxListReturn> => {
