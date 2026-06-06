@@ -6,12 +6,16 @@ import { AppsCommands } from "./apps.js";
 
 const tempRoots: string[] = [];
 const originalCwd = process.cwd();
+const originalHome = process.env.HOME;
+const originalStateDir = process.env.RAVI_STATE_DIR;
 
 function makeRepo(): string {
   const root = mkdtempSync(join(tmpdir(), "ravi-apps-cli-"));
   tempRoots.push(root);
   mkdirSync(join(root, "src", "apps", "apps"), { recursive: true });
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "test-repo" }));
+  process.env.HOME = join(root, ".home");
+  process.env.RAVI_STATE_DIR = join(root, ".state");
   writeFileSync(
     join(root, "src", "apps", "apps", "ravi.app.json"),
     JSON.stringify(
@@ -63,6 +67,10 @@ function captureJson(fn: () => unknown): unknown {
 
 afterEach(() => {
   process.chdir(originalCwd);
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+  if (originalStateDir === undefined) delete process.env.RAVI_STATE_DIR;
+  else process.env.RAVI_STATE_DIR = originalStateDir;
   while (tempRoots.length > 0) {
     const root = tempRoots.pop();
     if (root) rmSync(root, { recursive: true, force: true });
