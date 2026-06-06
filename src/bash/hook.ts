@@ -18,6 +18,7 @@ import { checkDangerousPatterns, parseBashCommand, UNCONDITIONAL_BLOCKS } from "
 import { logger } from "../utils/logger.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
 import { agentCan, canWithCapabilityContext } from "../permissions/engine.js";
+import { recordPermissionDenial } from "../permissions/denials.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
 import type { ContextCapability } from "../router/router-db.js";
 
@@ -188,6 +189,7 @@ export interface BashPermissionDecision {
   reason?: string;
   denialType?: "env_spoofing" | "executable" | "session_scope";
   toolName?: string | null;
+  deniedCapabilities?: Array<{ relation: string; objectType: string; objectId: string }>;
 }
 
 function hasContextCapabilities(ctx: BashPermissionContext): ctx is BashPermissionContext & {
@@ -215,7 +217,7 @@ function isSuperadminContext(ctx: BashPermissionContext): boolean {
 function checkExecutablePermissionsForContext(
   command: string,
   ctx: BashPermissionContext,
-): { allowed: boolean; reason?: string } {
+): { allowed: boolean; reason?: string; deniedCapabilities?: BashPermissionDecision["deniedCapabilities"] } {
   if (canWithBashContext(ctx, "execute", "executable", "*")) {
     return { allowed: true };
   }
@@ -250,6 +252,11 @@ function checkExecutablePermissionsForContext(
     return {
       allowed: false,
       reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot execute: ${blocked.join(", ")}`,
+      deniedCapabilities: blocked.map((executable) => ({
+        relation: "execute",
+        objectType: "executable",
+        objectId: executable,
+      })),
     };
   }
 
@@ -280,7 +287,7 @@ function checkScopePermissionForContext(
   command: string,
   toolName: string | null,
   ctx: BashPermissionContext,
-): { allowed: boolean; reason?: string } {
+): { allowed: boolean; reason?: string; deniedCapabilities?: BashPermissionDecision["deniedCapabilities"] } {
   if (!toolName) return { allowed: true };
 
   if (SESSION_TARGET_COMMANDS.has(toolName)) {
@@ -289,6 +296,7 @@ function checkScopePermissionForContext(
       return {
         allowed: false,
         reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot access session:${target}`,
+        deniedCapabilities: [{ relation: "access", objectType: "session", objectId: target }],
       };
     }
   }
@@ -315,6 +323,32 @@ export function emitBashDeniedAudit(command: string, decision: BashPermissionDec
   emitAudit(event);
 }
 
+function recordBashPermissionDenial(
+  command: string,
+  decision: BashPermissionDecision,
+  ctx: BashPermissionContext,
+  agentId?: string,
+): void {
+  if (decision.allowed || decision.denialType === "env_spoofing") return;
+  const subjectId = agentId ?? ctx.agentId;
+  if (!subjectId) return;
+
+  for (const denied of decision.deniedCapabilities ?? []) {
+    recordPermissionDenial({
+      subjectType: "agent",
+      subjectId,
+      agentId: subjectId,
+      sessionKey: ctx.sessionKey,
+      sessionName: ctx.sessionName,
+      relation: denied.relation,
+      objectType: denied.objectType,
+      objectId: denied.objectId,
+      reason: decision.reason,
+      command,
+    });
+  }
+}
+
 export function evaluateBashPermission(command: string, ctx: BashPermissionContext = {}): BashPermissionDecision {
   const isSuperadmin = isSuperadminContext(ctx);
   const spoofResult = isSuperadmin ? { allowed: true } : checkEnvSpoofing(command);
@@ -333,6 +367,7 @@ export function evaluateBashPermission(command: string, ctx: BashPermissionConte
         allowed: false,
         reason: execResult.reason,
         denialType: "executable",
+        deniedCapabilities: execResult.deniedCapabilities,
       };
     }
   }
@@ -345,6 +380,7 @@ export function evaluateBashPermission(command: string, ctx: BashPermissionConte
       reason: scopeResult.reason,
       denialType: "session_scope",
       toolName,
+      deniedCapabilities: scopeResult.deniedCapabilities,
     };
   }
 
@@ -372,11 +408,12 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
 
     const agentId = options.getAgentId();
     const scopeCtx = getScopeContext();
-    const decision = evaluateBashPermission(command, {
+    const bashContext = {
       agentId,
       sessionKey: scopeCtx.sessionKey,
       sessionName: scopeCtx.sessionName,
-    });
+    };
+    const decision = evaluateBashPermission(command, bashContext);
 
     if (!decision.allowed && decision.denialType === "env_spoofing") {
       log.warn("Env spoofing blocked", {
@@ -384,6 +421,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
         reason: decision.reason,
       });
       emitBashDeniedAudit(command, decision, agentId);
+      recordBashPermissionDenial(command, decision, bashContext, agentId);
 
       return buildPreToolUseDenyResult(decision.reason!);
     }
@@ -394,6 +432,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
         reason: decision.reason,
       });
       emitBashDeniedAudit(command, decision, agentId);
+      recordBashPermissionDenial(command, decision, bashContext, agentId);
 
       return buildPreToolUseDenyResult(decision.reason!);
     }
@@ -404,6 +443,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
         reason: decision.reason,
       });
       emitBashDeniedAudit(command, decision, agentId);
+      recordBashPermissionDenial(command, decision, bashContext, agentId);
 
       return buildPreToolUseDenyResult(decision.reason!);
     }
@@ -442,18 +482,31 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
 
     // Check REBAC: can agent use this tool?
     if (!agentCan(agentId, "use", "tool", toolName)) {
+      const scopeCtx = getScopeContext();
+      const reason = `Permission denied: agent:${agentId} cannot use tool:${toolName}`;
       log.warn("Tool blocked", { agentId, tool: toolName });
+      recordPermissionDenial({
+        subjectType: "agent",
+        subjectId: agentId,
+        agentId,
+        sessionKey: scopeCtx.sessionKey,
+        sessionName: scopeCtx.sessionName,
+        relation: "use",
+        objectType: "tool",
+        objectId: toolName,
+        reason,
+      });
       emitAudit({
         type: "tool",
         agentId,
         denied: `tool:${toolName}`,
-        reason: `Permission denied: agent:${agentId} cannot use tool:${toolName}`,
+        reason,
       });
       return {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
-          permissionDecisionReason: `Permission denied: agent:${agentId} cannot use tool:${toolName}`,
+          permissionDecisionReason: reason,
         },
       };
     }

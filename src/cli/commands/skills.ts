@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
@@ -20,6 +20,12 @@ import {
   type RaviSkill,
 } from "../../skills/manager.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
+import {
+  skillShowReturnSchema,
+  skillsInstallReturnSchema,
+  skillsListReturnSchema,
+  skillsSyncReturnSchema,
+} from "./operational-return-schemas.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -52,6 +58,7 @@ export class SkillsCommands {
     description: "List Ravi catalog skills, installed skills or source skills",
     aliases: ["ls"],
   })
+  @Returns(skillsListReturnSchema)
   list(
     @Option({ flags: "--source <source>", description: "List skills available in a GitHub URL, git URL or local path" })
     source?: string,
@@ -119,6 +126,7 @@ export class SkillsCommands {
   }
 
   @Command({ name: "show", description: "Show a Ravi catalog skill, installed skill or source skill" })
+  @Returns(skillShowReturnSchema)
   show(
     @Arg("name", { description: "Catalog skill name, installed skill name, or source skill name" }) name: string,
     @Option({ flags: "--source <source>", description: "Inspect skill from a GitHub URL, git URL or local path" })
@@ -154,6 +162,7 @@ export class SkillsCommands {
   }
 
   @Command({ name: "install", description: "Install Ravi catalog skills or skills from an explicit source" })
+  @Returns(skillsInstallReturnSchema)
   install(
     @Arg("name", {
       required: false,
@@ -217,6 +226,7 @@ export class SkillsCommands {
   }
 
   @Command({ name: "sync", description: "Sync Ravi plugin skills into the Codex skills directory" })
+  @Returns(skillsSyncReturnSchema)
   sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const codexSynced = syncCodex();
     const payload = {

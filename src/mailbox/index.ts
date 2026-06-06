@@ -9,6 +9,8 @@ export type {
   MailAccountStatus,
   MailAddress,
   MailAddressInput,
+  MailAttachment,
+  MailAttachmentInput,
   MailMailbox,
   MailMailboxRole,
   MailMailboxStatus,

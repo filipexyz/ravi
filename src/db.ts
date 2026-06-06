@@ -203,6 +203,21 @@ export function getRecentSessionHistory(sessionId: string, limit = 50): Message[
   return getRecentHistory(sessionId, limit);
 }
 
+export function getLatestExternalUserMessageAt(sessionId: string): number | undefined {
+  const row = getDb()
+    .prepare(
+      `SELECT created_at
+       FROM messages
+       WHERE session_id = ?
+         AND role = 'user'
+         AND source_message_id IS NOT NULL
+       ORDER BY id DESC
+       LIMIT 1`,
+    )
+    .get(sessionId) as { created_at?: string | null } | undefined;
+  return parseMessageCreatedAtMs(row?.created_at);
+}
+
 export interface MessageHistoryScope {
   agentId?: string | null;
   chatId?: string | null;
@@ -305,4 +320,14 @@ export function close(): void {
     db = null;
     dbPath = null;
   }
+}
+
+function parseMessageCreatedAtMs(value: string | null | undefined): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const hasTimezone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
+  const normalized = hasTimezone ? trimmed : `${trimmed.replace(" ", "T")}Z`;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }

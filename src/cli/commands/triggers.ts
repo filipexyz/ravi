@@ -3,9 +3,15 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import {
+  triggerListReturnSchema,
+  triggerMutationReturnSchema,
+  triggerShowReturnSchema,
+  triggerTopicsReturnSchema,
+} from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
@@ -122,6 +128,7 @@ function resolveTriggerMessage(topic: string, message: string | undefined) {
 })
 export class TriggersCommands {
   @Command({ name: "topics", description: "List trigger-ready NATS topics" })
+  @Returns(triggerTopicsReturnSchema)
   topics(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const topics = getTriggerTopicCatalog();
     const payload = { topics };
@@ -134,6 +141,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "list", description: "List all event triggers" })
+  @Returns(triggerListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical trigger tag" }) tagSlug?: string,
@@ -211,6 +219,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "show", description: "Show trigger details" })
+  @Returns(triggerShowReturnSchema)
   show(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -254,6 +263,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "add", description: "Add a new event trigger" })
+  @Returns(triggerMutationReturnSchema)
   async add(
     @Arg("name", { description: "Trigger name" }) name: string,
     @Option({
@@ -410,6 +420,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "enable", description: "Enable a trigger" })
+  @Returns(triggerMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -440,6 +451,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "disable", description: "Disable a trigger" })
+  @Returns(triggerMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -470,6 +482,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "set", description: "Set trigger property" })
+  @Returns(triggerMutationReturnSchema)
   async set(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Arg("key", {
@@ -587,6 +600,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "test", description: "Test trigger with fake event data" })
+  @Returns(triggerMutationReturnSchema)
   async test(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -626,6 +640,7 @@ export class TriggersCommands {
     description: "Delete a trigger",
     aliases: ["delete", "remove"],
   })
+  @Returns(triggerMutationReturnSchema)
   async rm(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

@@ -5,11 +5,12 @@
  *
  * Resolution order:
  *   1. No agent context (CLI direct) → always allowed
- *   2. Superadmin? → check (agent, <id>, admin, system, *)
- *   3. Direct relation? → check (agent, <id>, <permission>, <objectType>, <objectId>)
- *   4. Wildcard? → check (agent, <id>, <permission>, <objectType>, *)
- *   5. Pattern match? → check relations with glob patterns (e.g., dev-*)
- *   6. Tool group? → check if tool belongs to a granted toolgroup
+ *   2. Scoped runtime context? → check its capability lease
+ *   3. Superadmin? → check (agent, <id>, admin, system, *)
+ *   4. Direct relation? → check (agent, <id>, <permission>, <objectType>, <objectId>)
+ *   5. Wildcard? → check (agent, <id>, <permission>, <objectType>, *)
+ *   6. Pattern match? → check relations with glob patterns (e.g., dev-*)
+ *   7. Tool group? → check if tool belongs to a granted toolgroup
  */
 
 import { hasRelation, listRelations } from "./relations.js";
@@ -113,13 +114,18 @@ export function agentCan(
   // No agent context → always allowed (CLI direct)
   if (!agentId) return true;
 
-  // Live superadmin always wins, even when a running context has stale caps.
-  if (isAgentSuperadmin(agentId)) return true;
-
   const scopedContext = getScopedContext(agentId);
   if (scopedContext) {
-    return canWithCapabilityContext(scopedContext, permission, objectType, objectId);
+    return canWithCapabilityContext(
+      { ...scopedContext, agentId: scopedContext.agentId ?? agentId },
+      permission,
+      objectType,
+      objectId,
+    );
   }
+
+  // Live superadmin wins when no scoped context is constraining the call.
+  if (isAgentSuperadmin(agentId)) return true;
 
   return can("agent", agentId, permission, objectType, objectId);
 }

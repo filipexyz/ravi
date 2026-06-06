@@ -3,9 +3,33 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { z } from "zod";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail } from "../context.js";
 import { nats } from "../../nats.js";
+
+const reactSendReturnSchema = z.object({
+  success: z.literal(true),
+  topic: z.literal("ravi.outbound.reaction"),
+  reaction: z.object({
+    messageId: z.string(),
+    emoji: z.string(),
+  }),
+  target: z.object({
+    channel: z.string(),
+    accountId: z.string(),
+    chatId: z.string(),
+  }),
+  event: z
+    .object({
+      channel: z.string(),
+      accountId: z.string(),
+      chatId: z.string(),
+      messageId: z.string(),
+      emoji: z.string(),
+    })
+    .passthrough(),
+});
 
 @Group({
   name: "react",
@@ -14,6 +38,7 @@ import { nats } from "../../nats.js";
 })
 export class ReactCommands {
   @Command({ name: "send", description: "Send an emoji reaction to a message" })
+  @Returns(reactSendReturnSchema)
   async send(
     @Arg("messageId", { description: "Message ID to react to (from [mid:ID] tag)" }) messageId: string,
     @Arg("emoji", { description: "Emoji to react with" }) emoji: string,

@@ -26,6 +26,12 @@ export interface PageSiteUpdateOptions extends PagesClientOptions {
   site: string;
 }
 
+export interface PageDomainBindOptions extends PagesClientOptions {
+  hostnames: string[];
+  project: string;
+  site: string;
+}
+
 export interface PagesClientDeps {
   client?: ConsoleApiClient;
   readCredentials?: typeof readCloudCredentials;
@@ -66,6 +72,17 @@ export interface PageSiteUpdateResult {
   site: PageSitePayload;
   edgeManifestRepair: unknown;
   url: string | null;
+}
+
+export interface PageDomainBindResult {
+  success: true;
+  bindings: PageSitePayload[];
+  consoleUrl: string;
+  hostnames: string[];
+  projectRef: string;
+  site: PageSitePayload;
+  siteRef: string;
+  total: number;
 }
 
 export class RaviPagesClient {
@@ -115,6 +132,38 @@ export class RaviPagesClient {
     return {
       site: normalizeSitePayload(payload),
       edgeManifestRepair: record?.edgeManifestRepair ?? null,
+    };
+  }
+
+  async bindDomains(
+    accessToken: string,
+    options: PageDomainBindOptions,
+  ): Promise<{
+    bindings: PageSitePayload[];
+    hostnames: string[];
+    site: PageSitePayload;
+    total: number;
+  }> {
+    const payload = await this.request<unknown>(
+      "POST",
+      `/api/cli/projects/${encodeURIComponent(requireText(options.project, "project"))}/pages/${encodeURIComponent(
+        requireText(options.site, "site"),
+      )}/domains`,
+      {
+        hostnames: normalizeHostnames(options.hostnames),
+      },
+      accessToken,
+    );
+    const record = objectValue(payload);
+    const bindings = Array.isArray(record?.bindings) ? record.bindings.map(normalizeSitePayload) : [];
+    const hostnames = Array.isArray(record?.hostnames)
+      ? record.hostnames.map((value) => (typeof value === "string" ? value : "")).filter(Boolean)
+      : [];
+    return {
+      bindings,
+      hostnames,
+      site: normalizeSitePayload(record?.site),
+      total: typeof record?.total === "number" ? record.total : bindings.length,
     };
   }
 
@@ -194,6 +243,24 @@ export async function updatePageSite(
   };
 }
 
+export async function bindPageDomains(
+  options: PageDomainBindOptions,
+  deps: PagesClientDeps = {},
+): Promise<PageDomainBindResult> {
+  const auth = await createAuthenticatedPagesContext(options, deps);
+  const result = await new RaviPagesClient(auth.client).bindDomains(auth.accessToken, options);
+  return {
+    success: true,
+    bindings: result.bindings,
+    consoleUrl: auth.consoleUrl,
+    hostnames: result.hostnames,
+    projectRef: requireText(options.project, "project"),
+    site: result.site,
+    siteRef: requireText(options.site, "site"),
+    total: result.total,
+  };
+}
+
 export function normalizePageVisibility(value: string | undefined): PageVisibility | undefined {
   if (!value?.trim()) return undefined;
   const normalized = value.trim().toLowerCase().replace(/-/g, "_");
@@ -240,6 +307,13 @@ function normalizeSitePayload(payload: unknown): PageSitePayload {
   const record = objectValue(payload);
   const nested = objectValue(record?.site);
   return nested ?? record ?? {};
+}
+
+function normalizeHostnames(values: string[]): string[] {
+  const hostnames = [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  if (hostnames.length === 0) throw new CloudAuthError("PAYLOAD_INVALID", "Missing hostname.");
+  if (hostnames.length > 20) throw new CloudAuthError("PAYLOAD_INVALID", "Bind at most 20 hostnames per request.");
+  return hostnames;
 }
 
 function hostedSiteUrl(site: PageSitePayload): string | null {

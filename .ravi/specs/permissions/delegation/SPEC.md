@@ -1,0 +1,97 @@
+---
+id: permissions/delegation
+title: "Delegation"
+kind: capability
+domain: permissions
+capability: delegation
+capabilities:
+  - rebac
+  - roles
+  - invocation-context
+  - effective-capabilities
+tags:
+  - permissions
+  - delegation
+  - roles
+  - contacts
+applies_to:
+  - src/permissions
+  - src/runtime/runtime-request-context.ts
+  - src/runtime/context-registry.ts
+  - src/runtime/host-services.ts
+  - src/omni/consumer.ts
+  - src/contacts.ts
+owners:
+  - ravi-rebac
+  - ravi-dev
+status: active
+normative: true
+---
+
+# Delegation
+
+## Intent
+
+Delegation defines how a user, chat, route, automation, or system actor lends authority to an agent for one execution.
+
+The model is Discord-role-like: nothing is available by default, and capabilities are unlocked only by explicit grants on principals or roles. Broad agent grants remain useful as a technical ceiling, but they MUST NOT become ambient authority for every person who can speak to that agent.
+
+## Definitions
+
+- `delegator`: principal that caused execution. For human inbound, this is normally `contact:<id>`.
+- `executor`: agent that will run the provider turn.
+- `surface`: chat, thread, route, instance, project, or session context where the invocation happened.
+- `role`: reusable authority bundle assigned to a principal or surface.
+- `effective_capability`: capability that survived all delegation constraints and is present in the runtime context used by tools.
+
+## Invariants
+
+- Delegation MUST be explicit, auditable, and explainable.
+- Effective authority for user-initiated execution MUST be derived by intersection, not union.
+- A role MAY grant capabilities, but a role assignment MUST be scoped. Global role assignment is a conscious explicit operation, not the default.
+- Chat or route policy MAY further restrict authority. It MUST NOT expand authority beyond the actor and agent ceilings.
+- Unknown or unresolved actors MUST receive no delegated tool/executable/CLI/session/contact authority.
+- A user-facing response channel is not the same as tool authority. Ravi MAY answer textually while denying tools.
+- Break-glass authority MUST be distinguishable from normal delegated authority in traces and context provenance.
+
+## Canonical Formula
+
+For a user-initiated turn:
+
+```text
+effective_caps = agent_caps INTERSECT actor_caps INTERSECT surface_caps INTERSECT turn_caps
+```
+
+Where:
+
+- `agent_caps` are the maximum technical capabilities of the executor.
+- `actor_caps` are capabilities the current speaker can delegate.
+- `surface_caps` are constraints from chat, thread, route, instance, project, or session policy.
+- `turn_caps` are short-lived caps for this invocation, approval, or explicit user confirmation.
+
+For internal execution:
+
+```text
+effective_caps = automation_caps INTERSECT agent_caps INTERSECT target_surface_caps
+```
+
+Internal execution MUST use an explicit `automation:<id>` or `system:<id>` principal. It MUST NOT silently inherit the last human speaker.
+
+## Role Model
+
+Roles SHOULD be modeled in the same relation graph whenever they affect execution.
+
+Examples:
+
+```text
+contact:<contact-id> member role:owner
+contact:<contact-id> member role:trusted-dev
+chat:<chat-id> constrain role:public-chat
+role:trusted-dev use tool:Bash
+role:trusted-dev execute executable:git
+role:trusted-dev execute group:sessions_read
+role:public-chat use toolgroup:read-only
+```
+
+Role expansion MUST preserve provenance so a denial/allow trace can say whether the capability came from a direct grant, role membership, surface policy, route policy, or explicit turn approval.
+

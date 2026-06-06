@@ -3,9 +3,35 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { z } from "zod";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
+import { looseObjectSchema } from "../return-schemas.js";
 import { sendMediaWithOmniCli } from "../media-send.js";
+
+const mediaSendReturnSchema = z.object({
+  success: z.literal(true),
+  media: z
+    .object({
+      filePath: z.string(),
+      filename: z.string(),
+      mimeType: z.string(),
+      type: z.string(),
+      caption: z.string().optional(),
+      voiceNote: z.boolean(),
+    })
+    .passthrough(),
+  target: z
+    .object({
+      channel: z.string().optional(),
+      accountId: z.string(),
+      instanceId: z.string(),
+      chatId: z.string(),
+      threadId: z.string().optional(),
+    })
+    .passthrough(),
+  delivery: looseObjectSchema,
+});
 
 @Group({
   name: "media",
@@ -14,6 +40,7 @@ import { sendMediaWithOmniCli } from "../media-send.js";
 })
 export class MediaCommands {
   @Command({ name: "send", description: "Send a media file (image, video, audio, document)" })
+  @Returns(mediaSendReturnSchema)
   async send(
     @Arg("filePath", { description: "Path to the file to send" }) filePath: string,
     @Option({ flags: "--caption <text>", description: "Caption for the media" }) caption?: string,

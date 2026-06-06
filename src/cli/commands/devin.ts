@@ -3,6 +3,20 @@ import { readFileSync } from "node:fs";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListOffset } from "../pagination.js";
+import {
+  declareCommandReturns,
+  devinAuthCheckReturnSchema,
+  devinSessionArchiveReturnSchema,
+  devinSessionAttachmentsReturnSchema,
+  devinSessionCreateReturnSchema,
+  devinSessionInsightsReturnSchema,
+  devinSessionMessagesReturnSchema,
+  devinSessionSendReturnSchema,
+  devinSessionShowReturnSchema,
+  devinSessionSyncReturnSchema,
+  devinSessionTerminateReturnSchema,
+  devinSessionsListReturnSchema,
+} from "./operational-return-schemas.js";
 import { createArtifact } from "../../artifacts/store.js";
 import {
   createDevinClientFromEnv,
@@ -670,3 +684,20 @@ export class DevinSessionCommands {
     return payload;
   }
 }
+
+declareCommandReturns(DevinAuthCommands, {
+  check: devinAuthCheckReturnSchema,
+});
+
+declareCommandReturns(DevinSessionCommands, {
+  archive: devinSessionArchiveReturnSchema,
+  attachments: devinSessionAttachmentsReturnSchema,
+  create: devinSessionCreateReturnSchema,
+  insights: devinSessionInsightsReturnSchema,
+  list: devinSessionsListReturnSchema,
+  messages: devinSessionMessagesReturnSchema,
+  send: devinSessionSendReturnSchema,
+  show: devinSessionShowReturnSchema,
+  sync: devinSessionSyncReturnSchema,
+  terminate: devinSessionTerminateReturnSchema,
+});

@@ -1,5 +1,6 @@
 import { nats as runtimeNats } from "../nats.js";
 import { canWithCapabilityContext } from "../permissions/engine.js";
+import { recordPermissionDenial } from "../permissions/denials.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";
 import { logger } from "../utils/logger.js";
@@ -208,6 +209,18 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
   });
 
   if (!result.approved) {
+    recordPermissionDenial({
+      subjectType: "agent",
+      subjectId: context.agentId ?? undefined,
+      agentId: context.agentId,
+      sessionKey: context.sessionKey,
+      sessionName: context.sessionName,
+      contextId: context.contextId,
+      relation: permission,
+      objectType,
+      objectId,
+      reason: result.reason,
+    });
     return {
       allowed: false,
       approved: false,

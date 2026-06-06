@@ -3,7 +3,8 @@
  */
 
 import "reflect-metadata";
-import { CliOnly, Command, Group, Option, Scope } from "../decorators.js";
+import { z } from "zod";
+import { Command, Group, Option, Scope } from "../decorators.js";
 import {
   type DailyMetricsRow,
   getDailyMetrics,
@@ -11,6 +12,7 @@ import {
   rollupDailyMetrics,
   utcDateString,
 } from "../../metrics/rollup.js";
+import { declareCommandReturns } from "./operational-return-schemas.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -107,7 +109,6 @@ export class MetricsCommands {
     name: "rollup",
     description: "Aggregate cost_events + session_events into daily_metrics for a date range",
   })
-  @CliOnly()
   async rollup(
     @Option({ flags: "--since <date|days>", description: "Start date YYYY-MM-DD or N days ago" })
     sinceRaw?: string,
@@ -133,7 +134,6 @@ export class MetricsCommands {
 
   @Scope("superadmin")
   @Command({ name: "show", description: "Display daily metrics rolled up to date" })
-  @CliOnly()
   async show(
     @Option({ flags: "--agent <id>", description: "Filter to one agent" }) agentId?: string,
     @Option({ flags: "--days <n>", description: "Last N days (default: 7)" }) daysRaw?: string,
@@ -191,7 +191,6 @@ export class MetricsCommands {
 
   @Scope("superadmin")
   @Command({ name: "dates", description: "List dates that have already been rolled up" })
-  @CliOnly()
   async dates(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean): Promise<string[]> {
     const dates = getRolledUpDates();
     if (asJson) {
@@ -210,3 +209,28 @@ export class MetricsCommands {
     return dates;
   }
 }
+
+const dailyMetricsRowSchema = z.object({
+  agentId: z.string(),
+  date: z.string(),
+  model: z.string(),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cacheReadTokens: z.number(),
+  cacheCreationTokens: z.number(),
+  totalCostUsd: z.number(),
+  costEventCount: z.number(),
+  turnsComplete: z.number(),
+  turnsFailed: z.number(),
+  turnsInterrupted: z.number(),
+  toolCalls: z.number(),
+  toolErrors: z.number(),
+  totalDurationMs: z.number(),
+  rolledUpAt: z.number(),
+});
+
+declareCommandReturns(MetricsCommands, {
+  rollup: z.object({ dates: z.array(z.string()), rowsWritten: z.number() }),
+  show: z.array(dailyMetricsRowSchema),
+  dates: z.array(z.string()),
+});

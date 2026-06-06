@@ -31,6 +31,13 @@ import qrcode from "qrcode-terminal";
 import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import {
+  commandEnvelopeReturnSchema,
+  declareCommandReturns,
+  routeExplainReturnSchema,
+  routeShowReturnSchema,
+  routesListReturnSchema,
+} from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 import { createOmniClient } from "../../omni/client.js";
 import {
@@ -2075,3 +2082,41 @@ export class InstancesPendingCommands {
     }
   }
 }
+
+declareCommandReturns(InstancesCommands, {
+  create: commandEnvelopeReturnSchema,
+  delete: commandEnvelopeReturnSchema,
+  deleted: commandEnvelopeReturnSchema,
+  disable: commandEnvelopeReturnSchema,
+  disconnect: commandEnvelopeReturnSchema,
+  enable: commandEnvelopeReturnSchema,
+  get: commandEnvelopeReturnSchema,
+  list: commandEnvelopeReturnSchema,
+  restore: commandEnvelopeReturnSchema,
+  set: commandEnvelopeReturnSchema,
+  show: commandEnvelopeReturnSchema,
+  status: commandEnvelopeReturnSchema,
+  target: commandEnvelopeReturnSchema,
+});
+
+declareCommandReturns(RoutesCommands, {
+  explain: routeExplainReturnSchema,
+  list: routesListReturnSchema,
+  show: routeShowReturnSchema,
+});
+
+declareCommandReturns(InstancesRoutesCommands, {
+  add: commandEnvelopeReturnSchema,
+  deleted: commandEnvelopeReturnSchema,
+  list: commandEnvelopeReturnSchema,
+  remove: commandEnvelopeReturnSchema,
+  restore: commandEnvelopeReturnSchema,
+  set: commandEnvelopeReturnSchema,
+  show: commandEnvelopeReturnSchema,
+});
+
+declareCommandReturns(InstancesPendingCommands, {
+  approve: commandEnvelopeReturnSchema,
+  list: commandEnvelopeReturnSchema,
+  reject: commandEnvelopeReturnSchema,
+});

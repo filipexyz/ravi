@@ -30,9 +30,7 @@ export type SecurityRequirement = Record<string, string[]>;
 
 export interface OpenApiResponse {
   description: string;
-  content?: {
-    "application/json": { schema: JsonSchema };
-  };
+  content?: Record<string, { schema: JsonSchema }>;
 }
 
 export interface OpenApiRequestBody {

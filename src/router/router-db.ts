@@ -1462,6 +1462,31 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_relations_object
       ON relations(object_type, object_id);
 
+    CREATE TABLE IF NOT EXISTS permission_denials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subject_type TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      relation TEXT NOT NULL,
+      object_type TEXT NOT NULL,
+      object_id TEXT NOT NULL,
+      agent_id TEXT,
+      session_key TEXT,
+      session_name TEXT,
+      context_id TEXT,
+      reason TEXT,
+      command TEXT,
+      detail_json TEXT,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER,
+      resolved_relation_id INTEGER,
+      notified_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_permission_denials_pending
+      ON permission_denials(subject_type, subject_id, relation, object_type, object_id, resolved_at);
+    CREATE INDEX IF NOT EXISTS idx_permission_denials_session
+      ON permission_denials(session_key, session_name, created_at DESC);
+
     -- Message metadata (transcriptions, media paths — for reply reinjection)
     CREATE TABLE IF NOT EXISTS message_metadata (
       message_id TEXT PRIMARY KEY,
@@ -4821,8 +4846,18 @@ export function dbFindChatByRef(input: {
   instanceId?: string | null;
   chatType?: ChatType | null;
 }): ChatRecord | null {
+  return dbListChatsByRef({ ...input, limit: 1 })[0] ?? null;
+}
+
+export function dbListChatsByRef(input: {
+  ref: string;
+  channel?: string | null;
+  instanceId?: string | null;
+  chatType?: ChatType | null;
+  limit?: number;
+}): ChatRecord[] {
   const candidates = chatRefCandidates(input.ref);
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return [];
   const where: string[] = [];
   const params: Array<string | number> = [];
   if (input.channel?.trim()) {
@@ -4842,17 +4877,18 @@ export function dbFindChatByRef(input: {
     `(id IN (${placeholders}) OR platform_chat_id IN (${placeholders}) OR normalized_chat_id IN (${placeholders}))`,
   );
   params.push(...candidates, ...candidates, ...candidates);
-  const row = getDb()
+  const limit = Math.max(1, Math.min(500, Math.trunc(input.limit ?? 50)));
+  const rows = getDb()
     .prepare(
       `
       SELECT * FROM chats
       WHERE ${where.join(" AND ")}
       ORDER BY last_seen_at DESC, updated_at DESC
-      LIMIT 1
+      LIMIT ?
     `,
     )
-    .get(...params) as ChatRow | undefined;
-  return row ? rowToChat(row) : null;
+    .all(...params, limit) as ChatRow[];
+  return rows.map(rowToChat);
 }
 
 export function dbListChats(

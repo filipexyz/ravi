@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateContext, dbDeleteContext, dbGetContext } from "../router/router-db.js";
+import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext } from "../router/router-db.js";
+import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
   setApprovalServiceDependenciesForTest,
   type ApprovalServiceDependencies,
 } from "./service.js";
+import { listPermissionDenials } from "../permissions/denials.js";
 
 let requestReplyResult: { messageId?: string } = { messageId: "msg_1" };
 let subscribeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
@@ -129,10 +131,14 @@ describe("approval service", () => {
   });
 
   it("fails closed when no approval source is available", async () => {
+    dbCreateAgent({ id: "dev", cwd: "/tmp/dev" });
+    getOrCreateSession("agent:dev:dev-main", "dev", "/tmp/dev", { name: "dev-main" });
     const context = dbCreateContext({
       contextId: "ctx_3",
       contextKey: "rctx_3",
       kind: "agent-runtime",
+      agentId: "dev",
+      sessionKey: "agent:dev:dev-main",
       sessionName: "dev-main",
       capabilities: [],
       createdAt: 1000,
@@ -153,5 +159,16 @@ describe("approval service", () => {
       reason: "No approval source available.",
     });
     expect(emitted).toHaveLength(0);
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+      expect.objectContaining({
+        agentId: "dev",
+        sessionKey: "agent:dev:dev-main",
+        sessionName: "dev-main",
+        contextId: "ctx_3",
+        relation: "execute",
+        objectType: "group",
+        objectId: "daemon",
+      }),
+    );
   });
 });

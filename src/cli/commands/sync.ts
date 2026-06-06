@@ -1,10 +1,13 @@
 import "reflect-metadata";
-import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
+import { z } from "zod";
+import { Arg, Command, Group, Option } from "../decorators.js";
 import { readCloudCredentials } from "../../cloud-auth/storage.js";
 import { createConsoleSyncBridge, getSyncStatusSummary, inspectSyncRecord, retryOutbox } from "../../sync/index.js";
 import { getSyncRuntimeConfig } from "../../sync/config.js";
 import { enqueueTraceExportBatch, pushTraceExportBatch } from "../../session-trace/cloud-trace-export.js";
 import type { ConsoleSyncPullResult, ConsoleSyncPushResult } from "../../sync/console-bridge.js";
+import { jsonArraySchema, jsonValueSchema } from "../return-schemas.js";
+import { declareCommandReturns } from "./operational-return-schemas.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -17,7 +20,6 @@ function printJson(payload: unknown): void {
 })
 export class SyncCommands {
   @Command({ name: "status", description: "Show local sync status" })
-  @CliOnly()
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const payload = buildStatusPayload();
     if (asJson) {
@@ -37,7 +39,6 @@ export class SyncCommands {
   }
 
   @Command({ name: "push", description: "Upload a bounded outbox batch to Console" })
-  @CliOnly()
   async push(
     @Option({ flags: "--domain <domain>", description: "Filter one sync domain" }) domain?: string,
     @Option({ flags: "--project <project>", description: "Alias for --project-ref" }) project?: string,
@@ -79,7 +80,6 @@ export class SyncCommands {
   }
 
   @Command({ name: "pull", description: "Download a bounded remote event batch from Console" })
-  @CliOnly()
   async pull(
     @Option({ flags: "--domain <domain>", description: "Filter one sync domain" }) domain?: string,
     @Option({ flags: "--project <project>", description: "Alias for --project-ref" }) project?: string,
@@ -104,7 +104,6 @@ export class SyncCommands {
   }
 
   @Command({ name: "retry", description: "Move failed sync outbox rows back to pending" })
-  @CliOnly()
   retry(
     @Option({ flags: "--id <id>", description: "Retry one outbox id" }) id?: string,
     @Option({ flags: "--dead", description: "Also retry dead rows" }) includeDead?: boolean,
@@ -121,7 +120,6 @@ export class SyncCommands {
   }
 
   @Command({ name: "inspect", description: "Inspect a sync outbox/inbox row by id" })
-  @CliOnly()
   inspect(
     @Arg("id", { description: "sync_outbox or sync_inbox id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -143,6 +141,127 @@ export class SyncCommands {
     return payload;
   }
 }
+
+const syncStatusCountSchema = z.object({
+  pending: z.number(),
+  leased: z.number().optional(),
+  sent: z.number().optional(),
+  acked: z.number().optional(),
+  applied: z.number().optional(),
+  skipped: z.number().optional(),
+  failed: z.number(),
+  dead: z.number(),
+});
+
+const syncCursorSchema = z.object({
+  domain: z.string(),
+  cursorKey: z.string(),
+  cursorValue: z.string().nullable(),
+  updatedAt: z.number(),
+  meta: jsonValueSchema.nullable(),
+});
+
+const syncOutboxRecordSchema = z.object({
+  id: z.string(),
+  eventId: z.string(),
+  originInstallationId: z.string().nullable(),
+  domain: z.string(),
+  eventType: z.string(),
+  entityType: z.string(),
+  entityId: z.string(),
+  entityRevision: z.number().nullable(),
+  idempotencyKey: z.string(),
+  payload: jsonValueSchema,
+  evidenceRefs: jsonArraySchema,
+  schemaVersion: z.number(),
+  status: z.enum(["pending", "leased", "sent", "acked", "failed", "dead"]),
+  attemptCount: z.number(),
+  nextAttemptAt: z.number(),
+  leaseId: z.string().nullable(),
+  leasedUntil: z.number().nullable(),
+  lastErrorCode: z.string().nullable(),
+  occurredAt: z.number(),
+  sentAt: z.number().nullable(),
+  ackedAt: z.number().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const syncInboxRecordSchema = z.object({
+  id: z.string(),
+  remoteSequence: z.string().nullable(),
+  remoteEventId: z.string(),
+  domain: z.string(),
+  eventType: z.string(),
+  entityType: z.string(),
+  entityId: z.string(),
+  payload: jsonValueSchema,
+  status: z.enum(["pending", "applied", "skipped", "failed", "dead"]),
+  attemptCount: z.number(),
+  lastErrorCode: z.string().nullable(),
+  receivedAt: z.number(),
+  appliedAt: z.number().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const syncPushResultSchema = z.object({
+  linked: z.boolean(),
+  status: z.enum(["unlinked", "noop", "uploaded", "failed"]),
+  attempted: z.number(),
+  sent: z.number(),
+  acked: z.number(),
+  failed: z.number(),
+  errorCode: z.string().optional(),
+});
+
+const tracePushResultSchema = z.object({
+  linked: z.boolean(),
+  status: z.enum(["unlinked", "noop", "uploaded", "failed"]),
+  attempted: z.number(),
+  acked: z.number(),
+  failed: z.number(),
+  errorCode: z.string().optional(),
+});
+
+const syncPullResultSchema = z.object({
+  linked: z.boolean(),
+  status: z.enum(["unlinked", "noop", "downloaded", "failed"]),
+  downloaded: z.number(),
+  enqueued: z.number(),
+  applied: z.number(),
+  skipped: z.number(),
+  failed: z.number(),
+  cursor: z.string().nullable(),
+  errorCode: z.string().optional(),
+});
+
+declareCommandReturns(SyncCommands, {
+  status: z.object({
+    linked: z.boolean(),
+    consoleUrl: z.string().nullable(),
+    installationId: z.string().nullable(),
+    runner: z.object({
+      enabled: z.boolean(),
+      env: z.string(),
+      pullDomains: z.array(z.string()),
+    }),
+    outbox: syncStatusCountSchema,
+    inbox: syncStatusCountSchema,
+    cursors: z.array(syncCursorSchema),
+    lastUpload: z.string().nullable(),
+    lastDownload: z.string().nullable(),
+    lastError: z.string().nullable(),
+  }),
+  push: syncPushResultSchema.extend({ trace: tracePushResultSchema.optional() }),
+  pull: syncPullResultSchema,
+  retry: z.object({ success: z.literal(true), retried: z.number() }),
+  inspect: z.union([
+    z.object({ found: z.literal(false), id: z.string() }),
+    z.object({ found: z.literal(true), kind: z.literal("outbox"), record: syncOutboxRecordSchema }),
+    z.object({ found: z.literal(true), kind: z.literal("inbox"), record: syncInboxRecordSchema }),
+  ]),
+});
 
 function buildStatusPayload() {
   const credentials = readCloudCredentials();

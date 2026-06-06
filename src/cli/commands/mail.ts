@@ -1,5 +1,6 @@
 import "reflect-metadata";
-import { CliOnly, Arg, Command, Group, Option } from "../decorators.js";
+import { z } from "zod";
+import { Arg, Command, Group, Option } from "../decorators.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../../cloud-auth/storage.js";
@@ -50,6 +51,9 @@ import {
   type MailOutboxStatus,
 } from "../../mailbox/index.js";
 import { projectMailMessageToInbox } from "../../inbox/index.js";
+import { hasContext } from "../context.js";
+import { jsonObjectSchema, jsonValueSchema, stringNumberRecordSchema } from "../return-schemas.js";
+import { declareCommandReturns } from "./operational-return-schemas.js";
 
 export interface MailCommandDeps extends MailClientDeps {
   client?: ConsoleApiClient;
@@ -64,7 +68,6 @@ export class MailAccountsCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "list", description: "List local mail accounts" })
-  @CliOnly()
   async list(
     @Option({ flags: "--provider <provider>", description: "Filter by provider" }) provider?: string,
     @Option({ flags: "--status <status>", description: "Filter by account status" }) status?: string,
@@ -86,7 +89,6 @@ export class MailAccountsCommands {
   }
 
   @Command({ name: "create", description: "Create or update a local mail provider account" })
-  @CliOnly()
   async create(
     @Option({ flags: "--provider <provider>", description: "Provider id, e.g. ravi-mail or gmail" }) provider?: string,
     @Option({ flags: "--id <id>", description: "Stable local account id" }) id?: string,
@@ -110,7 +112,6 @@ export class MailAccountsCommands {
   }
 
   @Command({ name: "sync", description: "Run one local provider sync tick for an account" })
-  @CliOnly()
   async sync(
     @Arg("account", { description: "Local mail account id" }) accountId: string,
     @Option({ flags: "--once", description: "Run one foreground tick" }) _once?: boolean,
@@ -142,7 +143,6 @@ export class MailAccountsCommands {
 })
 export class MailMailboxesCommands {
   @Command({ name: "list", description: "List local mailboxes" })
-  @CliOnly()
   async list(
     @Option({ flags: "--account <account>", description: "Local account id" }) accountId?: string,
     @Option({ flags: "--status <status>", description: "Filter by mailbox status" }) status?: string,
@@ -164,7 +164,6 @@ export class MailMailboxesCommands {
   }
 
   @Command({ name: "create", description: "Create or update a local mailbox projection" })
-  @CliOnly()
   async create(
     @Arg("address", { description: "Mailbox email address" }) address: string,
     @Option({ flags: "--account <account>", description: "Local account id" }) accountId?: string,
@@ -193,7 +192,6 @@ export class MailMailboxesCommands {
   }
 
   @Command({ name: "show", description: "Show a local mailbox" })
-  @CliOnly()
   async show(
     @Arg("mailbox", { description: "Local mailbox id or address" }) mailboxRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -209,7 +207,6 @@ export class MailMailboxesCommands {
   }
 
   @Command({ name: "disable", description: "Disable a local mailbox projection" })
-  @CliOnly()
   async disable(
     @Arg("mailbox", { description: "Local mailbox id or address" }) mailboxRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -233,7 +230,6 @@ export class MailMailboxesCommands {
 })
 export class MailMessagesCommands {
   @Command({ name: "list", description: "List local mail messages" })
-  @CliOnly()
   async list(
     @Option({ flags: "--mailbox <mailbox>", description: "Local mailbox id or address" }) mailbox?: string,
     @Option({ flags: "--query <query>", description: "Search subject/snippet/body" }) query?: string,
@@ -266,7 +262,6 @@ export class MailMessagesCommands {
   }
 
   @Command({ name: "search", description: "Search local mail messages" })
-  @CliOnly()
   async search(
     @Arg("query", { description: "Search query" }) query: string,
     @Option({ flags: "--mailbox <mailbox>", description: "Local mailbox id or address" }) mailbox?: string,
@@ -277,7 +272,6 @@ export class MailMessagesCommands {
   }
 
   @Command({ name: "read", description: "Read a local mail message" })
-  @CliOnly()
   async read(
     @Arg("message", { description: "Local message id" }) messageId: string,
     @Option({ flags: "--addresses", description: "Include local address rows" }) includeAddresses?: boolean,
@@ -295,7 +289,6 @@ export class MailMessagesCommands {
   }
 
   @Command({ name: "import", description: "Import one normalized provider message into the local mailbox" })
-  @CliOnly()
   async importMessage(
     @Option({ flags: "--mailbox <mailbox>", description: "Local mailbox id or address" }) mailbox?: string,
     @Option({ flags: "--from <email>", description: "Sender email" }) from?: string,
@@ -348,7 +341,6 @@ export class MailMessagesCommands {
 })
 export class MailOutboxCommands {
   @Command({ name: "status", description: "Show local mail outbox status" })
-  @CliOnly()
   async status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     return runMailCommand(asJson, async () => {
       const rows = listMailOutbox({ limit: 500 }).filter((row) => canUseRowMailbox("send", row.mailboxId));
@@ -363,7 +355,6 @@ export class MailOutboxCommands {
   }
 
   @Command({ name: "list", description: "List local outbox rows" })
-  @CliOnly()
   async list(
     @Option({ flags: "--status <status>", description: "Filter by outbox status" }) status?: string,
     @Option({ flags: "--mailbox <mailbox>", description: "Local mailbox id or address" }) mailbox?: string,
@@ -392,7 +383,6 @@ export class MailOutboxCommands {
   }
 
   @Command({ name: "inspect", description: "Inspect a local outbox row" })
-  @CliOnly()
   async inspect(
     @Arg("outbox", { description: "Local outbox id" }) outboxId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -410,7 +400,6 @@ export class MailOutboxCommands {
   }
 
   @Command({ name: "retry", description: "Move a failed/dead local outbox row back to pending" })
-  @CliOnly()
   async retry(
     @Arg("outbox", { description: "Local outbox id" }) outboxId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -436,7 +425,6 @@ export class MailOutboxCommands {
 })
 export class MailProvidersCommands {
   @Command({ name: "list", description: "List known mail providers and local account counts" })
-  @CliOnly()
   async list(
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Records to skip before returning results" }) offset?: string,
@@ -467,7 +455,6 @@ export class MailProvidersCommands {
 })
 export class MailCommands {
   @Command({ name: "send", description: "Queue mail in the local outbox" })
-  @CliOnly()
   async send(
     @Option({ flags: "--to <email>", description: "Recipient email or comma-separated recipients" }) to?: string,
     @Option({ flags: "--subject <subject>", description: "Message subject" }) subject?: string,
@@ -501,7 +488,6 @@ export class MailCommands {
   }
 
   @Command({ name: "reply", description: "Queue a local reply in the outbox" })
-  @CliOnly()
   async reply(
     @Arg("message", { description: "Local message id to reply to" }) messageId: string,
     @Option({ flags: "--body <text>", description: "Reply body" }) body?: string,
@@ -551,7 +537,6 @@ export class MailCommands {
 })
 export class MailThreadsCommands {
   @Command({ name: "read", description: "Read a local mail thread and its safe message timeline" })
-  @CliOnly()
   async read(
     @Arg("thread", { description: "Local thread id" }) threadId: string,
     @Option({ flags: "--addresses", description: "Include local address rows" }) includeAddresses?: boolean,
@@ -590,7 +575,6 @@ export class MailDomainsCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "list", description: "List managed Ravi Mail domains through Console" })
-  @CliOnly()
   async list(
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--limit <n>", description: "Maximum records to request" }) limit?: string,
@@ -612,7 +596,6 @@ export class MailDomainsCommands {
   }
 
   @Command({ name: "create", description: "Register a managed Ravi Mail domain in Console" })
-  @CliOnly()
   async create(
     @Arg("domain", { description: "Managed domain to register, such as ravi.bot" }) domain: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -635,7 +618,6 @@ export class MailRaviMailMailboxesCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "list", description: "List Ravi Mail provider mailboxes through Console" })
-  @CliOnly()
   async list(
     @Option({ flags: "--domain <domain>", description: "Filter by domain id, slug, or name" }) domain?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -659,9 +641,8 @@ export class MailRaviMailMailboxesCommands {
   }
 
   @Command({ name: "create", description: "Create a Ravi Mail provider mailbox through Console" })
-  @CliOnly()
   async create(
-    @Arg("address-or-local-part", { description: "Full address or local part" }) addressOrLocalPart: string,
+    @Arg("addressOrLocalPart", { description: "Full address or local part" }) addressOrLocalPart: string,
     @Option({ flags: "--domain <domain>", description: "Domain id, slug, or name" }) domain?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -682,7 +663,6 @@ export class MailRaviMailMailboxesCommands {
   }
 
   @Command({ name: "show", description: "Show Ravi Mail provider mailbox metadata" })
-  @CliOnly()
   async show(
     @Arg("mailbox", { description: "Provider mailbox id or address" }) mailbox: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -696,7 +676,6 @@ export class MailRaviMailMailboxesCommands {
   }
 
   @Command({ name: "disable", description: "Disable a managed Ravi Mail provider mailbox and active routes" })
-  @CliOnly()
   async disable(
     @Arg("mailbox", { description: "Provider mailbox id or address" }) mailbox: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -719,7 +698,6 @@ export class MailRaviMailMessagesCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "list", description: "List Ravi Mail provider message metadata" })
-  @CliOnly()
   async list(
     @Option({ flags: "--mailbox <mailbox>", description: "Provider mailbox id or address" }) mailbox?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -749,7 +727,6 @@ export class MailRaviMailMessagesCommands {
   }
 
   @Command({ name: "show", description: "Show Ravi Mail provider message metadata" })
-  @CliOnly()
   async show(
     @Arg("message", { description: "Provider message id" }) message: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -765,7 +742,6 @@ export class MailRaviMailMessagesCommands {
   }
 
   @Command({ name: "read", description: "Read one authorized Ravi Mail provider message body through Console" })
-  @CliOnly()
   async read(
     @Arg("message", { description: "Provider message id" }) message: string,
     @Option({
@@ -801,7 +777,6 @@ export class MailRaviMailCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "send", description: "Send mail directly through Console Ravi Mail" })
-  @CliOnly()
   async send(
     @Option({ flags: "--to <email>", description: "Recipient email or comma-separated recipients" }) to?: string,
     @Option({ flags: "--subject <subject>", description: "Message subject" }) subject?: string,
@@ -841,6 +816,222 @@ function defaultMailDeps(): MailCommandDeps {
   };
 }
 
+const nullableStringSchema = z.string().nullable();
+const nullableNumberSchema = z.number().nullable();
+
+const mailAccountSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  displayName: z.string(),
+  status: z.enum(["active", "paused", "auth_required", "disabled"]),
+  defaultMailboxId: nullableStringSchema,
+  credentialsRef: nullableStringSchema,
+  capabilities: jsonObjectSchema,
+  settings: jsonObjectSchema,
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const mailMailboxSchema = z.object({
+  id: z.string(),
+  accountId: z.string(),
+  address: z.string(),
+  normalizedAddress: z.string(),
+  displayName: nullableStringSchema,
+  role: z.enum(["primary", "alias", "shared", "system", "unknown"]),
+  status: z.enum(["active", "paused", "disabled"]),
+  providerMailboxId: nullableStringSchema,
+  isDefault: z.boolean(),
+  lastSyncedAt: nullableNumberSchema,
+  metadata: jsonObjectSchema,
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const mailAddressSchema = z.object({
+  id: z.string(),
+  messageId: z.string(),
+  kind: z.enum(["from", "to", "cc", "bcc", "reply_to", "sender"]),
+  address: z.string(),
+  normalizedAddress: z.string(),
+  displayName: nullableStringSchema,
+  contactId: nullableStringSchema,
+  agentId: nullableStringSchema,
+  platformIdentityId: nullableStringSchema,
+  raw: jsonObjectSchema,
+});
+
+const mailAttachmentSchema = z.object({
+  id: z.string(),
+  messageId: z.string(),
+  filename: nullableStringSchema,
+  contentType: nullableStringSchema,
+  sizeBytes: nullableNumberSchema,
+  sha256: nullableStringSchema,
+  localBlobRef: nullableStringSchema,
+  providerAttachmentId: nullableStringSchema,
+  redactionStatus: nullableStringSchema,
+  metadata: jsonObjectSchema,
+});
+
+const mailMessageBaseSchema = z.object({
+  id: z.string(),
+  threadId: z.string(),
+  mailboxId: z.string(),
+  accountId: z.string(),
+  direction: z.enum(["inbound", "outbound", "draft", "system"]),
+  status: z.enum(["received", "queued", "sending", "sent", "delivered", "failed", "archived", "trashed", "spam"]),
+  rfcMessageId: nullableStringSchema,
+  providerMessageId: nullableStringSchema,
+  providerThreadId: nullableStringSchema,
+  providerHistoryId: nullableStringSchema,
+  subject: nullableStringSchema,
+  subjectNormalized: nullableStringSchema,
+  snippet: nullableStringSchema,
+  bodyRedactionStatus: z.enum(["full_local", "preview_only", "redacted", "missing"]),
+  dateHeaderAt: nullableNumberSchema,
+  receivedAt: nullableNumberSchema,
+  sentAt: nullableNumberSchema,
+  safePayload: jsonObjectSchema,
+  providerProvenance: jsonObjectSchema,
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const mailMessageWithRelationsSchema = mailMessageBaseSchema.extend({
+  addresses: z.array(mailAddressSchema),
+  attachments: z.array(mailAttachmentSchema),
+});
+
+const safeMailMessageSchema = z.union([mailMessageWithRelationsSchema, mailMessageBaseSchema]);
+
+const mailThreadSchema = z.object({
+  id: z.string(),
+  subjectNormalized: nullableStringSchema,
+  latestMessageAt: nullableNumberSchema,
+  lastLocalMessageId: nullableStringSchema,
+  participants: z.array(jsonValueSchema),
+  providerThreadRefs: jsonObjectSchema,
+  metadata: jsonObjectSchema,
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const mailOutboxSchema = z.object({
+  id: z.string(),
+  mailboxId: z.string(),
+  accountId: z.string(),
+  messageId: z.string(),
+  operation: z.enum(["send", "reply", "draft", "update_draft", "delete_draft"]),
+  idempotencyKey: z.string(),
+  payload: jsonObjectSchema,
+  status: z.enum(["pending", "leased", "sending", "sent", "acked", "failed", "dead"]),
+  attemptCount: z.number(),
+  nextAttemptAt: z.number(),
+  lastErrorCode: nullableStringSchema,
+  providerResult: jsonObjectSchema.nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  ackedAt: nullableNumberSchema,
+});
+
+const mailProviderRowSchema = z.object({
+  provider: z.string(),
+  accounts: z.number(),
+  default: z.boolean(),
+  localFirst: z.boolean(),
+});
+
+const mailQueuedReturnSchema = z.object({
+  queued: z.literal(true),
+  message: safeMailMessageSchema,
+  outbox: mailOutboxSchema,
+});
+
+const remoteMailResponseSchema = jsonObjectSchema;
+
+declareCommandReturns(MailAccountsCommands, {
+  list: z.object({ accounts: z.array(mailAccountSchema) }),
+  create: z.object({ account: mailAccountSchema }),
+  sync: z.union([
+    z.object({
+      ok: z.literal(true),
+      account: mailAccountSchema,
+      status: z.literal("synced"),
+      provider: z.literal("ravi-mail"),
+      mailboxesImported: z.number(),
+      messagesImported: z.number(),
+      inboxCreated: z.number(),
+    }),
+    z.object({
+      ok: z.literal(false),
+      account: mailAccountSchema,
+      status: z.literal("adapter_not_started"),
+      message: z.string(),
+    }),
+  ]),
+});
+
+declareCommandReturns(MailMailboxesCommands, {
+  list: z.object({ mailboxes: z.array(mailMailboxSchema) }),
+  create: z.object({ mailbox: mailMailboxSchema }),
+  show: z.object({ mailbox: mailMailboxSchema }),
+  disable: z.object({ mailbox: mailMailboxSchema }),
+});
+
+declareCommandReturns(MailMessagesCommands, {
+  list: z.object({ messages: z.array(safeMailMessageSchema) }),
+  search: z.object({ messages: z.array(safeMailMessageSchema) }),
+  read: z.object({ message: safeMailMessageSchema }),
+  importMessage: z.object({
+    message: safeMailMessageSchema,
+    inboxItem: jsonObjectSchema.nullable(),
+    inboxCreated: z.boolean(),
+  }),
+});
+
+declareCommandReturns(MailOutboxCommands, {
+  status: z.object({ counts: stringNumberRecordSchema, total: z.number() }),
+  list: z.object({ outbox: z.array(mailOutboxSchema) }),
+  inspect: z.object({ outbox: mailOutboxSchema }),
+  retry: z.object({ outbox: mailOutboxSchema }),
+});
+
+declareCommandReturns(MailProvidersCommands, {
+  list: z.object({ providers: z.array(mailProviderRowSchema) }),
+});
+
+declareCommandReturns(MailCommands, {
+  send: mailQueuedReturnSchema,
+  reply: mailQueuedReturnSchema,
+});
+
+declareCommandReturns(MailThreadsCommands, {
+  read: z.object({ thread: mailThreadSchema, messages: z.array(safeMailMessageSchema) }),
+});
+
+declareCommandReturns(MailDomainsCommands, {
+  list: remoteMailResponseSchema,
+  create: remoteMailResponseSchema,
+});
+
+declareCommandReturns(MailRaviMailMailboxesCommands, {
+  list: remoteMailResponseSchema,
+  create: remoteMailResponseSchema,
+  show: remoteMailResponseSchema,
+  disable: remoteMailResponseSchema,
+});
+
+declareCommandReturns(MailRaviMailMessagesCommands, {
+  list: remoteMailResponseSchema,
+  show: remoteMailResponseSchema,
+  read: remoteMailResponseSchema,
+});
+
+declareCommandReturns(MailRaviMailCommands, {
+  send: remoteMailResponseSchema,
+});
+
 async function runMailCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
@@ -860,6 +1051,7 @@ async function runMailCommand<T>(asJson: boolean | undefined, fn: () => Promise<
         console.error("Next: run `ravi login`.");
       }
     }
+    if (hasContext()) throw formatted;
     process.exit(formatted.exitCode);
   }
 }

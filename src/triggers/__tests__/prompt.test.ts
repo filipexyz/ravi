@@ -20,6 +20,8 @@ describe("buildTriggerPrompt", () => {
         data: {
           mail: {
             messageId: "mail_msg_123",
+            fromText: "Alice <alice@example.com>",
+            toText: "nx-luis@ravi.bot",
             subject: "Contrato assinado",
           },
         },
@@ -38,7 +40,7 @@ describe("buildTriggerPrompt", () => {
         "[Trigger: Novo email local]",
         "Event: ravi.inbox.mail.received",
         "",
-        "[ravi mail] novo email no inbox: mail_msg_123. Assunto: Contrato assinado. Use ravi mail messages read mail_msg_123 para ler.",
+        "[ravi mail] novo email no inbox: mail_msg_123. De: Alice <alice@example.com>. Para: nx-luis@ravi.bot. Assunto: Contrato assinado. Use ravi mail messages read mail_msg_123 para ler.",
       ].join("\n"),
     );
     expect(prompt).not.toContain("Data:");

@@ -1,5 +1,6 @@
 import "reflect-metadata";
-import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
+import { z } from "zod";
+import { Arg, Command, Group, Option } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
@@ -14,6 +15,9 @@ import {
   type McpBridgeRevokeResult,
   type McpBridgesClientDeps,
 } from "../../bridges/client.js";
+import { hasContext } from "../context.js";
+import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { declareCommandReturns } from "./operational-return-schemas.js";
 
 export interface BridgesCommandDeps extends McpBridgesClientDeps {
   client?: ConsoleApiClient;
@@ -28,7 +32,6 @@ export class BridgesCommands {
   constructor(private readonly deps: BridgesCommandDeps = defaultBridgesDeps()) {}
 
   @Command({ name: "list", description: "List Ravi MCP bridges for a Console project" })
-  @CliOnly()
   async list(
     @Option({ flags: "--project <ref>", description: "Console project id or slug; defaults to RAVI_PROJECT" })
     projectRef?: string,
@@ -61,7 +64,6 @@ export class BridgesCommands {
   }
 
   @Command({ name: "create", description: "Create a Ravi MCP bridge URL for a Console project" })
-  @CliOnly()
   async create(
     @Option({ flags: "--project <ref>", description: "Console project id or slug; defaults to RAVI_PROJECT" })
     projectRef?: string,
@@ -100,7 +102,6 @@ export class BridgesCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a Ravi MCP bridge and its client tokens" })
-  @CliOnly()
   async revoke(
     @Arg("id", { description: "Bridge id" }) id: string,
     @Option({ flags: "--yes", description: "Skip confirmation prompt" }) yes?: boolean,
@@ -108,11 +109,12 @@ export class BridgesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runBridgesCommand(asJson, async () => {
-      if (!yes && !asJson) {
-        console.log(`This will revoke MCP bridge ${id} and all OAuth tokens minted for it.`);
-        console.log("Re-run with --yes to confirm.");
-        process.exit(1);
-        return undefined;
+      if (!yes) {
+        if (!asJson && !hasContext()) {
+          console.log(`This will revoke MCP bridge ${id} and all OAuth tokens minted for it.`);
+          console.log("Re-run with --yes to confirm.");
+        }
+        throw new CloudAuthError("PAYLOAD_INVALID", "Confirmation required: pass --yes to revoke this bridge.");
       }
       const result = await revokeMcpBridge(id, { console: consoleUrl }, this.deps);
       printPayload(result, asJson, () => printRevokedBridge(result));
@@ -124,6 +126,34 @@ export class BridgesCommands {
 function defaultBridgesDeps(): BridgesCommandDeps {
   return {};
 }
+
+const mcpBridgeSchema = jsonObjectSchema;
+
+declareCommandReturns(BridgesCommands, {
+  list: z.object({
+    success: z.literal(true),
+    consoleUrl: z.string(),
+    projectRef: z.string(),
+    total: z.number(),
+    pagination: strictCliOffsetPaginationSchema,
+    bridges: z.array(mcpBridgeSchema),
+    items: z.array(mcpBridgeSchema),
+  }),
+  create: z.object({
+    success: z.literal(true),
+    consoleUrl: z.string(),
+    projectRef: z.string(),
+    bridge: mcpBridgeSchema,
+    bridgeToken: z.string().nullable(),
+    bridgeUrl: z.string().nullable(),
+  }),
+  revoke: z.object({
+    success: z.literal(true),
+    consoleUrl: z.string(),
+    revoked: z.boolean(),
+    bridgeId: z.string(),
+  }),
+});
 
 async function runBridgesCommand<T>(asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
   try {
@@ -138,6 +168,7 @@ async function runBridgesCommand<T>(asJson: boolean | undefined, run: () => Prom
         console.error("Next: run `ravi login`.");
       }
     }
+    if (hasContext()) throw cloudError;
     process.exit(cloudError.exitCode);
   }
 }

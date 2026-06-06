@@ -104,6 +104,7 @@ describe("skills manager", () => {
   it("resolves catalog skills by Codex managed aliases", () => {
     const catalogSkills = listCatalogSkills();
 
+    expect(findSkillByName(catalogSkills, "ravi-system-apps")?.name).toBe("apps");
     expect(findSkillByName(catalogSkills, "ravi-system-tasks")?.name).toBe("tasks");
     expect(findSkillByName(catalogSkills, "ravi-dev-ravi-architecture")?.name).toBe("ravi-architecture");
   });

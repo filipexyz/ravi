@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Scope, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListLimit, parseCliListOffset } from "../pagination.js";
+import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 
 /** Notify gateway that config changed */
@@ -1769,3 +1770,37 @@ export class ContactsMetadataCommands {
     }
   }
 }
+
+declareCommandReturns(ContactsCommands, {
+  activity: commandEnvelopeReturnSchema,
+  add: commandEnvelopeReturnSchema,
+  allow: commandEnvelopeReturnSchema,
+  approve: commandEnvelopeReturnSchema,
+  backfill: commandEnvelopeReturnSchema,
+  block: commandEnvelopeReturnSchema,
+  check: commandEnvelopeReturnSchema,
+  duplicates: commandEnvelopeReturnSchema,
+  find: commandEnvelopeReturnSchema,
+  get: commandEnvelopeReturnSchema,
+  info: commandEnvelopeReturnSchema,
+  link: commandEnvelopeReturnSchema,
+  list: commandEnvelopeReturnSchema,
+  merge: commandEnvelopeReturnSchema,
+  messages: commandEnvelopeReturnSchema,
+  note: commandEnvelopeReturnSchema,
+  pending: commandEnvelopeReturnSchema,
+  profile: commandEnvelopeReturnSchema,
+  remove: commandEnvelopeReturnSchema,
+  sessions: commandEnvelopeReturnSchema,
+  set: commandEnvelopeReturnSchema,
+  tag: commandEnvelopeReturnSchema,
+  timeline: commandEnvelopeReturnSchema,
+  unlink: commandEnvelopeReturnSchema,
+  untag: commandEnvelopeReturnSchema,
+});
+
+declareCommandReturns(ContactsMetadataCommands, {
+  list: commandEnvelopeReturnSchema,
+  remove: commandEnvelopeReturnSchema,
+  set: commandEnvelopeReturnSchema,
+});

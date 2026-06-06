@@ -29,6 +29,8 @@ The app manifest gives Ravi a stable indexable contract:
   UI surfaces at the same time.
 - Health checks belong in the manifest, but execution belongs to an explicit
   doctor/check command.
+- Router-owned app operations can use `interface: "builtin"` so new apps can
+  expose help/show/check without pretending those are external CLI commands.
 
 ## Rejected Alternatives
 
@@ -40,3 +42,7 @@ The app manifest gives Ravi a stable indexable contract:
   and command metadata alone cannot describe storage, events, artifacts, or UI.
 - Letting discovery execute code to ask an app what it is: rejected because it
   creates side effects, security risk, and poor offline indexing.
+- Modeling router-owned operations as CLI commands like `ravi <app-id> check`:
+  rejected because runtime app routing would recursively call itself.
+- Modeling executable health checks as `ravi <app-id> check`: rejected because
+  app validation would recursively call the same router check.

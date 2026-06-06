@@ -12,6 +12,8 @@ import type {
   MailAccountStatus,
   MailAddress,
   MailAddressInput,
+  MailAttachment,
+  MailAttachmentInput,
   MailBodyRedactionStatus,
   MailDirection,
   MailMailbox,
@@ -106,6 +108,19 @@ interface MailAddressRow {
   agent_id: string | null;
   platform_identity_id: string | null;
   raw_json: string | null;
+}
+
+interface MailAttachmentRow {
+  id: string;
+  message_id: string;
+  filename: string | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  sha256: string | null;
+  local_blob_ref: string | null;
+  provider_attachment_id: string | null;
+  redaction_status: string | null;
+  metadata_json: string | null;
 }
 
 interface MailOutboxDbRow {
@@ -611,6 +626,9 @@ export function importMailMessage(input: ImportMailMessageInput): MailMessageWit
       );
 
       replaceMessageAddresses(messageId, input.addresses ?? []);
+      if (input.attachments !== undefined) {
+        replaceMessageAttachments(messageId, input.attachments);
+      }
       const row = getMessageRow(messageId);
       if (!row) throw new Error("Failed to import mail message.");
       return messageWithAddresses(rowToMessage(row));
@@ -671,7 +689,9 @@ export function readMailMessage(id: string, options: { includeAddresses?: boolea
   const row = getMessageRow(id);
   if (!row) throw new Error(`Mail message not found: ${id}`);
   const message = rowToMessage(row);
-  return options.includeAddresses ? messageWithAddresses(message) : { ...message, addresses: [] };
+  return options.includeAddresses
+    ? messageWithAddresses(message)
+    : { ...message, addresses: [], attachments: listMessageAttachments(id) };
 }
 
 export function enqueueMailSend(input: EnqueueMailSendInput): {
@@ -919,6 +939,47 @@ function replaceMessageAddresses(messageId: string, addresses: MailAddressInput[
   }
 }
 
+function replaceMessageAttachments(messageId: string, attachments: MailAttachmentInput[]): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM mail_attachments WHERE message_id = ?`).run(messageId);
+  if (attachments.length === 0) return;
+
+  const insert = db.prepare(
+    `
+    INSERT INTO mail_attachments (
+      id, message_id, filename, content_type, size_bytes, sha256,
+      local_blob_ref, provider_attachment_id, redaction_status, metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `,
+  );
+
+  for (const input of attachments) {
+    const providerAttachmentId = nullableText(input.providerAttachmentId);
+    const id =
+      nullableText(input.id) ||
+      semanticId("mail_att", [
+        messageId,
+        providerAttachmentId,
+        input.sha256,
+        input.filename,
+        input.contentType,
+        input.sizeBytes ?? null,
+      ]);
+    insert.run(
+      id,
+      messageId,
+      nullableText(input.filename),
+      nullableText(input.contentType),
+      nullableInteger(input.sizeBytes),
+      nullableText(input.sha256),
+      nullableText(input.localBlobRef),
+      providerAttachmentId,
+      nullableText(input.redactionStatus),
+      stableJson(input.metadata ?? {}),
+    );
+  }
+}
+
 function getAccountRow(id: string): MailAccountRow | null {
   return (getDb().prepare(`SELECT * FROM mail_accounts WHERE id = ?`).get(id) as MailAccountRow | undefined) ?? null;
 }
@@ -1021,10 +1082,21 @@ function findThreadIdByRfcMessageId(mailboxId: string, rfcMessageId: string): st
 }
 
 function messageWithAddresses(message: MailMessage): MailMessageWithAddresses {
-  const rows = getDb()
+  const addressRows = getDb()
     .prepare(`SELECT * FROM mail_message_addresses WHERE message_id = ? ORDER BY rowid ASC`)
     .all(message.id) as MailAddressRow[];
-  return { ...message, addresses: rows.map(rowToAddress) };
+  return {
+    ...message,
+    addresses: addressRows.map(rowToAddress),
+    attachments: listMessageAttachments(message.id),
+  };
+}
+
+function listMessageAttachments(messageId: string): MailAttachment[] {
+  const rows = getDb()
+    .prepare(`SELECT * FROM mail_attachments WHERE message_id = ? ORDER BY rowid ASC`)
+    .all(messageId) as MailAttachmentRow[];
+  return rows.map(rowToAttachment);
 }
 
 function rowToAccount(row: MailAccountRow): MailAccount {
@@ -1115,6 +1187,21 @@ function rowToAddress(row: MailAddressRow): MailAddress {
     agentId: row.agent_id,
     platformIdentityId: row.platform_identity_id,
     raw: parseJsonObject(row.raw_json),
+  };
+}
+
+function rowToAttachment(row: MailAttachmentRow): MailAttachment {
+  return {
+    id: row.id,
+    messageId: row.message_id,
+    filename: row.filename,
+    contentType: row.content_type,
+    sizeBytes: row.size_bytes,
+    sha256: row.sha256,
+    localBlobRef: row.local_blob_ref,
+    providerAttachmentId: row.provider_attachment_id,
+    redactionStatus: row.redaction_status,
+    metadata: parseJsonObject(row.metadata_json),
   };
 }
 
@@ -1224,6 +1311,11 @@ function requireText(value: string | undefined | null, label: string): string {
 function nullableText(value: string | undefined | null): string | null {
   const text = value?.trim();
   return text || null;
+}
+
+function nullableInteger(value: number | undefined | null): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.floor(value));
 }
 
 function clampInt(value: number | undefined, fallback: number, min: number, max: number): number {

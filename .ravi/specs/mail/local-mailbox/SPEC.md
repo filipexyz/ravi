@@ -206,6 +206,9 @@ Fields:
 - `metadata_json`
 
 Attachment content MUST be opt-in. Metadata MAY be synced locally by default.
+Provider/import paths MUST replace a message's attachment metadata
+idempotently when the provider event is replayed. Replays MUST NOT duplicate
+attachments for the same local message.
 
 ### `mail_sync_cursors`
 
@@ -309,7 +312,16 @@ ravi.mail.outbox.failed
 ```
 
 Event payloads MUST include local ids and MAY include provider ids as
-provenance. They MUST NOT include provider tokens or raw MIME.
+provenance. Native inbox mail received payloads MUST include structured
+sender/recipient lists (`mail.from`, `mail.to`) and exact display strings
+(`mail.fromText`, `mail.toText`) so templates can render `De`/`Para` without raw
+JSON. They MUST NOT include provider tokens or raw MIME.
+
+Native inbox mail received payloads MAY include `mail.attachments` metadata
+after local persistence. Each attachment entry MUST be metadata-only: local id,
+provider attachment id, filename, content type, size, SHA-256, redaction/scan
+status, and whether a local blob ref exists. It MUST NOT include raw bytes,
+remote URLs, provider tokens, raw MIME, or decrypted attachment content.
 
 `ravi.inbox.mail.received` belongs to the native inbox projection, not to the
 Console delivery mirror. It SHOULD be emitted only when a new inbound local mail
@@ -350,6 +362,11 @@ message idempotently by provider message id.
 If Console delivery enrichment fetches message body content, the enriched result
 SHOULD be persisted through the local mailbox ingest path. The delivery mirror
 MUST remain a delivery/debug mirror.
+
+If Console delivery enrichment fetches attachment metadata, the local mailbox
+ingest path MUST persist those attachments before the local inbox projection is
+emitted. Console delivery metadata MUST NOT be trusted as mailbox state until it
+has been imported into the local mailbox tables.
 
 If enrichment fails but the event still includes provider message id and mailbox
 address, the runner SHOULD import a metadata-only `preview_only` message so

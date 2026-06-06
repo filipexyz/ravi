@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -12,6 +12,13 @@ import {
   validateTaskProfiles,
 } from "../../tasks/index.js";
 import type { TaskProfileScaffoldPreset } from "../../tasks/types.js";
+import {
+  taskProfileInitReturnSchema,
+  taskProfilePreviewReturnSchema,
+  taskProfileReturnSchema,
+  taskProfilesListReturnSchema,
+  taskProfilesValidateReturnSchema,
+} from "./operational-return-schemas.js";
 
 function parseProfileInputs(raw?: string[] | string): Record<string, string> {
   const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
@@ -74,6 +81,7 @@ function summarizePrimaryArtifacts(profile: {
 })
 export class TaskProfileCommands {
   @Command({ name: "list", description: "List resolved task profiles from all catalog sources" })
+  @Returns(taskProfilesListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -116,6 +124,7 @@ export class TaskProfileCommands {
   }
 
   @Command({ name: "show", description: "Show the resolved manifest for one task profile" })
+  @Returns(taskProfileReturnSchema)
   show(
     @Arg("profileId", { description: "Task profile id" }) profileId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -175,6 +184,7 @@ export class TaskProfileCommands {
   }
 
   @Command({ name: "preview", description: "Render a profile preview with the resolved template context" })
+  @Returns(taskProfilePreviewReturnSchema)
   preview(
     @Arg("profileId", { description: "Task profile id" }) profileId: string,
     @Option({ flags: "--title <text>", description: "Preview task title" }) title?: string,
@@ -244,6 +254,7 @@ export class TaskProfileCommands {
   }
 
   @Command({ name: "validate", description: "Validate one profile or the whole resolved catalog" })
+  @Returns(taskProfilesValidateReturnSchema)
   validate(
     @Arg("profileId", { required: false, description: "Optional task profile id" }) profileId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -272,6 +283,7 @@ export class TaskProfileCommands {
   }
 
   @Command({ name: "init", description: "Create a profile scaffold in the workspace or user catalog" })
+  @Returns(taskProfileInitReturnSchema)
   init(
     @Arg("profileId", { description: "Task profile id" }) profileId: string,
     @Option({ flags: "--preset <preset>", description: "doc-first|brainstorm|runtime-only|content" }) preset?: string,

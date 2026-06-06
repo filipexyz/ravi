@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { configStore } from "../../config-store.js";
@@ -13,6 +13,12 @@ import {
 } from "../../commands/index.js";
 import type { AgentConfig } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
+import {
+  commandRunReturnSchema,
+  commandShowReturnSchema,
+  commandValidateReturnSchema,
+  commandsListReturnSchema,
+} from "./operational-return-schemas.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -92,6 +98,7 @@ function normalizeRestArgs(rest?: string[]): string[] {
 })
 export class RaviCommandsCommands {
   @Command({ name: "list", description: "List Ravi commands" })
+  @Returns(commandsListReturnSchema)
   list(
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -159,6 +166,7 @@ export class RaviCommandsCommands {
   }
 
   @Command({ name: "show", description: "Show one Ravi command" })
+  @Returns(commandShowReturnSchema)
   show(
     @Arg("name", { description: "Command name, with or without #" }) name: string,
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
@@ -187,6 +195,7 @@ export class RaviCommandsCommands {
   }
 
   @Command({ name: "validate", description: "Validate Ravi command files" })
+  @Returns(commandValidateReturnSchema)
   validate(
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -219,6 +228,7 @@ export class RaviCommandsCommands {
   }
 
   @Command({ name: "run", description: "Render a Ravi command into its composed prompt" })
+  @Returns(commandRunReturnSchema)
   run(
     @Arg("name", { description: "Command name, with or without #" }) name: string,
     @Arg("args", { required: false, variadic: true, description: "Command arguments" }) rest?: string[],

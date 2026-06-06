@@ -45,6 +45,7 @@ type ConfiguredGateResolution = SkillGateMetadata | false | undefined;
 
 export const DEFAULT_RAVI_GROUP_SKILL_RULES: readonly RaviGroupSkillRule[] = [
   { id: "agents", pattern: /^agents(?:[._]|$)/, skill: "ravi-system-agents-manager" },
+  { id: "apps", pattern: /^apps(?:[._]|$)/, skill: "ravi-system-apps" },
   { id: "artifacts", pattern: /^artifacts(?:[._]|$)/, skill: "ravi-system-artifacts" },
   { id: "audio", pattern: /^audio(?:[._]|$)/, skill: "ravi-system-audio" },
   { id: "contacts", pattern: /^contacts(?:[._]|$)/, skill: "ravi-system-contacts-manager" },

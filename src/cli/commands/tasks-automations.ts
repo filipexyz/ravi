@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
@@ -15,6 +15,11 @@ import {
 } from "../../tasks/index.js";
 import type { TaskAutomationEventType, TaskPriority, TaskReportEvent } from "../../tasks/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
+import {
+  taskAutomationMutationReturnSchema,
+  taskAutomationShowReturnSchema,
+  taskAutomationsListReturnSchema,
+} from "./operational-return-schemas.js";
 
 const VALID_PRIORITIES = new Set<TaskPriority>(["low", "normal", "high", "urgent"]);
 
@@ -128,6 +133,7 @@ function printJson(payload: unknown): void {
 })
 export class TaskAutomationCommands {
   @Command({ name: "list", description: "List configured task automations" })
+  @Returns(taskAutomationsListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical task automation tag" }) tagSlug?: string,
@@ -190,6 +196,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "show", description: "Show one task automation and its recent runs" })
+  @Returns(taskAutomationShowReturnSchema)
   show(
     @Arg("id", { description: "Task automation ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -265,6 +272,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "add", description: "Create a new task automation" })
+  @Returns(taskAutomationMutationReturnSchema)
   add(
     @Arg("name", { description: "Task automation name" }) name: string,
     @Option({ flags: "--on <events>", description: `Comma-separated events: ${TASK_AUTOMATION_EVENTS.join(",")}` })
@@ -357,6 +365,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "enable", description: "Enable a task automation" })
+  @Returns(taskAutomationMutationReturnSchema)
   enable(
     @Arg("id", { description: "Task automation ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -378,6 +387,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "disable", description: "Disable a task automation" })
+  @Returns(taskAutomationMutationReturnSchema)
   disable(
     @Arg("id", { description: "Task automation ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -399,6 +409,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "rm", description: "Delete a task automation", aliases: ["delete", "remove"] })
+  @Returns(taskAutomationMutationReturnSchema)
   remove(
     @Arg("id", { description: "Task automation ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

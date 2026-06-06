@@ -68,7 +68,8 @@ Trigger filters are the deterministic pre-agent predicate for event payloads. Th
 - `ravi triggers topics --json` includes `messageTemplate` for topics with a safe built-in default message.
 - `ravi triggers add "New local email" --topic "ravi.inbox.mail.received"` persists the catalog default message template without requiring `--message`.
 - A trigger created from a catalog default stores message provenance as catalog/template metadata.
-- The default `ravi.inbox.mail.received` message tells the agent a new email arrived, includes the local message id, and points at `ravi mail messages read <id>`.
+- The default `ravi.inbox.mail.received` message tells the agent a new email arrived, includes the local message id, exact display text for `De`/`Para`, and points at `ravi mail messages read <id>`.
+- If the local email event includes attachment metadata, trigger prompts MAY summarize filenames/counts but MUST NOT inline attachment bytes; agents should read/download attachments through explicit mail commands.
 - When the `ravi.inbox.mail.received` default template fires, the delivered prompt starts with `[Trigger: New local email]`, includes `Event: ravi.inbox.mail.received`, and does not include a raw JSON `Data:` block.
 - `ravi triggers add "Custom" --topic "custom.external.>"` without `--message` fails clearly because custom subjects have no catalog template.
 - `ravi triggers add --topic "whatsapp.*.reaction"` succeeds with a warning that `ravi.inbound.reaction` is the canonical built-in reaction subject.

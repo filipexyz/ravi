@@ -30,6 +30,405 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AdaptersListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "adapters": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "adapterId": {
+              "type": "string"
+            },
+            "adapterName": {
+              "type": "string"
+            },
+            "bind": {
+              "additionalProperties": {},
+              "properties": {
+                "agentId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bound": {
+                  "type": "boolean"
+                },
+                "cliName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contextId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contextKey": {},
+                "sessionKey": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bound",
+                "sessionKey",
+                "sessionName",
+                "agentId",
+                "contextId",
+                "cliName"
+              ],
+              "type": "object"
+            },
+            "diagnosticState": {
+              "enum": [
+                "live",
+                "dead",
+                "unbound",
+                "protocol-invalid",
+                "stopped",
+                "configured"
+              ],
+              "type": "string"
+            },
+            "health": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "lastCommand": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastEvent": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastProtocolError": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionKey": {
+              "type": "string"
+            },
+            "sessionName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "transport": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "adapterId",
+            "adapterName",
+            "transport",
+            "sessionKey",
+            "sessionName",
+            "status",
+            "diagnosticState",
+            "bind",
+            "health",
+            "lastEvent",
+            "lastCommand",
+            "lastProtocolError",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "count": {
+        "type": "number"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "adapterId": {
+              "type": "string"
+            },
+            "adapterName": {
+              "type": "string"
+            },
+            "bind": {
+              "additionalProperties": {},
+              "properties": {
+                "agentId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bound": {
+                  "type": "boolean"
+                },
+                "cliName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contextId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contextKey": {},
+                "sessionKey": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bound",
+                "sessionKey",
+                "sessionName",
+                "agentId",
+                "contextId",
+                "cliName"
+              ],
+              "type": "object"
+            },
+            "diagnosticState": {
+              "enum": [
+                "live",
+                "dead",
+                "unbound",
+                "protocol-invalid",
+                "stopped",
+                "configured"
+              ],
+              "type": "string"
+            },
+            "health": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "lastCommand": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastEvent": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastProtocolError": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionKey": {
+              "type": "string"
+            },
+            "sessionName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "transport": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "adapterId",
+            "adapterName",
+            "transport",
+            "sessionKey",
+            "sessionName",
+            "status",
+            "diagnosticState",
+            "bind",
+            "health",
+            "lastEvent",
+            "lastCommand",
+            "lastProtocolError",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "count",
+      "total",
+      "pagination",
+      "items",
+      "adapters"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AdaptersShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -41,6 +440,171 @@ public enum RaviSchemas {
     },
     "required": [
       "adapterId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AdaptersShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "adapterId": {
+        "type": "string"
+      },
+      "adapterName": {
+        "type": "string"
+      },
+      "bind": {
+        "additionalProperties": {},
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bound": {
+            "type": "boolean"
+          },
+          "cliName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contextKey": {},
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "bound",
+          "sessionKey",
+          "sessionName",
+          "agentId",
+          "contextId",
+          "cliName"
+        ],
+        "type": "object"
+      },
+      "diagnosticState": {
+        "enum": [
+          "live",
+          "dead",
+          "unbound",
+          "protocol-invalid",
+          "stopped",
+          "configured"
+        ],
+        "type": "string"
+      },
+      "health": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "lastCommand": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "lastEvent": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "lastProtocolError": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sessionKey": {
+        "type": "string"
+      },
+      "sessionName": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "type": "string"
+      },
+      "transport": {
+        "type": "string"
+      },
+      "updatedAt": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "adapterId",
+      "adapterName",
+      "transport",
+      "sessionKey",
+      "sessionName",
+      "status",
+      "diagnosticState",
+      "bind",
+      "health",
+      "lastEvent",
+      "lastCommand",
+      "lastProtocolError",
+      "updatedAt"
     ],
     "type": "object"
   }
@@ -75,6 +639,44 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AgentsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "const": "create",
+        "type": "string"
+      },
+      "agent": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "permissions": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "runtimeTarget": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "agent",
+      "runtimeTarget",
+      "permissions"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AgentsDebounceInputSchema = #"""
   {
     "additionalProperties": false,
@@ -90,6 +692,42 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgentsDebounceReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "agentId": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "debounceMs": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "enabled": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "agentId",
+      "debounceMs",
+      "enabled"
     ],
     "type": "object"
   }
@@ -119,6 +757,61 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AgentsDebugReturnSchema = #"""
+  {
+    "anyOf": [
+      {
+        "additionalProperties": {},
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "availableSessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "agentId",
+          "availableSessions"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": {},
+        "properties": {
+          "entries": {
+            "items": {},
+            "type": "array"
+          },
+          "session": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "transcript": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          }
+        },
+        "required": [
+          "session",
+          "transcript",
+          "entries"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
   public static let AgentsDeleteInputSchema = #"""
   {
     "additionalProperties": false,
@@ -130,6 +823,35 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgentsDeleteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "const": "delete",
+        "type": "string"
+      },
+      "agentId": {
+        "type": "string"
+      },
+      "before": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "changed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "agentId"
     ],
     "type": "object"
   }
@@ -156,6 +878,100 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AgentsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "agents": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "defaultAgent": {
+        "type": "string"
+      },
+      "filters": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "defaultAgent",
+      "filters",
+      "agents"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AgentsResetInputSchema = #"""
   {
     "additionalProperties": false,
@@ -176,6 +992,59 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AgentsResetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "const": "reset",
+        "type": "string"
+      },
+      "agentId": {
+        "type": "string"
+      },
+      "availableSessions": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "count": {
+        "type": "number"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "resetSessions": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "session": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "agentId",
+      "target"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AgentsSessionInputSchema = #"""
   {
     "additionalProperties": false,
@@ -187,6 +1056,36 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgentsSessionReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "sessions": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "agent",
+      "total",
+      "sessions"
     ],
     "type": "object"
   }
@@ -218,6 +1117,41 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AgentsSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "const": "set",
+        "type": "string"
+      },
+      "agent": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "agentId": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "key": {
+        "type": "string"
+      },
+      "value": {}
+    },
+    "required": [
+      "action",
+      "changed",
+      "agentId",
+      "key",
+      "value"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AgentsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -229,6 +1163,27 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgentsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "permissionsCommand": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "permissionsCommand"
     ],
     "type": "object"
   }
@@ -254,6 +1209,31 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AgentsSpecModeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "agentId": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "specMode": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "agentId",
+      "specMode"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AgentsSyncInstructionsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -267,6 +1247,50 @@ public enum RaviSchemas {
         "type": "boolean"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let AgentsSyncInstructionsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "alreadyCanonical": {
+        "type": "number"
+      },
+      "incomplete": {
+        "type": "number"
+      },
+      "manualReview": {
+        "type": "number"
+      },
+      "migrated": {
+        "type": "number"
+      },
+      "missing": {
+        "type": "number"
+      },
+      "results": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "migrated",
+      "alreadyCanonical",
+      "missing",
+      "manualReview",
+      "incomplete",
+      "results"
+    ],
     "type": "object"
   }
   """#
@@ -345,6 +1369,249 @@ public enum RaviSchemas {
       "ok",
       "checked",
       "results"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AppsGuideInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Optional app id for app-specific prompts",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let AppsGuideReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "app": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "errors": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "type": "string"
+              },
+              "interfaceNames": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "manifest": {
+                "anyOf": [
+                  {},
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "permissions": {
+                "additionalProperties": false,
+                "properties": {
+                  "mutating": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "optional": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "required": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "required",
+                  "optional",
+                  "mutating"
+                ],
+                "type": "object"
+              },
+              "relativePath": {
+                "type": "string"
+              },
+              "rootPath": {
+                "type": "string"
+              },
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "enum": [
+                  "repo",
+                  "plugin",
+                  "state"
+                ],
+                "type": "string"
+              },
+              "valid": {
+                "type": "boolean"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "version",
+              "description",
+              "schema",
+              "source",
+              "path",
+              "relativePath",
+              "rootPath",
+              "interfaceNames",
+              "permissions",
+              "valid",
+              "errors",
+              "warnings",
+              "manifest"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "appId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "nextCommands": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "prompts": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "commands": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "prompt",
+            "commands"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "skill": {
+        "type": "string"
+      },
+      "skillGate": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "skill": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "skill"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "appId",
+      "app",
+      "skill",
+      "skillGate",
+      "prompts",
+      "nextCommands"
     ],
     "type": "object"
   }
@@ -709,6 +1976,550 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AppsPromptsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Optional app id for app-specific prompts",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let AppsPromptsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "app": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "errors": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "type": "string"
+              },
+              "interfaceNames": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "manifest": {
+                "anyOf": [
+                  {},
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "permissions": {
+                "additionalProperties": false,
+                "properties": {
+                  "mutating": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "optional": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "required": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "required",
+                  "optional",
+                  "mutating"
+                ],
+                "type": "object"
+              },
+              "relativePath": {
+                "type": "string"
+              },
+              "rootPath": {
+                "type": "string"
+              },
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "enum": [
+                  "repo",
+                  "plugin",
+                  "state"
+                ],
+                "type": "string"
+              },
+              "valid": {
+                "type": "boolean"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "version",
+              "description",
+              "schema",
+              "source",
+              "path",
+              "relativePath",
+              "rootPath",
+              "interfaceNames",
+              "permissions",
+              "valid",
+              "errors",
+              "warnings",
+              "manifest"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "appId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "nextCommands": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "prompts": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "commands": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "prompt",
+            "commands"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "skill": {
+        "type": "string"
+      },
+      "skillGate": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "skill": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "skill"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "appId",
+      "app",
+      "skill",
+      "skillGate",
+      "prompts",
+      "nextCommands"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AppsRunInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "args": {
+        "description": "Operation arguments",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "id": {
+        "description": "App id",
+        "type": "string"
+      },
+      "operation": {
+        "description": "Operation name. Defaults to app help.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AppsRunReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "appId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "channel": {
+        "type": "string"
+      },
+      "command": {
+        "type": "string"
+      },
+      "durationMs": {
+        "type": "number"
+      },
+      "error": {
+        "type": "string"
+      },
+      "exitCode": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "handler": {
+        "type": "string"
+      },
+      "interface": {
+        "anyOf": [
+          {
+            "enum": [
+              "builtin",
+              "cli",
+              "sdk",
+              "tool",
+              "stream"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "mutating": {
+        "type": "boolean"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "operation": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "operationId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "result": {},
+      "status": {
+        "enum": [
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "stderr": {
+        "type": "string"
+      },
+      "stdout": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "appId",
+      "operation",
+      "operationId",
+      "interface",
+      "mutating",
+      "status",
+      "durationMs"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AppsScaffoldInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "description": "Canonical CLI command (default: ravi <id>)",
+        "type": "string"
+      },
+      "description": {
+        "description": "Short app description",
+        "type": "string"
+      },
+      "dryRun": {
+        "description": "Print planned files without writing",
+        "type": "boolean"
+      },
+      "force": {
+        "description": "Overwrite existing scaffold files",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Stable app id, e.g. music or music/player",
+        "type": "string"
+      },
+      "name": {
+        "description": "Human display name",
+        "type": "string"
+      },
+      "skipSkill": {
+        "description": "Do not create a skill skeleton",
+        "type": "boolean"
+      },
+      "skipSpec": {
+        "description": "Do not create an app spec skeleton",
+        "type": "boolean"
+      },
+      "skipUi": {
+        "description": "Do not include interfaces.ui in the manifest",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AppsScaffoldReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "files": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "planned",
+                "created",
+                "overwritten"
+              ],
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "manifest",
+                "spec",
+                "skill"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "action"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "force": {
+        "type": "boolean"
+      },
+      "id": {
+        "type": "string"
+      },
+      "manifest": {},
+      "manifestPath": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "nextCommands": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "skill": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "skillPath": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "specPath": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "description",
+      "command",
+      "dryRun",
+      "force",
+      "manifestPath",
+      "specPath",
+      "skillPath",
+      "skill",
+      "files",
+      "manifest",
+      "nextCommands"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AppsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -894,6 +2705,22 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ArtifactsArchiveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ArtifactsAttachInputSchema = #"""
   {
     "additionalProperties": false,
@@ -923,6 +2750,22 @@ public enum RaviSchemas {
       "id",
       "targetId",
       "targetType"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ArtifactsAttachReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success"
     ],
     "type": "object"
   }
@@ -1061,6 +2904,38 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ArtifactsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifact": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "package": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "version": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "artifact"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ArtifactsEventInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1098,6 +2973,33 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ArtifactsEventReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifact": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ArtifactsEventsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1109,6 +3011,34 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ArtifactsEventsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifactId": {
+        "type": "string"
+      },
+      "events": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "artifactId",
+      "total",
+      "events"
     ],
     "type": "object"
   }
@@ -1160,6 +3090,183 @@ public enum RaviSchemas {
       }
     },
     "type": "object"
+  }
+  """#
+
+  public static let ArtifactsListReturnSchema = #"""
+  {
+    "anyOf": [
+      {
+        "additionalProperties": {},
+        "properties": {
+          "artifacts": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "pagination": {
+            "additionalProperties": {},
+            "properties": {
+              "hasMore": {
+                "type": "boolean"
+              },
+              "limit": {
+                "type": "number"
+              },
+              "nextCommand": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "nextOffset": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "offset": {
+                "type": "number"
+              },
+              "returned": {
+                "type": "number"
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "limit",
+              "offset",
+              "returned",
+              "total",
+              "hasMore",
+              "nextOffset",
+              "nextCommand"
+            ],
+            "type": "object"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "pagination",
+          "items",
+          "artifacts"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": {},
+        "properties": {
+          "generatedAt": {
+            "type": "number"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "pagination": {
+            "additionalProperties": {},
+            "properties": {
+              "hasMore": {
+                "type": "boolean"
+              },
+              "limit": {
+                "type": "number"
+              },
+              "nextCommand": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "nextOffset": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "offset": {
+                "type": "number"
+              },
+              "returned": {
+                "type": "number"
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "limit",
+              "offset",
+              "returned",
+              "total",
+              "hasMore",
+              "nextOffset",
+              "nextCommand"
+            ],
+            "type": "object"
+          },
+          "query": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "stats": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "generatedAt",
+          "query",
+          "pagination",
+          "stats",
+          "items"
+        ],
+        "type": "object"
+      }
+    ]
   }
   """#
 
@@ -1248,6 +3355,52 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ArtifactsPublishReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifact": {},
+      "artifactVersion": {},
+      "localSync": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "publish": {},
+      "release": {},
+      "routes": {
+        "items": {},
+        "type": "array"
+      },
+      "upload": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "artifact",
+      "artifactVersion",
+      "publish",
+      "release",
+      "routes",
+      "url",
+      "upload"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ArtifactsReleaseActivateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1280,6 +3433,42 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ArtifactsReleaseActivateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "localSync": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "release": {},
+      "routes": {
+        "items": {},
+        "type": "array"
+      },
+      "site": {},
+      "url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "release",
+      "site",
+      "routes",
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ArtifactsRestoreInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1304,6 +3493,40 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ArtifactsRestoreReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifact": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "restoreVersion": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "restoredFrom": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "artifact",
+      "restoredFrom",
+      "restoreVersion"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ArtifactsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1315,6 +3538,50 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ArtifactsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifact": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "events": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "links": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "versions": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "artifact",
+      "links",
+      "events",
+      "versions"
     ],
     "type": "object"
   }
@@ -1355,6 +3622,28 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ArtifactsSnapshotReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "version": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "version"
     ],
     "type": "object"
   }
@@ -1472,6 +3761,22 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ArtifactsUpdateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ArtifactsVersionInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1492,6 +3797,27 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ArtifactsVersionReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifactId": {
+        "type": "string"
+      },
+      "version": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "artifactId",
+      "version"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ArtifactsVersionsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1503,6 +3829,34 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ArtifactsVersionsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifactId": {
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      },
+      "versions": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "artifactId",
+      "total",
+      "versions"
     ],
     "type": "object"
   }
@@ -1556,6 +3910,6993 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AudioGenerateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "audio": {
+        "additionalProperties": {},
+        "properties": {
+          "filePath": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "sendCommand": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "filePath",
+          "mimeType",
+          "text",
+          "sendCommand"
+        ],
+        "type": "object"
+      },
+      "options": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "sent": {
+        "additionalProperties": {},
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "caption": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "voiceNote": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "transport",
+          "accountId",
+          "instanceId",
+          "chatId",
+          "filename",
+          "caption",
+          "voiceNote"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "audio",
+      "options"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let BridgesCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "allow": {
+        "description": "Comma-separated capability classes: read,write,destructive; defaults to Console policy",
+        "type": "string"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "description": {
+        "description": "Bridge description",
+        "type": "string"
+      },
+      "name": {
+        "description": "Bridge display name",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id or slug; defaults to RAVI_PROJECT",
+        "type": "string"
+      },
+      "session": {
+        "description": "Existing session to expose; not supported by the current Console CLI API yet",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let BridgesCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "bridge": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "bridgeToken": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "bridgeUrl": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "projectRef",
+      "bridge",
+      "bridgeToken",
+      "bridgeUrl"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let BridgesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum bridges to return (default: 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of bridges to skip (default: 0)",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id or slug; defaults to RAVI_PROJECT",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let BridgesListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "bridges": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "projectRef",
+      "total",
+      "pagination",
+      "bridges",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let BridgesRevokeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "id": {
+        "description": "Bridge id",
+        "type": "string"
+      },
+      "yes": {
+        "description": "Skip confirmation prompt",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let BridgesRevokeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "bridgeId": {
+        "type": "string"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "revoked": {
+        "type": "boolean"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "revoked",
+      "bridgeId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarAccountsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "credentialsRef": {
+        "description": "Reference to an existing credential store entry",
+        "type": "string"
+      },
+      "id": {
+        "description": "Stable local account id",
+        "type": "string"
+      },
+      "name": {
+        "description": "Display name",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Provider id, e.g. local or google-calendar",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarAccountsCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialsRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultCalendarId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "auth_required",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "displayName",
+          "status",
+          "defaultCalendarId",
+          "credentialsRef",
+          "capabilities",
+          "settings",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "account"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarAccountsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Filter by provider",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by account status",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarAccountsListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "accounts": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "credentialsRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "defaultCalendarId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "settings": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "auth_required",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "displayName",
+            "status",
+            "defaultCalendarId",
+            "credentialsRef",
+            "capabilities",
+            "settings",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "accounts"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarAccountsSyncInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "description": "Local calendar account id",
+        "type": "string"
+      },
+      "once": {
+        "description": "Run one foreground tick",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "account"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarAccountsSyncReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "additionalProperties": false,
+            "properties": {
+              "capabilities": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "credentialsRef": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "defaultCalendarId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "settings": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "paused",
+                  "auth_required",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "provider",
+              "displayName",
+              "status",
+              "defaultCalendarId",
+              "credentialsRef",
+              "capabilities",
+              "settings",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "localFirst": {
+            "const": true,
+            "type": "boolean"
+          },
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "status": {
+            "const": "adapter_not_required",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "account",
+          "status",
+          "localFirst"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "additionalProperties": false,
+            "properties": {
+              "capabilities": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "credentialsRef": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "defaultCalendarId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "settings": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "paused",
+                  "auth_required",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "provider",
+              "displayName",
+              "status",
+              "defaultCalendarId",
+              "credentialsRef",
+              "capabilities",
+              "settings",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "ok": {
+            "const": false,
+            "type": "boolean"
+          },
+          "status": {
+            "const": "adapter_not_started",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "account",
+          "status",
+          "message"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
+  public static let CalendarAvailabilityInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "description": "Local calendar id or name",
+        "type": "string"
+      },
+      "from": {
+        "description": "Window start; default now",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "to": {
+        "description": "Window end; default +30d",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarAvailabilityReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "busy": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "eventId": {
+              "type": "string"
+            },
+            "redacted": {
+              "type": "boolean"
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "calendarId",
+            "startAt",
+            "endAt",
+            "busyStatus",
+            "title",
+            "redacted"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "window": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "window",
+      "busy"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "description": "Local account id",
+        "type": "string"
+      },
+      "color": {
+        "description": "Display color",
+        "type": "string"
+      },
+      "default": {
+        "description": "Mark as default calendar for the account",
+        "type": "boolean"
+      },
+      "description": {
+        "description": "Calendar description",
+        "type": "string"
+      },
+      "name": {
+        "description": "Calendar name",
+        "type": "string"
+      },
+      "owner": {
+        "description": "Owner subject, e.g. agent:main or contact:<id>",
+        "type": "string"
+      },
+      "providerCalendarId": {
+        "description": "Provider calendar id as provenance",
+        "type": "string"
+      },
+      "role": {
+        "description": "primary, secondary, shared, resource, system, or unknown",
+        "type": "string"
+      },
+      "timezone": {
+        "description": "IANA timezone",
+        "type": "string"
+      },
+      "visibility": {
+        "description": "private, shared, public, or local_only",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "providerCalendarId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "disabled",
+              "deleted"
+            ],
+            "type": "string"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "shared",
+              "public",
+              "local_only"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "providerCalendarId",
+          "name",
+          "description",
+          "color",
+          "timezone",
+          "role",
+          "status",
+          "visibility",
+          "ownerType",
+          "ownerId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "calendar"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsDisableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "description": "Local calendar id or name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "calendar"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsDisableReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "providerCalendarId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "disabled",
+              "deleted"
+            ],
+            "type": "string"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "shared",
+              "public",
+              "local_only"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "providerCalendarId",
+          "name",
+          "description",
+          "color",
+          "timezone",
+          "role",
+          "status",
+          "visibility",
+          "ownerType",
+          "ownerId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "calendar"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "description": "Local account id",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by calendar status",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "calendars": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "color": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "lastSyncedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "metadata": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string"
+            },
+            "ownerType": {
+              "type": "string"
+            },
+            "providerCalendarId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "role": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "disabled",
+                "deleted"
+              ],
+              "type": "string"
+            },
+            "timezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "enum": [
+                "private",
+                "shared",
+                "public",
+                "local_only"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "accountId",
+            "providerCalendarId",
+            "name",
+            "description",
+            "color",
+            "timezone",
+            "role",
+            "status",
+            "visibility",
+            "ownerType",
+            "ownerId",
+            "isDefault",
+            "lastSyncedAt",
+            "metadata",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "calendars"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsShareInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "description": "Local calendar id or name",
+        "type": "string"
+      },
+      "expiresAt": {
+        "description": "Optional membership expiration timestamp",
+        "type": "string"
+      },
+      "relation": {
+        "description": "owner, reader, writer, manager, or free_busy",
+        "type": "string"
+      },
+      "with": {
+        "description": "Subject, e.g. agent:main",
+        "type": "string"
+      }
+    },
+    "required": [
+      "calendar"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsShareReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "providerCalendarId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "disabled",
+              "deleted"
+            ],
+            "type": "string"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "shared",
+              "public",
+              "local_only"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "providerCalendarId",
+          "name",
+          "description",
+          "color",
+          "timezone",
+          "role",
+          "status",
+          "visibility",
+          "ownerType",
+          "ownerId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "member": {
+        "additionalProperties": false,
+        "properties": {
+          "calendarId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "memberType": {
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "owner",
+              "reader",
+              "writer",
+              "manager",
+              "free_busy"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "calendarId",
+          "memberType",
+          "memberId",
+          "relation",
+          "expiresAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "calendar",
+      "member"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "description": "Local calendar id, name, or provider calendar id",
+        "type": "string"
+      },
+      "members": {
+        "description": "Include membership projection rows",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "calendar"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarCalendarsShowReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "providerCalendarId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "disabled",
+              "deleted"
+            ],
+            "type": "string"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "shared",
+              "public",
+              "local_only"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "providerCalendarId",
+          "name",
+          "description",
+          "color",
+          "timezone",
+          "role",
+          "status",
+          "visibility",
+          "ownerType",
+          "ownerId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "members": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "memberId": {
+              "type": "string"
+            },
+            "memberType": {
+              "type": "string"
+            },
+            "relation": {
+              "enum": [
+                "owner",
+                "reader",
+                "writer",
+                "manager",
+                "free_busy"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "memberType",
+            "memberId",
+            "relation",
+            "expiresAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "calendar"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsCancelInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "description": "Local event id",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Local write idempotency key",
+        "type": "string"
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsCancelReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "attendees": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "eventId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "organizer",
+                        "required",
+                        "optional",
+                        "resource",
+                        "informational"
+                      ],
+                      "type": "string"
+                    },
+                    "normalizedEmail": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "providerAttendeeId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "responseStatus": {
+                      "enum": [
+                        "accepted",
+                        "declined",
+                        "tentative",
+                        "needs_action",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "eventId",
+                    "kind",
+                    "responseStatus",
+                    "email",
+                    "normalizedEmail",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "providerAttendeeId",
+                    "raw",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "creatorAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deletedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "descriptionRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "endTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "etag": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "icalUid": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "locationRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "organizerAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "originalStartAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerRecurringEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recurrence": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "recurrenceRule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sequence": {
+                "type": "number"
+              },
+              "seriesId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "startTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "uid": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "visibility": {
+                "enum": [
+                  "default",
+                  "private",
+                  "public",
+                  "confidential"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "uid",
+              "providerEventId",
+              "providerRecurringEventId",
+              "icalUid",
+              "seriesId",
+              "originalStartAt",
+              "title",
+              "description",
+              "descriptionRedactionStatus",
+              "location",
+              "locationRedactionStatus",
+              "status",
+              "busyStatus",
+              "visibility",
+              "startAt",
+              "endAt",
+              "startTimezone",
+              "endTimezone",
+              "allDay",
+              "recurrenceRule",
+              "recurrence",
+              "sequence",
+              "etag",
+              "organizerContactId",
+              "organizerAgentId",
+              "organizerPlatformIdentityId",
+              "creatorContactId",
+              "creatorAgentId",
+              "creatorPlatformIdentityId",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "deletedAt",
+              "attendees"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "redacted": {
+                "const": true,
+                "type": "boolean"
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "const": "Busy",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "title",
+              "status",
+              "busyStatus",
+              "startAt",
+              "endAt",
+              "redacted"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "outbox": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "attemptCount": {
+                "type": "number"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "eventId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "idempotencyKey": {
+                "type": "string"
+              },
+              "lastErrorCode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "nextAttemptAt": {
+                "type": "number"
+              },
+              "operation": {
+                "enum": [
+                  "create",
+                  "update",
+                  "cancel",
+                  "delete",
+                  "respond"
+                ],
+                "type": "string"
+              },
+              "payload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerResult": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "leased",
+                  "sending",
+                  "sent",
+                  "acked",
+                  "failed",
+                  "dead"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "accountId",
+              "calendarId",
+              "eventId",
+              "operation",
+              "idempotencyKey",
+              "payload",
+              "status",
+              "attemptCount",
+              "nextAttemptAt",
+              "lastErrorCode",
+              "providerResult",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "event",
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "attendee": {
+        "description": "Comma-separated attendee emails",
+        "type": "string"
+      },
+      "calendar": {
+        "description": "Local calendar id or name",
+        "type": "string"
+      },
+      "description": {
+        "description": "Event description",
+        "type": "string"
+      },
+      "end": {
+        "description": "Event end",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Local write idempotency key",
+        "type": "string"
+      },
+      "location": {
+        "description": "Event location",
+        "type": "string"
+      },
+      "start": {
+        "description": "Event start",
+        "type": "string"
+      },
+      "timezone": {
+        "description": "Start/end timezone",
+        "type": "string"
+      },
+      "title": {
+        "description": "Event title",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "attendees": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "eventId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "organizer",
+                        "required",
+                        "optional",
+                        "resource",
+                        "informational"
+                      ],
+                      "type": "string"
+                    },
+                    "normalizedEmail": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "providerAttendeeId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "responseStatus": {
+                      "enum": [
+                        "accepted",
+                        "declined",
+                        "tentative",
+                        "needs_action",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "eventId",
+                    "kind",
+                    "responseStatus",
+                    "email",
+                    "normalizedEmail",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "providerAttendeeId",
+                    "raw",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "creatorAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deletedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "descriptionRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "endTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "etag": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "icalUid": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "locationRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "organizerAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "originalStartAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerRecurringEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recurrence": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "recurrenceRule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sequence": {
+                "type": "number"
+              },
+              "seriesId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "startTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "uid": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "visibility": {
+                "enum": [
+                  "default",
+                  "private",
+                  "public",
+                  "confidential"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "uid",
+              "providerEventId",
+              "providerRecurringEventId",
+              "icalUid",
+              "seriesId",
+              "originalStartAt",
+              "title",
+              "description",
+              "descriptionRedactionStatus",
+              "location",
+              "locationRedactionStatus",
+              "status",
+              "busyStatus",
+              "visibility",
+              "startAt",
+              "endAt",
+              "startTimezone",
+              "endTimezone",
+              "allDay",
+              "recurrenceRule",
+              "recurrence",
+              "sequence",
+              "etag",
+              "organizerContactId",
+              "organizerAgentId",
+              "organizerPlatformIdentityId",
+              "creatorContactId",
+              "creatorAgentId",
+              "creatorPlatformIdentityId",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "deletedAt",
+              "attendees"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "redacted": {
+                "const": true,
+                "type": "boolean"
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "const": "Busy",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "title",
+              "status",
+              "busyStatus",
+              "startAt",
+              "endAt",
+              "redacted"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "outbox": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "attemptCount": {
+                "type": "number"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "eventId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "idempotencyKey": {
+                "type": "string"
+              },
+              "lastErrorCode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "nextAttemptAt": {
+                "type": "number"
+              },
+              "operation": {
+                "enum": [
+                  "create",
+                  "update",
+                  "cancel",
+                  "delete",
+                  "respond"
+                ],
+                "type": "string"
+              },
+              "payload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerResult": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "leased",
+                  "sending",
+                  "sent",
+                  "acked",
+                  "failed",
+                  "dead"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "accountId",
+              "calendarId",
+              "eventId",
+              "operation",
+              "idempotencyKey",
+              "payload",
+              "status",
+              "attemptCount",
+              "nextAttemptAt",
+              "lastErrorCode",
+              "providerResult",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "event",
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "description": "Local calendar id or name",
+        "type": "string"
+      },
+      "from": {
+        "description": "Window start; default now",
+        "type": "string"
+      },
+      "includeCancelled": {
+        "description": "Include cancelled events",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset",
+        "type": "string"
+      },
+      "query": {
+        "description": "Search title/description/location",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by event status",
+        "type": "string"
+      },
+      "to": {
+        "description": "Window end; default +30d",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "events": {
+        "items": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "allDay": {
+                  "type": "boolean"
+                },
+                "attendees": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "agentId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "contactId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "number"
+                      },
+                      "displayName": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "email": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "eventId": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "organizer",
+                          "required",
+                          "optional",
+                          "resource",
+                          "informational"
+                        ],
+                        "type": "string"
+                      },
+                      "normalizedEmail": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "platformIdentityId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "providerAttendeeId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "raw": {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "responseStatus": {
+                        "enum": [
+                          "accepted",
+                          "declined",
+                          "tentative",
+                          "needs_action",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "eventId",
+                      "kind",
+                      "responseStatus",
+                      "email",
+                      "normalizedEmail",
+                      "displayName",
+                      "contactId",
+                      "agentId",
+                      "platformIdentityId",
+                      "providerAttendeeId",
+                      "raw",
+                      "createdAt",
+                      "updatedAt"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "busyStatus": {
+                  "enum": [
+                    "busy",
+                    "free",
+                    "tentative",
+                    "out_of_office",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "calendarId": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "creatorAgentId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "creatorContactId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "creatorPlatformIdentityId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "deletedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "descriptionRedactionStatus": {
+                  "enum": [
+                    "full_local",
+                    "preview_only",
+                    "redacted",
+                    "missing"
+                  ],
+                  "type": "string"
+                },
+                "endAt": {
+                  "type": "number"
+                },
+                "endTimezone": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "etag": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "icalUid": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "location": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "locationRedactionStatus": {
+                  "enum": [
+                    "full_local",
+                    "preview_only",
+                    "redacted",
+                    "missing"
+                  ],
+                  "type": "string"
+                },
+                "organizerAgentId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "organizerContactId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "organizerPlatformIdentityId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "originalStartAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerEventId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProvenance": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "providerRecurringEventId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "recurrence": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "recurrenceRule": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "safePayload": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "sequence": {
+                  "type": "number"
+                },
+                "seriesId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "startAt": {
+                  "type": "number"
+                },
+                "startTimezone": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "confirmed",
+                    "tentative",
+                    "cancelled",
+                    "draft",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "uid": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                },
+                "visibility": {
+                  "enum": [
+                    "default",
+                    "private",
+                    "public",
+                    "confidential"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "calendarId",
+                "accountId",
+                "uid",
+                "providerEventId",
+                "providerRecurringEventId",
+                "icalUid",
+                "seriesId",
+                "originalStartAt",
+                "title",
+                "description",
+                "descriptionRedactionStatus",
+                "location",
+                "locationRedactionStatus",
+                "status",
+                "busyStatus",
+                "visibility",
+                "startAt",
+                "endAt",
+                "startTimezone",
+                "endTimezone",
+                "allDay",
+                "recurrenceRule",
+                "recurrence",
+                "sequence",
+                "etag",
+                "organizerContactId",
+                "organizerAgentId",
+                "organizerPlatformIdentityId",
+                "creatorContactId",
+                "creatorAgentId",
+                "creatorPlatformIdentityId",
+                "safePayload",
+                "providerProvenance",
+                "createdAt",
+                "updatedAt",
+                "deletedAt",
+                "attendees"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "busyStatus": {
+                  "enum": [
+                    "busy",
+                    "free",
+                    "tentative",
+                    "out_of_office",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "calendarId": {
+                  "type": "string"
+                },
+                "endAt": {
+                  "type": "number"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "redacted": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "startAt": {
+                  "type": "number"
+                },
+                "status": {
+                  "enum": [
+                    "confirmed",
+                    "tentative",
+                    "cancelled",
+                    "draft",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "title": {
+                  "const": "Busy",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "calendarId",
+                "accountId",
+                "title",
+                "status",
+                "busyStatus",
+                "startAt",
+                "endAt",
+                "redacted"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "type": "array"
+      },
+      "window": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "window",
+      "events"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "description": "Local event id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsReadReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "attendees": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "eventId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "organizer",
+                        "required",
+                        "optional",
+                        "resource",
+                        "informational"
+                      ],
+                      "type": "string"
+                    },
+                    "normalizedEmail": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "providerAttendeeId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "responseStatus": {
+                      "enum": [
+                        "accepted",
+                        "declined",
+                        "tentative",
+                        "needs_action",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "eventId",
+                    "kind",
+                    "responseStatus",
+                    "email",
+                    "normalizedEmail",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "providerAttendeeId",
+                    "raw",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "creatorAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deletedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "descriptionRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "endTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "etag": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "icalUid": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "locationRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "organizerAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "originalStartAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerRecurringEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recurrence": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "recurrenceRule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sequence": {
+                "type": "number"
+              },
+              "seriesId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "startTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "uid": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "visibility": {
+                "enum": [
+                  "default",
+                  "private",
+                  "public",
+                  "confidential"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "uid",
+              "providerEventId",
+              "providerRecurringEventId",
+              "icalUid",
+              "seriesId",
+              "originalStartAt",
+              "title",
+              "description",
+              "descriptionRedactionStatus",
+              "location",
+              "locationRedactionStatus",
+              "status",
+              "busyStatus",
+              "visibility",
+              "startAt",
+              "endAt",
+              "startTimezone",
+              "endTimezone",
+              "allDay",
+              "recurrenceRule",
+              "recurrence",
+              "sequence",
+              "etag",
+              "organizerContactId",
+              "organizerAgentId",
+              "organizerPlatformIdentityId",
+              "creatorContactId",
+              "creatorAgentId",
+              "creatorPlatformIdentityId",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "deletedAt",
+              "attendees"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "redacted": {
+                "const": true,
+                "type": "boolean"
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "const": "Busy",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "title",
+              "status",
+              "busyStatus",
+              "startAt",
+              "endAt",
+              "redacted"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsRespondInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "attendeeAgent": {
+        "description": "Attendee agent id",
+        "type": "string"
+      },
+      "attendeeEmail": {
+        "description": "Attendee email identity",
+        "type": "string"
+      },
+      "event": {
+        "description": "Local event id",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Local write idempotency key",
+        "type": "string"
+      },
+      "status": {
+        "description": "accepted, declined, tentative, needs_action, or unknown",
+        "type": "string"
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsRespondReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "attendees": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "eventId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "organizer",
+                        "required",
+                        "optional",
+                        "resource",
+                        "informational"
+                      ],
+                      "type": "string"
+                    },
+                    "normalizedEmail": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "providerAttendeeId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "responseStatus": {
+                      "enum": [
+                        "accepted",
+                        "declined",
+                        "tentative",
+                        "needs_action",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "eventId",
+                    "kind",
+                    "responseStatus",
+                    "email",
+                    "normalizedEmail",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "providerAttendeeId",
+                    "raw",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "creatorAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deletedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "descriptionRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "endTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "etag": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "icalUid": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "locationRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "organizerAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "originalStartAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerRecurringEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recurrence": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "recurrenceRule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sequence": {
+                "type": "number"
+              },
+              "seriesId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "startTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "uid": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "visibility": {
+                "enum": [
+                  "default",
+                  "private",
+                  "public",
+                  "confidential"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "uid",
+              "providerEventId",
+              "providerRecurringEventId",
+              "icalUid",
+              "seriesId",
+              "originalStartAt",
+              "title",
+              "description",
+              "descriptionRedactionStatus",
+              "location",
+              "locationRedactionStatus",
+              "status",
+              "busyStatus",
+              "visibility",
+              "startAt",
+              "endAt",
+              "startTimezone",
+              "endTimezone",
+              "allDay",
+              "recurrenceRule",
+              "recurrence",
+              "sequence",
+              "etag",
+              "organizerContactId",
+              "organizerAgentId",
+              "organizerPlatformIdentityId",
+              "creatorContactId",
+              "creatorAgentId",
+              "creatorPlatformIdentityId",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "deletedAt",
+              "attendees"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "redacted": {
+                "const": true,
+                "type": "boolean"
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "const": "Busy",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "title",
+              "status",
+              "busyStatus",
+              "startAt",
+              "endAt",
+              "redacted"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "outbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "attemptCount": {
+            "type": "number"
+          },
+          "calendarId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "operation": {
+            "enum": [
+              "create",
+              "update",
+              "cancel",
+              "delete",
+              "respond"
+            ],
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providerResult": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "leased",
+              "sending",
+              "sent",
+              "acked",
+              "failed",
+              "dead"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "calendarId",
+          "eventId",
+          "operation",
+          "idempotencyKey",
+          "payload",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastErrorCode",
+          "providerResult",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "event",
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsUpdateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "busy": {
+        "description": "busy, free, tentative, out_of_office, or unknown",
+        "type": "string"
+      },
+      "description": {
+        "description": "Event description",
+        "type": "string"
+      },
+      "end": {
+        "description": "Event end",
+        "type": "string"
+      },
+      "event": {
+        "description": "Local event id",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Local write idempotency key",
+        "type": "string"
+      },
+      "location": {
+        "description": "Event location",
+        "type": "string"
+      },
+      "start": {
+        "description": "Event start",
+        "type": "string"
+      },
+      "status": {
+        "description": "confirmed, tentative, cancelled, draft, or unknown",
+        "type": "string"
+      },
+      "title": {
+        "description": "Event title",
+        "type": "string"
+      },
+      "visibility": {
+        "description": "default, private, public, or confidential",
+        "type": "string"
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarEventsUpdateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "attendees": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "eventId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "organizer",
+                        "required",
+                        "optional",
+                        "resource",
+                        "informational"
+                      ],
+                      "type": "string"
+                    },
+                    "normalizedEmail": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "providerAttendeeId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "responseStatus": {
+                      "enum": [
+                        "accepted",
+                        "declined",
+                        "tentative",
+                        "needs_action",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "eventId",
+                    "kind",
+                    "responseStatus",
+                    "email",
+                    "normalizedEmail",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "providerAttendeeId",
+                    "raw",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "creatorAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deletedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "descriptionRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "endTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "etag": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "icalUid": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "locationRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "organizerAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "originalStartAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerRecurringEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recurrence": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "recurrenceRule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sequence": {
+                "type": "number"
+              },
+              "seriesId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "startTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "uid": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "visibility": {
+                "enum": [
+                  "default",
+                  "private",
+                  "public",
+                  "confidential"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "uid",
+              "providerEventId",
+              "providerRecurringEventId",
+              "icalUid",
+              "seriesId",
+              "originalStartAt",
+              "title",
+              "description",
+              "descriptionRedactionStatus",
+              "location",
+              "locationRedactionStatus",
+              "status",
+              "busyStatus",
+              "visibility",
+              "startAt",
+              "endAt",
+              "startTimezone",
+              "endTimezone",
+              "allDay",
+              "recurrenceRule",
+              "recurrence",
+              "sequence",
+              "etag",
+              "organizerContactId",
+              "organizerAgentId",
+              "organizerPlatformIdentityId",
+              "creatorContactId",
+              "creatorAgentId",
+              "creatorPlatformIdentityId",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "deletedAt",
+              "attendees"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "redacted": {
+                "const": true,
+                "type": "boolean"
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "const": "Busy",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "title",
+              "status",
+              "busyStatus",
+              "startAt",
+              "endAt",
+              "redacted"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "outbox": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "attemptCount": {
+                "type": "number"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "eventId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "idempotencyKey": {
+                "type": "string"
+              },
+              "lastErrorCode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "nextAttemptAt": {
+                "type": "number"
+              },
+              "operation": {
+                "enum": [
+                  "create",
+                  "update",
+                  "cancel",
+                  "delete",
+                  "respond"
+                ],
+                "type": "string"
+              },
+              "payload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerResult": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "leased",
+                  "sending",
+                  "sent",
+                  "acked",
+                  "failed",
+                  "dead"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "accountId",
+              "calendarId",
+              "eventId",
+              "operation",
+              "idempotencyKey",
+              "payload",
+              "status",
+              "attemptCount",
+              "nextAttemptAt",
+              "lastErrorCode",
+              "providerResult",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "event",
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarOutboxInspectInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "description": "Local outbox id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarOutboxInspectReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "attemptCount": {
+            "type": "number"
+          },
+          "calendarId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "operation": {
+            "enum": [
+              "create",
+              "update",
+              "cancel",
+              "delete",
+              "respond"
+            ],
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providerResult": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "leased",
+              "sending",
+              "sent",
+              "acked",
+              "failed",
+              "dead"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "calendarId",
+          "eventId",
+          "operation",
+          "idempotencyKey",
+          "payload",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastErrorCode",
+          "providerResult",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarOutboxListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "calendar": {
+        "description": "Local calendar id or name",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by outbox status",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarOutboxListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "attemptCount": {
+              "type": "number"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "eventId": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "idempotencyKey": {
+              "type": "string"
+            },
+            "lastErrorCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextAttemptAt": {
+              "type": "number"
+            },
+            "operation": {
+              "enum": [
+                "create",
+                "update",
+                "cancel",
+                "delete",
+                "respond"
+              ],
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerResult": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "leased",
+                "sending",
+                "sent",
+                "acked",
+                "failed",
+                "dead"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "accountId",
+            "calendarId",
+            "eventId",
+            "operation",
+            "idempotencyKey",
+            "payload",
+            "status",
+            "attemptCount",
+            "nextAttemptAt",
+            "lastErrorCode",
+            "providerResult",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarOutboxRetryInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "description": "Local outbox id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarOutboxRetryReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "attemptCount": {
+            "type": "number"
+          },
+          "calendarId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "operation": {
+            "enum": [
+              "create",
+              "update",
+              "cancel",
+              "delete",
+              "respond"
+            ],
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providerResult": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "leased",
+              "sending",
+              "sent",
+              "acked",
+              "failed",
+              "dead"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "calendarId",
+          "eventId",
+          "operation",
+          "idempotencyKey",
+          "payload",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastErrorCode",
+          "providerResult",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarOutboxStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CalendarOutboxStatusReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "counts": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "counts",
+      "total"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ChatsBackfillProviderTimestampsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1573,6 +10914,14 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsBackfillProviderTimestampsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -1622,6 +10971,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChatsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ChatsListsAddInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1667,6 +11024,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChatsListsAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ChatsListsCreateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1695,6 +11060,14 @@ public enum RaviSchemas {
     "required": [
       "name"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsListsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -1748,6 +11121,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChatsListsDeltaReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ChatsListsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1769,6 +11150,14 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsListsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -1822,6 +11211,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChatsListsMarkReadReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ChatsListsMembersInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1858,6 +11255,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChatsListsMembersReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ChatsListsRemoveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1887,6 +11292,14 @@ public enum RaviSchemas {
       "chat",
       "list"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsListsRemoveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -1935,6 +11348,284 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChatsReadReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CloudProjectsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "defaultPageSite": {
+        "description": "Also create a default Ravi Pages site; uses the project slug when omitted",
+        "type": "string"
+      },
+      "description": {
+        "description": "Project description",
+        "type": "string"
+      },
+      "name": {
+        "description": "Project display name; defaults to the slug",
+        "type": "string"
+      },
+      "slug": {
+        "description": "Console project slug",
+        "type": "string"
+      },
+      "visibility": {
+        "description": "Default visibility: private|protected_link|public",
+        "type": "string"
+      }
+    },
+    "required": [
+      "slug"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudProjectsCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "type": "string"
+      },
+      "project": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "redirectTo": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "project",
+      "redirectTo"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudProjectsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum projects to return (default: 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of projects to skip (default: 0)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CloudProjectsListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "projects": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "total",
+      "pagination",
+      "projects",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CommandsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -1956,6 +11647,299 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let CommandsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "commands": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "argumentHint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "arguments": {
+              "items": {},
+              "type": "array"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "disabled": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "issues": {
+              "items": {
+                "additionalProperties": {},
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "level": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "scope": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "level",
+                  "code",
+                  "message",
+                  "id",
+                  "scope",
+                  "path"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "path": {
+              "type": "string"
+            },
+            "relativePath": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "shadowedBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "shadows": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "token": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "token",
+            "title",
+            "description",
+            "argumentHint",
+            "arguments",
+            "disabled",
+            "scope",
+            "path",
+            "relativePath",
+            "shadowedBy",
+            "shadows",
+            "issues"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "issues": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "level": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "level",
+            "code",
+            "message",
+            "id",
+            "scope",
+            "path"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "locations": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "agent",
+      "locations",
+      "commands",
+      "issues"
+    ],
     "type": "object"
   }
   """#
@@ -1987,6 +11971,184 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CommandsRunReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "command": {
+        "additionalProperties": {},
+        "properties": {
+          "argumentHint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "arguments": {
+            "items": {},
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "level": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scope": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "level",
+                "code",
+                "message",
+                "id",
+                "scope",
+                "path"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "shadowedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shadows": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "title",
+          "description",
+          "argumentHint",
+          "arguments",
+          "disabled",
+          "scope",
+          "path",
+          "relativePath",
+          "shadowedBy",
+          "shadows",
+          "issues"
+        ],
+        "type": "object"
+      },
+      "metadata": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "positionalArguments": {
+        "items": {},
+        "type": "array"
+      },
+      "prompt": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "command",
+      "metadata",
+      "positionalArguments",
+      "prompt"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CommandsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2007,6 +12169,169 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CommandsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "command": {
+        "additionalProperties": {},
+        "properties": {
+          "argumentHint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "arguments": {
+            "items": {},
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "level": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scope": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "level",
+                "code",
+                "message",
+                "id",
+                "scope",
+                "path"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "shadowedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shadows": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "title",
+          "description",
+          "argumentHint",
+          "arguments",
+          "disabled",
+          "scope",
+          "path",
+          "relativePath",
+          "shadowedBy",
+          "shadows",
+          "issues"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "agent",
+      "command"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CommandsValidateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2016,6 +12341,401 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let CommandsValidateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "effectiveTotal": {
+        "type": "number"
+      },
+      "errors": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "level": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "level",
+            "code",
+            "message",
+            "id",
+            "scope",
+            "path"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      },
+      "valid": {
+        "type": "boolean"
+      },
+      "warnings": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "level": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "level",
+            "code",
+            "message",
+            "id",
+            "scope",
+            "path"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "valid",
+      "agent",
+      "total",
+      "effectiveTotal",
+      "errors",
+      "warnings"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ConnectorsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching connectors to skip (default: 0)",
+        "type": "string"
+      },
+      "project": {
+        "description": "Filter by Ravi Cloud project id",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Filter by provider id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let ConnectorsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connections": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "string"
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "projectId": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "requiresReauth": {
+              "type": "boolean"
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "projectId",
+            "provider",
+            "displayName",
+            "status",
+            "requiresReauth",
+            "scopes",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "limit",
+          "offset",
+          "returned"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "connections",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ConnectorsRevokeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Connector id",
+        "type": "string"
+      },
+      "yes": {
+        "description": "Skip confirmation prompt",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ConnectorsRevokeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "revoked": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "revoked",
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ConnectorsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Connector id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ConnectorsShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "externalAccountLogin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grantedAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastReauthAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requiresReauth": {
+            "type": "boolean"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "provider",
+          "displayName",
+          "status",
+          "requiresReauth",
+          "scopes",
+          "createdAt",
+          "capabilities",
+          "externalAccountLogin",
+          "grantedAt",
+          "lastReauthAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "connection"
+    ],
     "type": "object"
   }
   """#
@@ -2048,6 +12768,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsActivityReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsAddInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2076,6 +12804,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsAllowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2088,6 +12824,14 @@ public enum RaviSchemas {
     "required": [
       "contact"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsAllowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2112,6 +12856,14 @@ public enum RaviSchemas {
     "required": [
       "contact"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsApproveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2157,6 +12909,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsBackfillReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsBlockInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2169,6 +12929,14 @@ public enum RaviSchemas {
     "required": [
       "contact"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsBlockReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2189,9 +12957,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsCheckReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsDuplicatesInputSchema = #"""
   {
     "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsDuplicatesReturnSchema = #"""
+  {
+    "additionalProperties": {},
     "properties": {},
     "type": "object"
   }
@@ -2217,6 +13001,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsFindReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsGetInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2233,6 +13025,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsGetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsInfoInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2245,6 +13045,14 @@ public enum RaviSchemas {
     "required": [
       "contact"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsInfoReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2281,6 +13089,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsLinkReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2298,6 +13114,14 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2323,6 +13147,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsMergeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsMessagesInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2343,6 +13175,14 @@ public enum RaviSchemas {
     "required": [
       "contact"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsMessagesReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2375,6 +13215,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsMetadataListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsMetadataRemoveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2400,6 +13248,14 @@ public enum RaviSchemas {
       "contact",
       "key"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsMetadataRemoveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2438,6 +13294,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsMetadataSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsNoteInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2467,6 +13331,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsNoteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsPendingInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2476,6 +13348,14 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsPendingReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2504,6 +13384,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsProfileReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsRemoveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2516,6 +13404,14 @@ public enum RaviSchemas {
     "required": [
       "contact"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsRemoveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2540,6 +13436,14 @@ public enum RaviSchemas {
     "required": [
       "contact"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsSessionsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2570,6 +13474,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsTagInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2587,6 +13499,14 @@ public enum RaviSchemas {
       "contact",
       "tag"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsTagReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2623,6 +13543,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsTimelineReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsUnlinkInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2651,6 +13579,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContactsUnlinkReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContactsUntagInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2668,6 +13604,14 @@ public enum RaviSchemas {
       "contact",
       "tag"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContactsUntagReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2698,9 +13642,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextAuthorizeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContextCapabilitiesInputSchema = #"""
   {
     "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ContextCapabilitiesReturnSchema = #"""
+  {
+    "additionalProperties": {},
     "properties": {},
     "type": "object"
   }
@@ -2728,6 +13688,14 @@ public enum RaviSchemas {
       "objectType",
       "permission"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContextCheckReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2761,9 +13729,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextCleanupAgentRuntimeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContextCodexBashHookInputSchema = #"""
   {
     "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ContextCodexBashHookReturnSchema = #"""
+  {
+    "additionalProperties": {},
     "properties": {},
     "type": "object"
   }
@@ -2793,6 +13777,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextCredentialsAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContextCredentialsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2806,6 +13798,14 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ContextCredentialsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2826,6 +13826,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextCredentialsRemoveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContextCredentialsSetDefaultInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2842,6 +13850,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextCredentialsSetDefaultReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContextInfoInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2854,6 +13870,14 @@ public enum RaviSchemas {
     "required": [
       "contextId"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContextInfoReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2886,6 +13910,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextIssueReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContextLineageInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2898,6 +13930,14 @@ public enum RaviSchemas {
     "required": [
       "contextId"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ContextLineageReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -2935,6 +13975,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContextRevokeInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2960,6 +14008,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextRevokeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContextVisibilityInputSchema = #"""
   {
     "additionalProperties": false,
@@ -2968,9 +14024,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextVisibilityReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ContextWhoamiInputSchema = #"""
   {
     "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ContextWhoamiReturnSchema = #"""
+  {
+    "additionalProperties": {},
     "properties": {},
     "type": "object"
   }
@@ -2996,6 +14068,90 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CostsAgentReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "summary": {
+        "additionalProperties": false,
+        "properties": {
+          "total_cache_creation": {
+            "type": "number"
+          },
+          "total_cache_read": {
+            "type": "number"
+          },
+          "total_cost": {
+            "type": "number"
+          },
+          "total_input": {
+            "type": "number"
+          },
+          "total_output": {
+            "type": "number"
+          },
+          "total_tokens": {
+            "type": "number"
+          },
+          "turns": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total_cost",
+          "total_input",
+          "total_output",
+          "total_cache_read",
+          "total_cache_creation",
+          "turns",
+          "total_tokens"
+        ],
+        "type": "object"
+      },
+      "window": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveHours": {
+            "type": "number"
+          },
+          "requestedHours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sinceMs": {
+            "type": "number"
+          },
+          "untilMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestedHours",
+          "effectiveHours",
+          "sinceMs",
+          "untilMs"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "window",
+      "summary",
+      "agentId"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CostsAgentsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3009,6 +14165,108 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let CostsAgentsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agents": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "models": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "total_cache_creation": {
+              "type": "number"
+            },
+            "total_cache_read": {
+              "type": "number"
+            },
+            "total_cost": {
+              "type": "number"
+            },
+            "total_input": {
+              "type": "number"
+            },
+            "total_output": {
+              "type": "number"
+            },
+            "total_tokens": {
+              "type": "number"
+            },
+            "turns": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total_cost",
+            "total_input",
+            "total_output",
+            "total_cache_read",
+            "total_cache_creation",
+            "turns",
+            "total_tokens",
+            "agentId",
+            "models"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "limit": {
+        "type": "number"
+      },
+      "totalAgents": {
+        "type": "number"
+      },
+      "window": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveHours": {
+            "type": "number"
+          },
+          "requestedHours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sinceMs": {
+            "type": "number"
+          },
+          "untilMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestedHours",
+          "effectiveHours",
+          "sinceMs",
+          "untilMs"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "window",
+      "limit",
+      "totalAgents",
+      "agents"
+    ],
     "type": "object"
   }
   """#
@@ -3029,6 +14287,80 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CostsSessionReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sessionKey": {
+        "type": "string"
+      },
+      "sessionName": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "summary": {
+        "additionalProperties": false,
+        "properties": {
+          "total_cache_creation": {
+            "type": "number"
+          },
+          "total_cache_read": {
+            "type": "number"
+          },
+          "total_cost": {
+            "type": "number"
+          },
+          "total_input": {
+            "type": "number"
+          },
+          "total_output": {
+            "type": "number"
+          },
+          "total_tokens": {
+            "type": "number"
+          },
+          "turns": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total_cost",
+          "total_input",
+          "total_output",
+          "total_cache_read",
+          "total_cache_creation",
+          "turns",
+          "total_tokens"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "sessionKey",
+      "sessionName",
+      "agentId",
+      "summary"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CostsSummaryInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3038,6 +14370,86 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let CostsSummaryReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "summary": {
+        "additionalProperties": false,
+        "properties": {
+          "total_cache_creation": {
+            "type": "number"
+          },
+          "total_cache_read": {
+            "type": "number"
+          },
+          "total_cost": {
+            "type": "number"
+          },
+          "total_input": {
+            "type": "number"
+          },
+          "total_output": {
+            "type": "number"
+          },
+          "total_tokens": {
+            "type": "number"
+          },
+          "turns": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total_cost",
+          "total_input",
+          "total_output",
+          "total_cache_read",
+          "total_cache_creation",
+          "turns",
+          "total_tokens"
+        ],
+        "type": "object"
+      },
+      "window": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveHours": {
+            "type": "number"
+          },
+          "requestedHours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sinceMs": {
+            "type": "number"
+          },
+          "untilMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestedHours",
+          "effectiveHours",
+          "sinceMs",
+          "untilMs"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "window",
+      "summary"
+    ],
     "type": "object"
   }
   """#
@@ -3059,6 +14471,116 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CostsTopSessionsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "type": "number"
+      },
+      "sessions": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "type": "string"
+            },
+            "sessionName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "total_cache_creation": {
+              "type": "number"
+            },
+            "total_cache_read": {
+              "type": "number"
+            },
+            "total_cost": {
+              "type": "number"
+            },
+            "total_input": {
+              "type": "number"
+            },
+            "total_output": {
+              "type": "number"
+            },
+            "total_tokens": {
+              "type": "number"
+            },
+            "turns": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total_cost",
+            "total_input",
+            "total_output",
+            "total_cache_read",
+            "total_cache_creation",
+            "turns",
+            "total_tokens",
+            "sessionKey",
+            "sessionName",
+            "name",
+            "agentId"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "window": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveHours": {
+            "type": "number"
+          },
+          "requestedHours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sinceMs": {
+            "type": "number"
+          },
+          "untilMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestedHours",
+          "effectiveHours",
+          "sinceMs",
+          "untilMs"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "window",
+      "limit",
+      "sessions"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmAccountInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3070,6 +14592,27 @@ public enum RaviSchemas {
     },
     "required": [
       "account"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmAccountReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "crm": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "target",
+      "crm"
     ],
     "type": "object"
   }
@@ -3107,6 +14650,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmAccountCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmAccountLinkContactInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3136,6 +14698,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmAccountLinkContactReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmAccountShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3147,6 +14728,27 @@ public enum RaviSchemas {
     },
     "required": [
       "account"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmAccountShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "crm": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "target",
+      "crm"
     ],
     "type": "object"
   }
@@ -3169,6 +14771,38 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmBoardReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "opportunities": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "stages": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "opportunities"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmContactInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3180,6 +14814,27 @@ public enum RaviSchemas {
     },
     "required": [
       "contact"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmContactReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "crm": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "target",
+      "crm"
     ],
     "type": "object"
   }
@@ -3215,6 +14870,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmContactSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmContactShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3226,6 +14900,27 @@ public enum RaviSchemas {
     },
     "required": [
       "contact"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmContactShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "crm": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "target",
+      "crm"
     ],
     "type": "object"
   }
@@ -3256,6 +14951,81 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmContactsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmFactConfirmInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3267,6 +15037,25 @@ public enum RaviSchemas {
     },
     "required": [
       "fact"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFactConfirmReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -3313,6 +15102,81 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFactListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
     "type": "object"
   }
   """#
@@ -3372,6 +15236,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmFactProposeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmFactRejectInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3383,6 +15266,25 @@ public enum RaviSchemas {
     },
     "required": [
       "fact"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFactRejectReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -3437,6 +15339,81 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmNextReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmOpportunityInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3447,6 +15424,27 @@ public enum RaviSchemas {
       }
     },
     "required": [
+      "opportunity"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmOpportunityReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "opportunity": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "target",
       "opportunity"
     ],
     "type": "object"
@@ -3464,6 +15462,30 @@ public enum RaviSchemas {
     },
     "required": [
       "opportunity"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmOpportunityContactsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "contacts": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "contacts"
     ],
     "type": "object"
   }
@@ -3513,6 +15535,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmOpportunityCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmOpportunityLinkContactInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3546,6 +15587,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmOpportunityLinkContactReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmOpportunityMoveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3571,6 +15631,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmOpportunityMoveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmOpportunityShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3581,6 +15660,27 @@ public enum RaviSchemas {
       }
     },
     "required": [
+      "opportunity"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmOpportunityShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "opportunity": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "target",
       "opportunity"
     ],
     "type": "object"
@@ -3619,6 +15719,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmPipelineCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmPipelineListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3640,6 +15759,81 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
     "type": "object"
   }
   """#
@@ -3670,6 +15864,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmPipelineSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmPipelineShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3682,6 +15895,14 @@ public enum RaviSchemas {
     "required": [
       "pipeline"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -3735,6 +15956,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmPipelineStageAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmPipelineStageArchiveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3751,6 +15991,25 @@ public enum RaviSchemas {
     "required": [
       "pipeline",
       "stage"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageArchiveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -3779,6 +16038,81 @@ public enum RaviSchemas {
     },
     "required": [
       "pipeline"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
     ],
     "type": "object"
   }
@@ -3815,6 +16149,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmPipelineStageSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmPipelineStageShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3832,6 +16185,14 @@ public enum RaviSchemas {
       "pipeline",
       "stage"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -3886,6 +16247,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmPipelineStageTopicAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmPipelineStageTopicArchiveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3907,6 +16287,25 @@ public enum RaviSchemas {
       "pipeline",
       "stage",
       "topic"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmPipelineStageTopicArchiveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -3948,6 +16347,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmPipelineStageTopicSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmPipelineStageTopicsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3981,6 +16399,81 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmPipelineStageTopicsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmTaskCancelInputSchema = #"""
   {
     "additionalProperties": false,
@@ -3996,6 +16489,25 @@ public enum RaviSchemas {
     },
     "required": [
       "task"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmTaskCancelReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -4069,6 +16581,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmTaskCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmTaskDoneInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4080,6 +16611,25 @@ public enum RaviSchemas {
     },
     "required": [
       "task"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmTaskDoneReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -4138,6 +16688,81 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CrmTaskListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmTaskShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4148,6 +16773,27 @@ public enum RaviSchemas {
       }
     },
     "required": [
+      "task"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmTaskShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "target": {
+        "type": "string"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "target",
       "task"
     ],
     "type": "object"
@@ -4173,6 +16819,25 @@ public enum RaviSchemas {
     },
     "required": [
       "task"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmTaskSnoozeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -4254,6 +16919,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CronAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "job": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "job"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CronDisableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4270,6 +16980,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CronDisableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "job": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "job"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CronEnableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4281,6 +17036,51 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CronEnableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "job": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "job"
     ],
     "type": "object"
   }
@@ -4307,6 +17107,90 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CronListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "jobs": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "jobs"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CronRmInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4323,6 +17207,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CronRmReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "job": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "job"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CronRunInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4334,6 +17263,51 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CronRunReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "job": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "job"
     ],
     "type": "object"
   }
@@ -4365,6 +17339,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CronSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "job": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "job"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CronShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4381,10 +17400,59 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CronShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "job": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "job"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DaemonEnvInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let DaemonEnvReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "const": "env",
+        "type": "string"
+      },
+      "created": {
+        "type": "boolean"
+      },
+      "existedBefore": {
+        "type": "boolean"
+      },
+      "openedEditor": {
+        "type": "boolean"
+      },
+      "path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "action",
+      "path",
+      "existedBefore",
+      "created",
+      "openedEditor"
+    ],
     "type": "object"
   }
   """#
@@ -4415,10 +17483,49 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DaemonInitAdminKeyReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "const": "init-admin-key",
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DaemonInstallInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let DaemonInstallReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action",
+      "changed"
+    ],
     "type": "object"
   }
   """#
@@ -4449,6 +17556,21 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DaemonLogsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DaemonRestartInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4466,10 +17588,48 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DaemonRestartReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DaemonStartInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let DaemonStartReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action",
+      "changed"
+    ],
     "type": "object"
   }
   """#
@@ -4482,10 +17642,69 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DaemonStatusReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "infrastructure": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "pm2Available": {
+        "type": "boolean"
+      },
+      "processName": {
+        "type": "string"
+      },
+      "processes": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "ravi": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "pm2Available",
+      "processName",
+      "ravi",
+      "infrastructure",
+      "processes"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DaemonStopInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let DaemonStopReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action",
+      "changed"
+    ],
     "type": "object"
   }
   """#
@@ -4498,10 +17717,57 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DaemonUninstallReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DevinAuthCheckInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let DevinAuthCheckReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "baseUrl": {
+        "type": "string"
+      },
+      "configuredOrgId": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "self": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "ok",
+      "baseUrl",
+      "self"
+    ],
     "type": "object"
   }
   """#
@@ -4516,6 +17782,28 @@ public enum RaviSchemas {
       }
     },
     "required": [
+      "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let DevinSessionsArchiveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "session": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "const": "archived",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
       "session"
     ],
     "type": "object"
@@ -4537,6 +17825,34 @@ public enum RaviSchemas {
     },
     "required": [
       "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let DevinSessionsAttachmentsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "attachments": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "devinId": {
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "devinId",
+      "total",
+      "attachments"
     ],
     "type": "object"
   }
@@ -4650,6 +17966,43 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DevinSessionsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "maxAcuLimit": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "maxAcuLimitSource": {
+        "type": "string"
+      },
+      "session": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "const": "created",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "maxAcuLimitSource",
+      "maxAcuLimit",
+      "session"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DevinSessionsInsightsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4665,6 +18018,42 @@ public enum RaviSchemas {
     },
     "required": [
       "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let DevinSessionsInsightsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "insights": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "session": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "summary": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "session",
+      "summary",
+      "insights"
     ],
     "type": "object"
   }
@@ -4699,6 +18088,97 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DevinSessionsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "hasNextPage": {
+        "type": "boolean"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "sessions": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "source": {
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "source",
+      "sessions"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DevinSessionsMessagesInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4714,6 +18194,34 @@ public enum RaviSchemas {
     },
     "required": [
       "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let DevinSessionsMessagesReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "devinId": {
+        "type": "string"
+      },
+      "messages": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "devinId",
+      "total",
+      "messages"
     ],
     "type": "object"
   }
@@ -4744,6 +18252,28 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DevinSessionsSendReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "session": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "const": "sent",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "session"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DevinSessionsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4755,6 +18285,23 @@ public enum RaviSchemas {
       "sync": {
         "description": "Fetch latest remote state first",
         "type": "boolean"
+      }
+    },
+    "required": [
+      "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let DevinSessionsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "session": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
       }
     },
     "required": [
@@ -4788,6 +18335,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DevinSessionsSyncReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifacts": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "attachments": {
+        "type": "number"
+      },
+      "insights": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "messages": {
+        "type": "number"
+      },
+      "session": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "session",
+      "messages",
+      "attachments",
+      "insights",
+      "artifacts"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DevinSessionsTerminateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4802,6 +18394,32 @@ public enum RaviSchemas {
       }
     },
     "required": [
+      "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let DevinSessionsTerminateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "archive": {
+        "type": "boolean"
+      },
+      "session": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "const": "terminated",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "archive",
       "session"
     ],
     "type": "object"
@@ -4828,6 +18446,214 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let EvalRunReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "execution": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "grade": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "outputDir": {
+        "type": "string"
+      },
+      "runId": {
+        "type": "string"
+      },
+      "session": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "runId",
+      "outputDir",
+      "session",
+      "execution",
+      "grade"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let GmailListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connector": {
+        "description": "Connector id (defaults to first active Google)",
+        "type": "string"
+      },
+      "cursor": {
+        "description": "Page token for the next page (Gmail nextPageToken)",
+        "type": "string"
+      },
+      "label": {
+        "description": "Filter by label id (repeat for multiple)",
+        "type": "string"
+      },
+      "max": {
+        "description": "Max messages to return (1-100, default 25)",
+        "type": "string"
+      },
+      "q": {
+        "description": "Gmail search query (same as the web search bar)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let GmailListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "capability": {
+        "type": "string"
+      },
+      "refreshed": {
+        "type": "boolean"
+      },
+      "result": {
+        "$ref": "#/$defs/__schema0"
+      }
+    },
+    "required": [
+      "capability",
+      "refreshed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let GmailReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connector": {
+        "description": "Connector id (defaults to first active Google)",
+        "type": "string"
+      },
+      "format": {
+        "description": "full | metadata | raw (default full)",
+        "type": "string"
+      },
+      "id": {
+        "description": "Gmail message id (from `ravi gmail list`)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let GmailReadReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "capability": {
+        "type": "string"
+      },
+      "refreshed": {
+        "type": "boolean"
+      },
+      "result": {
+        "$ref": "#/$defs/__schema0"
+      }
+    },
+    "required": [
+      "capability",
+      "refreshed"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let HeartbeatDisableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4839,6 +18665,180 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let HeartbeatDisableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "cwd",
+          "model",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "heartbeat": {
+        "additionalProperties": {},
+        "properties": {
+          "accountId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeEnd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeHours": {
+            "type": "string"
+          },
+          "activeStart": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "intervalDescription": {
+            "type": "string"
+          },
+          "intervalMs": {
+            "type": "number"
+          },
+          "lastRunAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "intervalMs",
+          "intervalDescription",
+          "model",
+          "accountId",
+          "activeStart",
+          "activeEnd",
+          "activeHours",
+          "lastRunAt"
+        ],
+        "type": "object"
+      },
+      "heartbeatFile": {
+        "type": "string"
+      },
+      "heartbeatFileExists": {
+        "type": "boolean"
+      },
+      "property": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "value": {}
+    },
+    "required": [
+      "agent",
+      "heartbeat",
+      "heartbeatFile",
+      "heartbeatFileExists",
+      "status",
+      "target",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -4859,6 +18859,180 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let HeartbeatEnableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "cwd",
+          "model",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "heartbeat": {
+        "additionalProperties": {},
+        "properties": {
+          "accountId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeEnd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeHours": {
+            "type": "string"
+          },
+          "activeStart": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "intervalDescription": {
+            "type": "string"
+          },
+          "intervalMs": {
+            "type": "number"
+          },
+          "lastRunAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "intervalMs",
+          "intervalDescription",
+          "model",
+          "accountId",
+          "activeStart",
+          "activeEnd",
+          "activeHours",
+          "lastRunAt"
+        ],
+        "type": "object"
+      },
+      "heartbeatFile": {
+        "type": "string"
+      },
+      "heartbeatFileExists": {
+        "type": "boolean"
+      },
+      "property": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "value": {}
+    },
+    "required": [
+      "agent",
+      "heartbeat",
+      "heartbeatFile",
+      "heartbeatFileExists",
+      "status",
+      "target",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -4890,6 +19064,180 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let HeartbeatSetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "cwd",
+          "model",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "heartbeat": {
+        "additionalProperties": {},
+        "properties": {
+          "accountId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeEnd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeHours": {
+            "type": "string"
+          },
+          "activeStart": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "intervalDescription": {
+            "type": "string"
+          },
+          "intervalMs": {
+            "type": "number"
+          },
+          "lastRunAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "intervalMs",
+          "intervalDescription",
+          "model",
+          "accountId",
+          "activeStart",
+          "activeEnd",
+          "activeHours",
+          "lastRunAt"
+        ],
+        "type": "object"
+      },
+      "heartbeatFile": {
+        "type": "string"
+      },
+      "heartbeatFileExists": {
+        "type": "boolean"
+      },
+      "property": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "value": {}
+    },
+    "required": [
+      "agent",
+      "heartbeat",
+      "heartbeatFile",
+      "heartbeatFileExists",
+      "status",
+      "target",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let HeartbeatShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4906,10 +19254,324 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let HeartbeatShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "additionalProperties": {},
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "cwd",
+          "model",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "heartbeat": {
+        "additionalProperties": {},
+        "properties": {
+          "accountId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeEnd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeHours": {
+            "type": "string"
+          },
+          "activeStart": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "intervalDescription": {
+            "type": "string"
+          },
+          "intervalMs": {
+            "type": "number"
+          },
+          "lastRunAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "intervalMs",
+          "intervalDescription",
+          "model",
+          "accountId",
+          "activeStart",
+          "activeEnd",
+          "activeHours",
+          "lastRunAt"
+        ],
+        "type": "object"
+      },
+      "heartbeatFile": {
+        "type": "string"
+      },
+      "heartbeatFileExists": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "agent",
+      "heartbeat",
+      "heartbeatFile",
+      "heartbeatFileExists"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let HeartbeatStatusInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let HeartbeatStatusReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agents": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agent": {
+              "additionalProperties": {},
+              "properties": {
+                "cwd": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "cwd",
+                "model",
+                "provider"
+              ],
+              "type": "object"
+            },
+            "heartbeat": {
+              "additionalProperties": {},
+              "properties": {
+                "accountId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "activeEnd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "activeHours": {
+                  "type": "string"
+                },
+                "activeStart": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "intervalDescription": {
+                  "type": "string"
+                },
+                "intervalMs": {
+                  "type": "number"
+                },
+                "lastRunAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "enabled",
+                "intervalMs",
+                "intervalDescription",
+                "model",
+                "accountId",
+                "activeStart",
+                "activeEnd",
+                "activeHours",
+                "lastRunAt"
+              ],
+              "type": "object"
+            },
+            "heartbeatFile": {
+              "type": "string"
+            },
+            "heartbeatFileExists": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "agent",
+            "heartbeat",
+            "heartbeatFile",
+            "heartbeatFileExists"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "agents"
+    ],
     "type": "object"
   }
   """#
@@ -4925,6 +19587,48 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let HeartbeatTriggerReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "heartbeatFile": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "sessionName": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "heartbeatFile"
     ],
     "type": "object"
   }
@@ -5014,6 +19718,44 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let HooksCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "hook": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "hook"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let HooksDisableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5030,6 +19772,44 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let HooksDisableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "hook": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "hook"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let HooksEnableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5041,6 +19821,44 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let HooksEnableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "hook": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "hook"
     ],
     "type": "object"
   }
@@ -5067,6 +19885,90 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let HooksListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "hooks": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "hooks"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let HooksRmInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5078,6 +19980,44 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let HooksRmReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "hook": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "hook"
     ],
     "type": "object"
   }
@@ -5099,6 +20039,23 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let HooksShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "hook": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "hook"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let HooksTestInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5111,6 +20068,14 @@ public enum RaviSchemas {
     "required": [
       "id"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let HooksTestReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -5194,6 +20159,67 @@ public enum RaviSchemas {
     },
     "required": [
       "input"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ImageAtlasSplitReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifactId": {
+        "type": "string"
+      },
+      "artifact_id": {
+        "type": "string"
+      },
+      "crops": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "manifestPath": {
+        "type": "string"
+      },
+      "outputDir": {
+        "type": "string"
+      },
+      "parentArtifactId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sent": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "artifactId",
+      "artifact_id",
+      "manifestPath",
+      "outputDir",
+      "parentArtifactId",
+      "crops",
+      "sent"
     ],
     "type": "object"
   }
@@ -5283,6 +20309,165 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ImageGenerateReturnSchema = #"""
+  {
+    "anyOf": [
+      {
+        "additionalProperties": {},
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "autoSend": {
+            "type": "boolean"
+          },
+          "delivery": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "events": {
+            "type": "string"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "workerPid": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "success",
+          "artifact_id",
+          "artifactId",
+          "status",
+          "hint",
+          "autoSend",
+          "events"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": {},
+        "properties": {
+          "images": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "filePath": {
+                  "type": "string"
+                },
+                "mimeType": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "sendCommand": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "filePath",
+                "mimeType",
+                "prompt",
+                "provider",
+                "model",
+                "artifactId",
+                "sendCommand"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "options": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "sent": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "caption": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "filename": {
+                  "type": "string"
+                },
+                "instanceId": {
+                  "type": "string"
+                },
+                "messageId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "transport": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "transport",
+                "accountId",
+                "instanceId",
+                "chatId",
+                "filename",
+                "caption"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "images",
+          "options",
+          "sent"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
   public static let InboxArchiveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5299,10 +20484,46 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InboxArchiveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "item": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InboxDisableInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let InboxDisableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changed": {
+        "type": "boolean"
+      },
+      "enabled": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "enabled",
+      "changed"
+    ],
     "type": "object"
   }
   """#
@@ -5323,10 +20544,46 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InboxDoneReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "item": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InboxEnableInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let InboxEnableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changed": {
+        "type": "boolean"
+      },
+      "enabled": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "enabled",
+      "changed"
+    ],
     "type": "object"
   }
   """#
@@ -5344,6 +20601,30 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InboxItemsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InboxListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5354,6 +20635,10 @@ public enum RaviSchemas {
       },
       "limit": {
         "description": "Maximum items to return (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Items to skip before returning results",
         "type": "string"
       },
       "source": {
@@ -5369,6 +20654,30 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InboxListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InboxPollInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5378,6 +20687,28 @@ public enum RaviSchemas {
         "type": "boolean"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let InboxPollReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "ok": {
+        "const": true,
+        "type": "boolean"
+      },
+      "snapshot": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "ok",
+      "snapshot"
+    ],
     "type": "object"
   }
   """#
@@ -5398,6 +20729,32 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InboxReadReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "events": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "item": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "item",
+      "events"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InboxReplayInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5409,6 +20766,38 @@ public enum RaviSchemas {
     },
     "required": [
       "ref"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let InboxReplayReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "itemId": {
+        "type": "string"
+      },
+      "ok": {
+        "const": true,
+        "type": "boolean"
+      },
+      "replayedAt": {
+        "type": "string"
+      },
+      "sequence": {
+        "type": "number"
+      },
+      "subject": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "itemId",
+      "sequence",
+      "subject",
+      "replayedAt"
     ],
     "type": "object"
   }
@@ -5434,6 +20823,23 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InboxSnoozeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "item": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InboxSourcesInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5442,9 +20848,37 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InboxSourcesReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "sources": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "sources"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InboxStatusInputSchema = #"""
   {
     "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let InboxStatusReturnSchema = #"""
+  {
+    "additionalProperties": {},
     "properties": {},
     "type": "object"
   }
@@ -5525,6 +20959,40 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InsightsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "comment": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "insight": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "success",
+      "insight",
+      "tags"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InsightsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5583,6 +21051,142 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InsightsListReturnSchema = #"""
+  {
+    "anyOf": [
+      {
+        "additionalProperties": {},
+        "properties": {
+          "count": {
+            "type": "number"
+          },
+          "insights": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "pagination": {
+            "additionalProperties": {},
+            "properties": {
+              "hasMore": {
+                "type": "boolean"
+              },
+              "limit": {
+                "type": "number"
+              },
+              "nextCommand": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "nextOffset": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "offset": {
+                "type": "number"
+              },
+              "returned": {
+                "type": "number"
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "limit",
+              "offset",
+              "returned",
+              "total",
+              "hasMore",
+              "nextOffset",
+              "nextCommand"
+            ],
+            "type": "object"
+          },
+          "query": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "count",
+          "total",
+          "pagination",
+          "query",
+          "items",
+          "insights"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": {},
+        "properties": {
+          "generatedAt": {
+            "type": "number"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "query": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "stats": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok",
+          "generatedAt",
+          "query",
+          "stats",
+          "items"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
   public static let InsightsSearchInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5604,6 +21208,36 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InsightsSearchReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "count": {
+        "type": "number"
+      },
+      "insights": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "query": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "count",
+      "query",
+      "insights"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let InsightsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5615,6 +21249,30 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let InsightsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "insight": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "insight",
+      "tags"
     ],
     "type": "object"
   }
@@ -5656,6 +21314,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesDeleteInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5672,9 +21338,25 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesDeleteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesDeletedInputSchema = #"""
   {
     "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesDeletedReturnSchema = #"""
+  {
+    "additionalProperties": {},
     "properties": {},
     "type": "object"
   }
@@ -5696,6 +21378,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesDisableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesDisconnectInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5712,6 +21402,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesDisconnectReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesEnableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5724,6 +21422,14 @@ public enum RaviSchemas {
     "required": [
       "target"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesEnableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -5749,6 +21455,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesGetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5766,6 +21480,14 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -5795,6 +21517,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesPendingApproveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesPendingListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5815,6 +21545,14 @@ public enum RaviSchemas {
     "required": [
       "name"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesPendingListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -5840,6 +21578,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesPendingRejectReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesRestoreInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5852,6 +21598,14 @@ public enum RaviSchemas {
     "required": [
       "name"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesRestoreReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -5906,6 +21660,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesRoutesAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesRoutesDeletedInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5915,6 +21677,14 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesRoutesDeletedReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -5947,6 +21717,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesRoutesListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesRoutesRemoveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5972,6 +21750,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesRoutesRemoveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesRoutesRestoreInputSchema = #"""
   {
     "additionalProperties": false,
@@ -5993,6 +21779,14 @@ public enum RaviSchemas {
       "name",
       "pattern"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesRoutesRestoreReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -6032,6 +21826,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesRoutesSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesRoutesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6049,6 +21851,14 @@ public enum RaviSchemas {
       "name",
       "pattern"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesRoutesShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -6079,6 +21889,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6095,6 +21913,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InstancesShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let InstancesStatusInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6107,6 +21933,14 @@ public enum RaviSchemas {
     "required": [
       "name"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesStatusReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -6130,6 +21964,7781 @@ public enum RaviSchemas {
     },
     "required": [
       "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let InstancesTargetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let MailAccountsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "credentialsRef": {
+        "description": "Reference to existing credential store entry",
+        "type": "string"
+      },
+      "id": {
+        "description": "Stable local account id",
+        "type": "string"
+      },
+      "name": {
+        "description": "Display name",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Provider id, e.g. ravi-mail or gmail",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailAccountsCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialsRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultMailboxId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "auth_required",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "displayName",
+          "status",
+          "defaultMailboxId",
+          "credentialsRef",
+          "capabilities",
+          "settings",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "account"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailAccountsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Filter by provider",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by account status",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailAccountsListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "accounts": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "credentialsRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "defaultMailboxId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "settings": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "auth_required",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "displayName",
+            "status",
+            "defaultMailboxId",
+            "credentialsRef",
+            "capabilities",
+            "settings",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "accounts"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailAccountsSyncInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "description": "Local mail account id",
+        "type": "string"
+      },
+      "once": {
+        "description": "Run one foreground tick",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "account"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailAccountsSyncReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "additionalProperties": false,
+            "properties": {
+              "capabilities": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "credentialsRef": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "defaultMailboxId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "settings": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "paused",
+                  "auth_required",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "provider",
+              "displayName",
+              "status",
+              "defaultMailboxId",
+              "credentialsRef",
+              "capabilities",
+              "settings",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "inboxCreated": {
+            "type": "number"
+          },
+          "mailboxesImported": {
+            "type": "number"
+          },
+          "messagesImported": {
+            "type": "number"
+          },
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "provider": {
+            "const": "ravi-mail",
+            "type": "string"
+          },
+          "status": {
+            "const": "synced",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "account",
+          "status",
+          "provider",
+          "mailboxesImported",
+          "messagesImported",
+          "inboxCreated"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "additionalProperties": false,
+            "properties": {
+              "capabilities": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "credentialsRef": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "defaultMailboxId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "settings": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "paused",
+                  "auth_required",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "provider",
+              "displayName",
+              "status",
+              "defaultMailboxId",
+              "credentialsRef",
+              "capabilities",
+              "settings",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "ok": {
+            "const": false,
+            "type": "boolean"
+          },
+          "status": {
+            "const": "adapter_not_started",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "account",
+          "status",
+          "message"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
+  public static let MailDomainsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "domain": {
+        "description": "Managed domain to register, such as ravi.bot",
+        "type": "string"
+      }
+    },
+    "required": [
+      "domain"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailDomainsCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailDomainsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum records to request",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset to request",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailDomainsListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailMailboxesCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "description": "Local account id",
+        "type": "string"
+      },
+      "address": {
+        "description": "Mailbox email address",
+        "type": "string"
+      },
+      "default": {
+        "description": "Mark as default mailbox for the account",
+        "type": "boolean"
+      },
+      "name": {
+        "description": "Mailbox display name",
+        "type": "string"
+      },
+      "providerMailboxId": {
+        "description": "Provider mailbox id as provenance",
+        "type": "string"
+      },
+      "role": {
+        "description": "primary, alias, shared, system, or unknown",
+        "type": "string"
+      }
+    },
+    "required": [
+      "address"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMailboxesCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "mailbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "normalizedAddress": {
+            "type": "string"
+          },
+          "providerMailboxId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "enum": [
+              "primary",
+              "alias",
+              "shared",
+              "system",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "address",
+          "normalizedAddress",
+          "displayName",
+          "role",
+          "status",
+          "providerMailboxId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "mailbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMailboxesDisableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "mailbox": {
+        "description": "Local mailbox id or address",
+        "type": "string"
+      }
+    },
+    "required": [
+      "mailbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMailboxesDisableReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "mailbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "normalizedAddress": {
+            "type": "string"
+          },
+          "providerMailboxId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "enum": [
+              "primary",
+              "alias",
+              "shared",
+              "system",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "address",
+          "normalizedAddress",
+          "displayName",
+          "role",
+          "status",
+          "providerMailboxId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "mailbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMailboxesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "description": "Local account id",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by mailbox status",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailMailboxesListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "mailboxes": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "address": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "displayName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "lastSyncedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "metadata": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "normalizedAddress": {
+              "type": "string"
+            },
+            "providerMailboxId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "role": {
+              "enum": [
+                "primary",
+                "alias",
+                "shared",
+                "system",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "accountId",
+            "address",
+            "normalizedAddress",
+            "displayName",
+            "role",
+            "status",
+            "providerMailboxId",
+            "isDefault",
+            "lastSyncedAt",
+            "metadata",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "mailboxes"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMailboxesShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "mailbox": {
+        "description": "Local mailbox id or address",
+        "type": "string"
+      }
+    },
+    "required": [
+      "mailbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMailboxesShowReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "mailbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "normalizedAddress": {
+            "type": "string"
+          },
+          "providerMailboxId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "enum": [
+              "primary",
+              "alias",
+              "shared",
+              "system",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "address",
+          "normalizedAddress",
+          "displayName",
+          "role",
+          "status",
+          "providerMailboxId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "mailbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMessagesImportInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "body": {
+        "description": "Plaintext body",
+        "type": "string"
+      },
+      "from": {
+        "description": "Sender email",
+        "type": "string"
+      },
+      "mailbox": {
+        "description": "Local mailbox id or address",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Provider id as provenance",
+        "type": "string"
+      },
+      "providerMessageId": {
+        "description": "Provider message id",
+        "type": "string"
+      },
+      "providerThreadId": {
+        "description": "Provider thread id",
+        "type": "string"
+      },
+      "rfcMessageId": {
+        "description": "RFC Message-ID",
+        "type": "string"
+      },
+      "subject": {
+        "description": "Message subject",
+        "type": "string"
+      },
+      "to": {
+        "description": "Recipient email or comma-separated recipients",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailMessagesImportReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "inboxCreated": {
+        "type": "boolean"
+      },
+      "inboxItem": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "message": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "addresses": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "address": {
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "from",
+                        "to",
+                        "cc",
+                        "bcc",
+                        "reply_to",
+                        "sender"
+                      ],
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "normalizedAddress": {
+                      "type": "string"
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "kind",
+                    "address",
+                    "normalizedAddress",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "raw"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attachments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentType": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "filename": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "localBlobRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "providerAttachmentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "redactionStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sizeBytes": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "filename",
+                    "contentType",
+                    "sizeBytes",
+                    "sha256",
+                    "localBlobRef",
+                    "providerAttachmentId",
+                    "redactionStatus",
+                    "metadata"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "addresses",
+              "attachments"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "required": [
+      "message",
+      "inboxItem",
+      "inboxCreated"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMessagesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "addresses": {
+        "description": "Include local address rows",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "mailbox": {
+        "description": "Local mailbox id or address",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset",
+        "type": "string"
+      },
+      "query": {
+        "description": "Search subject/snippet/body",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by local message status",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailMessagesListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "messages": {
+        "items": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "addresses": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "agentId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "contactId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "displayName": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "from",
+                          "to",
+                          "cc",
+                          "bcc",
+                          "reply_to",
+                          "sender"
+                        ],
+                        "type": "string"
+                      },
+                      "messageId": {
+                        "type": "string"
+                      },
+                      "normalizedAddress": {
+                        "type": "string"
+                      },
+                      "platformIdentityId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "raw": {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "messageId",
+                      "kind",
+                      "address",
+                      "normalizedAddress",
+                      "displayName",
+                      "contactId",
+                      "agentId",
+                      "platformIdentityId",
+                      "raw"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "attachments": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contentType": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "filename": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "localBlobRef": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "messageId": {
+                        "type": "string"
+                      },
+                      "metadata": {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "providerAttachmentId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "redactionStatus": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sha256": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sizeBytes": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "messageId",
+                      "filename",
+                      "contentType",
+                      "sizeBytes",
+                      "sha256",
+                      "localBlobRef",
+                      "providerAttachmentId",
+                      "redactionStatus",
+                      "metadata"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "bodyRedactionStatus": {
+                  "enum": [
+                    "full_local",
+                    "preview_only",
+                    "redacted",
+                    "missing"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "dateHeaderAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "direction": {
+                  "enum": [
+                    "inbound",
+                    "outbound",
+                    "draft",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "mailboxId": {
+                  "type": "string"
+                },
+                "providerHistoryId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProvenance": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "providerThreadId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "receivedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "rfcMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "safePayload": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "sentAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "snippet": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "received",
+                    "queued",
+                    "sending",
+                    "sent",
+                    "delivered",
+                    "failed",
+                    "archived",
+                    "trashed",
+                    "spam"
+                  ],
+                  "type": "string"
+                },
+                "subject": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subjectNormalized": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "threadId",
+                "mailboxId",
+                "accountId",
+                "direction",
+                "status",
+                "rfcMessageId",
+                "providerMessageId",
+                "providerThreadId",
+                "providerHistoryId",
+                "subject",
+                "subjectNormalized",
+                "snippet",
+                "bodyRedactionStatus",
+                "dateHeaderAt",
+                "receivedAt",
+                "sentAt",
+                "safePayload",
+                "providerProvenance",
+                "createdAt",
+                "updatedAt",
+                "addresses",
+                "attachments"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "bodyRedactionStatus": {
+                  "enum": [
+                    "full_local",
+                    "preview_only",
+                    "redacted",
+                    "missing"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "dateHeaderAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "direction": {
+                  "enum": [
+                    "inbound",
+                    "outbound",
+                    "draft",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "mailboxId": {
+                  "type": "string"
+                },
+                "providerHistoryId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProvenance": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "providerThreadId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "receivedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "rfcMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "safePayload": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "sentAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "snippet": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "received",
+                    "queued",
+                    "sending",
+                    "sent",
+                    "delivered",
+                    "failed",
+                    "archived",
+                    "trashed",
+                    "spam"
+                  ],
+                  "type": "string"
+                },
+                "subject": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subjectNormalized": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "threadId",
+                "mailboxId",
+                "accountId",
+                "direction",
+                "status",
+                "rfcMessageId",
+                "providerMessageId",
+                "providerThreadId",
+                "providerHistoryId",
+                "subject",
+                "subjectNormalized",
+                "snippet",
+                "bodyRedactionStatus",
+                "dateHeaderAt",
+                "receivedAt",
+                "sentAt",
+                "safePayload",
+                "providerProvenance",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "messages"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMessagesReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "addresses": {
+        "description": "Include local address rows",
+        "type": "boolean"
+      },
+      "message": {
+        "description": "Local message id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMessagesReadReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "addresses": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "address": {
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "from",
+                        "to",
+                        "cc",
+                        "bcc",
+                        "reply_to",
+                        "sender"
+                      ],
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "normalizedAddress": {
+                      "type": "string"
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "kind",
+                    "address",
+                    "normalizedAddress",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "raw"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attachments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentType": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "filename": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "localBlobRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "providerAttachmentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "redactionStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sizeBytes": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "filename",
+                    "contentType",
+                    "sizeBytes",
+                    "sha256",
+                    "localBlobRef",
+                    "providerAttachmentId",
+                    "redactionStatus",
+                    "metadata"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "addresses",
+              "attachments"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMessagesSearchInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "mailbox": {
+        "description": "Local mailbox id or address",
+        "type": "string"
+      },
+      "query": {
+        "description": "Search query",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailMessagesSearchReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "messages": {
+        "items": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "addresses": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "agentId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "contactId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "displayName": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "from",
+                          "to",
+                          "cc",
+                          "bcc",
+                          "reply_to",
+                          "sender"
+                        ],
+                        "type": "string"
+                      },
+                      "messageId": {
+                        "type": "string"
+                      },
+                      "normalizedAddress": {
+                        "type": "string"
+                      },
+                      "platformIdentityId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "raw": {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "messageId",
+                      "kind",
+                      "address",
+                      "normalizedAddress",
+                      "displayName",
+                      "contactId",
+                      "agentId",
+                      "platformIdentityId",
+                      "raw"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "attachments": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contentType": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "filename": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "localBlobRef": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "messageId": {
+                        "type": "string"
+                      },
+                      "metadata": {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "providerAttachmentId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "redactionStatus": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sha256": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sizeBytes": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "messageId",
+                      "filename",
+                      "contentType",
+                      "sizeBytes",
+                      "sha256",
+                      "localBlobRef",
+                      "providerAttachmentId",
+                      "redactionStatus",
+                      "metadata"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "bodyRedactionStatus": {
+                  "enum": [
+                    "full_local",
+                    "preview_only",
+                    "redacted",
+                    "missing"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "dateHeaderAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "direction": {
+                  "enum": [
+                    "inbound",
+                    "outbound",
+                    "draft",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "mailboxId": {
+                  "type": "string"
+                },
+                "providerHistoryId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProvenance": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "providerThreadId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "receivedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "rfcMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "safePayload": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "sentAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "snippet": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "received",
+                    "queued",
+                    "sending",
+                    "sent",
+                    "delivered",
+                    "failed",
+                    "archived",
+                    "trashed",
+                    "spam"
+                  ],
+                  "type": "string"
+                },
+                "subject": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subjectNormalized": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "threadId",
+                "mailboxId",
+                "accountId",
+                "direction",
+                "status",
+                "rfcMessageId",
+                "providerMessageId",
+                "providerThreadId",
+                "providerHistoryId",
+                "subject",
+                "subjectNormalized",
+                "snippet",
+                "bodyRedactionStatus",
+                "dateHeaderAt",
+                "receivedAt",
+                "sentAt",
+                "safePayload",
+                "providerProvenance",
+                "createdAt",
+                "updatedAt",
+                "addresses",
+                "attachments"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "bodyRedactionStatus": {
+                  "enum": [
+                    "full_local",
+                    "preview_only",
+                    "redacted",
+                    "missing"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "dateHeaderAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "direction": {
+                  "enum": [
+                    "inbound",
+                    "outbound",
+                    "draft",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "mailboxId": {
+                  "type": "string"
+                },
+                "providerHistoryId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProvenance": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "providerThreadId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "receivedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "rfcMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "safePayload": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "sentAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "snippet": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "received",
+                    "queued",
+                    "sending",
+                    "sent",
+                    "delivered",
+                    "failed",
+                    "archived",
+                    "trashed",
+                    "spam"
+                  ],
+                  "type": "string"
+                },
+                "subject": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subjectNormalized": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "threadId",
+                "mailboxId",
+                "accountId",
+                "direction",
+                "status",
+                "rfcMessageId",
+                "providerMessageId",
+                "providerThreadId",
+                "providerHistoryId",
+                "subject",
+                "subjectNormalized",
+                "snippet",
+                "bodyRedactionStatus",
+                "dateHeaderAt",
+                "receivedAt",
+                "sentAt",
+                "safePayload",
+                "providerProvenance",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "messages"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailOutboxInspectInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "description": "Local outbox id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailOutboxInspectReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "ackedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attemptCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mailboxId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "operation": {
+            "enum": [
+              "send",
+              "reply",
+              "draft",
+              "update_draft",
+              "delete_draft"
+            ],
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providerResult": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "leased",
+              "sending",
+              "sent",
+              "acked",
+              "failed",
+              "dead"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "mailboxId",
+          "accountId",
+          "messageId",
+          "operation",
+          "idempotencyKey",
+          "payload",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastErrorCode",
+          "providerResult",
+          "createdAt",
+          "updatedAt",
+          "ackedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailOutboxListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "mailbox": {
+        "description": "Local mailbox id or address",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Records to skip before returning results",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by outbox status",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailOutboxListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "ackedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "attemptCount": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "idempotencyKey": {
+              "type": "string"
+            },
+            "lastErrorCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "nextAttemptAt": {
+              "type": "number"
+            },
+            "operation": {
+              "enum": [
+                "send",
+                "reply",
+                "draft",
+                "update_draft",
+                "delete_draft"
+              ],
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerResult": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "leased",
+                "sending",
+                "sent",
+                "acked",
+                "failed",
+                "dead"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "mailboxId",
+            "accountId",
+            "messageId",
+            "operation",
+            "idempotencyKey",
+            "payload",
+            "status",
+            "attemptCount",
+            "nextAttemptAt",
+            "lastErrorCode",
+            "providerResult",
+            "createdAt",
+            "updatedAt",
+            "ackedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailOutboxRetryInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "description": "Local outbox id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailOutboxRetryReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "outbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "ackedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attemptCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mailboxId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "operation": {
+            "enum": [
+              "send",
+              "reply",
+              "draft",
+              "update_draft",
+              "delete_draft"
+            ],
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providerResult": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "leased",
+              "sending",
+              "sent",
+              "acked",
+              "failed",
+              "dead"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "mailboxId",
+          "accountId",
+          "messageId",
+          "operation",
+          "idempotencyKey",
+          "payload",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastErrorCode",
+          "providerResult",
+          "createdAt",
+          "updatedAt",
+          "ackedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailOutboxStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let MailOutboxStatusReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "counts": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "counts",
+      "total"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Maximum records",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Records to skip before returning results",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "providers": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "accounts": {
+              "type": "number"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "localFirst": {
+              "type": "boolean"
+            },
+            "provider": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "accounts",
+            "default",
+            "localFirst"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "providers"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMailboxesCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "addressOrLocalPart": {
+        "description": "Full address or local part",
+        "type": "string"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "domain": {
+        "description": "Domain id, slug, or name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "addressOrLocalPart"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMailboxesCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMailboxesDisableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "mailbox": {
+        "description": "Provider mailbox id or address",
+        "type": "string"
+      }
+    },
+    "required": [
+      "mailbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMailboxesDisableReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMailboxesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "domain": {
+        "description": "Filter by domain id, slug, or name",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum records to request",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset to request",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMailboxesListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMailboxesShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "mailbox": {
+        "description": "Provider mailbox id or address",
+        "type": "string"
+      }
+    },
+    "required": [
+      "mailbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMailboxesShowReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMessagesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "addresses": {
+        "description": "Decrypt and print address summary metadata",
+        "type": "boolean"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum records to request",
+        "type": "string"
+      },
+      "mailbox": {
+        "description": "Provider mailbox id or address",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Offset to request",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMessagesListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMessagesReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "message": {
+        "description": "Provider message id",
+        "type": "string"
+      },
+      "payload": {
+        "description": "Payload to read: parsed_body, raw_mime, subject, headers, or address_summary",
+        "type": "string"
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMessagesReadReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMessagesShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "addresses": {
+        "description": "Decrypt and print address summary metadata",
+        "type": "boolean"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "message": {
+        "description": "Provider message id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailMessagesShowReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "body": {
+        "description": "Message body",
+        "type": "string"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "from": {
+        "description": "Explicit provider sender mailbox id or address",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Idempotency key for Console retries",
+        "type": "string"
+      },
+      "subject": {
+        "description": "Message subject",
+        "type": "string"
+      },
+      "to": {
+        "description": "Recipient email or comma-separated recipients",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailProvidersRaviMailSendReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailReplyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "bcc": {
+        "description": "BCC recipient or comma-separated recipients",
+        "type": "string"
+      },
+      "body": {
+        "description": "Reply body",
+        "type": "string"
+      },
+      "cc": {
+        "description": "CC recipient or comma-separated recipients",
+        "type": "string"
+      },
+      "from": {
+        "description": "Local sender mailbox id or address",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Local outbox idempotency key",
+        "type": "string"
+      },
+      "message": {
+        "description": "Local message id to reply to",
+        "type": "string"
+      },
+      "subject": {
+        "description": "Override reply subject",
+        "type": "string"
+      },
+      "to": {
+        "description": "Override recipient or comma-separated recipients",
+        "type": "string"
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailReplyReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "addresses": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "address": {
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "from",
+                        "to",
+                        "cc",
+                        "bcc",
+                        "reply_to",
+                        "sender"
+                      ],
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "normalizedAddress": {
+                      "type": "string"
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "kind",
+                    "address",
+                    "normalizedAddress",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "raw"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attachments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentType": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "filename": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "localBlobRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "providerAttachmentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "redactionStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sizeBytes": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "filename",
+                    "contentType",
+                    "sizeBytes",
+                    "sha256",
+                    "localBlobRef",
+                    "providerAttachmentId",
+                    "redactionStatus",
+                    "metadata"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "addresses",
+              "attachments"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "outbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "ackedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attemptCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mailboxId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "operation": {
+            "enum": [
+              "send",
+              "reply",
+              "draft",
+              "update_draft",
+              "delete_draft"
+            ],
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providerResult": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "leased",
+              "sending",
+              "sent",
+              "acked",
+              "failed",
+              "dead"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "mailboxId",
+          "accountId",
+          "messageId",
+          "operation",
+          "idempotencyKey",
+          "payload",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastErrorCode",
+          "providerResult",
+          "createdAt",
+          "updatedAt",
+          "ackedAt"
+        ],
+        "type": "object"
+      },
+      "queued": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "queued",
+      "message",
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "body": {
+        "description": "Message body",
+        "type": "string"
+      },
+      "from": {
+        "description": "Local sender mailbox id or address",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Local outbox idempotency key",
+        "type": "string"
+      },
+      "subject": {
+        "description": "Message subject",
+        "type": "string"
+      },
+      "to": {
+        "description": "Recipient email or comma-separated recipients",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MailSendReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "addresses": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "address": {
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "from",
+                        "to",
+                        "cc",
+                        "bcc",
+                        "reply_to",
+                        "sender"
+                      ],
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "normalizedAddress": {
+                      "type": "string"
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "kind",
+                    "address",
+                    "normalizedAddress",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "raw"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attachments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentType": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "filename": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "localBlobRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "providerAttachmentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "redactionStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sizeBytes": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "filename",
+                    "contentType",
+                    "sizeBytes",
+                    "sha256",
+                    "localBlobRef",
+                    "providerAttachmentId",
+                    "redactionStatus",
+                    "metadata"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "addresses",
+              "attachments"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "outbox": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "ackedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attemptCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mailboxId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "operation": {
+            "enum": [
+              "send",
+              "reply",
+              "draft",
+              "update_draft",
+              "delete_draft"
+            ],
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providerResult": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "leased",
+              "sending",
+              "sent",
+              "acked",
+              "failed",
+              "dead"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "mailboxId",
+          "accountId",
+          "messageId",
+          "operation",
+          "idempotencyKey",
+          "payload",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastErrorCode",
+          "providerResult",
+          "createdAt",
+          "updatedAt",
+          "ackedAt"
+        ],
+        "type": "object"
+      },
+      "queued": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "queued",
+      "message",
+      "outbox"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailThreadsReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "addresses": {
+        "description": "Include local address rows",
+        "type": "boolean"
+      },
+      "thread": {
+        "description": "Local thread id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MailThreadsReadReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "messages": {
+        "items": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "addresses": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "agentId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "contactId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "displayName": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "from",
+                          "to",
+                          "cc",
+                          "bcc",
+                          "reply_to",
+                          "sender"
+                        ],
+                        "type": "string"
+                      },
+                      "messageId": {
+                        "type": "string"
+                      },
+                      "normalizedAddress": {
+                        "type": "string"
+                      },
+                      "platformIdentityId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "raw": {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "messageId",
+                      "kind",
+                      "address",
+                      "normalizedAddress",
+                      "displayName",
+                      "contactId",
+                      "agentId",
+                      "platformIdentityId",
+                      "raw"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "attachments": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contentType": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "filename": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "localBlobRef": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "messageId": {
+                        "type": "string"
+                      },
+                      "metadata": {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "providerAttachmentId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "redactionStatus": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sha256": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sizeBytes": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "messageId",
+                      "filename",
+                      "contentType",
+                      "sizeBytes",
+                      "sha256",
+                      "localBlobRef",
+                      "providerAttachmentId",
+                      "redactionStatus",
+                      "metadata"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "bodyRedactionStatus": {
+                  "enum": [
+                    "full_local",
+                    "preview_only",
+                    "redacted",
+                    "missing"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "dateHeaderAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "direction": {
+                  "enum": [
+                    "inbound",
+                    "outbound",
+                    "draft",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "mailboxId": {
+                  "type": "string"
+                },
+                "providerHistoryId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProvenance": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "providerThreadId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "receivedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "rfcMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "safePayload": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "sentAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "snippet": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "received",
+                    "queued",
+                    "sending",
+                    "sent",
+                    "delivered",
+                    "failed",
+                    "archived",
+                    "trashed",
+                    "spam"
+                  ],
+                  "type": "string"
+                },
+                "subject": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subjectNormalized": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "threadId",
+                "mailboxId",
+                "accountId",
+                "direction",
+                "status",
+                "rfcMessageId",
+                "providerMessageId",
+                "providerThreadId",
+                "providerHistoryId",
+                "subject",
+                "subjectNormalized",
+                "snippet",
+                "bodyRedactionStatus",
+                "dateHeaderAt",
+                "receivedAt",
+                "sentAt",
+                "safePayload",
+                "providerProvenance",
+                "createdAt",
+                "updatedAt",
+                "addresses",
+                "attachments"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "bodyRedactionStatus": {
+                  "enum": [
+                    "full_local",
+                    "preview_only",
+                    "redacted",
+                    "missing"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "dateHeaderAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "direction": {
+                  "enum": [
+                    "inbound",
+                    "outbound",
+                    "draft",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "mailboxId": {
+                  "type": "string"
+                },
+                "providerHistoryId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProvenance": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "providerThreadId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "receivedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "rfcMessageId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "safePayload": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "sentAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "snippet": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "received",
+                    "queued",
+                    "sending",
+                    "sent",
+                    "delivered",
+                    "failed",
+                    "archived",
+                    "trashed",
+                    "spam"
+                  ],
+                  "type": "string"
+                },
+                "subject": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subjectNormalized": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "threadId",
+                "mailboxId",
+                "accountId",
+                "direction",
+                "status",
+                "rfcMessageId",
+                "providerMessageId",
+                "providerThreadId",
+                "providerHistoryId",
+                "subject",
+                "subjectNormalized",
+                "snippet",
+                "bodyRedactionStatus",
+                "dateHeaderAt",
+                "receivedAt",
+                "sentAt",
+                "safePayload",
+                "providerProvenance",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "type": "array"
+      },
+      "thread": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastLocalMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latestMessageAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          "providerThreadRefs": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "subjectNormalized": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "subjectNormalized",
+          "latestMessageAt",
+          "lastLocalMessageId",
+          "participants",
+          "providerThreadRefs",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "thread",
+      "messages"
     ],
     "type": "object"
   }
@@ -6175,6 +29784,250 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let MediaSendReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "delivery": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "media": {
+        "additionalProperties": {},
+        "properties": {
+          "caption": {
+            "type": "string"
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "voiceNote": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "filePath",
+          "filename",
+          "mimeType",
+          "type",
+          "voiceNote"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "instanceId",
+          "chatId"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "media",
+      "target",
+      "delivery"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MetricsDatesInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let MetricsDatesReturnSchema = #"""
+  {
+    "items": {
+      "type": "string"
+    },
+    "type": "array"
+  }
+  """#
+
+  public static let MetricsRollupInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "since": {
+        "description": "Start date YYYY-MM-DD or N days ago",
+        "type": "string"
+      },
+      "through": {
+        "description": "End date YYYY-MM-DD (default: yesterday UTC)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MetricsRollupReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dates": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "rowsWritten": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "dates",
+      "rowsWritten"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MetricsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Filter to one agent",
+        "type": "string"
+      },
+      "by": {
+        "description": "Group by 'agent' | 'agent-model' | 'date' (default: agent-model)",
+        "type": "string"
+      },
+      "days": {
+        "description": "Last N days (default: 7)",
+        "type": "string"
+      },
+      "since": {
+        "description": "Override start date YYYY-MM-DD",
+        "type": "string"
+      },
+      "through": {
+        "description": "Override end date YYYY-MM-DD",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let MetricsShowReturnSchema = #"""
+  {
+    "items": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "cacheCreationTokens": {
+          "type": "number"
+        },
+        "cacheReadTokens": {
+          "type": "number"
+        },
+        "costEventCount": {
+          "type": "number"
+        },
+        "date": {
+          "type": "string"
+        },
+        "inputTokens": {
+          "type": "number"
+        },
+        "model": {
+          "type": "string"
+        },
+        "outputTokens": {
+          "type": "number"
+        },
+        "rolledUpAt": {
+          "type": "number"
+        },
+        "toolCalls": {
+          "type": "number"
+        },
+        "toolErrors": {
+          "type": "number"
+        },
+        "totalCostUsd": {
+          "type": "number"
+        },
+        "totalDurationMs": {
+          "type": "number"
+        },
+        "turnsComplete": {
+          "type": "number"
+        },
+        "turnsFailed": {
+          "type": "number"
+        },
+        "turnsInterrupted": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "agentId",
+        "date",
+        "model",
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheCreationTokens",
+        "totalCostUsd",
+        "costEventCount",
+        "turnsComplete",
+        "turnsFailed",
+        "turnsInterrupted",
+        "toolCalls",
+        "toolErrors",
+        "totalDurationMs",
+        "rolledUpAt"
+      ],
+      "type": "object"
+    },
+    "type": "array"
+  }
+  """#
+
   public static let ObserversListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6196,6 +30049,90 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ObserversListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "bindings": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "bindings"
+    ],
     "type": "object"
   }
   """#
@@ -6224,6 +30161,29 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ObserversProfilesInitReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "profileDir": {
+        "type": "string"
+      },
+      "profilePath": {
+        "type": "string"
+      },
+      "sourceKind": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "sourceKind",
+      "profileDir",
+      "profilePath"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ObserversProfilesListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6237,6 +30197,90 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ObserversProfilesListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "profiles": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "profiles"
+    ],
     "type": "object"
   }
   """#
@@ -6261,6 +30305,35 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ObserversProfilesPreviewReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "eventMarkdown": {
+        "type": "string"
+      },
+      "eventType": {
+        "type": "string"
+      },
+      "profile": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "prompt": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "profile",
+      "eventType",
+      "eventMarkdown",
+      "prompt"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ObserversProfilesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6272,6 +30345,27 @@ public enum RaviSchemas {
     },
     "required": [
       "profileId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ObserversProfilesShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "body": {
+        "type": "string"
+      },
+      "profile": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "profile",
+      "body"
     ],
     "type": "object"
   }
@@ -6290,6 +30384,39 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ObserversProfilesValidateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "errors": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "profiles": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "ok",
+      "profiles",
+      "errors"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ObserversRefreshInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6301,6 +30428,54 @@ public enum RaviSchemas {
     },
     "required": [
       "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ObserversRefreshReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "bindings": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "created": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "skipped": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "source": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "source",
+      "total",
+      "created",
+      "bindings",
+      "skipped"
     ],
     "type": "object"
   }
@@ -6322,6 +30497,28 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ObserversRulesDisableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "rule": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "rule"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ObserversRulesEnableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6338,6 +30535,28 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ObserversRulesEnableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "rule": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "rule"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ObserversRulesExplainInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6349,6 +30568,41 @@ public enum RaviSchemas {
     },
     "required": [
       "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ObserversRulesExplainReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "bindings": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "rules": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "source": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "source",
+      "rules",
+      "bindings"
     ],
     "type": "object"
   }
@@ -6371,6 +30625,90 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ObserversRulesListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "rules": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "rules"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ObserversRulesRmInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6382,6 +30720,24 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ObserversRulesRmReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "deleted": {},
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "deleted"
     ],
     "type": "object"
   }
@@ -6488,6 +30844,28 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ObserversRulesSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "rule": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "rule"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ObserversRulesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6504,10 +30882,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ObserversRulesShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "rule": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "rule"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ObserversRulesValidateInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ObserversRulesValidateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "errors": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "ok": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok",
+      "errors"
+    ],
     "type": "object"
   }
   """#
@@ -6523,6 +30942,676 @@ public enum RaviSchemas {
     },
     "required": [
       "bindingId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ObserversShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "binding": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "binding"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "defaultSite": {
+        "description": "Mark this as the project default site when available",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Console project id or slug",
+        "type": "string"
+      },
+      "slug": {
+        "description": "Hosted subdomain slug, e.g. demo for demo.ravi.page",
+        "type": "string"
+      },
+      "visibility": {
+        "description": "Default visibility: private|protected_link|public",
+        "type": "string"
+      }
+    },
+    "required": [
+      "project",
+      "slug"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "type": "string"
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "site": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "projectRef",
+      "site",
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesDomainsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "hostnames": {
+        "description": "Custom hostname(s), e.g. www.example.com",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "project": {
+        "description": "Console project id or slug",
+        "type": "string"
+      },
+      "site": {
+        "description": "Pages site id or slug",
+        "type": "string"
+      }
+    },
+    "required": [
+      "hostnames",
+      "project",
+      "site"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesDomainsReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "bindings": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "hostnames": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "site": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "bindings",
+      "consoleUrl",
+      "hostnames",
+      "projectRef",
+      "site",
+      "siteRef",
+      "total"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum sites to return (default: 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of sites to skip (default: 0)",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id or slug",
+        "type": "string"
+      }
+    },
+    "required": [
+      "project"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "sites": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "projectRef",
+      "total",
+      "pagination",
+      "sites",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesUpdateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id or slug",
+        "type": "string"
+      },
+      "site": {
+        "description": "Pages site id or slug",
+        "type": "string"
+      },
+      "visibility": {
+        "description": "Default visibility: private|protected_link|public",
+        "type": "string"
+      }
+    },
+    "required": [
+      "project",
+      "site"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesUpdateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "type": "string"
+      },
+      "edgeManifestRepair": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "site": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "projectRef",
+      "siteRef",
+      "site",
+      "edgeManifestRepair",
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesVisibilityInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id or slug",
+        "type": "string"
+      },
+      "site": {
+        "description": "Pages site id or slug",
+        "type": "string"
+      },
+      "visibility": {
+        "description": "private|protected_link|public",
+        "type": "string"
+      }
+    },
+    "required": [
+      "project",
+      "site",
+      "visibility"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesVisibilityReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "type": "string"
+      },
+      "edgeManifestRepair": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "site": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "projectRef",
+      "siteRef",
+      "site",
+      "edgeManifestRepair",
+      "url"
     ],
     "type": "object"
   }
@@ -6554,6 +31643,67 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PermissionsCheckReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "allowed": {
+        "type": "boolean"
+      },
+      "object": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "raw": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "raw",
+          "type",
+          "id"
+        ],
+        "type": "object"
+      },
+      "permission": {
+        "type": "string"
+      },
+      "subject": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "raw": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "raw",
+          "type",
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "subject",
+      "permission",
+      "object",
+      "allowed"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let PermissionsClearInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6563,6 +31713,39 @@ public enum RaviSchemas {
         "type": "boolean"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let PermissionsClearReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "const": "cleared",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "target",
+      "changedCount",
+      "status"
+    ],
     "type": "object"
   }
   """#
@@ -6593,6 +31776,99 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PermissionsGrantReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "relation": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "objectMembers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectType",
+          "subjectId",
+          "subject",
+          "relation",
+          "objectType",
+          "objectId",
+          "object"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "const": "granted",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "warnings": {
+        "items": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "target",
+      "changedCount",
+      "status",
+      "relation",
+      "warnings"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let PermissionsInitInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6609,6 +31885,91 @@ public enum RaviSchemas {
     "required": [
       "subject",
       "template"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PermissionsInitReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "relations": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "object": {
+              "type": "string"
+            },
+            "objectId": {
+              "type": "string"
+            },
+            "objectMembers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "objectType": {
+              "type": "string"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "subjectId": {
+              "type": "string"
+            },
+            "subjectType": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "subjectType",
+            "subjectId",
+            "subject",
+            "relation",
+            "objectType",
+            "objectId",
+            "object"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "status": {
+        "const": "applied",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "target",
+      "changedCount",
+      "status",
+      "relations"
     ],
     "type": "object"
   }
@@ -6647,6 +32008,201 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PermissionsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "filter": {
+        "additionalProperties": {},
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "object": {
+              "type": "string"
+            },
+            "objectId": {
+              "type": "string"
+            },
+            "objectMembers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "objectType": {
+              "type": "string"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "subjectId": {
+              "type": "string"
+            },
+            "subjectType": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "subjectType",
+            "subjectId",
+            "subject",
+            "relation",
+            "objectType",
+            "objectId",
+            "object"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "relations": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "object": {
+              "type": "string"
+            },
+            "objectId": {
+              "type": "string"
+            },
+            "objectMembers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "objectType": {
+              "type": "string"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "subjectId": {
+              "type": "string"
+            },
+            "subjectType": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "subjectType",
+            "subjectId",
+            "subject",
+            "relation",
+            "objectType",
+            "objectId",
+            "object"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "filter",
+      "items",
+      "relations"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let PermissionsRevokeInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6673,10 +32229,229 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PermissionsRevokeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "relation": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "objectMembers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectType",
+          "subjectId",
+          "subject",
+          "relation",
+          "objectType",
+          "objectId",
+          "object"
+        ],
+        "type": "object"
+      },
+      "remainingIndividualRelations": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "object": {
+              "type": "string"
+            },
+            "objectId": {
+              "type": "string"
+            },
+            "objectMembers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "objectType": {
+              "type": "string"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "subjectId": {
+              "type": "string"
+            },
+            "subjectType": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "subjectType",
+            "subjectId",
+            "subject",
+            "relation",
+            "objectType",
+            "objectId",
+            "object"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "status": {
+        "const": "revoked",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "target",
+      "changedCount",
+      "status",
+      "relation",
+      "remainingIndividualRelations"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let PermissionsSyncInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let PermissionsSyncReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "relations": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "object": {
+              "type": "string"
+            },
+            "objectId": {
+              "type": "string"
+            },
+            "objectMembers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "objectType": {
+              "type": "string"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "subjectId": {
+              "type": "string"
+            },
+            "subjectType": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "subjectType",
+            "subjectId",
+            "subject",
+            "relation",
+            "objectType",
+            "objectId",
+            "object"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "status": {
+        "const": "synced",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "target",
+      "changedCount",
+      "status",
+      "relations"
+    ],
     "type": "object"
   }
   """#
@@ -6729,6 +32504,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsFixturesSeedInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6738,6 +32521,30 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ProjectsFixturesSeedReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "fixtures": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "fixtures"
+    ],
     "type": "object"
   }
   """#
@@ -6811,6 +32618,32 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsInitReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "workflows": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "details",
+      "workflows"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsLinkInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6853,6 +32686,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsLinkReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6878,6 +32719,96 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "filters": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "projects": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "filters",
+      "projects"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsNextInputSchema = #"""
   {
     "additionalProperties": false,
@@ -6891,6 +32822,36 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ProjectsNextReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "filters": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "projects": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "filters",
+      "projects"
+    ],
     "type": "object"
   }
   """#
@@ -6928,6 +32889,14 @@ public enum RaviSchemas {
       "project",
       "target"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProjectsResourcesAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -6984,6 +32953,30 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsResourcesImportReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "resources": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "resources"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsResourcesListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7012,6 +33005,90 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsResourcesListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "resources": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "resources"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsResourcesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7033,6 +33110,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsResourcesShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7049,6 +33134,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsStatusInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7061,6 +33154,14 @@ public enum RaviSchemas {
     "required": [
       "project"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProjectsStatusReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -7102,6 +33203,35 @@ public enum RaviSchemas {
       "nodeKey",
       "project",
       "taskId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProjectsTasksAttachReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "defaults": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "workflow": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details",
+      "workflow",
+      "defaults"
     ],
     "type": "object"
   }
@@ -7161,6 +33291,35 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsTasksCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "defaults": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "workflow": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details",
+      "workflow",
+      "defaults"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsTasksDispatchInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7185,6 +33344,35 @@ public enum RaviSchemas {
     "required": [
       "project",
       "taskId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProjectsTasksDispatchReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "defaults": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "workflow": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details",
+      "workflow",
+      "defaults"
     ],
     "type": "object"
   }
@@ -7242,6 +33430,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsUpdateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsWorkflowsAttachInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7262,6 +33458,29 @@ public enum RaviSchemas {
     "required": [
       "project",
       "runId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProjectsWorkflowsAttachReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "workflow": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details",
+      "workflow"
     ],
     "type": "object"
   }
@@ -7296,6 +33515,29 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProjectsWorkflowsStartReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "workflow": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details",
+      "workflow"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsCancelInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7315,6 +33557,29 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsCancelReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "message": {
+        "type": "string"
+      },
+      "request_id": {
+        "type": "string"
+      },
+      "success": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "message",
+      "request_id"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsEventsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7325,6 +33590,34 @@ public enum RaviSchemas {
     },
     "required": [
       "call_request_id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsEventsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "events": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "request_id": {
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "request_id",
+      "total",
+      "events"
     ],
     "type": "object"
   }
@@ -7388,6 +33681,32 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsProfilesConfigureReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "profile": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "provider_sync": {
+        "anyOf": [
+          {},
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "profile",
+      "provider_sync"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsProfilesListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7409,6 +33728,81 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsProfilesListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsProfilesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7420,6 +33814,14 @@ public enum RaviSchemas {
     "required": [
       "profile_id"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsProfilesShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -7468,6 +33870,49 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsRequestReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "block_reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "blocked": {
+        "type": "boolean"
+      },
+      "hint": {
+        "type": "string"
+      },
+      "provider_mode": {
+        "enum": [
+          "stub",
+          "live"
+        ],
+        "type": "string"
+      },
+      "request": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "request",
+      "blocked",
+      "provider_mode",
+      "hint"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsRulesInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7481,6 +33926,34 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsRulesReturnSchema = #"""
+  {
+    "anyOf": [
+      {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      {
+        "additionalProperties": {},
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "rules": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "rules",
+          "message"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
   public static let ProxCallsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7491,6 +33964,45 @@ public enum RaviSchemas {
     },
     "required": [
       "call_request_id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "request": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "runs": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "request",
+      "runs",
+      "result"
     ],
     "type": "object"
   }
@@ -7527,6 +34039,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsToolsBindReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsToolsConfigureInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7546,6 +34066,14 @@ public enum RaviSchemas {
     "required": [
       "tool_id"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsToolsConfigureReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -7589,6 +34117,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsToolsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsToolsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7610,6 +34146,81 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsToolsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
     "type": "object"
   }
   """#
@@ -7641,6 +34252,21 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsToolsRunReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsToolsRunsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7651,6 +34277,34 @@ public enum RaviSchemas {
     },
     "required": [
       "call_request_id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsToolsRunsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "request_id": {
+        "type": "string"
+      },
+      "tool_runs": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "request_id",
+      "total",
+      "tool_runs"
     ],
     "type": "object"
   }
@@ -7671,6 +34325,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsToolsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsToolsUnbindInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7684,6 +34346,26 @@ public enum RaviSchemas {
     },
     "required": [
       "profile_id",
+      "tool_id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsToolsUnbindReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "tool_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
       "tool_id"
     ],
     "type": "object"
@@ -7709,6 +34391,39 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsTranscriptReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "outcome": {
+        "type": "string"
+      },
+      "request_id": {
+        "type": "string"
+      },
+      "summary": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "transcript": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "request_id",
+      "outcome",
+      "transcript"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsVoiceAgentsBindToolInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7728,6 +34443,14 @@ public enum RaviSchemas {
       "tool_id",
       "voice_agent_id"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsVoiceAgentsBindToolReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -7763,6 +34486,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsVoiceAgentsConfigureReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsVoiceAgentsCreateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7794,6 +34525,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsVoiceAgentsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsVoiceAgentsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7815,6 +34554,81 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsVoiceAgentsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsVoiceAgentsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7826,6 +34640,14 @@ public enum RaviSchemas {
     "required": [
       "voice_agent_id"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsVoiceAgentsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -7853,6 +34675,49 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ProxCallsVoiceAgentsSyncReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "dry_run": {
+        "type": "boolean"
+      },
+      "intended_changes": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "provider_agent_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "provider_sync": {
+        "type": "string"
+      },
+      "voice_agent_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "voice_agent_id",
+      "provider",
+      "dry_run",
+      "intended_changes",
+      "provider_sync"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProxCallsVoiceAgentsUnbindToolInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7867,6 +34732,26 @@ public enum RaviSchemas {
     "required": [
       "tool_id",
       "voice_agent_id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ProxCallsVoiceAgentsUnbindToolReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "tool_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "tool_id"
     ],
     "type": "object"
   }
@@ -7888,6 +34773,94 @@ public enum RaviSchemas {
     "required": [
       "emoji",
       "messageId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ReactSendReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "accountId",
+          "chatId",
+          "messageId",
+          "emoji"
+        ],
+        "type": "object"
+      },
+      "reaction": {
+        "additionalProperties": false,
+        "properties": {
+          "emoji": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "messageId",
+          "emoji"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "accountId",
+          "chatId"
+        ],
+        "type": "object"
+      },
+      "topic": {
+        "const": "ravi.outbound.reaction",
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "topic",
+      "reaction",
+      "target",
+      "event"
     ],
     "type": "object"
   }
@@ -7918,6 +34891,75 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RoutesExplainReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "channel": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "configuredRoute": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "instance": {
+        "type": "string"
+      },
+      "liveEffect": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "pattern": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "target",
+      "instance",
+      "pattern",
+      "channel",
+      "configuredRoute",
+      "liveEffect"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let RoutesListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7943,6 +34985,107 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RoutesListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "filter": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "instance": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "routes": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "instance",
+      "filter",
+      "routes"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let RoutesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -7959,6 +35102,31 @@ public enum RaviSchemas {
     "required": [
       "name",
       "pattern"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RoutesShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "instance": {
+        "type": "string"
+      },
+      "pattern": {
+        "type": "string"
+      },
+      "route": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "instance",
+      "pattern",
+      "route"
     ],
     "type": "object"
   }
@@ -7994,6 +35162,61 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RulesImportReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "candidates": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "counts": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "cwd": {
+        "type": "string"
+      },
+      "force": {
+        "type": "boolean"
+      },
+      "includeUser": {
+        "type": "boolean"
+      },
+      "rulesDir": {
+        "type": "string"
+      },
+      "sources": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "write": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "cwd",
+      "includeUser",
+      "write",
+      "force",
+      "rulesDir",
+      "sources",
+      "candidates",
+      "counts"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let RulesSourcesInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8012,6 +35235,64 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let RulesSourcesReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "counts": {
+        "additionalProperties": false,
+        "properties": {
+          "existingSources": {
+            "type": "number"
+          },
+          "missingSources": {
+            "type": "number"
+          },
+          "sources": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "sources",
+          "existingSources",
+          "missingSources"
+        ],
+        "type": "object"
+      },
+      "cwd": {
+        "type": "string"
+      },
+      "includeUser": {
+        "type": "boolean"
+      },
+      "provider": {
+        "enum": [
+          "all",
+          "claude",
+          "agents"
+        ],
+        "type": "string"
+      },
+      "sources": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "cwd",
+      "provider",
+      "includeUser",
+      "sources",
+      "counts"
+    ],
     "type": "object"
   }
   """#
@@ -8081,6 +35362,23 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RuntimeCredentialsAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "credential": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "credential"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let RuntimeCredentialsClassifyInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8126,6 +35424,29 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RuntimeCredentialsClassifyReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "pressure": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "signal": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "signal",
+      "pressure"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let RuntimeCredentialsDisableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8142,6 +35463,23 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RuntimeCredentialsDisableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "credential": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "credential"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let RuntimeCredentialsEnableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8153,6 +35491,23 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsEnableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "credential": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "credential"
     ],
     "type": "object"
   }
@@ -8187,6 +35542,23 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RuntimeCredentialsImportReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "credential": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "credential"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let RuntimeCredentialsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8216,6 +35588,90 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "credentials": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "providerHealth": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "credentials",
+      "providerHealth"
+    ],
     "type": "object"
   }
   """#
@@ -8257,6 +35713,26 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RuntimeCredentialsRefreshReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "refreshed": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "refreshed"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let RuntimeCredentialsResetHealthInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8268,6 +35744,36 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsResetHealthReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "credential": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "health": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "credential",
+      "health"
     ],
     "type": "object"
   }
@@ -8302,6 +35808,48 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RuntimeCredentialsSelectReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "candidates": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "rejected": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "selected": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "selected",
+      "candidates",
+      "rejected"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let RuntimeCredentialsStatusInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8311,6 +35859,36 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimeCredentialsStatusReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "credential": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "health": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "credential",
+      "health"
+    ],
     "type": "object"
   }
   """#
@@ -8333,6 +35911,52 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SdkClientCheckReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dir": {
+        "type": "string"
+      },
+      "drift": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "reason",
+            "path"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "files": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "dir",
+      "drift",
+      "files"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SdkClientGenerateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8351,6 +35975,50 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SdkClientGenerateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dir": {
+        "type": "string"
+      },
+      "files": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "number"
+            },
+            "file": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "path",
+            "bytes"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "status": {
+        "const": "written",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "dir",
+      "files"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SdkOpenapiCheckInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8360,6 +36028,33 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let SdkOpenapiCheckReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "drift": {
+        "type": "boolean"
+      },
+      "liveBytes": {
+        "type": "number"
+      },
+      "path": {
+        "type": "string"
+      },
+      "storedBytes": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "path",
+      "drift",
+      "liveBytes",
+      "storedBytes"
+    ],
     "type": "object"
   }
   """#
@@ -8381,6 +36076,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SdkOpenapiEmitReturnSchema = #"""
+  {
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "status": {
+            "const": "stdout",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "const": "written",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "path",
+          "bytes"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
   public static let SdkSwiftCheckInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8395,6 +36135,52 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let SdkSwiftCheckReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dir": {
+        "type": "string"
+      },
+      "drift": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "reason",
+            "path"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "files": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "dir",
+      "drift",
+      "files"
+    ],
     "type": "object"
   }
   """#
@@ -8417,6 +36203,50 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SdkSwiftGenerateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dir": {
+        "type": "string"
+      },
+      "files": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "number"
+            },
+            "file": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "path",
+            "bytes"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "status": {
+        "const": "written",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "dir",
+      "files"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SelfChatInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8426,6 +36256,31 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let SelfChatReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "reason": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "partial",
+          "missing",
+          "unavailable"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "status"
+    ],
     "type": "object"
   }
   """#
@@ -8447,10 +36302,224 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SelfContextReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "chat": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "depth": {
+        "type": "string"
+      },
+      "explain": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "generatedAt": {
+        "type": "number"
+      },
+      "identity": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "knowledge": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "limit": {
+        "type": "number"
+      },
+      "nextReads": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "permissions": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "recent": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "route": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "session": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "generatedAt",
+      "depth",
+      "limit",
+      "identity",
+      "session",
+      "chat",
+      "route",
+      "recent",
+      "permissions",
+      "knowledge",
+      "explain",
+      "nextReads"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SelfExplainInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SelfExplainReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "explain": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "generatedAt": {
+        "type": "number"
+      },
+      "nextReads": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "generatedAt",
+      "explain",
+      "nextReads"
+    ],
     "type": "object"
   }
   """#
@@ -8463,10 +36532,60 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SelfKnowledgeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "reason": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "partial",
+          "missing",
+          "unavailable"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "status"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SelfPermissionsInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SelfPermissionsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "reason": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "partial",
+          "missing",
+          "unavailable"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "status"
+    ],
     "type": "object"
   }
   """#
@@ -8484,10 +36603,60 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SelfRecentReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "reason": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "partial",
+          "missing",
+          "unavailable"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "status"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SelfRouteInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SelfRouteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "reason": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "partial",
+          "missing",
+          "unavailable"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "status"
+    ],
     "type": "object"
   }
   """#
@@ -8500,31 +36669,99 @@ public enum RaviSchemas {
   }
   """#
 
-  public static let ServiceStartInputSchema = #"""
+  public static let SelfWhoamiReturnSchema = #"""
   {
-    "additionalProperties": false,
-    "properties": {},
-    "type": "object"
-  }
-  """#
-
-  public static let ServiceTuiInputSchema = #"""
-  {
-    "additionalProperties": false,
+    "additionalProperties": {},
     "properties": {
+      "chat": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "generatedAt": {
+        "type": "number"
+      },
+      "identity": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "nextReads": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "route": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "session": {
-        "description": "Session key (default: agent:main:main)",
-        "type": "string"
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
       }
     },
-    "type": "object"
-  }
-  """#
-
-  public static let ServiceWaInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {},
+    "required": [
+      "generatedAt",
+      "identity",
+      "session",
+      "chat",
+      "route",
+      "nextReads"
+    ],
     "type": "object"
   }
   """#
@@ -8542,6 +36779,14 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsActionsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -8591,6 +36836,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsAnswerReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsAskInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8636,6 +36889,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsAskReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsAttachInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8660,6 +36921,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsAttachReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsDeleteInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8672,6 +36941,14 @@ public enum RaviSchemas {
     "required": [
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsDeleteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -8696,6 +36973,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsDeleteMessageReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsDetachInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8712,6 +36997,14 @@ public enum RaviSchemas {
     "required": [
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsDetachReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -8740,6 +37033,14 @@ public enum RaviSchemas {
     "required": [
       "sessionOrMessage"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsEditMessageReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -8785,6 +37086,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsExecuteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsExtendInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8801,6 +37110,446 @@ public enum RaviSchemas {
     "required": [
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsExtendReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsAddInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "at": {
+        "description": "One-shot schedule timestamp",
+        "type": "string"
+      },
+      "barrier": {
+        "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
+        "type": "string"
+      },
+      "cron": {
+        "description": "Cron expression",
+        "type": "string"
+      },
+      "description": {
+        "description": "Description for humans",
+        "type": "string"
+      },
+      "disabled": {
+        "description": "Create disabled/paused",
+        "type": "boolean"
+      },
+      "every": {
+        "description": "Idle followup after inactivity, e.g. 30m, 2h, 1d",
+        "type": "string"
+      },
+      "message": {
+        "description": "Followup message template",
+        "type": "string"
+      },
+      "name": {
+        "description": "Followup cadence name",
+        "type": "string"
+      },
+      "owner": {
+        "description": "Owner scope (default: current agent or system:ravi)",
+        "type": "string"
+      },
+      "step": {
+        "description": "Idle followup step; repeat or quote, e.g. --step '2h=First followup' --step '3h=Second followup'",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "targetChat": {
+        "description": "Target one canonical chat id/ref",
+        "type": "string"
+      },
+      "targetList": {
+        "description": "Target every active chat in a reading list",
+        "type": "string"
+      },
+      "targetSession": {
+        "description": "Target one session by name or key",
+        "type": "string"
+      },
+      "timezone": {
+        "description": "Timezone for cron schedules",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsInspectInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Followup cadence id",
+        "type": "string"
+      },
+      "runs": {
+        "description": "Number of recent runs (default: 20)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsInspectReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "includeDisabled": {
+        "description": "Include paused/disabled cadences",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching rows to skip",
+        "type": "string"
+      },
+      "targetType": {
+        "description": "Filter by target type: session|chat|reading_list",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsPauseInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Followup cadence id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsPauseReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsResumeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Followup cadence id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsResumeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsRetryInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "cadence": {
+        "description": "Retry failed/dead runs for one cadence",
+        "type": "string"
+      },
+      "run": {
+        "description": "Optional run id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsRetryReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsRunInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Followup cadence id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsRunReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsRunsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "cadence": {
+        "description": "Filter by cadence id",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching rows to skip",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by run status",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsRunsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsSnoozeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Followup cadence id",
+        "type": "string"
+      },
+      "until": {
+        "description": "Wake-up timestamp",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsFollowupsSnoozeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -8850,6 +37599,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsGoalReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsInfoInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8862,6 +37619,14 @@ public enum RaviSchemas {
     "required": [
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsInfoReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -8907,6 +37672,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsInformReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsKeepInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8919,6 +37692,14 @@ public enum RaviSchemas {
     "required": [
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsKeepReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -8956,6 +37737,81 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsMuteInputSchema = #"""
   {
     "additionalProperties": false,
@@ -8972,6 +37828,14 @@ public enum RaviSchemas {
     "required": [
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsMuteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -9005,6 +37869,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsPruneReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsReadInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9030,6 +37902,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsReadReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsRenameInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9051,6 +37931,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsRenameReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsResetInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9063,6 +37951,14 @@ public enum RaviSchemas {
     "required": [
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsResetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -9100,6 +37996,28 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsRuntimeFollowUpReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "error": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "operation": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsRuntimeForkInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9128,6 +38046,28 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsRuntimeForkReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "error": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "operation": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsRuntimeInterruptInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9147,6 +38087,28 @@ public enum RaviSchemas {
     },
     "required": [
       "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsRuntimeInterruptReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "error": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "operation": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
     ],
     "type": "object"
   }
@@ -9188,6 +38150,28 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsRuntimeListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "error": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "operation": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsRuntimeReadInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9212,6 +38196,28 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsRuntimeReadReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "error": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "operation": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsRuntimeRollbackInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9231,6 +38237,28 @@ public enum RaviSchemas {
     },
     "required": [
       "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsRuntimeRollbackReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "error": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "operation": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
     ],
     "type": "object"
   }
@@ -9264,6 +38292,28 @@ public enum RaviSchemas {
     "required": [
       "session",
       "text"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsRuntimeSteerReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "data": {},
+      "error": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "operation": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
     ],
     "type": "object"
   }
@@ -9341,6 +38391,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsSendReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsSetDisplayInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9358,6 +38416,14 @@ public enum RaviSchemas {
       "displayName",
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsSetDisplayReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -9383,6 +38449,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsSetModelReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsSetThinkingInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9400,6 +38474,14 @@ public enum RaviSchemas {
       "level",
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsSetThinkingReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -9425,6 +38507,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsSetTtlReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsSubscriptionsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9437,6 +38527,14 @@ public enum RaviSchemas {
     "required": [
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsSubscriptionsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -9509,6 +38607,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsTraceReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsUnmuteInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9529,6 +38635,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsUnmuteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsVisibilityInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9541,6 +38655,14 @@ public enum RaviSchemas {
     "required": [
       "nameOrKey"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsVisibilityReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -9561,6 +38683,107 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SettingsDeleteReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "setting": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isSet": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "isSet",
+          "known",
+          "legacy",
+          "description",
+          "defaultValue",
+          "hint"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "setting"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SettingsGetInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9572,6 +38795,86 @@ public enum RaviSchemas {
     },
     "required": [
       "key"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SettingsGetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "setting": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isSet": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "isSet",
+          "known",
+          "legacy",
+          "description",
+          "defaultValue",
+          "hint"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "setting"
     ],
     "type": "object"
   }
@@ -9598,6 +38901,382 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SettingsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "customSettings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "defaultValue": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "isSet": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "known": {
+              "type": "boolean"
+            },
+            "legacy": {
+              "type": "boolean"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "value",
+            "isSet",
+            "known",
+            "legacy",
+            "description",
+            "defaultValue",
+            "hint"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "defaultValue": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "isSet": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "known": {
+              "type": "boolean"
+            },
+            "legacy": {
+              "type": "boolean"
+            },
+            "section": {
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "value",
+            "isSet",
+            "known",
+            "legacy",
+            "description",
+            "defaultValue",
+            "hint",
+            "section"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "knownSettings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "defaultValue": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "isSet": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "known": {
+              "type": "boolean"
+            },
+            "legacy": {
+              "type": "boolean"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "value",
+            "isSet",
+            "known",
+            "legacy",
+            "description",
+            "defaultValue",
+            "hint"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "legacySettings": {
+        "additionalProperties": false,
+        "properties": {
+          "hidden": {
+            "type": "boolean"
+          },
+          "settings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "defaultValue": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hint": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isSet": {
+                  "type": "boolean"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "known": {
+                  "type": "boolean"
+                },
+                "legacy": {
+                  "type": "boolean"
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "value",
+                "isSet",
+                "known",
+                "legacy",
+                "description",
+                "defaultValue",
+                "hint"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "hidden",
+          "settings"
+        ],
+        "type": "object"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "showLegacy": {
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "showLegacy",
+      "knownSettings",
+      "customSettings",
+      "legacySettings",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SettingsSetInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9619,6 +39298,107 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SettingsSetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "setting": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isSet": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "isSet",
+          "known",
+          "legacy",
+          "description",
+          "defaultValue",
+          "hint"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "setting"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillGatesDisableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9635,6 +39415,166 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillGatesDisableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "rule": {
+        "additionalProperties": {},
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "defaultRule": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "groupRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "skill",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "rule"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillGatesEnableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9646,6 +39586,166 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillGatesEnableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "rule": {
+        "additionalProperties": {},
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "defaultRule": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "groupRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "skill",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "rule"
     ],
     "type": "object"
   }
@@ -9672,6 +39772,372 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillGatesListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "configuredTotal": {
+        "type": "number"
+      },
+      "filters": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "command": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "commandPrefix": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "commandRegex": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "configured": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "defaultRule": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "disabled": {
+              "type": "boolean"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "groupRegex": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "pattern": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "skill": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "type": "string"
+            },
+            "tool": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "toolPrefix": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "toolRegex": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "skill",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "rules": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "command": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "commandPrefix": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "commandRegex": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "configured": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "defaultRule": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "disabled": {
+              "type": "boolean"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "groupRegex": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "pattern": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "skill": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "type": "string"
+            },
+            "tool": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "toolPrefix": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "toolRegex": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "skill",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "configuredTotal",
+      "items",
+      "rules"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillGatesResetInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9688,6 +40154,26 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillGatesResetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "deleted": {
+        "type": "boolean"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "deleted"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillGatesRmInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9699,6 +40185,172 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillGatesRmReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "deleted": {
+        "type": "boolean"
+      },
+      "rule": {
+        "additionalProperties": {},
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "defaultRule": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "groupRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "skill",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "action"
     ],
     "type": "object"
   }
@@ -9757,6 +40409,166 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillGatesSetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "rule": {
+        "additionalProperties": {},
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "defaultRule": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "groupRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "skill",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "rule"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillGatesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9768,6 +40580,161 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillGatesShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "rule": {
+        "additionalProperties": {},
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "defaultRule": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "groupRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "skill",
+          "enabled"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "rule"
     ],
     "type": "object"
   }
@@ -9810,6 +40777,83 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillsInstallReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "codexSynced": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "installed": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "pluginName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "skillFilePath": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "path",
+            "skillFilePath",
+            "source",
+            "pluginName"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "source": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "source",
+      "installed",
+      "codexSynced"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9843,6 +40887,135 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "skills": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "pluginName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "skillFilePath": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "path",
+            "skillFilePath",
+            "source",
+            "pluginName"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "source": {
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "source",
+      "skills"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -9867,10 +41040,99 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "skill": {
+        "additionalProperties": {},
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "pluginName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skillFilePath": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "path",
+          "skillFilePath",
+          "source",
+          "pluginName",
+          "content"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "skill"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillsSyncInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsSyncReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "codexSynced": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "codexSynced",
+      "total"
+    ],
     "type": "object"
   }
   """#
@@ -9891,6 +41153,23 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsGetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "context": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "context"
     ],
     "type": "object"
   }
@@ -9917,6 +41196,90 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "specs": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "specs"
+    ],
     "type": "object"
   }
   """#
@@ -9949,10 +41312,72 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SpecsNewReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "createdFiles": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "missingAncestors": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "spec": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "const": "created",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "spec",
+      "createdFiles",
+      "missingAncestors"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SpecsSyncInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsSyncReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "rootPath": {
+        "type": "string"
+      },
+      "status": {
+        "const": "synced",
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "status",
+      "total",
+      "rootPath"
+    ],
     "type": "object"
   }
   """#
@@ -10006,6 +41431,103 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let StickersAddReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "sticker": {
+        "additionalProperties": {},
+        "properties": {
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "avoid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "media": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description",
+          "avoid",
+          "channels",
+          "agents",
+          "media",
+          "enabled",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "action",
+      "sticker"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let StickersListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10023,6 +41545,231 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let StickersListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "agents": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "avoid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "channels": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "media": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "description",
+            "avoid",
+            "channels",
+            "agents",
+            "media",
+            "enabled",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "stickers": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "agents": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "avoid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "channels": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "media": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "description",
+            "avoid",
+            "channels",
+            "agents",
+            "media",
+            "enabled",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "stickers"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let StickersRemoveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10034,6 +41781,30 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let StickersRemoveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "const": "remove",
+        "type": "string"
+      },
+      "stickerId": {
+        "type": "string"
+      },
+      "success": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "action",
+      "stickerId"
     ],
     "type": "object"
   }
@@ -10071,6 +41842,71 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let StickersSendReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "sticker": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "accountId",
+          "chatId"
+        ],
+        "type": "object"
+      },
+      "topic": {
+        "const": "ravi.stickers.send",
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "topic",
+      "sticker",
+      "target",
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let StickersShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10082,6 +41918,974 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let StickersShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "sticker": {
+        "additionalProperties": {},
+        "properties": {
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "avoid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "media": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description",
+          "avoid",
+          "channels",
+          "agents",
+          "media",
+          "enabled",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "sticker"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SyncInspectInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "sync_outbox or sync_inbox id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SyncInspectReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "found": {
+            "const": false,
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "found",
+          "id"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "found": {
+            "const": true,
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "outbox",
+            "type": "string"
+          },
+          "record": {
+            "additionalProperties": false,
+            "properties": {
+              "ackedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "attemptCount": {
+                "type": "number"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "domain": {
+                "type": "string"
+              },
+              "entityId": {
+                "type": "string"
+              },
+              "entityRevision": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "entityType": {
+                "type": "string"
+              },
+              "eventId": {
+                "type": "string"
+              },
+              "eventType": {
+                "type": "string"
+              },
+              "evidenceRefs": {
+                "items": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "type": "array"
+              },
+              "id": {
+                "type": "string"
+              },
+              "idempotencyKey": {
+                "type": "string"
+              },
+              "lastErrorCode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "leaseId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "leasedUntil": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "nextAttemptAt": {
+                "type": "number"
+              },
+              "occurredAt": {
+                "type": "number"
+              },
+              "originInstallationId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "payload": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "schemaVersion": {
+                "type": "number"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "leased",
+                  "sent",
+                  "acked",
+                  "failed",
+                  "dead"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "eventId",
+              "originInstallationId",
+              "domain",
+              "eventType",
+              "entityType",
+              "entityId",
+              "entityRevision",
+              "idempotencyKey",
+              "payload",
+              "evidenceRefs",
+              "schemaVersion",
+              "status",
+              "attemptCount",
+              "nextAttemptAt",
+              "leaseId",
+              "leasedUntil",
+              "lastErrorCode",
+              "occurredAt",
+              "sentAt",
+              "ackedAt",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "found",
+          "kind",
+          "record"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "found": {
+            "const": true,
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "inbox",
+            "type": "string"
+          },
+          "record": {
+            "additionalProperties": false,
+            "properties": {
+              "appliedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "attemptCount": {
+                "type": "number"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "domain": {
+                "type": "string"
+              },
+              "entityId": {
+                "type": "string"
+              },
+              "entityType": {
+                "type": "string"
+              },
+              "eventType": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "lastErrorCode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "payload": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "receivedAt": {
+                "type": "number"
+              },
+              "remoteEventId": {
+                "type": "string"
+              },
+              "remoteSequence": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "applied",
+                  "skipped",
+                  "failed",
+                  "dead"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "remoteSequence",
+              "remoteEventId",
+              "domain",
+              "eventType",
+              "entityType",
+              "entityId",
+              "payload",
+              "status",
+              "attemptCount",
+              "lastErrorCode",
+              "receivedAt",
+              "appliedAt",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "found",
+          "kind",
+          "record"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
+  public static let SyncPullInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "domain": {
+        "description": "Filter one sync domain",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Max events in batch",
+        "type": "string"
+      },
+      "project": {
+        "description": "Alias for --project-ref",
+        "type": "string"
+      },
+      "projectId": {
+        "description": "Console project id",
+        "type": "string"
+      },
+      "projectRef": {
+        "description": "Console project ref",
+        "type": "string"
+      },
+      "scope": {
+        "description": "Sync scope (organization)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SyncPullReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "applied": {
+        "type": "number"
+      },
+      "cursor": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "downloaded": {
+        "type": "number"
+      },
+      "enqueued": {
+        "type": "number"
+      },
+      "errorCode": {
+        "type": "string"
+      },
+      "failed": {
+        "type": "number"
+      },
+      "linked": {
+        "type": "boolean"
+      },
+      "skipped": {
+        "type": "number"
+      },
+      "status": {
+        "enum": [
+          "unlinked",
+          "noop",
+          "downloaded",
+          "failed"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "linked",
+      "status",
+      "downloaded",
+      "enqueued",
+      "applied",
+      "skipped",
+      "failed",
+      "cursor"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SyncPushInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "domain": {
+        "description": "Filter one sync domain",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Max events in batch",
+        "type": "string"
+      },
+      "maxBytes": {
+        "description": "Max payload bytes in batch",
+        "type": "string"
+      },
+      "project": {
+        "description": "Alias for --project-ref",
+        "type": "string"
+      },
+      "projectId": {
+        "description": "Console project id",
+        "type": "string"
+      },
+      "projectRef": {
+        "description": "Console project ref",
+        "type": "string"
+      },
+      "scope": {
+        "description": "Sync scope (organization)",
+        "type": "string"
+      },
+      "traces": {
+        "description": "Also enqueue and upload runtime trace export batches",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SyncPushReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "acked": {
+        "type": "number"
+      },
+      "attempted": {
+        "type": "number"
+      },
+      "errorCode": {
+        "type": "string"
+      },
+      "failed": {
+        "type": "number"
+      },
+      "linked": {
+        "type": "boolean"
+      },
+      "sent": {
+        "type": "number"
+      },
+      "status": {
+        "enum": [
+          "unlinked",
+          "noop",
+          "uploaded",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "trace": {
+        "additionalProperties": false,
+        "properties": {
+          "acked": {
+            "type": "number"
+          },
+          "attempted": {
+            "type": "number"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "failed": {
+            "type": "number"
+          },
+          "linked": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "unlinked",
+              "noop",
+              "uploaded",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "linked",
+          "status",
+          "attempted",
+          "acked",
+          "failed"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "linked",
+      "status",
+      "attempted",
+      "sent",
+      "acked",
+      "failed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SyncRetryInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dead": {
+        "description": "Also retry dead rows",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Retry one outbox id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SyncRetryReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "retried": {
+        "type": "number"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "retried"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SyncStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SyncStatusReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cursors": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "cursorKey": {
+              "type": "string"
+            },
+            "cursorValue": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "domain": {
+              "type": "string"
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "domain",
+            "cursorKey",
+            "cursorValue",
+            "updatedAt",
+            "meta"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "inbox": {
+        "additionalProperties": false,
+        "properties": {
+          "acked": {
+            "type": "number"
+          },
+          "applied": {
+            "type": "number"
+          },
+          "dead": {
+            "type": "number"
+          },
+          "failed": {
+            "type": "number"
+          },
+          "leased": {
+            "type": "number"
+          },
+          "pending": {
+            "type": "number"
+          },
+          "sent": {
+            "type": "number"
+          },
+          "skipped": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "pending",
+          "failed",
+          "dead"
+        ],
+        "type": "object"
+      },
+      "installationId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "lastDownload": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "lastError": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "lastUpload": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "linked": {
+        "type": "boolean"
+      },
+      "outbox": {
+        "additionalProperties": false,
+        "properties": {
+          "acked": {
+            "type": "number"
+          },
+          "applied": {
+            "type": "number"
+          },
+          "dead": {
+            "type": "number"
+          },
+          "failed": {
+            "type": "number"
+          },
+          "leased": {
+            "type": "number"
+          },
+          "pending": {
+            "type": "number"
+          },
+          "sent": {
+            "type": "number"
+          },
+          "skipped": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "pending",
+          "failed",
+          "dead"
+        ],
+        "type": "object"
+      },
+      "runner": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "env": {
+            "type": "string"
+          },
+          "pullDomains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "env",
+          "pullDomains"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "linked",
+      "consoleUrl",
+      "installationId",
+      "runner",
+      "outbox",
+      "inbox",
+      "cursors",
+      "lastUpload",
+      "lastDownload",
+      "lastError"
     ],
     "type": "object"
   }
@@ -10115,6 +42919,49 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TagRulesEvaluateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "apply": {
+        "type": "boolean"
+      },
+      "outcomes": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "ruleId": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "traces": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "ruleId",
+      "target",
+      "apply",
+      "outcomes",
+      "traces"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TagRulesExplainInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10124,6 +42971,44 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let TagRulesExplainReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "loaded": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "outcomes": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "rules": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "target",
+      "rules",
+      "loaded",
+      "outcomes"
+    ],
     "type": "object"
   }
   """#
@@ -10145,6 +43030,59 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TagRulesListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "errors": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "limit",
+          "offset"
+        ],
+        "type": "object"
+      },
+      "rules": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "rules",
+      "errors",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TagRulesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10156,6 +43094,26 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TagRulesShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "rule": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "rule"
     ],
     "type": "object"
   }
@@ -10178,10 +43136,87 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TagRulesTickReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "appliedActions": {
+        "type": "number"
+      },
+      "contacts": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "contactsProcessed": {
+        "type": "number"
+      },
+      "loadErrors": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "matched": {
+        "type": "number"
+      },
+      "rulesLoaded": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "rulesLoaded",
+      "loadErrors",
+      "contactsProcessed",
+      "matched",
+      "appliedActions",
+      "contacts"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TagRulesValidateInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let TagRulesValidateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "errors": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "ruleCount": {
+        "type": "number"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "error"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "ruleCount",
+      "errors"
+    ],
     "type": "object"
   }
   """#
@@ -10318,6 +43353,49 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TagsAttachReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "behaviorConsumers": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "binding": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "tag": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TagsCreateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10350,6 +43428,49 @@ public enum RaviSchemas {
     },
     "required": [
       "slug"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TagsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "behaviorConsumers": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "binding": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "tag": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount"
     ],
     "type": "object"
   }
@@ -10483,6 +43604,32 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TagsDetachReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "const": "detached",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TagsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10516,6 +43663,96 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let TagsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "filters": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "page": {
+        "additionalProperties": {},
+        "properties": {
+          "count": {
+            "type": "number"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "limit",
+          "count",
+          "hasMore",
+          "nextCursor",
+          "nextCommand",
+          "sort",
+          "order"
+        ],
+        "type": "object"
+      },
+      "tags": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "page",
+      "filters",
+      "items",
+      "tags"
+    ],
     "type": "object"
   }
   """#
@@ -10665,6 +43902,105 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TagsSearchReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "behaviorConsumers": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "bindings": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "filters": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "page": {
+        "additionalProperties": {},
+        "properties": {
+          "count": {
+            "type": "number"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "limit",
+          "count",
+          "hasMore",
+          "nextCursor",
+          "nextCommand",
+          "sort",
+          "order"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "page",
+      "filters",
+      "items",
+      "bindings",
+      "behaviorConsumers"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TagsSetInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10691,6 +44027,49 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TagsSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "behaviorConsumers": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "binding": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "tag": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TagsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10702,6 +44081,41 @@ public enum RaviSchemas {
     },
     "required": [
       "slug"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TagsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "behaviorConsumers": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "bindings": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "tag": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "tag",
+      "bindings",
+      "behaviorConsumers"
     ],
     "type": "object"
   }
@@ -10722,6 +44136,29 @@ public enum RaviSchemas {
     },
     "required": [
       "taskId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TasksArchiveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "event"
     ],
     "type": "object"
   }
@@ -10818,6 +44255,48 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksAutomationsAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "automation": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount",
+      "target",
+      "automation"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksAutomationsDisableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10834,6 +44313,48 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksAutomationsDisableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "automation": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount",
+      "target",
+      "automation"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksAutomationsEnableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10845,6 +44366,48 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TasksAutomationsEnableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "automation": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount",
+      "target",
+      "automation"
     ],
     "type": "object"
   }
@@ -10871,6 +44434,96 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksAutomationsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "automations": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "filters": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "filters",
+      "automations"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksAutomationsRmInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10887,6 +44540,48 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksAutomationsRmReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "automation": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "changedCount",
+      "target",
+      "automation"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksAutomationsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10898,6 +44593,32 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TasksAutomationsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "automation": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "runs": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "automation",
+      "runs"
     ],
     "type": "object"
   }
@@ -10923,6 +44644,29 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksBlockReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksCommentInputSchema = #"""
   {
     "additionalProperties": false,
@@ -10939,6 +44683,35 @@ public enum RaviSchemas {
     "required": [
       "body",
       "taskId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TasksCommentReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "comment": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "event",
+      "comment"
     ],
     "type": "object"
   }
@@ -11046,6 +44819,92 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "dependencies": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "dependents": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "launchPlan": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "parentTaskId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "readiness": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "relatedEvents": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "taskProfile": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "taskProfile",
+      "event",
+      "relatedEvents",
+      "parentTaskId",
+      "readiness",
+      "dependencies",
+      "dependents",
+      "launchPlan"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksDepsAddInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11062,6 +44921,29 @@ public enum RaviSchemas {
     "required": [
       "dependencyTaskId",
       "taskId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TasksDepsAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "event"
     ],
     "type": "object"
   }
@@ -11091,6 +44973,122 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksDepsLsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "dependencies": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "dependents": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "launchPlan": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "readiness": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "taskId": {
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "taskId",
+      "total",
+      "pagination",
+      "readiness",
+      "launchPlan",
+      "items",
+      "dependencies",
+      "dependents"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksDepsRmInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11107,6 +45105,29 @@ public enum RaviSchemas {
     "required": [
       "dependencyTaskId",
       "taskId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TasksDepsRmReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "event"
     ],
     "type": "object"
   }
@@ -11164,6 +45185,38 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksDispatchReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "mode": {
+        "type": "string"
+      },
+      "readiness": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "mode",
+      "task",
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksDoneInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11184,6 +45237,29 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksDoneReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksFailInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11199,6 +45275,29 @@ public enum RaviSchemas {
     },
     "required": [
       "taskId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TasksFailReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "event"
     ],
     "type": "object"
   }
@@ -11293,6 +45392,66 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "archiveMode": {
+        "type": "string"
+      },
+      "filters": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "limit": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "page": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "tasks": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "archiveMode",
+      "limit",
+      "page",
+      "filters",
+      "items",
+      "tasks"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksProfilesInitInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11318,6 +45477,29 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksProfilesInitReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "manifestPath": {
+        "type": "string"
+      },
+      "profileDir": {
+        "type": "string"
+      },
+      "sourceKind": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "sourceKind",
+      "profileDir",
+      "manifestPath"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksProfilesListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11331,6 +45513,90 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let TasksProfilesListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "profiles": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "profiles"
+    ],
     "type": "object"
   }
   """#
@@ -11386,6 +45652,29 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksProfilesPreviewReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "profile": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "rendered": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "profile",
+      "rendered"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksProfilesShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11402,6 +45691,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksProfilesShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let TasksProfilesValidateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11411,6 +45708,30 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let TasksProfilesValidateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "results": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "valid": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "valid",
+      "results"
+    ],
     "type": "object"
   }
   """#
@@ -11439,6 +45760,29 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksReportReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11459,6 +45803,89 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TasksShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "comments": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "dependencies": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "dependents": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "events": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "historyLimit": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "launchPlan": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "readiness": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "events",
+      "comments",
+      "historyLimit",
+      "readiness",
+      "dependencies",
+      "dependents",
+      "launchPlan"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TasksUnarchiveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11470,6 +45897,29 @@ public enum RaviSchemas {
     },
     "required": [
       "taskId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TasksUnarchiveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "task",
+      "event"
     ],
     "type": "object"
   }
@@ -11495,6 +45945,33 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ThreadsBriefReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "brief": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "thread": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "thread",
+      "brief"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ThreadsCloseInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11513,6 +45990,27 @@ public enum RaviSchemas {
       }
     },
     "required": [
+      "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ThreadsCloseReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "thread": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
       "thread"
     ],
     "type": "object"
@@ -11543,6 +46041,33 @@ public enum RaviSchemas {
     "required": [
       "body",
       "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ThreadsCommentReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "entry": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "thread": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "thread",
+      "entry"
     ],
     "type": "object"
   }
@@ -11588,6 +46113,27 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ThreadsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "thread": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ThreadsEntriesInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11611,6 +46157,36 @@ public enum RaviSchemas {
     },
     "required": [
       "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ThreadsEntriesReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "entries": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "thread": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "thread",
+      "entries"
     ],
     "type": "object"
   }
@@ -11653,6 +46229,33 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ThreadsLinkReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "link": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "thread": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "thread",
+      "link"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ThreadsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11686,6 +46289,82 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ThreadsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "const": "list",
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "items",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ThreadsNoteInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11715,6 +46394,33 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ThreadsNoteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "entry": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "thread": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "thread",
+      "entry"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ThreadsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11739,6 +46445,45 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ThreadsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "entries": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "links": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "thread": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "thread",
+      "entries",
+      "links"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ToolsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11756,6 +46501,115 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ToolsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "groups": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "tools": {
+              "items": {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "tools"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "tools": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "groups",
+      "tools"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ToolsManifestInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11764,10 +46618,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ToolsManifestReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "tools": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "tools"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ToolsSchemaInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ToolsSchemaReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "schema": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "schema"
+    ],
     "type": "object"
   }
   """#
@@ -11783,6 +46678,23 @@ public enum RaviSchemas {
     },
     "required": [
       "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ToolsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "tool": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "tool"
     ],
     "type": "object"
   }
@@ -11808,6 +46720,47 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ToolsTestReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "args": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "result": {
+        "additionalProperties": {},
+        "properties": {
+          "content": {
+            "items": {},
+            "type": "array"
+          },
+          "isError": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "isError",
+          "content"
+        ],
+        "type": "object"
+      },
+      "tool": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "tool",
+      "args",
+      "result"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TranscribeFileInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11824,6 +46777,79 @@ public enum RaviSchemas {
     },
     "required": [
       "path"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TranscribeFileReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "options": {
+        "additionalProperties": false,
+        "properties": {
+          "lang": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lang"
+        ],
+        "type": "object"
+      },
+      "source": {
+        "additionalProperties": false,
+        "properties": {
+          "filePath": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "number"
+          },
+          "sizeMB": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "filePath",
+          "mimeType",
+          "sizeBytes",
+          "sizeMB"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "transcription": {
+        "additionalProperties": {},
+        "properties": {
+          "chunks": {
+            "type": "number"
+          },
+          "duration": {
+            "type": "number"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "transcription",
+      "source",
+      "options"
     ],
     "type": "object"
   }
@@ -11873,6 +46899,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TriggersAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "trigger": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "trigger"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TriggersDisableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11889,6 +46960,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TriggersDisableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "trigger": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "trigger"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TriggersEnableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11900,6 +47016,51 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TriggersEnableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "trigger": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "trigger"
     ],
     "type": "object"
   }
@@ -11926,6 +47087,90 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TriggersListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      },
+      "triggers": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "triggers"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TriggersRmInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11937,6 +47182,51 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TriggersRmReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "trigger": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "trigger"
     ],
     "type": "object"
   }
@@ -11968,6 +47258,51 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TriggersSetReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "trigger": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "trigger"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TriggersShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11979,6 +47314,23 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let TriggersShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "trigger": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "trigger"
     ],
     "type": "object"
   }
@@ -12000,10 +47352,75 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let TriggersTestReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "trigger": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "status",
+      "target",
+      "changedCount",
+      "trigger"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let TriggersTopicsInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let TriggersTopicsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "topics": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "topics"
+    ],
     "type": "object"
   }
   """#
@@ -12032,6 +47449,74 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let VideoAnalyzeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "artifact": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "options": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "video": {
+        "additionalProperties": {},
+        "properties": {
+          "duration": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "topics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "transcript": {
+            "type": "string"
+          },
+          "visualDescription": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "title",
+          "duration",
+          "summary",
+          "topics",
+          "transcript",
+          "visualDescription"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "artifact",
+      "video",
+      "options"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WatchConnectorsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12041,6 +47526,39 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let WatchConnectorsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "connectors": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "connectors",
+      "items"
+    ],
     "type": "object"
   }
   """#
@@ -12090,6 +47608,39 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WatchCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "capabilities": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "next": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "status": {
+        "type": "string"
+      },
+      "watch": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "watch",
+      "capabilities",
+      "next"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WatchDisableInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12101,6 +47652,27 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchDisableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "status": {
+        "type": "string"
+      },
+      "watch": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "watch"
     ],
     "type": "object"
   }
@@ -12122,6 +47694,27 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WatchEnableReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "status": {
+        "type": "string"
+      },
+      "watch": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "watch"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WatchEventsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12133,6 +47726,35 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchEventsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "eventTypes": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "subjects": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "watchId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "watchId",
+      "eventTypes",
+      "subjects"
     ],
     "type": "object"
   }
@@ -12163,6 +47785,90 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WatchListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      },
+      "watches": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "watches"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WatchRmInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12173,6 +47879,25 @@ public enum RaviSchemas {
       }
     },
     "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchRmReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "deleted": {
+        "type": "boolean"
+      },
+      "id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "deleted",
       "id"
     ],
     "type": "object"
@@ -12190,6 +47915,23 @@ public enum RaviSchemas {
     },
     "required": [
       "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WatchShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "watch": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "watch"
     ],
     "type": "object"
   }
@@ -12235,6 +47977,33 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WatchTriggerReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "status": {
+        "type": "string"
+      },
+      "trigger": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "watch": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "watch",
+      "trigger"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappDmAckInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12256,6 +48025,14 @@ public enum RaviSchemas {
       "contact",
       "messageId"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WhatsappDmAckReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12289,6 +48066,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappDmReadReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappDmSendInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12310,6 +48095,14 @@ public enum RaviSchemas {
       "contact",
       "message"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WhatsappDmSendReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12339,6 +48132,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappGroupAddReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappGroupCreateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12347,9 +48148,35 @@ public enum RaviSchemas {
         "description": "WhatsApp account ID",
         "type": "string"
       },
+      "admin": {
+        "description": "Phone numbers to add and promote as group admins. Can be repeated or comma-separated.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "admins": {
+        "description": "Alias for --admin",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
       "agent": {
         "description": "Agent to route this group chat to",
         "type": "string"
+      },
+      "agentCwd": {
+        "description": "CWD for --create-agent (default: ~/ravi/<agent>)",
+        "type": "string"
+      },
+      "agentProvider": {
+        "description": "Runtime provider id for --create-agent",
+        "type": "string"
+      },
+      "createAgent": {
+        "description": "Create --agent first when it does not exist",
+        "type": "boolean"
       },
       "name": {
         "description": "Group name/subject",
@@ -12358,12 +48185,24 @@ public enum RaviSchemas {
       "participants": {
         "description": "Phone numbers to add (comma-separated)",
         "type": "string"
+      },
+      "skipTaggedAdmins": {
+        "description": "Do not auto-promote contacts tagged admin",
+        "type": "boolean"
       }
     },
     "required": [
       "name",
       "participants"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WhatsappGroupCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12393,6 +48232,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappGroupDemoteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappGroupDescriptionInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12418,6 +48265,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappGroupDescriptionReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappGroupInfoInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12434,6 +48289,14 @@ public enum RaviSchemas {
     "required": [
       "groupId"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WhatsappGroupInfoReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12458,6 +48321,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappGroupInviteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappGroupJoinInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12474,6 +48345,14 @@ public enum RaviSchemas {
     "required": [
       "code"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WhatsappGroupJoinReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12498,6 +48377,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappGroupLeaveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappGroupListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12515,6 +48402,14 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let WhatsappGroupListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12544,6 +48439,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappGroupPromoteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappGroupRemoveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12565,6 +48468,14 @@ public enum RaviSchemas {
       "groupId",
       "participants"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WhatsappGroupRemoveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12594,6 +48505,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappGroupRenameReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappGroupRevokeInviteInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12610,6 +48529,14 @@ public enum RaviSchemas {
     "required": [
       "groupId"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WhatsappGroupRevokeInviteReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12646,6 +48573,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappGroupSendReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WhatsappGroupSettingsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12671,6 +48606,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WhatsappGroupSettingsReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WorkflowsRunsArchiveNodeInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12687,6 +48630,23 @@ public enum RaviSchemas {
     "required": [
       "nodeKey",
       "runId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WorkflowsRunsArchiveNodeReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details"
     ],
     "type": "object"
   }
@@ -12713,6 +48673,23 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WorkflowsRunsCancelReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WorkflowsRunsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12726,6 +48703,90 @@ public enum RaviSchemas {
         "type": "string"
       }
     },
+    "type": "object"
+  }
+  """#
+
+  public static let WorkflowsRunsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "runs": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "runs"
+    ],
     "type": "object"
   }
   """#
@@ -12751,6 +48812,23 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WorkflowsRunsReleaseReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WorkflowsRunsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12763,6 +48841,14 @@ public enum RaviSchemas {
     "required": [
       "runId"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WorkflowsRunsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12788,6 +48874,23 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WorkflowsRunsSkipReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WorkflowsRunsStartInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12804,6 +48907,14 @@ public enum RaviSchemas {
     "required": [
       "specId"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WorkflowsRunsStartReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#
@@ -12829,6 +48940,23 @@ public enum RaviSchemas {
       "nodeKey",
       "runId",
       "taskId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let WorkflowsRunsTaskAttachReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "details": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "details"
     ],
     "type": "object"
   }
@@ -12880,6 +49008,36 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WorkflowsRunsTaskCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "workflow": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "task",
+      "workflow"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WorkflowsSpecsCreateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12904,6 +49062,14 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WorkflowsSpecsCreateReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let WorkflowsSpecsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12921,6 +49087,90 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let WorkflowsSpecsListReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "specs": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items",
+      "specs"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WorkflowsSpecsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12933,6 +49183,14 @@ public enum RaviSchemas {
     "required": [
       "specId"
     ],
+    "type": "object"
+  }
+  """#
+
+  public static let WorkflowsSpecsShowReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
     "type": "object"
   }
   """#

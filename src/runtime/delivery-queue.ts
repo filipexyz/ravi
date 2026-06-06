@@ -162,6 +162,7 @@ export interface RuntimeMessageGeneratorOptions {
   sessionName: string;
   session: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
+  beforeTurnStart?: (input: { deliverableMessages: RuntimeUserMessage[]; combinedPrompt: string }) => void;
   traceTurnStart?: (input: {
     combinedPrompt: string;
     deliverableMessages: RuntimeUserMessage[];
@@ -172,6 +173,7 @@ export async function* createRuntimeMessageGenerator({
   sessionName,
   session,
   stashedMessages,
+  beforeTurnStart,
   traceTurnStart,
 }: RuntimeMessageGeneratorOptions): AsyncGenerator<RuntimePromptMessage> {
   const stashed = stashedMessages.get(sessionName);
@@ -223,6 +225,11 @@ export async function* createRuntimeMessageGenerator({
     }
     session.lastActivity = Date.now();
     session.currentTraceTurnTerminalRecorded = false;
+
+    beforeTurnStart?.({
+      combinedPrompt: combined,
+      deliverableMessages: deliverable.map((message) => ({ ...message })),
+    });
 
     if (traceTurnStart) {
       try {

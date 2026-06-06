@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -13,6 +13,12 @@ import {
   type SpecKind,
   type SpecRecord,
 } from "../../specs/index.js";
+import {
+  specContextReturnSchema,
+  specCreateReturnSchema,
+  specsListReturnSchema,
+  specsSyncReturnSchema,
+} from "./operational-return-schemas.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -29,6 +35,7 @@ function printSpecSummary(spec: SpecRecord): void {
 })
 export class SpecsCommands {
   @Command({ name: "list", description: "List specs from .ravi/specs" })
+  @Returns(specsListReturnSchema)
   list(
     @Option({ flags: "--domain <domain>", description: "Filter by domain" }) domain?: string,
     @Option({ flags: "--kind <kind>", description: "Filter by kind: domain|capability|feature" }) kind?: string,
@@ -75,6 +82,7 @@ export class SpecsCommands {
   }
 
   @Command({ name: "get", description: "Get inherited spec context" })
+  @Returns(specContextReturnSchema)
   get(
     @Arg("id", { description: "Spec id: domain[/capability[/feature]]" }) id: string,
     @Option({ flags: "--mode <mode>", description: "rules|full|checks|why|runbook", defaultValue: "rules" })
@@ -102,6 +110,7 @@ export class SpecsCommands {
   }
 
   @Command({ name: "new", description: "Create a new spec under .ravi/specs" })
+  @Returns(specCreateReturnSchema)
   new(
     @Arg("id", { description: "Spec id: domain[/capability[/feature]]" }) id: string,
     @Option({ flags: "--title <title>", description: "Spec title" }) title?: string,
@@ -147,6 +156,7 @@ export class SpecsCommands {
   }
 
   @Command({ name: "sync", description: "Rebuild the specs SQLite index from Markdown" })
+  @Returns(specsSyncReturnSchema)
   sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     try {
       const result = syncSpecs();

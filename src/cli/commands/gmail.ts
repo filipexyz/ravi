@@ -1,10 +1,14 @@
 import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
+import { z } from "zod";
 import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import { LinkStepUpRequiredError } from "../../link/client.js";
 import { execCapability, listConnectors } from "../../link/connectors.js";
+import { hasContext } from "../context.js";
+import { jsonValueSchema } from "../return-schemas.js";
+import { declareCommandReturns } from "./operational-return-schemas.js";
 
 @Group({
   name: "gmail",
@@ -13,7 +17,6 @@ import { execCapability, listConnectors } from "../../link/connectors.js";
 })
 export class GmailCommands {
   @Command({ name: "list", description: "List messages in the connected Gmail mailbox" })
-  @CliOnly()
   async list(
     @Option({ flags: "--q <query>", description: "Gmail search query (same as the web search bar)" }) query?: string,
     @Option({ flags: "--label <id>", description: "Filter by label id (repeat for multiple)" }) label?: string,
@@ -62,7 +65,6 @@ export class GmailCommands {
   }
 
   @Command({ name: "read", description: "Read a single Gmail message" })
-  @CliOnly()
   async read(
     @Arg("id", { description: "Gmail message id (from `ravi gmail list`)" }) id: string,
     @Option({ flags: "--format <format>", description: "full | metadata | raw (default full)" }) format?: string,
@@ -170,6 +172,17 @@ export class GmailCommands {
     });
   }
 }
+
+const gmailExecResultSchema = z.object({
+  result: jsonValueSchema.optional(),
+  capability: z.string(),
+  refreshed: z.boolean(),
+});
+
+declareCommandReturns(GmailCommands, {
+  list: gmailExecResultSchema,
+  read: gmailExecResultSchema,
+});
 
 async function execWithStepUp(input: {
   connectorId: string;
@@ -285,6 +298,7 @@ async function runGmailCommand<T>(asJson: boolean | undefined, fn: () => Promise
         console.error("Next: run `ravi login`.");
       }
     }
+    if (hasContext()) throw cloudError;
     process.exit(cloudError.exitCode);
   }
 }

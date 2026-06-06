@@ -7,6 +7,7 @@
 
 import { getContext } from "../cli/context.js";
 import { agentCan } from "./engine.js";
+import { recordPermissionDenial } from "./denials.js";
 import { publish, closeNats } from "../nats.js";
 import type { SessionEntry } from "../router/types.js";
 import type { ScopeType } from "../cli/decorators.js";
@@ -34,6 +35,28 @@ function emitAudit(event: { type: string; agentId: string; denied: string; reaso
     console.error("[audit] emitAudit failed", err);
   });
   pendingAudits.push(p);
+}
+
+function recordScopeDenial(input: {
+  ctx: ScopeContext;
+  relation: string;
+  objectType: string;
+  objectId: string;
+  reason: string;
+  command?: string;
+}): void {
+  recordPermissionDenial({
+    subjectType: "agent",
+    subjectId: input.ctx.agentId,
+    agentId: input.ctx.agentId,
+    sessionKey: input.ctx.sessionKey,
+    sessionName: input.ctx.sessionName,
+    relation: input.relation,
+    objectType: input.objectType,
+    objectId: input.objectId,
+    reason: input.reason,
+    command: input.command,
+  });
 }
 
 // ============================================================================
@@ -248,11 +271,20 @@ export function enforceScopeCheck(
     case "superadmin": {
       const allowed = agentCan(ctx.agentId, "admin", "system", "*");
       if (!allowed) {
+        const reason = `Permission denied: agent:${ctx.agentId} requires admin on system:*`;
+        recordScopeDenial({
+          ctx,
+          relation: "admin",
+          objectType: "system",
+          objectId: "*",
+          reason,
+          command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
+        });
         emitAudit({
           type: "scope",
           agentId: ctx.agentId!,
           denied: "system:*",
-          reason: `Permission denied: agent:${ctx.agentId} requires admin on system:*`,
+          reason,
           command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
       }
@@ -273,11 +305,21 @@ export function enforceScopeCheck(
       }
 
       const target = commandName && groupName ? `group:${groupName}_${commandName}` : `group:${groupName ?? "*"}`;
+      const objectId = commandName && groupName ? `${groupName}_${commandName}` : (groupName ?? "*");
+      const reason = `Permission denied: agent:${ctx.agentId} requires execute on ${target}`;
+      recordScopeDenial({
+        ctx,
+        relation: "execute",
+        objectType: "group",
+        objectId,
+        reason,
+        command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
+      });
       emitAudit({
         type: "scope",
         agentId: ctx.agentId!,
         denied: target,
-        reason: `Permission denied: agent:${ctx.agentId} requires execute on ${target}`,
+        reason,
         command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
       });
       return { allowed: false, errorMessage: `Permission denied: agent:${ctx.agentId} requires execute on ${target}` };
@@ -285,11 +327,20 @@ export function enforceScopeCheck(
     case "writeContacts": {
       const wcAllowed = canWriteContacts(ctx);
       if (!wcAllowed) {
+        const reason = `Permission denied: agent:${ctx.agentId} requires write_contacts`;
+        recordScopeDenial({
+          ctx,
+          relation: "write_contacts",
+          objectType: "system",
+          objectId: "*",
+          reason,
+          command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
+        });
         emitAudit({
           type: "scope",
           agentId: ctx.agentId!,
           denied: "write_contacts",
-          reason: `Permission denied: agent:${ctx.agentId} requires write_contacts`,
+          reason,
           command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
       }

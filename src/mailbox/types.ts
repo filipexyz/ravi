@@ -100,8 +100,22 @@ export interface MailAddress {
   raw: Record<string, unknown>;
 }
 
+export interface MailAttachment {
+  id: string;
+  messageId: string;
+  filename: string | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  localBlobRef: string | null;
+  providerAttachmentId: string | null;
+  redactionStatus: string | null;
+  metadata: Record<string, unknown>;
+}
+
 export interface MailMessageWithAddresses extends MailMessage {
   addresses: MailAddress[];
+  attachments: MailAttachment[];
 }
 
 export interface MailOutboxRow {
@@ -130,6 +144,18 @@ export interface MailAddressInput {
   agentId?: string | null;
   platformIdentityId?: string | null;
   raw?: Record<string, unknown> | null;
+}
+
+export interface MailAttachmentInput {
+  id?: string;
+  filename?: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  sha256?: string | null;
+  localBlobRef?: string | null;
+  providerAttachmentId?: string | null;
+  redactionStatus?: string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface CreateMailAccountInput {
@@ -183,6 +209,7 @@ export interface ImportMailMessageInput {
   safePayload?: Record<string, unknown>;
   providerProvenance?: Record<string, unknown>;
   addresses?: MailAddressInput[];
+  attachments?: MailAttachmentInput[];
   idempotencyKey?: string | null;
   now?: number;
 }

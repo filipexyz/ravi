@@ -1,8 +1,9 @@
 import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { z } from "zod";
 import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
-import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import {
   execCapability,
   getConnectStatus,
@@ -13,6 +14,8 @@ import {
   type ConnectorDetail,
   type ConnectorListItem,
 } from "../../link/connectors.js";
+import { hasContext } from "../context.js";
+import { declareCommandReturns } from "./operational-return-schemas.js";
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -89,7 +92,6 @@ export class ConnectorsCommands {
   }
 
   @Command({ name: "list", description: "List your connectors" })
-  @CliOnly()
   async list(
     @Option({ flags: "--provider <provider>", description: "Filter by provider id" }) provider?: string,
     @Option({ flags: "--project <id>", description: "Filter by Ravi Cloud project id" }) project?: string,
@@ -103,68 +105,96 @@ export class ConnectorsCommands {
       const limit = Math.min(Math.max(Number.parseInt(limitOpt ?? "", 10) || 50, 1), 500);
       const offset = Math.max(Number.parseInt(offsetOpt ?? "", 10) || 0, 0);
       const connections = all.slice(offset, offset + limit);
+      const payload = {
+        connections,
+        pagination: { total: all.length, limit, offset, returned: connections.length },
+      };
       if (asJson) {
-        console.log(
-          JSON.stringify(
-            {
-              connections,
-              pagination: { total: all.length, limit, offset, returned: connections.length },
-            },
-            null,
-            2,
-          ),
-        );
+        console.log(JSON.stringify(payload, null, 2));
       } else if (all.length === 0) {
         console.log("No connectors configured. Run `ravi connectors connect <provider>` to add one.");
       } else {
         console.log(`Connectors (${connections.length}/${all.length}):`);
         for (const conn of connections) printConnectorSummary(conn);
       }
-      return connections;
+      return payload;
     });
   }
 
   @Command({ name: "show", description: "Show details of a single connector" })
-  @CliOnly()
   async show(
     @Arg("id", { description: "Connector id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runConnectorCommand(asJson, async () => {
       const connection = await showConnector(id);
+      const payload = { connection };
       if (asJson) {
-        console.log(JSON.stringify({ connection }, null, 2));
+        console.log(JSON.stringify(payload, null, 2));
       } else {
         printConnectorDetail(connection);
       }
-      return connection;
+      return payload;
     });
   }
 
   @Command({ name: "revoke", description: "Revoke a connector and delete its stored credentials" })
-  @CliOnly()
   async revoke(
     @Arg("id", { description: "Connector id" }) id: string,
     @Option({ flags: "--yes", description: "Skip confirmation prompt" }) yes?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runConnectorCommand(asJson, async () => {
-      if (!yes && !asJson) {
-        console.log(`This will revoke connector ${id} at the provider and delete its stored tokens.`);
-        console.log("Re-run with --yes to confirm.");
-        process.exit(1);
-        return undefined;
+      if (!yes) {
+        if (!asJson && !hasContext()) {
+          console.log(`This will revoke connector ${id} at the provider and delete its stored tokens.`);
+          console.log("Re-run with --yes to confirm.");
+        }
+        throw new CloudAuthError("PAYLOAD_INVALID", "Confirmation required: pass --yes to revoke this connector.");
       }
       await revokeConnector(id);
+      const payload = { revoked: true as const, id };
       if (asJson) {
-        console.log(JSON.stringify({ revoked: true, id }, null, 2));
+        console.log(JSON.stringify(payload, null, 2));
       } else {
         console.log(`Revoked connector ${id}.`);
       }
-      return { revoked: true } as const;
+      return payload;
     });
   }
 }
+
+const connectorListItemSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  provider: z.string(),
+  displayName: z.string(),
+  status: z.string(),
+  requiresReauth: z.boolean(),
+  scopes: z.array(z.string()),
+  createdAt: z.string(),
+});
+
+const connectorDetailSchema = connectorListItemSchema.extend({
+  capabilities: z.array(z.string()),
+  externalAccountLogin: z.string().nullable(),
+  grantedAt: z.string(),
+  lastReauthAt: z.string().nullable(),
+});
+
+declareCommandReturns(ConnectorsCommands, {
+  list: z.object({
+    connections: z.array(connectorListItemSchema),
+    pagination: z.object({
+      total: z.number(),
+      limit: z.number(),
+      offset: z.number(),
+      returned: z.number(),
+    }),
+  }),
+  show: z.object({ connection: connectorDetailSchema }),
+  revoke: z.object({ revoked: z.literal(true), id: z.string() }),
+});
 
 async function pollUntilTerminal(pendingId: string) {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
@@ -214,6 +244,7 @@ async function runConnectorCommand<T>(asJson: boolean | undefined, fn: () => Pro
         console.error("Next: run `ravi login`.");
       }
     }
+    if (hasContext()) throw cloudError;
     process.exit(cloudError.exitCode);
   }
 }

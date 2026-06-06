@@ -171,8 +171,10 @@ export async function dispatch(
     return { response: returnValue, audit: auditEmitted ? audit : null };
   }
 
+  const responseValue = returnValue ?? {};
+
   if (cmd.returns) {
-    const returnIssues = checkReturnShape(cmd.returns, returnValue);
+    const returnIssues = checkReturnShape(cmd.returns, responseValue);
     if (returnIssues) {
       response = returnShapeError(returnIssues);
       const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
@@ -181,7 +183,7 @@ export async function dispatch(
     }
   }
 
-  response = json(200, returnValue ?? {});
+  response = json(200, responseValue);
   const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
   const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
   return { response, audit: auditEmitted ? audit : null };

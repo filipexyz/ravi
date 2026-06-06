@@ -17,6 +17,15 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';",
+    "sandbox": "sandbox allow-scripts; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; worker-src 'self' blob:; child-src 'self'; object-src 'none';"
+  },
+  "sandbox": {
+    "pages": [
+      "vibes-sandbox.html"
+    ]
+  },
   "options_page": "options.html",
   "content_scripts": [
     {
@@ -27,6 +36,7 @@
         "task-duration.js",
         "task-presenter.js",
         "task-drawer-state.js",
+        "vibes.js",
         "content.js"
       ],
       "css": [
@@ -38,7 +48,12 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "page-bridge.js"
+        "page-bridge.js",
+        "vibes-sandbox.html",
+        "vibes-sandbox.js",
+        "vendor/strudel/index.js",
+        "vendor/strudel/assets/*",
+        "vendor/strudel/LICENSE"
       ],
       "matches": [
         "https://web.whatsapp.com/*"

@@ -4,11 +4,12 @@
 
 import "reflect-metadata";
 import { resolve, basename } from "node:path";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { getContext } from "../context.js";
 import { generateAudio } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
 import { sendMediaWithOmniCli } from "../media-send.js";
+import { audioGenerateReturnSchema } from "./operational-return-schemas.js";
 
 @Group({
   name: "audio",
@@ -20,6 +21,7 @@ export class AudioCommands {
     name: "generate",
     description: "Generate speech from text using ElevenLabs TTS",
   })
+  @Returns(audioGenerateReturnSchema)
   async generate(
     @Arg("text", { description: "Text to convert to speech" })
     text: string,

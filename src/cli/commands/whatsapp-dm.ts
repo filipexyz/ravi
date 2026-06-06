@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
+import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 import { getContact, getContactIdentities, normalizePhone, formatPhone } from "../../contacts.js";
 import { getFirstAccountName } from "../../router/router-db.js";
@@ -210,3 +211,9 @@ export class WhatsAppDmCommands {
     return payload;
   }
 }
+
+declareCommandReturns(WhatsAppDmCommands, {
+  ack: commandEnvelopeReturnSchema,
+  read: commandEnvelopeReturnSchema,
+  send: commandEnvelopeReturnSchema,
+});

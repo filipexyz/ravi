@@ -25,6 +25,7 @@ mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
   Scope: () => () => {},
+  Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
   Arg: () => () => {},
   Option: () => () => {},
 }));

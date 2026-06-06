@@ -530,6 +530,7 @@ mock.module("./permissions/engine.js", () => ({
 }));
 
 mock.module("./runtime/runtime-context-store.js", () => ({
+  DEFAULT_DERIVED_CONTEXT_TTL_MS: 60 * 60 * 1000,
   createRuntimeContext: (input: {
     kind?: string;
     agentId?: string;
@@ -569,6 +570,7 @@ mock.module("./runtime/runtime-context-store.js", () => ({
     metadata: input.metadata,
     createdAt: Date.now(),
   }),
+  revokeRuntimeContext: () => true,
   snapshotAgentCapabilities: () => snapshotAgentCapabilitiesImpl(),
 }));
 

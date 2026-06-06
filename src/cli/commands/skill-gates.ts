@@ -3,9 +3,11 @@
  */
 
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { z } from "zod";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { cliOffsetPaginationSchema, looseObjectSchema } from "../return-schemas.js";
 import { isDefaultSkillGateRuleId, listDefaultSkillGateRules, type DefaultSkillGateRule } from "../skill-gates.js";
 import {
   dbDeleteSkillGateRule,
@@ -37,6 +39,60 @@ interface EffectiveSkillGateRule {
   configured?: DbSkillGateRule;
   defaultRule?: DefaultSkillGateRule;
 }
+
+const skillGateRuleReturnSchema = z
+  .object({
+    id: z.string(),
+    skill: z.string().nullable(),
+    enabled: z.boolean(),
+    source: z.string().optional(),
+    disabled: z.boolean().optional(),
+    pattern: z.string().nullable().optional(),
+    groupRegex: z.string().nullable().optional(),
+    tool: z.string().nullable().optional(),
+    toolPrefix: z.string().nullable().optional(),
+    toolRegex: z.string().nullable().optional(),
+    command: z.string().nullable().optional(),
+    commandPrefix: z.string().nullable().optional(),
+    commandRegex: z.string().nullable().optional(),
+    configured: looseObjectSchema.nullable().optional(),
+    defaultRule: looseObjectSchema.nullable().optional(),
+    createdAt: z.number().optional(),
+    updatedAt: z.number().optional(),
+  })
+  .passthrough();
+
+const skillGatesListReturnSchema = z.object({
+  total: z.number(),
+  pagination: cliOffsetPaginationSchema,
+  filters: looseObjectSchema.optional(),
+  configuredTotal: z.number(),
+  items: z.array(skillGateRuleReturnSchema),
+  rules: z.array(skillGateRuleReturnSchema),
+});
+
+const skillGateShowReturnSchema = z.object({
+  rule: skillGateRuleReturnSchema,
+});
+
+const skillGateRuleMutationReturnSchema = z.object({
+  success: z.literal(true),
+  rule: skillGateRuleReturnSchema,
+});
+
+const skillGateRemoveReturnSchema = z
+  .object({
+    success: z.literal(true),
+    action: z.string(),
+    rule: skillGateRuleReturnSchema.optional(),
+    deleted: z.boolean().optional(),
+  })
+  .passthrough();
+
+const skillGateResetReturnSchema = z.object({
+  success: z.literal(true),
+  deleted: z.boolean(),
+});
 
 function hasMatcher(input: DbSkillGateRuleInput): boolean {
   return Boolean(
@@ -161,6 +217,7 @@ function printRule(rule: EffectiveSkillGateRule): void {
 })
 export class SkillGatesCommands {
   @Command({ name: "list", description: "List skill gate rules" })
+  @Returns(skillGatesListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical skill gate rule tag" }) tagSlug?: string,
@@ -212,6 +269,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "show", description: "Show one skill gate rule" })
+  @Returns(skillGateShowReturnSchema)
   show(
     @Arg("id", { description: "Rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -231,6 +289,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "set", description: "Create or overwrite a skill gate rule" })
+  @Returns(skillGateRuleMutationReturnSchema)
   set(
     @Arg("id", { description: "Rule id. Use a default id to override it, or a new id for a custom rule." }) id: string,
     @Arg("skill", { description: "Skill name loaded by this gate" }) skill: string,
@@ -277,6 +336,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "disable", description: "Disable a skill gate rule" })
+  @Returns(skillGateRuleMutationReturnSchema)
   disable(
     @Arg("id", { description: "Rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -300,6 +360,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "enable", description: "Enable a configured skill gate rule" })
+  @Returns(skillGateRuleMutationReturnSchema)
   enable(
     @Arg("id", { description: "Rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -320,6 +381,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "rm", description: "Remove a custom gate or disable a default gate" })
+  @Returns(skillGateRemoveReturnSchema)
   rm(
     @Arg("id", { description: "Rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -347,6 +409,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "reset", description: "Delete a configured override and restore the default behavior" })
+  @Returns(skillGateResetReturnSchema)
   reset(
     @Arg("id", { description: "Rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

@@ -21,6 +21,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { ChannelContext, RuntimeLaunchPrompt } from "./message-types.js";
+import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
@@ -235,7 +236,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     assertRuntimeCompatibility(runtimeProvider, {
       requiresMcpServers: !!agent.specMode,
       requiresRemoteSpawn: !!agent.remote,
-      toolAccessMode: getRuntimeToolAccessMode(runtimeCapabilities, agent.id),
+      toolAccessMode: shouldUseTurnScopedAuthorityForPrompt(prompt, resolvedSource)
+        ? "restricted"
+        : getRuntimeToolAccessMode(runtimeCapabilities, agent.id),
     });
 
     const resumableProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
