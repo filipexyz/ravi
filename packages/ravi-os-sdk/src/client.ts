@@ -5284,7 +5284,13 @@ export class RaviClient {
       /** Create a new group */
       create: async (name: string, participants: string, options?: {
         account?: string;
+        admin?: string[];
+        admins?: string[];
         agent?: string;
+        agentCwd?: string;
+        agentProvider?: string;
+        createAgent?: boolean;
+        skipTaggedAdmins?: boolean;
       }): Promise<WhatsappGroupCreateReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],

@@ -4870,9 +4870,15 @@ export type WhatsappGroupAddReturn = unknown;
 /** Input shape for `whatsapp.group.create`. */
 export type WhatsappGroupCreateInput = {
   account?: string;
+  admin?: string[];
+  admins?: string[];
   agent?: string;
+  agentCwd?: string;
+  agentProvider?: string;
+  createAgent?: boolean;
   name: string;
   participants: string;
+  skipTaggedAdmins?: boolean;
 };
 
 /** Return shape for `whatsapp.group.create`. (no @Returns declared) */

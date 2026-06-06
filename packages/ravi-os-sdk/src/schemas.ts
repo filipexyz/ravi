@@ -11901,9 +11901,35 @@ export const WhatsappGroupCreateInputSchema = {
       "description": "WhatsApp account ID",
       "type": "string"
     },
+    "admin": {
+      "description": "Phone numbers to add and promote as group admins. Can be repeated or comma-separated.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "admins": {
+      "description": "Alias for --admin",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "agent": {
       "description": "Agent to route this group chat to",
       "type": "string"
+    },
+    "agentCwd": {
+      "description": "CWD for --create-agent (default: ~/ravi/<agent>)",
+      "type": "string"
+    },
+    "agentProvider": {
+      "description": "Runtime provider id for --create-agent",
+      "type": "string"
+    },
+    "createAgent": {
+      "description": "Create --agent first when it does not exist",
+      "type": "boolean"
     },
     "name": {
       "description": "Group name/subject",
@@ -11912,6 +11938,10 @@ export const WhatsappGroupCreateInputSchema = {
     "participants": {
       "description": "Phone numbers to add (comma-separated)",
       "type": "string"
+    },
+    "skipTaggedAdmins": {
+      "description": "Do not auto-promote contacts tagged admin",
+      "type": "boolean"
     }
   },
   "required": [
