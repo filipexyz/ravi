@@ -13,9 +13,13 @@ description: |
 
 # WhatsApp Manager
 
-Funcionalidades do WhatsApp expostas via Baileys. Permite gerenciar grupos, membros, convites e configurações diretamente pelo CLI.
+Funcionalidades do WhatsApp expostas via Omni/Baileys. Permite criar grupos, registrar rotas/sessões Ravi e operar grupos pelo CLI.
 
-**Importante:** Todos os comandos precisam que o daemon esteja rodando com WhatsApp conectado. Os comandos se comunicam com o daemon via NATS (request/reply).
+**Importante:** Todos os comandos precisam que o Omni esteja rodando com WhatsApp conectado.
+
+**Criação de grupo:** `ravi whatsapp group create` usa a API HTTP pública do Omni (`POST /api/v2/instances/:id/groups`) e depois registra chat, rota, participantes e sessão no SQLite local do Ravi. Não use o tópico legado `ravi.whatsapp.group.create`.
+
+**Operações legadas de grupo:** comandos como `list`, `info`, `add`, `remove`, `promote`, `demote`, `leave`, `join`, `invite`, `rename`, `description` e `settings` ainda passam pelo bridge NATS legado `ravi.whatsapp.group.{op}` neste CLI. Verifique o contrato/handler antes de depender deles em automação.
 
 **Gerenciamento de contas/instâncias:** use `ravi instances` (conectar, desconectar, status, policies).
 
@@ -42,12 +46,12 @@ ravi whatsapp group create "Nome do Grupo" "5511999999999,5511888888888"
 
 Participantes separados por vírgula. Aceita números de telefone ou JIDs.
 
-**Com agent (recomendado):** Auto-aprova o contato e cria a rota pro agent num comando só:
+**Com agent (recomendado):** cria o grupo real no WhatsApp, registra o chat local, cria a rota, cria/atacha a sessão e envia um inform inicial ao agent:
 ```bash
 ravi whatsapp group create "Vida - Health" "5511947879044" --agent health
 ```
 
-**Criar agent, criar grupo, adicionar o ator como admin e rotear em uma chamada:**
+**Criar agent, criar grupo, adicionar participantes inferidos/explicitados e rotear em uma chamada:**
 ```bash
 ravi whatsapp group create "Vida - Health" "5511888888888" \
   --agent health \
@@ -55,7 +59,7 @@ ravi whatsapp group create "Vida - Health" "5511888888888" \
   --agent-cwd ~/ravi/health
 ```
 
-Quando o comando roda dentro de uma sessão Ravi, o criador é inferido pelo actor do contexto e entra como participante/admin automaticamente. `--admin` é opcional: use para promover admins extras ou quando estiver rodando fora de um contexto com actor. O número passado em `--admin` também entra na lista inicial de participantes antes da criação do grupo. Use `--admins` como alias ou repita `--admin`.
+Quando o comando roda dentro de uma sessão Ravi, o criador pode ser inferido pelo actor do contexto e entra como participante inicial. `--admin`/`--admins` também adiciona os números à lista inicial de participantes, mas **não promove admin automaticamente**: o contrato público atual do Omni ainda não expõe promoção de admin. Quando isso acontece, o payload retorna `adminPromotion.status = "skipped"` e o Ravi registra esses contatos como `member`, não `admin`.
 
 Saída:
 ```
@@ -89,6 +93,7 @@ ravi whatsapp group remove <groupId> "5511999999999"
 ```bash
 ravi whatsapp group promote <groupId> "5511999999999"
 ```
+Este comando ainda depende do bridge NATS legado. No fluxo `group create`, promoção automática de admin fica `skipped` até o Omni expor um contrato público para isso.
 
 ### Remover admin
 ```bash
@@ -155,10 +160,10 @@ ravi whatsapp group create "Equipe" "5511999" --account business
 # Tudo num comando só:
 ravi whatsapp group create "Vida - Finanças" "5511947879044" --agent financas
 
-# Cria o agent se ainda não existir; o actor da sessão vira admin automaticamente:
+# Cria o agent se ainda não existir; o actor da sessão entra como participante inicial:
 ravi whatsapp group create "Vida - Finanças" "5511888888888" --agent financas --create-agent
 
-# Fora de uma sessão Ravi, ou para admins extras, informe explicitamente:
+# Fora de uma sessão Ravi, ou para participantes que você quer incluir explicitamente:
 ravi whatsapp group create "Vida - Finanças" "5511888888888" --agent financas --admin 5511947879044
 ```
 
