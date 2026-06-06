@@ -29,6 +29,18 @@ type InstanceRecord = {
   state?: string;
 };
 
+type OmniGroupRecord = {
+  id?: string;
+  externalId?: string;
+  subject?: string;
+  name?: string;
+  owner?: string;
+  creation?: number;
+  participants?: Array<{ id: string; admin: string | null }>;
+  memberCount?: number;
+  isCommunity?: boolean;
+};
+
 type RequestOptions = {
   method?: string;
   query?: Record<string, string | number | boolean | undefined>;
@@ -127,6 +139,22 @@ export function createOmniClient(config: { baseUrl: string; apiKey: string; cliV
       },
       async disconnect(id: string): Promise<void> {
         await request(`/instances/${encodeURIComponent(id)}/disconnect`, { method: "POST" });
+      },
+      async listGroups(id: string, params?: RequestOptions["query"]): Promise<PaginatedResponse<OmniGroupRecord>> {
+        const payload = await request<OmniGroupRecord[]>(`/instances/${encodeURIComponent(id)}/groups`, {
+          query: params,
+        });
+        return {
+          items: payload.items ?? payload.data ?? [],
+          meta: payload.meta,
+        };
+      },
+      async createGroup(id: string, body: { subject: string; participants: string[] }): Promise<OmniGroupRecord> {
+        const payload = await request<OmniGroupRecord>(`/instances/${encodeURIComponent(id)}/groups`, {
+          method: "POST",
+          body,
+        });
+        return payload.data ?? {};
       },
     },
     messages: {

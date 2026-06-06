@@ -33,6 +33,7 @@ let createdAgents: Array<{ id: string; cwd: string; provider?: string }> = [];
 let routeCreates: Array<Record<string, unknown>> = [];
 let chatParticipants: Array<Record<string, unknown>> = [];
 let sessionAttachments: Array<Record<string, unknown>> = [];
+let omniGroupCreates: Array<{ instanceId: string; body: { subject: string; participants: string[] } }> = [];
 let toolContext: Record<string, unknown> | undefined;
 
 mock.module("../context.js", () => ({
@@ -61,6 +62,42 @@ mock.module("../../utils/request-reply.js", () => ({
       return { ok: true, participants: data.participants };
     }
     return { ok: true };
+  }),
+}));
+
+mock.module("../../omni-config.js", () => ({
+  resolveOmniConnection: () => ({
+    apiUrl: "http://omni.local",
+    apiKey: "test-key",
+    source: "test",
+  }),
+}));
+
+mock.module("../../omni/client.js", () => ({
+  createOmniClient: () => ({
+    instances: {
+      createGroup: mock(async (instanceId: string, body: { subject: string; participants: string[] }) => {
+        omniGroupCreates.push({ instanceId, body });
+        return {
+          id: "120363@g.us",
+          subject: body.subject,
+          participants: [
+            { id: "owner@s.whatsapp.net", admin: "superadmin" },
+            ...body.participants.map((participant) => ({
+              id: `${participant}@s.whatsapp.net`,
+              admin: null,
+            })),
+          ],
+        };
+      }),
+    },
+    messages: {
+      send: mock(async () => ({ messageId: "omni-msg-1" })),
+      sendPresence: mock(async () => undefined),
+      sendReaction: mock(async () => ({ messageId: "omni-reaction-1" })),
+      deleteChannel: mock(async () => undefined),
+      editChannel: mock(async () => undefined),
+    },
   }),
 }));
 
@@ -230,6 +267,7 @@ describe("channel command --json output", () => {
     routeCreates = [];
     chatParticipants = [];
     sessionAttachments = [];
+    omniGroupCreates = [];
     toolContext = undefined;
     for (const key of actorEnvKeys) {
       delete process.env[key];
@@ -255,7 +293,7 @@ describe("channel command --json output", () => {
     expect((payload.result as Record<string, unknown>).ok).toBe(true);
   });
 
-  it("creates an agent, WhatsApp group route, admin promotion, and chat/session binding in one command", async () => {
+  it("creates an agent, WhatsApp group route, and chat/session binding in one command", async () => {
     toolContext = { context: { metadata: { senderPhone: "5511888888888" } } };
 
     const payload = await captureJson(() =>
@@ -275,11 +313,17 @@ describe("channel command --json output", () => {
     );
 
     expect(createdAgents).toEqual([{ id: "launch-agent", cwd: "/tmp/launch-agent", provider: "codex" }]);
-    expect(requestCalls.find((call) => call.topic.endsWith(".create"))?.data.participants).toEqual([
-      "5511999999999",
-      "5511888888888",
+    expect(omniGroupCreates).toEqual([
+      {
+        instanceId: "instance-main",
+        body: {
+          subject: "Launch",
+          participants: ["5511999999999", "5511888888888"],
+        },
+      },
     ]);
-    expect(requestCalls.find((call) => call.topic.endsWith(".promote"))?.data.participants).toEqual(["5511888888888"]);
+    expect(requestCalls.find((call) => call.topic.endsWith(".create"))).toBeUndefined();
+    expect(requestCalls.find((call) => call.topic.endsWith(".promote"))).toBeUndefined();
     expect(routeCreates[0]).toMatchObject({
       pattern: "group:120363",
       accountId: "main",
@@ -289,14 +333,15 @@ describe("channel command --json output", () => {
     expect(chatParticipants).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ contactId: "contact-5511999999999", role: "member" }),
-        expect.objectContaining({ contactId: "contact-5511888888888", role: "admin" }),
+        expect.objectContaining({ contactId: "contact-5511888888888", role: "member" }),
         expect.objectContaining({ agentId: "launch-agent", role: "agent" }),
       ]),
     );
     expect(sessionAttachments[0]).toMatchObject({ role: "primary", setOutputTarget: true, speechMode: "speak" });
     expect(payload.agent).toMatchObject({ status: "created", agentId: "launch-agent" });
     expect(payload.adminPromotion).toMatchObject({
-      status: "promoted",
+      status: "skipped",
+      reason: "omni_group_admin_promotion_not_supported",
       actorAdmins: ["5511888888888"],
       explicitAdmins: [],
     });

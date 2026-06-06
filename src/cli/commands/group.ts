@@ -22,6 +22,7 @@ import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { resolveOmniGroupMetadata } from "../../omni/group-metadata-cache.js";
 import { prepareOmniMentionMessage } from "../../omni/mentions.js";
 import { OmniSender } from "../../omni/sender.js";
+import { createOmniClient } from "../../omni/client.js";
 import { resolveOmniConnection } from "../../omni-config.js";
 import { buildSessionKey } from "../../router/session-key.js";
 import {
@@ -337,6 +338,42 @@ async function groupRequest<T = Record<string, unknown>>(
   );
 }
 
+function resolveGroupInstance(account?: string): { accountId: string; instanceId: string } {
+  const accountId = resolveGroupAccount(account);
+  if (!accountId) fail("No WhatsApp account configured.");
+
+  const instance = dbGetInstance(accountId);
+  const instanceId = instance?.instanceId ?? (UUID_RE.test(accountId) ? accountId : "");
+  if (!instanceId) fail(`No omni instance mapped for account "${accountId}".`);
+
+  return { accountId, instanceId };
+}
+
+async function createGroupViaOmni(input: {
+  subject: string;
+  participants: string[];
+  account?: string;
+}): Promise<{ id: string; subject: string; participants: number; raw: Record<string, unknown> }> {
+  const connection = resolveOmniConnection();
+  if (!connection) fail("Omni API is not configured. Set OMNI_API_URL/OMNI_API_KEY or ~/.omni/config.json.");
+
+  const { instanceId } = resolveGroupInstance(input.account);
+  const client = createOmniClient({ baseUrl: connection.apiUrl, apiKey: connection.apiKey });
+  const raw = await client.instances.createGroup(instanceId, {
+    subject: input.subject,
+    participants: input.participants,
+  });
+  const id = asNonEmptyString(raw.id) ?? asNonEmptyString(raw.externalId);
+  if (!id) fail("Omni group create returned no group id.");
+
+  return {
+    id,
+    subject: asNonEmptyString(raw.subject) ?? asNonEmptyString(raw.name) ?? input.subject,
+    participants: Array.isArray(raw.participants) ? raw.participants.length : input.participants.length,
+    raw: raw as Record<string, unknown>,
+  };
+}
+
 @Group({
   name: "whatsapp.group",
   description: "WhatsApp group management",
@@ -582,11 +619,7 @@ export class GroupCommands {
         })
       : null;
 
-    const result = await groupRequest<{ id: string; subject: string; participants: number }>(
-      "create",
-      { subject: name, participants },
-      account,
-    );
+    const result = await createGroupViaOmni({ subject: name, participants, account });
     const jsonPayload: Record<string, unknown> = {
       status: "created",
       accountId: resolveGroupAccount(account),
@@ -619,40 +652,19 @@ export class GroupCommands {
           .flatMap((c) => c.identities.filter((i) => i.platform === "phone").map((i) => i.value))
           .filter(Boolean);
     const adminPhones = uniquePhones([...actorAdmins, ...explicitAdmins, ...taggedAdminPhones]);
+    const confirmedAdminPhones: string[] = [];
 
     if (adminPhones.length > 0) {
-      try {
-        const promotion = await groupRequest(
-          "promote",
-          {
-            groupId: result.id,
-            participants: adminPhones,
-          },
-          account,
-        );
-        jsonPayload.adminPromotion = {
-          status: "promoted",
-          participants: adminPhones,
-          actorAdmins,
-          explicitAdmins,
-          taggedAdmins: uniquePhones(taggedAdminPhones),
-          result: promotion,
-          changedCount: adminPhones.length,
-        };
-        if (!asJson) console.log(`  Admins:       promoted ${adminPhones.length} contact(s)`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        jsonPayload.adminPromotion = {
-          status: "failed",
-          participants: adminPhones,
-          actorAdmins,
-          explicitAdmins,
-          taggedAdmins: uniquePhones(taggedAdminPhones),
-          error: msg,
-          changedCount: 0,
-        };
-        if (!asJson) console.log(`  Admins:       promote failed (${msg})`);
-      }
+      jsonPayload.adminPromotion = {
+        status: "skipped",
+        reason: "omni_group_admin_promotion_not_supported",
+        participants: adminPhones,
+        actorAdmins,
+        explicitAdmins,
+        taggedAdmins: uniquePhones(taggedAdminPhones),
+        changedCount: 0,
+      };
+      if (!asJson) console.log(`  Admins:       skipped (not exposed by Omni API)`);
     }
 
     // Register chat and route to agent if specified.
@@ -677,7 +689,7 @@ export class GroupCommands {
     jsonPayload.chatParticipants = upsertGroupChatParticipants({
       chatId: chat.id,
       participants,
-      admins: adminPhones,
+      admins: confirmedAdminPhones,
       agent,
       source: "whatsapp.group.create",
     });
