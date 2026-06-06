@@ -8,6 +8,8 @@ export type MailPayloadReader = (
   payloadKind: Extract<MailMessagePayloadKind, "subject" | "address_summary" | "parsed_body">,
 ) => Promise<JsonRecord>;
 
+export type MailAttachmentMetadataReader = (messageId: string) => Promise<JsonRecord>;
+
 export interface MailPayloadEnrichmentOptions {
   now?: () => string;
 }
@@ -15,16 +17,21 @@ export interface MailPayloadEnrichmentOptions {
 export async function enrichMailMessageReceivedPayload(
   natsPayload: InboxNatsPayload,
   readPayload: MailPayloadReader,
+  listAttachmentsOrOptions?: MailAttachmentMetadataReader | MailPayloadEnrichmentOptions,
   options: MailPayloadEnrichmentOptions = {},
 ): Promise<InboxNatsPayload> {
   if (natsPayload.eventType !== "mail.message.received") return natsPayload;
+  const listAttachments = typeof listAttachmentsOrOptions === "function" ? listAttachmentsOrOptions : undefined;
+  const resolvedOptions =
+    typeof listAttachmentsOrOptions === "function" ? options : (listAttachmentsOrOptions ?? options);
 
   const messageId = extractMailMessageId(natsPayload);
-  if (!messageId) return withMailEnrichmentStatus(natsPayload, "skipped", "missing_message_id", options);
+  if (!messageId) return withMailEnrichmentStatus(natsPayload, "skipped", "missing_message_id", resolvedOptions);
 
   const subject = readPlaintext(await readPayload(messageId, "subject"));
   const addressSummary = parseJsonRecord(readPlaintext(await readPayload(messageId, "address_summary")));
   const parsedBody = parseJsonRecord(readPlaintext(await readPayload(messageId, "parsed_body")));
+  const attachments = listAttachments ? readAttachments(await listAttachments(messageId)) : [];
   const bodyText = readString(parsedBody?.text);
   const bodyHtml = readString(parsedBody?.html);
 
@@ -55,11 +62,12 @@ export async function enrichMailMessageReceivedPayload(
     },
     bodyText,
     bodyHtml,
+    attachments,
     enrichment: {
       status: "enriched",
       source: "console_mail_read",
-      enrichedAt: (options.now ?? currentIso)(),
-      payloadKinds: ["subject", "address_summary", "parsed_body"],
+      enrichedAt: (resolvedOptions.now ?? currentIso)(),
+      payloadKinds: ["subject", "address_summary", "parsed_body", ...(listAttachments ? ["attachments"] : [])],
     },
   };
 
@@ -169,6 +177,27 @@ function parseJsonRecord(value: string | null): JsonRecord | null {
   }
 }
 
+function readAttachments(response: JsonRecord): JsonRecord[] {
+  const attachments = response.attachments;
+  if (!Array.isArray(attachments)) return [];
+  return attachments.flatMap((attachment) => {
+    const record = asRecord(attachment);
+    if (!record) return [];
+    return [
+      {
+        id: firstString(record.id, record.attachmentId),
+        providerAttachmentId: firstString(record.providerAttachmentId, record.id),
+        filename: readString(record.filename),
+        contentType: readString(record.contentType),
+        sizeBytes: readNumber(record.sizeBytes),
+        sha256: readString(record.sha256),
+        status: readString(record.status),
+        hasEncryptedObject: readBoolean(record.hasEncryptedObject),
+      },
+    ];
+  });
+}
+
 function firstString(...values: unknown[]): string | null {
   for (const value of values) {
     const stringValue = readString(value);
@@ -179,6 +208,14 @@ function firstString(...values: unknown[]): string | null {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+function readNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function asRecord(value: unknown): JsonRecord | null {

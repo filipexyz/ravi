@@ -34,6 +34,404 @@ export const AdaptersListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `adapters.list`. */
+export const AdaptersListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "adapters": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "adapterId": {
+            "type": "string"
+          },
+          "adapterName": {
+            "type": "string"
+          },
+          "bind": {
+            "additionalProperties": {},
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "bound": {
+                "type": "boolean"
+              },
+              "cliName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "contextId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "contextKey": {},
+              "sessionKey": {
+                "type": "string"
+              },
+              "sessionName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "bound",
+              "sessionKey",
+              "sessionName",
+              "agentId",
+              "contextId",
+              "cliName"
+            ],
+            "type": "object"
+          },
+          "diagnosticState": {
+            "enum": [
+              "live",
+              "dead",
+              "unbound",
+              "protocol-invalid",
+              "stopped",
+              "configured"
+            ],
+            "type": "string"
+          },
+          "health": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "lastCommand": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastEvent": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastProtocolError": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "adapterId",
+          "adapterName",
+          "transport",
+          "sessionKey",
+          "sessionName",
+          "status",
+          "diagnosticState",
+          "bind",
+          "health",
+          "lastEvent",
+          "lastCommand",
+          "lastProtocolError",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "count": {
+      "type": "number"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "adapterId": {
+            "type": "string"
+          },
+          "adapterName": {
+            "type": "string"
+          },
+          "bind": {
+            "additionalProperties": {},
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "bound": {
+                "type": "boolean"
+              },
+              "cliName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "contextId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "contextKey": {},
+              "sessionKey": {
+                "type": "string"
+              },
+              "sessionName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "bound",
+              "sessionKey",
+              "sessionName",
+              "agentId",
+              "contextId",
+              "cliName"
+            ],
+            "type": "object"
+          },
+          "diagnosticState": {
+            "enum": [
+              "live",
+              "dead",
+              "unbound",
+              "protocol-invalid",
+              "stopped",
+              "configured"
+            ],
+            "type": "string"
+          },
+          "health": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "lastCommand": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastEvent": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastProtocolError": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "adapterId",
+          "adapterName",
+          "transport",
+          "sessionKey",
+          "sessionName",
+          "status",
+          "diagnosticState",
+          "bind",
+          "health",
+          "lastEvent",
+          "lastCommand",
+          "lastProtocolError",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "count",
+    "total",
+    "pagination",
+    "items",
+    "adapters"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `adapters.show`. */
 export const AdaptersShowInputSchema = {
   "additionalProperties": false,
@@ -45,6 +443,170 @@ export const AdaptersShowInputSchema = {
   },
   "required": [
     "adapterId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `adapters.show`. */
+export const AdaptersShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "adapterId": {
+      "type": "string"
+    },
+    "adapterName": {
+      "type": "string"
+    },
+    "bind": {
+      "additionalProperties": {},
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bound": {
+          "type": "boolean"
+        },
+        "cliName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contextKey": {},
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "bound",
+        "sessionKey",
+        "sessionName",
+        "agentId",
+        "contextId",
+        "cliName"
+      ],
+      "type": "object"
+    },
+    "diagnosticState": {
+      "enum": [
+        "live",
+        "dead",
+        "unbound",
+        "protocol-invalid",
+        "stopped",
+        "configured"
+      ],
+      "type": "string"
+    },
+    "health": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "lastCommand": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastEvent": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastProtocolError": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "transport": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "adapterId",
+    "adapterName",
+    "transport",
+    "sessionKey",
+    "sessionName",
+    "status",
+    "diagnosticState",
+    "bind",
+    "health",
+    "lastEvent",
+    "lastCommand",
+    "lastProtocolError",
+    "updatedAt"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -77,6 +639,43 @@ export const AgentsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `agents.create`. */
+export const AgentsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "const": "create",
+      "type": "string"
+    },
+    "agent": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "permissions": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "runtimeTarget": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "agent",
+    "runtimeTarget",
+    "permissions"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.debounce`. */
 export const AgentsDebounceInputSchema = {
   "additionalProperties": false,
@@ -92,6 +691,41 @@ export const AgentsDebounceInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.debounce`. */
+export const AgentsDebounceReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "debounceMs": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "agentId",
+    "debounceMs",
+    "enabled"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -119,6 +753,60 @@ export const AgentsDebugInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `agents.debug`. */
+export const AgentsDebugReturnSchema = {
+  "anyOf": [
+    {
+      "additionalProperties": {},
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "availableSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "agentId",
+        "availableSessions"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": {},
+      "properties": {
+        "entries": {
+          "items": {},
+          "type": "array"
+        },
+        "session": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "transcript": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "session",
+        "transcript",
+        "entries"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.delete`. */
 export const AgentsDeleteInputSchema = {
   "additionalProperties": false,
@@ -130,6 +818,34 @@ export const AgentsDeleteInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.delete`. */
+export const AgentsDeleteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "const": "delete",
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "before": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "changed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "agentId"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -154,6 +870,99 @@ export const AgentsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `agents.list`. */
+export const AgentsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "defaultAgent": {
+      "type": "string"
+    },
+    "filters": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "defaultAgent",
+    "filters",
+    "agents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.reset`. */
 export const AgentsResetInputSchema = {
   "additionalProperties": false,
@@ -173,6 +982,58 @@ export const AgentsResetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `agents.reset`. */
+export const AgentsResetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "const": "reset",
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "availableSessions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "count": {
+      "type": "number"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "resetSessions": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "session": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "agentId",
+    "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.session`. */
 export const AgentsSessionInputSchema = {
   "additionalProperties": false,
@@ -184,6 +1045,35 @@ export const AgentsSessionInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.session`. */
+export const AgentsSessionReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "sessions": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "agent",
+    "total",
+    "sessions"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -213,6 +1103,40 @@ export const AgentsSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `agents.set`. */
+export const AgentsSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "const": "set",
+      "type": "string"
+    },
+    "agent": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "key": {
+      "type": "string"
+    },
+    "value": {}
+  },
+  "required": [
+    "action",
+    "changed",
+    "agentId",
+    "key",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.show`. */
 export const AgentsShowInputSchema = {
   "additionalProperties": false,
@@ -224,6 +1148,26 @@ export const AgentsShowInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.show`. */
+export const AgentsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "permissionsCommand": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "permissionsCommand"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -247,6 +1191,30 @@ export const AgentsSpecModeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `agents.spec-mode`. */
+export const AgentsSpecModeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "specMode": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "agentId",
+    "specMode"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.sync-instructions`. */
 export const AgentsSyncInstructionsInputSchema = {
   "additionalProperties": false,
@@ -260,6 +1228,49 @@ export const AgentsSyncInstructionsInputSchema = {
       "type": "boolean"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.sync-instructions`. */
+export const AgentsSyncInstructionsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "alreadyCanonical": {
+      "type": "number"
+    },
+    "incomplete": {
+      "type": "number"
+    },
+    "manualReview": {
+      "type": "number"
+    },
+    "migrated": {
+      "type": "number"
+    },
+    "missing": {
+      "type": "number"
+    },
+    "results": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "migrated",
+    "alreadyCanonical",
+    "missing",
+    "manualReview",
+    "incomplete",
+    "results"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -336,6 +1347,247 @@ export const AppsCheckReturnSchema = {
     "ok",
     "checked",
     "results"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.guide`. */
+export const AppsGuideInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Optional app id for app-specific prompts",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.guide`. */
+export const AppsGuideReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "app": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "errors": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "interfaceNames": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "manifest": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "permissions": {
+              "additionalProperties": false,
+              "properties": {
+                "mutating": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "optional": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "required": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "required",
+                "optional",
+                "mutating"
+              ],
+              "type": "object"
+            },
+            "relativePath": {
+              "type": "string"
+            },
+            "rootPath": {
+              "type": "string"
+            },
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "repo",
+                "plugin",
+                "state"
+              ],
+              "type": "string"
+            },
+            "valid": {
+              "type": "boolean"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "version",
+            "description",
+            "schema",
+            "source",
+            "path",
+            "relativePath",
+            "rootPath",
+            "interfaceNames",
+            "permissions",
+            "valid",
+            "errors",
+            "warnings",
+            "manifest"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "appId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nextCommands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "prompts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "commands": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "prompt",
+          "commands"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "skill": {
+      "type": "string"
+    },
+    "skillGate": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "type": "string"
+        },
+        "skill": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "group",
+        "skill"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "appId",
+    "app",
+    "skill",
+    "skillGate",
+    "prompts",
+    "nextCommands"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -697,6 +1949,544 @@ export const AppsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.prompts`. */
+export const AppsPromptsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Optional app id for app-specific prompts",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.prompts`. */
+export const AppsPromptsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "app": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "errors": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "interfaceNames": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "manifest": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "permissions": {
+              "additionalProperties": false,
+              "properties": {
+                "mutating": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "optional": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "required": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "required",
+                "optional",
+                "mutating"
+              ],
+              "type": "object"
+            },
+            "relativePath": {
+              "type": "string"
+            },
+            "rootPath": {
+              "type": "string"
+            },
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "repo",
+                "plugin",
+                "state"
+              ],
+              "type": "string"
+            },
+            "valid": {
+              "type": "boolean"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "version",
+            "description",
+            "schema",
+            "source",
+            "path",
+            "relativePath",
+            "rootPath",
+            "interfaceNames",
+            "permissions",
+            "valid",
+            "errors",
+            "warnings",
+            "manifest"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "appId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nextCommands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "prompts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "commands": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "prompt",
+          "commands"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "skill": {
+      "type": "string"
+    },
+    "skillGate": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "type": "string"
+        },
+        "skill": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "group",
+        "skill"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "appId",
+    "app",
+    "skill",
+    "skillGate",
+    "prompts",
+    "nextCommands"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.run`. */
+export const AppsRunInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "Operation arguments",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "id": {
+      "description": "App id",
+      "type": "string"
+    },
+    "operation": {
+      "description": "Operation name. Defaults to app help.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.run`. */
+export const AppsRunReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "appId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "channel": {
+      "type": "string"
+    },
+    "command": {
+      "type": "string"
+    },
+    "durationMs": {
+      "type": "number"
+    },
+    "error": {
+      "type": "string"
+    },
+    "exitCode": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "handler": {
+      "type": "string"
+    },
+    "interface": {
+      "anyOf": [
+        {
+          "enum": [
+            "builtin",
+            "cli",
+            "sdk",
+            "tool",
+            "stream"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mutating": {
+      "type": "boolean"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "operation": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "operationId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "result": {},
+    "status": {
+      "enum": [
+        "completed",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "stderr": {
+      "type": "string"
+    },
+    "stdout": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "appId",
+    "operation",
+    "operationId",
+    "interface",
+    "mutating",
+    "status",
+    "durationMs"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.scaffold`. */
+export const AppsScaffoldInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "description": "Canonical CLI command (default: ravi <id>)",
+      "type": "string"
+    },
+    "description": {
+      "description": "Short app description",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Print planned files without writing",
+      "type": "boolean"
+    },
+    "force": {
+      "description": "Overwrite existing scaffold files",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Stable app id, e.g. music or music/player",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human display name",
+      "type": "string"
+    },
+    "skipSkill": {
+      "description": "Do not create a skill skeleton",
+      "type": "boolean"
+    },
+    "skipSpec": {
+      "description": "Do not create an app spec skeleton",
+      "type": "boolean"
+    },
+    "skipUi": {
+      "description": "Do not include interfaces.ui in the manifest",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.scaffold`. */
+export const AppsScaffoldReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "planned",
+              "created",
+              "overwritten"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "manifest",
+              "spec",
+              "skill"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "action"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "force": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "manifest": {},
+    "manifestPath": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "nextCommands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skill": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "skillPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "specPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "description",
+    "command",
+    "dryRun",
+    "force",
+    "manifestPath",
+    "specPath",
+    "skillPath",
+    "skill",
+    "files",
+    "manifest",
+    "nextCommands"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.show`. */
 export const AppsShowInputSchema = {
   "additionalProperties": false,
@@ -879,6 +2669,21 @@ export const ArtifactsArchiveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `artifacts.archive`. */
+export const ArtifactsArchiveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.attach`. */
 export const ArtifactsAttachInputSchema = {
   "additionalProperties": false,
@@ -908,6 +2713,21 @@ export const ArtifactsAttachInputSchema = {
     "id",
     "targetId",
     "targetType"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `artifacts.attach`. */
+export const ArtifactsAttachReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -1043,6 +2863,37 @@ export const ArtifactsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `artifacts.create`. */
+export const ArtifactsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifact": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "package": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "version": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "artifact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.event`. */
 export const ArtifactsEventInputSchema = {
   "additionalProperties": false,
@@ -1079,6 +2930,32 @@ export const ArtifactsEventInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `artifacts.event`. */
+export const ArtifactsEventReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifact": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.events`. */
 export const ArtifactsEventsInputSchema = {
   "additionalProperties": false,
@@ -1090,6 +2967,33 @@ export const ArtifactsEventsInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `artifacts.events`. */
+export const ArtifactsEventsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifactId": {
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "artifactId",
+    "total",
+    "events"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -1140,6 +3044,182 @@ export const ArtifactsListInputSchema = {
     }
   },
   "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `artifacts.list`. */
+export const ArtifactsListReturnSchema = {
+  "anyOf": [
+    {
+      "additionalProperties": {},
+      "properties": {
+        "artifacts": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "pagination": {
+          "additionalProperties": {},
+          "properties": {
+            "hasMore": {
+              "type": "boolean"
+            },
+            "limit": {
+              "type": "number"
+            },
+            "nextCommand": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextOffset": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "offset": {
+              "type": "number"
+            },
+            "returned": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "limit",
+            "offset",
+            "returned",
+            "total",
+            "hasMore",
+            "nextOffset",
+            "nextCommand"
+          ],
+          "type": "object"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total",
+        "pagination",
+        "items",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": {},
+      "properties": {
+        "generatedAt": {
+          "type": "number"
+        },
+        "items": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "pagination": {
+          "additionalProperties": {},
+          "properties": {
+            "hasMore": {
+              "type": "boolean"
+            },
+            "limit": {
+              "type": "number"
+            },
+            "nextCommand": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextOffset": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "offset": {
+              "type": "number"
+            },
+            "returned": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "limit",
+            "offset",
+            "returned",
+            "total",
+            "hasMore",
+            "nextOffset",
+            "nextCommand"
+          ],
+          "type": "object"
+        },
+        "query": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "stats": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok",
+        "generatedAt",
+        "query",
+        "pagination",
+        "stats",
+        "items"
+      ],
+      "type": "object"
+    }
+  ]
 } as const satisfies SdkJsonSchema;
 
 /** JSON Schema for the input body of `artifacts.publish`. */
@@ -1226,6 +3306,51 @@ export const ArtifactsPublishInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `artifacts.publish`. */
+export const ArtifactsPublishReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifact": {},
+    "artifactVersion": {},
+    "localSync": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "publish": {},
+    "release": {},
+    "routes": {
+      "items": {},
+      "type": "array"
+    },
+    "upload": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "artifact",
+    "artifactVersion",
+    "publish",
+    "release",
+    "routes",
+    "url",
+    "upload"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.release.activate`. */
 export const ArtifactsReleaseActivateInputSchema = {
   "additionalProperties": false,
@@ -1257,6 +3382,41 @@ export const ArtifactsReleaseActivateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `artifacts.release.activate`. */
+export const ArtifactsReleaseActivateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "localSync": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "release": {},
+    "routes": {
+      "items": {},
+      "type": "array"
+    },
+    "site": {},
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "release",
+    "site",
+    "routes",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.restore`. */
 export const ArtifactsRestoreInputSchema = {
   "additionalProperties": false,
@@ -1280,6 +3440,39 @@ export const ArtifactsRestoreInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `artifacts.restore`. */
+export const ArtifactsRestoreReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifact": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "restoreVersion": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "restoredFrom": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "artifact",
+    "restoredFrom",
+    "restoreVersion"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.show`. */
 export const ArtifactsShowInputSchema = {
   "additionalProperties": false,
@@ -1291,6 +3484,49 @@ export const ArtifactsShowInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `artifacts.show`. */
+export const ArtifactsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifact": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "links": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "versions": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "artifact",
+    "links",
+    "events",
+    "versions"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -1330,6 +3566,27 @@ export const ArtifactsSnapshotInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `artifacts.snapshot`. */
+export const ArtifactsSnapshotReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "version": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "version"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -1445,6 +3702,21 @@ export const ArtifactsUpdateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `artifacts.update`. */
+export const ArtifactsUpdateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.version`. */
 export const ArtifactsVersionInputSchema = {
   "additionalProperties": false,
@@ -1464,6 +3736,26 @@ export const ArtifactsVersionInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `artifacts.version`. */
+export const ArtifactsVersionReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifactId": {
+      "type": "string"
+    },
+    "version": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "artifactId",
+    "version"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.versions`. */
 export const ArtifactsVersionsInputSchema = {
   "additionalProperties": false,
@@ -1475,6 +3767,33 @@ export const ArtifactsVersionsInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `artifacts.versions`. */
+export const ArtifactsVersionsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifactId": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    },
+    "versions": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "artifactId",
+    "total",
+    "versions"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -1526,6 +3845,6948 @@ export const AudioGenerateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `audio.generate`. */
+export const AudioGenerateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "audio": {
+      "additionalProperties": {},
+      "properties": {
+        "filePath": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "sendCommand": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "filePath",
+        "mimeType",
+        "text",
+        "sendCommand"
+      ],
+      "type": "object"
+    },
+    "options": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "sent": {
+      "additionalProperties": {},
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "caption": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "chatId": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "transport": {
+          "type": "string"
+        },
+        "voiceNote": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "transport",
+        "accountId",
+        "instanceId",
+        "chatId",
+        "filename",
+        "caption",
+        "voiceNote"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "audio",
+    "options"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `bridges.create`. */
+export const BridgesCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "allow": {
+      "description": "Comma-separated capability classes: read,write,destructive; defaults to Console policy",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "description": {
+      "description": "Bridge description",
+      "type": "string"
+    },
+    "name": {
+      "description": "Bridge display name",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; defaults to RAVI_PROJECT",
+      "type": "string"
+    },
+    "session": {
+      "description": "Existing session to expose; not supported by the current Console CLI API yet",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bridges.create`. */
+export const BridgesCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bridge": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "bridgeToken": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "bridgeUrl": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "bridge",
+    "bridgeToken",
+    "bridgeUrl"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `bridges.list`. */
+export const BridgesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum bridges to return (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of bridges to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; defaults to RAVI_PROJECT",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bridges.list`. */
+export const BridgesListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bridges": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "total",
+    "pagination",
+    "bridges",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `bridges.revoke`. */
+export const BridgesRevokeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "id": {
+      "description": "Bridge id",
+      "type": "string"
+    },
+    "yes": {
+      "description": "Skip confirmation prompt",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bridges.revoke`. */
+export const BridgesRevokeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "bridgeId": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "revoked": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "revoked",
+    "bridgeId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.accounts.create`. */
+export const CalendarAccountsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credentialsRef": {
+      "description": "Reference to an existing credential store entry",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stable local account id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Display name",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Provider id, e.g. local or google-calendar",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.accounts.create`. */
+export const CalendarAccountsCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "credentialsRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "defaultCalendarId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "auth_required",
+            "disabled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "displayName",
+        "status",
+        "defaultCalendarId",
+        "credentialsRef",
+        "capabilities",
+        "settings",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.accounts.list`. */
+export const CalendarAccountsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by account status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.accounts.list`. */
+export const CalendarAccountsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accounts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialsRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultCalendarId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "auth_required",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "displayName",
+          "status",
+          "defaultCalendarId",
+          "credentialsRef",
+          "capabilities",
+          "settings",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "accounts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.accounts.sync`. */
+export const CalendarAccountsSyncInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Local calendar account id",
+      "type": "string"
+    },
+    "once": {
+      "description": "Run one foreground tick",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.accounts.sync`. */
+export const CalendarAccountsSyncReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "credentialsRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "defaultCalendarId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "settings": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "auth_required",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "displayName",
+            "status",
+            "defaultCalendarId",
+            "credentialsRef",
+            "capabilities",
+            "settings",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "localFirst": {
+          "const": true,
+          "type": "boolean"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "status": {
+          "const": "adapter_not_required",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "account",
+        "status",
+        "localFirst"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "credentialsRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "defaultCalendarId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "settings": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "auth_required",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "displayName",
+            "status",
+            "defaultCalendarId",
+            "credentialsRef",
+            "capabilities",
+            "settings",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "message": {
+          "type": "string"
+        },
+        "ok": {
+          "const": false,
+          "type": "boolean"
+        },
+        "status": {
+          "const": "adapter_not_started",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "account",
+        "status",
+        "message"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.availability`. */
+export const CalendarAvailabilityInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "description": "Local calendar id or name",
+      "type": "string"
+    },
+    "from": {
+      "description": "Window start; default now",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "to": {
+      "description": "Window end; default +30d",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.availability`. */
+export const CalendarAvailabilityReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "busy": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "busyStatus": {
+            "enum": [
+              "busy",
+              "free",
+              "tentative",
+              "out_of_office",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "calendarId": {
+            "type": "string"
+          },
+          "endAt": {
+            "type": "number"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "redacted": {
+            "type": "boolean"
+          },
+          "startAt": {
+            "type": "number"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "calendarId",
+          "startAt",
+          "endAt",
+          "busyStatus",
+          "title",
+          "redacted"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "window": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "window",
+    "busy"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.calendars.create`. */
+export const CalendarCalendarsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Local account id",
+      "type": "string"
+    },
+    "color": {
+      "description": "Display color",
+      "type": "string"
+    },
+    "default": {
+      "description": "Mark as default calendar for the account",
+      "type": "boolean"
+    },
+    "description": {
+      "description": "Calendar description",
+      "type": "string"
+    },
+    "name": {
+      "description": "Calendar name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner subject, e.g. agent:main or contact:<id>",
+      "type": "string"
+    },
+    "providerCalendarId": {
+      "description": "Provider calendar id as provenance",
+      "type": "string"
+    },
+    "role": {
+      "description": "primary, secondary, shared, resource, system, or unknown",
+      "type": "string"
+    },
+    "timezone": {
+      "description": "IANA timezone",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "private, shared, public, or local_only",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.calendars.create`. */
+export const CalendarCalendarsCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "providerCalendarId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "disabled",
+            "deleted"
+          ],
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "shared",
+            "public",
+            "local_only"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "providerCalendarId",
+        "name",
+        "description",
+        "color",
+        "timezone",
+        "role",
+        "status",
+        "visibility",
+        "ownerType",
+        "ownerId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "calendar"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.calendars.disable`. */
+export const CalendarCalendarsDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "description": "Local calendar id or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "calendar"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.calendars.disable`. */
+export const CalendarCalendarsDisableReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "providerCalendarId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "disabled",
+            "deleted"
+          ],
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "shared",
+            "public",
+            "local_only"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "providerCalendarId",
+        "name",
+        "description",
+        "color",
+        "timezone",
+        "role",
+        "status",
+        "visibility",
+        "ownerType",
+        "ownerId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "calendar"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.calendars.list`. */
+export const CalendarCalendarsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Local account id",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by calendar status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.calendars.list`. */
+export const CalendarCalendarsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "calendars": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "providerCalendarId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "disabled",
+              "deleted"
+            ],
+            "type": "string"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "shared",
+              "public",
+              "local_only"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "providerCalendarId",
+          "name",
+          "description",
+          "color",
+          "timezone",
+          "role",
+          "status",
+          "visibility",
+          "ownerType",
+          "ownerId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "calendars"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.calendars.share`. */
+export const CalendarCalendarsShareInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "description": "Local calendar id or name",
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "Optional membership expiration timestamp",
+      "type": "string"
+    },
+    "relation": {
+      "description": "owner, reader, writer, manager, or free_busy",
+      "type": "string"
+    },
+    "with": {
+      "description": "Subject, e.g. agent:main",
+      "type": "string"
+    }
+  },
+  "required": [
+    "calendar"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.calendars.share`. */
+export const CalendarCalendarsShareReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "providerCalendarId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "disabled",
+            "deleted"
+          ],
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "shared",
+            "public",
+            "local_only"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "providerCalendarId",
+        "name",
+        "description",
+        "color",
+        "timezone",
+        "role",
+        "status",
+        "visibility",
+        "ownerType",
+        "ownerId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "member": {
+      "additionalProperties": false,
+      "properties": {
+        "calendarId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "memberId": {
+          "type": "string"
+        },
+        "memberType": {
+          "type": "string"
+        },
+        "relation": {
+          "enum": [
+            "owner",
+            "reader",
+            "writer",
+            "manager",
+            "free_busy"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "calendarId",
+        "memberType",
+        "memberId",
+        "relation",
+        "expiresAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "calendar",
+    "member"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.calendars.show`. */
+export const CalendarCalendarsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "description": "Local calendar id, name, or provider calendar id",
+      "type": "string"
+    },
+    "members": {
+      "description": "Include membership projection rows",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "calendar"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.calendars.show`. */
+export const CalendarCalendarsShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "providerCalendarId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "disabled",
+            "deleted"
+          ],
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "shared",
+            "public",
+            "local_only"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "providerCalendarId",
+        "name",
+        "description",
+        "color",
+        "timezone",
+        "role",
+        "status",
+        "visibility",
+        "ownerType",
+        "ownerId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "members": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "calendarId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "memberType": {
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "owner",
+              "reader",
+              "writer",
+              "manager",
+              "free_busy"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "calendarId",
+          "memberType",
+          "memberId",
+          "relation",
+          "expiresAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "calendar"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.events.cancel`. */
+export const CalendarEventsCancelInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "description": "Local event id",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Local write idempotency key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.events.cancel`. */
+export const CalendarEventsCancelReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "allDay": {
+              "type": "boolean"
+            },
+            "attendees": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "displayName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "email": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "eventId": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "organizer",
+                      "required",
+                      "optional",
+                      "resource",
+                      "informational"
+                    ],
+                    "type": "string"
+                  },
+                  "normalizedEmail": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "providerAttendeeId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "raw": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "responseStatus": {
+                    "enum": [
+                      "accepted",
+                      "declined",
+                      "tentative",
+                      "needs_action",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "eventId",
+                  "kind",
+                  "responseStatus",
+                  "email",
+                  "normalizedEmail",
+                  "displayName",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "providerAttendeeId",
+                  "raw",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "creatorAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deletedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "descriptionRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "endTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "etag": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "icalUid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "locationRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "organizerAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "originalStartAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerRecurringEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recurrence": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "recurrenceRule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sequence": {
+              "type": "number"
+            },
+            "seriesId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "startTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uid": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "enum": [
+                "default",
+                "private",
+                "public",
+                "confidential"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "uid",
+            "providerEventId",
+            "providerRecurringEventId",
+            "icalUid",
+            "seriesId",
+            "originalStartAt",
+            "title",
+            "description",
+            "descriptionRedactionStatus",
+            "location",
+            "locationRedactionStatus",
+            "status",
+            "busyStatus",
+            "visibility",
+            "startAt",
+            "endAt",
+            "startTimezone",
+            "endTimezone",
+            "allDay",
+            "recurrenceRule",
+            "recurrence",
+            "sequence",
+            "etag",
+            "organizerContactId",
+            "organizerAgentId",
+            "organizerPlatformIdentityId",
+            "creatorContactId",
+            "creatorAgentId",
+            "creatorPlatformIdentityId",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt",
+            "deletedAt",
+            "attendees"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "redacted": {
+              "const": true,
+              "type": "boolean"
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "const": "Busy",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "title",
+            "status",
+            "busyStatus",
+            "startAt",
+            "endAt",
+            "redacted"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "outbox": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "attemptCount": {
+              "type": "number"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "eventId": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "idempotencyKey": {
+              "type": "string"
+            },
+            "lastErrorCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextAttemptAt": {
+              "type": "number"
+            },
+            "operation": {
+              "enum": [
+                "create",
+                "update",
+                "cancel",
+                "delete",
+                "respond"
+              ],
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerResult": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "leased",
+                "sending",
+                "sent",
+                "acked",
+                "failed",
+                "dead"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "accountId",
+            "calendarId",
+            "eventId",
+            "operation",
+            "idempotencyKey",
+            "payload",
+            "status",
+            "attemptCount",
+            "nextAttemptAt",
+            "lastErrorCode",
+            "providerResult",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "event",
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.events.create`. */
+export const CalendarEventsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "attendee": {
+      "description": "Comma-separated attendee emails",
+      "type": "string"
+    },
+    "calendar": {
+      "description": "Local calendar id or name",
+      "type": "string"
+    },
+    "description": {
+      "description": "Event description",
+      "type": "string"
+    },
+    "end": {
+      "description": "Event end",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Local write idempotency key",
+      "type": "string"
+    },
+    "location": {
+      "description": "Event location",
+      "type": "string"
+    },
+    "start": {
+      "description": "Event start",
+      "type": "string"
+    },
+    "timezone": {
+      "description": "Start/end timezone",
+      "type": "string"
+    },
+    "title": {
+      "description": "Event title",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.events.create`. */
+export const CalendarEventsCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "allDay": {
+              "type": "boolean"
+            },
+            "attendees": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "displayName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "email": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "eventId": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "organizer",
+                      "required",
+                      "optional",
+                      "resource",
+                      "informational"
+                    ],
+                    "type": "string"
+                  },
+                  "normalizedEmail": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "providerAttendeeId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "raw": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "responseStatus": {
+                    "enum": [
+                      "accepted",
+                      "declined",
+                      "tentative",
+                      "needs_action",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "eventId",
+                  "kind",
+                  "responseStatus",
+                  "email",
+                  "normalizedEmail",
+                  "displayName",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "providerAttendeeId",
+                  "raw",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "creatorAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deletedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "descriptionRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "endTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "etag": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "icalUid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "locationRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "organizerAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "originalStartAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerRecurringEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recurrence": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "recurrenceRule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sequence": {
+              "type": "number"
+            },
+            "seriesId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "startTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uid": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "enum": [
+                "default",
+                "private",
+                "public",
+                "confidential"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "uid",
+            "providerEventId",
+            "providerRecurringEventId",
+            "icalUid",
+            "seriesId",
+            "originalStartAt",
+            "title",
+            "description",
+            "descriptionRedactionStatus",
+            "location",
+            "locationRedactionStatus",
+            "status",
+            "busyStatus",
+            "visibility",
+            "startAt",
+            "endAt",
+            "startTimezone",
+            "endTimezone",
+            "allDay",
+            "recurrenceRule",
+            "recurrence",
+            "sequence",
+            "etag",
+            "organizerContactId",
+            "organizerAgentId",
+            "organizerPlatformIdentityId",
+            "creatorContactId",
+            "creatorAgentId",
+            "creatorPlatformIdentityId",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt",
+            "deletedAt",
+            "attendees"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "redacted": {
+              "const": true,
+              "type": "boolean"
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "const": "Busy",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "title",
+            "status",
+            "busyStatus",
+            "startAt",
+            "endAt",
+            "redacted"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "outbox": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "attemptCount": {
+              "type": "number"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "eventId": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "idempotencyKey": {
+              "type": "string"
+            },
+            "lastErrorCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextAttemptAt": {
+              "type": "number"
+            },
+            "operation": {
+              "enum": [
+                "create",
+                "update",
+                "cancel",
+                "delete",
+                "respond"
+              ],
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerResult": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "leased",
+                "sending",
+                "sent",
+                "acked",
+                "failed",
+                "dead"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "accountId",
+            "calendarId",
+            "eventId",
+            "operation",
+            "idempotencyKey",
+            "payload",
+            "status",
+            "attemptCount",
+            "nextAttemptAt",
+            "lastErrorCode",
+            "providerResult",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "event",
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.events.list`. */
+export const CalendarEventsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "description": "Local calendar id or name",
+      "type": "string"
+    },
+    "from": {
+      "description": "Window start; default now",
+      "type": "string"
+    },
+    "includeCancelled": {
+      "description": "Include cancelled events",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search title/description/location",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by event status",
+      "type": "string"
+    },
+    "to": {
+      "description": "Window end; default +30d",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.events.list`. */
+export const CalendarEventsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "events": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "attendees": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "eventId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "organizer",
+                        "required",
+                        "optional",
+                        "resource",
+                        "informational"
+                      ],
+                      "type": "string"
+                    },
+                    "normalizedEmail": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "providerAttendeeId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "responseStatus": {
+                      "enum": [
+                        "accepted",
+                        "declined",
+                        "tentative",
+                        "needs_action",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "eventId",
+                    "kind",
+                    "responseStatus",
+                    "email",
+                    "normalizedEmail",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "providerAttendeeId",
+                    "raw",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "creatorAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "creatorPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deletedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "descriptionRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "endTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "etag": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "icalUid": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "locationRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "organizerAgentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerContactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizerPlatformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "originalStartAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerRecurringEventId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recurrence": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "recurrenceRule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sequence": {
+                "type": "number"
+              },
+              "seriesId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "startTimezone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "uid": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "visibility": {
+                "enum": [
+                  "default",
+                  "private",
+                  "public",
+                  "confidential"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "uid",
+              "providerEventId",
+              "providerRecurringEventId",
+              "icalUid",
+              "seriesId",
+              "originalStartAt",
+              "title",
+              "description",
+              "descriptionRedactionStatus",
+              "location",
+              "locationRedactionStatus",
+              "status",
+              "busyStatus",
+              "visibility",
+              "startAt",
+              "endAt",
+              "startTimezone",
+              "endTimezone",
+              "allDay",
+              "recurrenceRule",
+              "recurrence",
+              "sequence",
+              "etag",
+              "organizerContactId",
+              "organizerAgentId",
+              "organizerPlatformIdentityId",
+              "creatorContactId",
+              "creatorAgentId",
+              "creatorPlatformIdentityId",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "deletedAt",
+              "attendees"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "busyStatus": {
+                "enum": [
+                  "busy",
+                  "free",
+                  "tentative",
+                  "out_of_office",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "calendarId": {
+                "type": "string"
+              },
+              "endAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "redacted": {
+                "const": true,
+                "type": "boolean"
+              },
+              "startAt": {
+                "type": "number"
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "tentative",
+                  "cancelled",
+                  "draft",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "const": "Busy",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "calendarId",
+              "accountId",
+              "title",
+              "status",
+              "busyStatus",
+              "startAt",
+              "endAt",
+              "redacted"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "window": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "window",
+    "events"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.events.read`. */
+export const CalendarEventsReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "description": "Local event id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.events.read`. */
+export const CalendarEventsReadReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "allDay": {
+              "type": "boolean"
+            },
+            "attendees": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "displayName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "email": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "eventId": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "organizer",
+                      "required",
+                      "optional",
+                      "resource",
+                      "informational"
+                    ],
+                    "type": "string"
+                  },
+                  "normalizedEmail": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "providerAttendeeId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "raw": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "responseStatus": {
+                    "enum": [
+                      "accepted",
+                      "declined",
+                      "tentative",
+                      "needs_action",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "eventId",
+                  "kind",
+                  "responseStatus",
+                  "email",
+                  "normalizedEmail",
+                  "displayName",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "providerAttendeeId",
+                  "raw",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "creatorAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deletedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "descriptionRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "endTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "etag": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "icalUid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "locationRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "organizerAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "originalStartAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerRecurringEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recurrence": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "recurrenceRule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sequence": {
+              "type": "number"
+            },
+            "seriesId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "startTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uid": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "enum": [
+                "default",
+                "private",
+                "public",
+                "confidential"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "uid",
+            "providerEventId",
+            "providerRecurringEventId",
+            "icalUid",
+            "seriesId",
+            "originalStartAt",
+            "title",
+            "description",
+            "descriptionRedactionStatus",
+            "location",
+            "locationRedactionStatus",
+            "status",
+            "busyStatus",
+            "visibility",
+            "startAt",
+            "endAt",
+            "startTimezone",
+            "endTimezone",
+            "allDay",
+            "recurrenceRule",
+            "recurrence",
+            "sequence",
+            "etag",
+            "organizerContactId",
+            "organizerAgentId",
+            "organizerPlatformIdentityId",
+            "creatorContactId",
+            "creatorAgentId",
+            "creatorPlatformIdentityId",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt",
+            "deletedAt",
+            "attendees"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "redacted": {
+              "const": true,
+              "type": "boolean"
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "const": "Busy",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "title",
+            "status",
+            "busyStatus",
+            "startAt",
+            "endAt",
+            "redacted"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.events.respond`. */
+export const CalendarEventsRespondInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "attendeeAgent": {
+      "description": "Attendee agent id",
+      "type": "string"
+    },
+    "attendeeEmail": {
+      "description": "Attendee email identity",
+      "type": "string"
+    },
+    "event": {
+      "description": "Local event id",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Local write idempotency key",
+      "type": "string"
+    },
+    "status": {
+      "description": "accepted, declined, tentative, needs_action, or unknown",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.events.respond`. */
+export const CalendarEventsRespondReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "allDay": {
+              "type": "boolean"
+            },
+            "attendees": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "displayName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "email": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "eventId": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "organizer",
+                      "required",
+                      "optional",
+                      "resource",
+                      "informational"
+                    ],
+                    "type": "string"
+                  },
+                  "normalizedEmail": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "providerAttendeeId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "raw": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "responseStatus": {
+                    "enum": [
+                      "accepted",
+                      "declined",
+                      "tentative",
+                      "needs_action",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "eventId",
+                  "kind",
+                  "responseStatus",
+                  "email",
+                  "normalizedEmail",
+                  "displayName",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "providerAttendeeId",
+                  "raw",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "creatorAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deletedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "descriptionRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "endTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "etag": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "icalUid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "locationRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "organizerAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "originalStartAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerRecurringEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recurrence": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "recurrenceRule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sequence": {
+              "type": "number"
+            },
+            "seriesId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "startTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uid": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "enum": [
+                "default",
+                "private",
+                "public",
+                "confidential"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "uid",
+            "providerEventId",
+            "providerRecurringEventId",
+            "icalUid",
+            "seriesId",
+            "originalStartAt",
+            "title",
+            "description",
+            "descriptionRedactionStatus",
+            "location",
+            "locationRedactionStatus",
+            "status",
+            "busyStatus",
+            "visibility",
+            "startAt",
+            "endAt",
+            "startTimezone",
+            "endTimezone",
+            "allDay",
+            "recurrenceRule",
+            "recurrence",
+            "sequence",
+            "etag",
+            "organizerContactId",
+            "organizerAgentId",
+            "organizerPlatformIdentityId",
+            "creatorContactId",
+            "creatorAgentId",
+            "creatorPlatformIdentityId",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt",
+            "deletedAt",
+            "attendees"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "redacted": {
+              "const": true,
+              "type": "boolean"
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "const": "Busy",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "title",
+            "status",
+            "busyStatus",
+            "startAt",
+            "endAt",
+            "redacted"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "attemptCount": {
+          "type": "number"
+        },
+        "calendarId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "eventId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAttemptAt": {
+          "type": "number"
+        },
+        "operation": {
+          "enum": [
+            "create",
+            "update",
+            "cancel",
+            "delete",
+            "respond"
+          ],
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "providerResult": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "leased",
+            "sending",
+            "sent",
+            "acked",
+            "failed",
+            "dead"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "calendarId",
+        "eventId",
+        "operation",
+        "idempotencyKey",
+        "payload",
+        "status",
+        "attemptCount",
+        "nextAttemptAt",
+        "lastErrorCode",
+        "providerResult",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event",
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.events.update`. */
+export const CalendarEventsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "busy": {
+      "description": "busy, free, tentative, out_of_office, or unknown",
+      "type": "string"
+    },
+    "description": {
+      "description": "Event description",
+      "type": "string"
+    },
+    "end": {
+      "description": "Event end",
+      "type": "string"
+    },
+    "event": {
+      "description": "Local event id",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Local write idempotency key",
+      "type": "string"
+    },
+    "location": {
+      "description": "Event location",
+      "type": "string"
+    },
+    "start": {
+      "description": "Event start",
+      "type": "string"
+    },
+    "status": {
+      "description": "confirmed, tentative, cancelled, draft, or unknown",
+      "type": "string"
+    },
+    "title": {
+      "description": "Event title",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "default, private, public, or confidential",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.events.update`. */
+export const CalendarEventsUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "allDay": {
+              "type": "boolean"
+            },
+            "attendees": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "displayName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "email": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "eventId": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "organizer",
+                      "required",
+                      "optional",
+                      "resource",
+                      "informational"
+                    ],
+                    "type": "string"
+                  },
+                  "normalizedEmail": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "providerAttendeeId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "raw": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "responseStatus": {
+                    "enum": [
+                      "accepted",
+                      "declined",
+                      "tentative",
+                      "needs_action",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "eventId",
+                  "kind",
+                  "responseStatus",
+                  "email",
+                  "normalizedEmail",
+                  "displayName",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "providerAttendeeId",
+                  "raw",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "creatorAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "creatorPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deletedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "descriptionRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "endTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "etag": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "icalUid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "locationRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "organizerAgentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerContactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "organizerPlatformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "originalStartAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerRecurringEventId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recurrence": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "recurrenceRule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sequence": {
+              "type": "number"
+            },
+            "seriesId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "startTimezone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uid": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "enum": [
+                "default",
+                "private",
+                "public",
+                "confidential"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "uid",
+            "providerEventId",
+            "providerRecurringEventId",
+            "icalUid",
+            "seriesId",
+            "originalStartAt",
+            "title",
+            "description",
+            "descriptionRedactionStatus",
+            "location",
+            "locationRedactionStatus",
+            "status",
+            "busyStatus",
+            "visibility",
+            "startAt",
+            "endAt",
+            "startTimezone",
+            "endTimezone",
+            "allDay",
+            "recurrenceRule",
+            "recurrence",
+            "sequence",
+            "etag",
+            "organizerContactId",
+            "organizerAgentId",
+            "organizerPlatformIdentityId",
+            "creatorContactId",
+            "creatorAgentId",
+            "creatorPlatformIdentityId",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt",
+            "deletedAt",
+            "attendees"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "busyStatus": {
+              "enum": [
+                "busy",
+                "free",
+                "tentative",
+                "out_of_office",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "endAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "redacted": {
+              "const": true,
+              "type": "boolean"
+            },
+            "startAt": {
+              "type": "number"
+            },
+            "status": {
+              "enum": [
+                "confirmed",
+                "tentative",
+                "cancelled",
+                "draft",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "const": "Busy",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "calendarId",
+            "accountId",
+            "title",
+            "status",
+            "busyStatus",
+            "startAt",
+            "endAt",
+            "redacted"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "outbox": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "attemptCount": {
+              "type": "number"
+            },
+            "calendarId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "eventId": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "idempotencyKey": {
+              "type": "string"
+            },
+            "lastErrorCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextAttemptAt": {
+              "type": "number"
+            },
+            "operation": {
+              "enum": [
+                "create",
+                "update",
+                "cancel",
+                "delete",
+                "respond"
+              ],
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerResult": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "leased",
+                "sending",
+                "sent",
+                "acked",
+                "failed",
+                "dead"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "accountId",
+            "calendarId",
+            "eventId",
+            "operation",
+            "idempotencyKey",
+            "payload",
+            "status",
+            "attemptCount",
+            "nextAttemptAt",
+            "lastErrorCode",
+            "providerResult",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "event",
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.outbox.inspect`. */
+export const CalendarOutboxInspectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "description": "Local outbox id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.outbox.inspect`. */
+export const CalendarOutboxInspectReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "attemptCount": {
+          "type": "number"
+        },
+        "calendarId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "eventId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAttemptAt": {
+          "type": "number"
+        },
+        "operation": {
+          "enum": [
+            "create",
+            "update",
+            "cancel",
+            "delete",
+            "respond"
+          ],
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "providerResult": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "leased",
+            "sending",
+            "sent",
+            "acked",
+            "failed",
+            "dead"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "calendarId",
+        "eventId",
+        "operation",
+        "idempotencyKey",
+        "payload",
+        "status",
+        "attemptCount",
+        "nextAttemptAt",
+        "lastErrorCode",
+        "providerResult",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.outbox.list`. */
+export const CalendarOutboxListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "description": "Local calendar id or name",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by outbox status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.outbox.list`. */
+export const CalendarOutboxListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "attemptCount": {
+            "type": "number"
+          },
+          "calendarId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "operation": {
+            "enum": [
+              "create",
+              "update",
+              "cancel",
+              "delete",
+              "respond"
+            ],
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providerResult": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "leased",
+              "sending",
+              "sent",
+              "acked",
+              "failed",
+              "dead"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "calendarId",
+          "eventId",
+          "operation",
+          "idempotencyKey",
+          "payload",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastErrorCode",
+          "providerResult",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.outbox.retry`. */
+export const CalendarOutboxRetryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "description": "Local outbox id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.outbox.retry`. */
+export const CalendarOutboxRetryReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "attemptCount": {
+          "type": "number"
+        },
+        "calendarId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "eventId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAttemptAt": {
+          "type": "number"
+        },
+        "operation": {
+          "enum": [
+            "create",
+            "update",
+            "cancel",
+            "delete",
+            "respond"
+          ],
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "providerResult": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "leased",
+            "sending",
+            "sent",
+            "acked",
+            "failed",
+            "dead"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "calendarId",
+        "eventId",
+        "operation",
+        "idempotencyKey",
+        "payload",
+        "status",
+        "attemptCount",
+        "nextAttemptAt",
+        "lastErrorCode",
+        "providerResult",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `calendar.outbox.status`. */
+export const CalendarOutboxStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendar.outbox.status`. */
+export const CalendarOutboxStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "counts": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "counts",
+    "total"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.backfill-provider-timestamps`. */
 export const ChatsBackfillProviderTimestampsInputSchema = {
   "additionalProperties": false,
@@ -1543,6 +10804,13 @@ export const ChatsBackfillProviderTimestampsInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.backfill-provider-timestamps`. */
+export const ChatsBackfillProviderTimestampsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -1590,6 +10858,13 @@ export const ChatsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `chats.list`. */
+export const ChatsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.lists.add`. */
 export const ChatsListsAddInputSchema = {
   "additionalProperties": false,
@@ -1634,6 +10909,13 @@ export const ChatsListsAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `chats.lists.add`. */
+export const ChatsListsAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.lists.create`. */
 export const ChatsListsCreateInputSchema = {
   "additionalProperties": false,
@@ -1662,6 +10944,13 @@ export const ChatsListsCreateInputSchema = {
   "required": [
     "name"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.create`. */
+export const ChatsListsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -1713,6 +11002,13 @@ export const ChatsListsDeltaInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `chats.lists.delta`. */
+export const ChatsListsDeltaReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.lists.list`. */
 export const ChatsListsListInputSchema = {
   "additionalProperties": false,
@@ -1734,6 +11030,13 @@ export const ChatsListsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.list`. */
+export const ChatsListsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -1785,6 +11088,13 @@ export const ChatsListsMarkReadInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `chats.lists.mark-read`. */
+export const ChatsListsMarkReadReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.lists.members`. */
 export const ChatsListsMembersInputSchema = {
   "additionalProperties": false,
@@ -1820,6 +11130,13 @@ export const ChatsListsMembersInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `chats.lists.members`. */
+export const ChatsListsMembersReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.lists.remove`. */
 export const ChatsListsRemoveInputSchema = {
   "additionalProperties": false,
@@ -1849,6 +11166,13 @@ export const ChatsListsRemoveInputSchema = {
     "chat",
     "list"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.remove`. */
+export const ChatsListsRemoveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -1895,6 +11219,279 @@ export const ChatsReadInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `chats.read`. */
+export const ChatsReadReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.projects.create`. */
+export const CloudProjectsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "defaultPageSite": {
+      "description": "Also create a default Ravi Pages site; uses the project slug when omitted",
+      "type": "string"
+    },
+    "description": {
+      "description": "Project description",
+      "type": "string"
+    },
+    "name": {
+      "description": "Project display name; defaults to the slug",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Console project slug",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "Default visibility: private|protected_link|public",
+      "type": "string"
+    }
+  },
+  "required": [
+    "slug"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.projects.create`. */
+export const CloudProjectsCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "project": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "redirectTo": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "project",
+    "redirectTo"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.projects.list`. */
+export const CloudProjectsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum projects to return (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of projects to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.projects.list`. */
+export const CloudProjectsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "projects": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "total",
+    "pagination",
+    "projects",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `commands.list`. */
 export const CommandsListInputSchema = {
   "additionalProperties": false,
@@ -1916,6 +11513,298 @@ export const CommandsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `commands.list`. */
+export const CommandsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "commands": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "argumentHint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "arguments": {
+            "items": {},
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "level": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scope": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "level",
+                "code",
+                "message",
+                "id",
+                "scope",
+                "path"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "shadowedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shadows": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "title",
+          "description",
+          "argumentHint",
+          "arguments",
+          "disabled",
+          "scope",
+          "path",
+          "relativePath",
+          "shadowedBy",
+          "shadows",
+          "issues"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "issues": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "level",
+          "code",
+          "message",
+          "id",
+          "scope",
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "locations": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "agent",
+    "locations",
+    "commands",
+    "issues"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -1945,6 +11834,183 @@ export const CommandsRunInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `commands.run`. */
+export const CommandsRunReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "command": {
+      "additionalProperties": {},
+      "properties": {
+        "argumentHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "arguments": {
+          "items": {},
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "issues": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "level": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "scope": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "level",
+              "code",
+              "message",
+              "id",
+              "scope",
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "path": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "shadowedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shadows": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "token",
+        "title",
+        "description",
+        "argumentHint",
+        "arguments",
+        "disabled",
+        "scope",
+        "path",
+        "relativePath",
+        "shadowedBy",
+        "shadows",
+        "issues"
+      ],
+      "type": "object"
+    },
+    "metadata": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "positionalArguments": {
+      "items": {},
+      "type": "array"
+    },
+    "prompt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "command",
+    "metadata",
+    "positionalArguments",
+    "prompt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `commands.show`. */
 export const CommandsShowInputSchema = {
   "additionalProperties": false,
@@ -1964,6 +12030,168 @@ export const CommandsShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `commands.show`. */
+export const CommandsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "command": {
+      "additionalProperties": {},
+      "properties": {
+        "argumentHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "arguments": {
+          "items": {},
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "issues": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "level": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "scope": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "level",
+              "code",
+              "message",
+              "id",
+              "scope",
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "path": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "shadowedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shadows": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "token",
+        "title",
+        "description",
+        "argumentHint",
+        "arguments",
+        "disabled",
+        "scope",
+        "path",
+        "relativePath",
+        "shadowedBy",
+        "shadows",
+        "issues"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agent",
+    "command"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `commands.validate`. */
 export const CommandsValidateInputSchema = {
   "additionalProperties": false,
@@ -1973,6 +12201,394 @@ export const CommandsValidateInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `commands.validate`. */
+export const CommandsValidateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "effectiveTotal": {
+      "type": "number"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "level",
+          "code",
+          "message",
+          "id",
+          "scope",
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    },
+    "valid": {
+      "type": "boolean"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "level",
+          "code",
+          "message",
+          "id",
+          "scope",
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "valid",
+    "agent",
+    "total",
+    "effectiveTotal",
+    "errors",
+    "warnings"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `connectors.list`. */
+export const ConnectorsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching connectors to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Filter by Ravi Cloud project id",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `connectors.list`. */
+export const ConnectorsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connections": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requiresReauth": {
+            "type": "boolean"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "provider",
+          "displayName",
+          "status",
+          "requiresReauth",
+          "scopes",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total",
+        "limit",
+        "offset",
+        "returned"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "connections",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `connectors.revoke`. */
+export const ConnectorsRevokeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Connector id",
+      "type": "string"
+    },
+    "yes": {
+      "description": "Skip confirmation prompt",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `connectors.revoke`. */
+export const ConnectorsRevokeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "revoked": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "revoked",
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `connectors.show`. */
+export const ConnectorsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Connector id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `connectors.show`. */
+export const ConnectorsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "externalAccountLogin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grantedAt": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastReauthAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "requiresReauth": {
+          "type": "boolean"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "provider",
+        "displayName",
+        "status",
+        "requiresReauth",
+        "scopes",
+        "createdAt",
+        "capabilities",
+        "externalAccountLogin",
+        "grantedAt",
+        "lastReauthAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "connection"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2003,6 +12619,13 @@ export const ContactsActivityInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.activity`. */
+export const ContactsActivityReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.add`. */
 export const ContactsAddInputSchema = {
   "additionalProperties": false,
@@ -2030,6 +12653,13 @@ export const ContactsAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.add`. */
+export const ContactsAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.allow`. */
 export const ContactsAllowInputSchema = {
   "additionalProperties": false,
@@ -2042,6 +12672,13 @@ export const ContactsAllowInputSchema = {
   "required": [
     "contact"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.allow`. */
+export const ContactsAllowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2065,6 +12702,13 @@ export const ContactsApproveInputSchema = {
   "required": [
     "contact"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.approve`. */
+export const ContactsApproveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2108,6 +12752,13 @@ export const ContactsBackfillInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.backfill`. */
+export const ContactsBackfillReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.block`. */
 export const ContactsBlockInputSchema = {
   "additionalProperties": false,
@@ -2120,6 +12771,13 @@ export const ContactsBlockInputSchema = {
   "required": [
     "contact"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.block`. */
+export const ContactsBlockReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2138,9 +12796,23 @@ export const ContactsCheckInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.check`. */
+export const ContactsCheckReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.duplicates`. */
 export const ContactsDuplicatesInputSchema = {
   "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.duplicates`. */
+export const ContactsDuplicatesReturnSchema = {
+  "additionalProperties": {},
   "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -2164,6 +12836,13 @@ export const ContactsFindInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.find`. */
+export const ContactsFindReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.get`. */
 export const ContactsGetInputSchema = {
   "additionalProperties": false,
@@ -2179,6 +12858,13 @@ export const ContactsGetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.get`. */
+export const ContactsGetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.info`. */
 export const ContactsInfoInputSchema = {
   "additionalProperties": false,
@@ -2191,6 +12877,13 @@ export const ContactsInfoInputSchema = {
   "required": [
     "contact"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.info`. */
+export const ContactsInfoReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2225,6 +12918,13 @@ export const ContactsLinkInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.link`. */
+export const ContactsLinkReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.list`. */
 export const ContactsListInputSchema = {
   "additionalProperties": false,
@@ -2242,6 +12942,13 @@ export const ContactsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.list`. */
+export const ContactsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2265,6 +12972,13 @@ export const ContactsMergeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.merge`. */
+export const ContactsMergeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.messages`. */
 export const ContactsMessagesInputSchema = {
   "additionalProperties": false,
@@ -2285,6 +12999,13 @@ export const ContactsMessagesInputSchema = {
   "required": [
     "contact"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.messages`. */
+export const ContactsMessagesReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2315,6 +13036,13 @@ export const ContactsMetadataListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.metadata.list`. */
+export const ContactsMetadataListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.metadata.remove`. */
 export const ContactsMetadataRemoveInputSchema = {
   "additionalProperties": false,
@@ -2340,6 +13068,13 @@ export const ContactsMetadataRemoveInputSchema = {
     "contact",
     "key"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.metadata.remove`. */
+export const ContactsMetadataRemoveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2376,6 +13111,13 @@ export const ContactsMetadataSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.metadata.set`. */
+export const ContactsMetadataSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.note`. */
 export const ContactsNoteInputSchema = {
   "additionalProperties": false,
@@ -2404,6 +13146,13 @@ export const ContactsNoteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.note`. */
+export const ContactsNoteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.pending`. */
 export const ContactsPendingInputSchema = {
   "additionalProperties": false,
@@ -2413,6 +13162,13 @@ export const ContactsPendingInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.pending`. */
+export const ContactsPendingReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2439,6 +13195,13 @@ export const ContactsProfileInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.profile`. */
+export const ContactsProfileReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.remove`. */
 export const ContactsRemoveInputSchema = {
   "additionalProperties": false,
@@ -2451,6 +13214,13 @@ export const ContactsRemoveInputSchema = {
   "required": [
     "contact"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.remove`. */
+export const ContactsRemoveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2474,6 +13244,13 @@ export const ContactsSessionsInputSchema = {
   "required": [
     "contact"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.sessions`. */
+export const ContactsSessionsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2502,6 +13279,13 @@ export const ContactsSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.set`. */
+export const ContactsSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.tag`. */
 export const ContactsTagInputSchema = {
   "additionalProperties": false,
@@ -2519,6 +13303,13 @@ export const ContactsTagInputSchema = {
     "contact",
     "tag"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.tag`. */
+export const ContactsTagReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2553,6 +13344,13 @@ export const ContactsTimelineInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.timeline`. */
+export const ContactsTimelineReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.unlink`. */
 export const ContactsUnlinkInputSchema = {
   "additionalProperties": false,
@@ -2580,6 +13378,13 @@ export const ContactsUnlinkInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.unlink`. */
+export const ContactsUnlinkReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.untag`. */
 export const ContactsUntagInputSchema = {
   "additionalProperties": false,
@@ -2597,6 +13402,13 @@ export const ContactsUntagInputSchema = {
     "contact",
     "tag"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.untag`. */
+export const ContactsUntagReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2625,9 +13437,23 @@ export const ContextAuthorizeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.authorize`. */
+export const ContextAuthorizeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.capabilities`. */
 export const ContextCapabilitiesInputSchema = {
   "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.capabilities`. */
+export const ContextCapabilitiesReturnSchema = {
+  "additionalProperties": {},
   "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -2654,6 +13480,13 @@ export const ContextCheckInputSchema = {
     "objectType",
     "permission"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.check`. */
+export const ContextCheckReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2685,9 +13518,23 @@ export const ContextCleanupAgentRuntimeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.cleanup-agent-runtime`. */
+export const ContextCleanupAgentRuntimeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.codex-bash-hook`. */
 export const ContextCodexBashHookInputSchema = {
   "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.codex-bash-hook`. */
+export const ContextCodexBashHookReturnSchema = {
+  "additionalProperties": {},
   "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -2715,6 +13562,13 @@ export const ContextCredentialsAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.credentials.add`. */
+export const ContextCredentialsAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.credentials.list`. */
 export const ContextCredentialsListInputSchema = {
   "additionalProperties": false,
@@ -2728,6 +13582,13 @@ export const ContextCredentialsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.credentials.list`. */
+export const ContextCredentialsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2746,6 +13607,13 @@ export const ContextCredentialsRemoveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.credentials.remove`. */
+export const ContextCredentialsRemoveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.credentials.set-default`. */
 export const ContextCredentialsSetDefaultInputSchema = {
   "additionalProperties": false,
@@ -2761,6 +13629,13 @@ export const ContextCredentialsSetDefaultInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.credentials.set-default`. */
+export const ContextCredentialsSetDefaultReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.info`. */
 export const ContextInfoInputSchema = {
   "additionalProperties": false,
@@ -2773,6 +13648,13 @@ export const ContextInfoInputSchema = {
   "required": [
     "contextId"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.info`. */
+export const ContextInfoReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2803,6 +13685,13 @@ export const ContextIssueInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.issue`. */
+export const ContextIssueReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.lineage`. */
 export const ContextLineageInputSchema = {
   "additionalProperties": false,
@@ -2815,6 +13704,13 @@ export const ContextLineageInputSchema = {
   "required": [
     "contextId"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.lineage`. */
+export const ContextLineageReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2850,6 +13746,13 @@ export const ContextListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.list`. */
+export const ContextListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.revoke`. */
 export const ContextRevokeInputSchema = {
   "additionalProperties": false,
@@ -2874,6 +13777,13 @@ export const ContextRevokeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.revoke`. */
+export const ContextRevokeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.visibility`. */
 export const ContextVisibilityInputSchema = {
   "additionalProperties": false,
@@ -2881,9 +13791,23 @@ export const ContextVisibilityInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.visibility`. */
+export const ContextVisibilityReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.whoami`. */
 export const ContextWhoamiInputSchema = {
   "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.whoami`. */
+export const ContextWhoamiReturnSchema = {
+  "additionalProperties": {},
   "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -2907,6 +13831,89 @@ export const CostsAgentInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `costs.agent`. */
+export const CostsAgentReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "total_cache_creation": {
+          "type": "number"
+        },
+        "total_cache_read": {
+          "type": "number"
+        },
+        "total_cost": {
+          "type": "number"
+        },
+        "total_input": {
+          "type": "number"
+        },
+        "total_output": {
+          "type": "number"
+        },
+        "total_tokens": {
+          "type": "number"
+        },
+        "turns": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total_cost",
+        "total_input",
+        "total_output",
+        "total_cache_read",
+        "total_cache_creation",
+        "turns",
+        "total_tokens"
+      ],
+      "type": "object"
+    },
+    "window": {
+      "additionalProperties": false,
+      "properties": {
+        "effectiveHours": {
+          "type": "number"
+        },
+        "requestedHours": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sinceMs": {
+          "type": "number"
+        },
+        "untilMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestedHours",
+        "effectiveHours",
+        "sinceMs",
+        "untilMs"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "window",
+    "summary",
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `costs.agents`. */
 export const CostsAgentsInputSchema = {
   "additionalProperties": false,
@@ -2920,6 +13927,107 @@ export const CostsAgentsInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `costs.agents`. */
+export const CostsAgentsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "total_cache_creation": {
+            "type": "number"
+          },
+          "total_cache_read": {
+            "type": "number"
+          },
+          "total_cost": {
+            "type": "number"
+          },
+          "total_input": {
+            "type": "number"
+          },
+          "total_output": {
+            "type": "number"
+          },
+          "total_tokens": {
+            "type": "number"
+          },
+          "turns": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total_cost",
+          "total_input",
+          "total_output",
+          "total_cache_read",
+          "total_cache_creation",
+          "turns",
+          "total_tokens",
+          "agentId",
+          "models"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "type": "number"
+    },
+    "totalAgents": {
+      "type": "number"
+    },
+    "window": {
+      "additionalProperties": false,
+      "properties": {
+        "effectiveHours": {
+          "type": "number"
+        },
+        "requestedHours": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sinceMs": {
+          "type": "number"
+        },
+        "untilMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestedHours",
+        "effectiveHours",
+        "sinceMs",
+        "untilMs"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "window",
+    "limit",
+    "totalAgents",
+    "agents"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2938,6 +14046,79 @@ export const CostsSessionInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `costs.session`. */
+export const CostsSessionReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "total_cache_creation": {
+          "type": "number"
+        },
+        "total_cache_read": {
+          "type": "number"
+        },
+        "total_cost": {
+          "type": "number"
+        },
+        "total_input": {
+          "type": "number"
+        },
+        "total_output": {
+          "type": "number"
+        },
+        "total_tokens": {
+          "type": "number"
+        },
+        "turns": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total_cost",
+        "total_input",
+        "total_output",
+        "total_cache_read",
+        "total_cache_creation",
+        "turns",
+        "total_tokens"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "sessionKey",
+    "sessionName",
+    "agentId",
+    "summary"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `costs.summary`. */
 export const CostsSummaryInputSchema = {
   "additionalProperties": false,
@@ -2947,6 +14128,85 @@ export const CostsSummaryInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `costs.summary`. */
+export const CostsSummaryReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "total_cache_creation": {
+          "type": "number"
+        },
+        "total_cache_read": {
+          "type": "number"
+        },
+        "total_cost": {
+          "type": "number"
+        },
+        "total_input": {
+          "type": "number"
+        },
+        "total_output": {
+          "type": "number"
+        },
+        "total_tokens": {
+          "type": "number"
+        },
+        "turns": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total_cost",
+        "total_input",
+        "total_output",
+        "total_cache_read",
+        "total_cache_creation",
+        "turns",
+        "total_tokens"
+      ],
+      "type": "object"
+    },
+    "window": {
+      "additionalProperties": false,
+      "properties": {
+        "effectiveHours": {
+          "type": "number"
+        },
+        "requestedHours": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sinceMs": {
+          "type": "number"
+        },
+        "untilMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestedHours",
+        "effectiveHours",
+        "sinceMs",
+        "untilMs"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "window",
+    "summary"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2966,6 +14226,115 @@ export const CostsTopSessionsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `costs.top-sessions`. */
+export const CostsTopSessionsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "type": "number"
+    },
+    "sessions": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_cache_creation": {
+            "type": "number"
+          },
+          "total_cache_read": {
+            "type": "number"
+          },
+          "total_cost": {
+            "type": "number"
+          },
+          "total_input": {
+            "type": "number"
+          },
+          "total_output": {
+            "type": "number"
+          },
+          "total_tokens": {
+            "type": "number"
+          },
+          "turns": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total_cost",
+          "total_input",
+          "total_output",
+          "total_cache_read",
+          "total_cache_creation",
+          "turns",
+          "total_tokens",
+          "sessionKey",
+          "sessionName",
+          "name",
+          "agentId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "window": {
+      "additionalProperties": false,
+      "properties": {
+        "effectiveHours": {
+          "type": "number"
+        },
+        "requestedHours": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sinceMs": {
+          "type": "number"
+        },
+        "untilMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestedHours",
+        "effectiveHours",
+        "sinceMs",
+        "untilMs"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "window",
+    "limit",
+    "sessions"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.account`. */
 export const CrmAccountInputSchema = {
   "additionalProperties": false,
@@ -2977,6 +14346,26 @@ export const CrmAccountInputSchema = {
   },
   "required": [
     "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.account`. */
+export const CrmAccountReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "crm": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
+    "crm"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3012,6 +14401,24 @@ export const CrmAccountCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.account.create`. */
+export const CrmAccountCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.account.link-contact`. */
 export const CrmAccountLinkContactInputSchema = {
   "additionalProperties": false,
@@ -3040,6 +14447,24 @@ export const CrmAccountLinkContactInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.account.link-contact`. */
+export const CrmAccountLinkContactReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.account.show`. */
 export const CrmAccountShowInputSchema = {
   "additionalProperties": false,
@@ -3051,6 +14476,26 @@ export const CrmAccountShowInputSchema = {
   },
   "required": [
     "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.account.show`. */
+export const CrmAccountShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "crm": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
+    "crm"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3071,6 +14516,37 @@ export const CrmBoardInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.board`. */
+export const CrmBoardReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "opportunities": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "stages": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "opportunities"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.contact`. */
 export const CrmContactInputSchema = {
   "additionalProperties": false,
@@ -3082,6 +14558,26 @@ export const CrmContactInputSchema = {
   },
   "required": [
     "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.contact`. */
+export const CrmContactReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "crm": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
+    "crm"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3115,6 +14611,24 @@ export const CrmContactSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.contact.set`. */
+export const CrmContactSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.contact.show`. */
 export const CrmContactShowInputSchema = {
   "additionalProperties": false,
@@ -3126,6 +14640,26 @@ export const CrmContactShowInputSchema = {
   },
   "required": [
     "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.contact.show`. */
+export const CrmContactShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "crm": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
+    "crm"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3154,6 +14688,80 @@ export const CrmContactsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.contacts`. */
+export const CrmContactsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.fact.confirm`. */
 export const CrmFactConfirmInputSchema = {
   "additionalProperties": false,
@@ -3165,6 +14773,24 @@ export const CrmFactConfirmInputSchema = {
   },
   "required": [
     "fact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.fact.confirm`. */
+export const CrmFactConfirmReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3210,6 +14836,80 @@ export const CrmFactListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.fact.list`. */
+export const CrmFactListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -3267,6 +14967,24 @@ export const CrmFactProposeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.fact.propose`. */
+export const CrmFactProposeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.fact.reject`. */
 export const CrmFactRejectInputSchema = {
   "additionalProperties": false,
@@ -3278,6 +14996,24 @@ export const CrmFactRejectInputSchema = {
   },
   "required": [
     "fact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.fact.reject`. */
+export const CrmFactRejectReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3330,6 +15066,80 @@ export const CrmNextInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.next`. */
+export const CrmNextReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.opportunity`. */
 export const CrmOpportunityInputSchema = {
   "additionalProperties": false,
@@ -3340,6 +15150,26 @@ export const CrmOpportunityInputSchema = {
     }
   },
   "required": [
+    "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.opportunity`. */
+export const CrmOpportunityReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "opportunity": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
     "opportunity"
   ],
   "type": "object"
@@ -3356,6 +15186,29 @@ export const CrmOpportunityContactsInputSchema = {
   },
   "required": [
     "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.opportunity.contacts`. */
+export const CrmOpportunityContactsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "contacts": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "contacts"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3403,6 +15256,24 @@ export const CrmOpportunityCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.opportunity.create`. */
+export const CrmOpportunityCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.opportunity.link-contact`. */
 export const CrmOpportunityLinkContactInputSchema = {
   "additionalProperties": false,
@@ -3435,6 +15306,24 @@ export const CrmOpportunityLinkContactInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.opportunity.link-contact`. */
+export const CrmOpportunityLinkContactReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.opportunity.move`. */
 export const CrmOpportunityMoveInputSchema = {
   "additionalProperties": false,
@@ -3459,6 +15348,24 @@ export const CrmOpportunityMoveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.opportunity.move`. */
+export const CrmOpportunityMoveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.opportunity.show`. */
 export const CrmOpportunityShowInputSchema = {
   "additionalProperties": false,
@@ -3469,6 +15376,26 @@ export const CrmOpportunityShowInputSchema = {
     }
   },
   "required": [
+    "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.opportunity.show`. */
+export const CrmOpportunityShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "opportunity": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
     "opportunity"
   ],
   "type": "object"
@@ -3505,6 +15432,24 @@ export const CrmPipelineCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.pipeline.create`. */
+export const CrmPipelineCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.list`. */
 export const CrmPipelineListInputSchema = {
   "additionalProperties": false,
@@ -3526,6 +15471,80 @@ export const CrmPipelineListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.list`. */
+export const CrmPipelineListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -3554,6 +15573,24 @@ export const CrmPipelineSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.pipeline.set`. */
+export const CrmPipelineSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.show`. */
 export const CrmPipelineShowInputSchema = {
   "additionalProperties": false,
@@ -3566,6 +15603,13 @@ export const CrmPipelineShowInputSchema = {
   "required": [
     "pipeline"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.show`. */
+export const CrmPipelineShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -3617,6 +15661,24 @@ export const CrmPipelineStageAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.pipeline.stage.add`. */
+export const CrmPipelineStageAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.stage.archive`. */
 export const CrmPipelineStageArchiveInputSchema = {
   "additionalProperties": false,
@@ -3633,6 +15695,24 @@ export const CrmPipelineStageArchiveInputSchema = {
   "required": [
     "pipeline",
     "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.stage.archive`. */
+export const CrmPipelineStageArchiveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3660,6 +15740,80 @@ export const CrmPipelineStageListInputSchema = {
   },
   "required": [
     "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.stage.list`. */
+export const CrmPipelineStageListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3694,6 +15848,24 @@ export const CrmPipelineStageSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.pipeline.stage.set`. */
+export const CrmPipelineStageSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.stage.show`. */
 export const CrmPipelineStageShowInputSchema = {
   "additionalProperties": false,
@@ -3711,6 +15883,13 @@ export const CrmPipelineStageShowInputSchema = {
     "pipeline",
     "stage"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.stage.show`. */
+export const CrmPipelineStageShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -3763,6 +15942,24 @@ export const CrmPipelineStageTopicAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.pipeline.stage.topic.add`. */
+export const CrmPipelineStageTopicAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.stage.topic.archive`. */
 export const CrmPipelineStageTopicArchiveInputSchema = {
   "additionalProperties": false,
@@ -3784,6 +15981,24 @@ export const CrmPipelineStageTopicArchiveInputSchema = {
     "pipeline",
     "stage",
     "topic"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.stage.topic.archive`. */
+export const CrmPipelineStageTopicArchiveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3823,6 +16038,24 @@ export const CrmPipelineStageTopicSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.pipeline.stage.topic.set`. */
+export const CrmPipelineStageTopicSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.stage.topics`. */
 export const CrmPipelineStageTopicsInputSchema = {
   "additionalProperties": false,
@@ -3855,6 +16088,80 @@ export const CrmPipelineStageTopicsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.pipeline.stage.topics`. */
+export const CrmPipelineStageTopicsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.task.cancel`. */
 export const CrmTaskCancelInputSchema = {
   "additionalProperties": false,
@@ -3870,6 +16177,24 @@ export const CrmTaskCancelInputSchema = {
   },
   "required": [
     "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.task.cancel`. */
+export const CrmTaskCancelReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3941,6 +16266,24 @@ export const CrmTaskCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.task.create`. */
+export const CrmTaskCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.task.done`. */
 export const CrmTaskDoneInputSchema = {
   "additionalProperties": false,
@@ -3952,6 +16295,24 @@ export const CrmTaskDoneInputSchema = {
   },
   "required": [
     "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.task.done`. */
+export const CrmTaskDoneReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4008,6 +16369,80 @@ export const CrmTaskListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `crm.task.list`. */
+export const CrmTaskListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.task.show`. */
 export const CrmTaskShowInputSchema = {
   "additionalProperties": false,
@@ -4018,6 +16453,26 @@ export const CrmTaskShowInputSchema = {
     }
   },
   "required": [
+    "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.task.show`. */
+export const CrmTaskShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "target": {
+      "type": "string"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "target",
     "task"
   ],
   "type": "object"
@@ -4042,6 +16497,24 @@ export const CrmTaskSnoozeInputSchema = {
   },
   "required": [
     "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.task.snooze`. */
+export const CrmTaskSnoozeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4121,6 +16594,50 @@ export const CronAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `cron.add`. */
+export const CronAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "job": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "job"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cron.disable`. */
 export const CronDisableInputSchema = {
   "additionalProperties": false,
@@ -4136,6 +16653,50 @@ export const CronDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `cron.disable`. */
+export const CronDisableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "job": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "job"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cron.enable`. */
 export const CronEnableInputSchema = {
   "additionalProperties": false,
@@ -4147,6 +16708,50 @@ export const CronEnableInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cron.enable`. */
+export const CronEnableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "job": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "job"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4171,6 +16776,89 @@ export const CronListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `cron.list`. */
+export const CronListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "jobs": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "jobs"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cron.rm`. */
 export const CronRmInputSchema = {
   "additionalProperties": false,
@@ -4186,6 +16874,50 @@ export const CronRmInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `cron.rm`. */
+export const CronRmReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "job": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "job"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cron.run`. */
 export const CronRunInputSchema = {
   "additionalProperties": false,
@@ -4197,6 +16929,50 @@ export const CronRunInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cron.run`. */
+export const CronRunReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "job": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "job"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4226,6 +17002,50 @@ export const CronSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `cron.set`. */
+export const CronSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "job": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "job"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cron.show`. */
 export const CronShowInputSchema = {
   "additionalProperties": false,
@@ -4241,10 +17061,57 @@ export const CronShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `cron.show`. */
+export const CronShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "job": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "job"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `daemon.env`. */
 export const DaemonEnvInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `daemon.env`. */
+export const DaemonEnvReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "const": "env",
+      "type": "string"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "existedBefore": {
+      "type": "boolean"
+    },
+    "openedEditor": {
+      "type": "boolean"
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "path",
+    "existedBefore",
+    "created",
+    "openedEditor"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4273,10 +17140,47 @@ export const DaemonInitAdminKeyInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `daemon.init-admin-key`. */
+export const DaemonInitAdminKeyReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "const": "init-admin-key",
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "changed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `daemon.install`. */
 export const DaemonInstallInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `daemon.install`. */
+export const DaemonInstallReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "changed"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4305,6 +17209,20 @@ export const DaemonLogsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `daemon.logs`. */
+export const DaemonLogsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `daemon.restart`. */
 export const DaemonRestartInputSchema = {
   "additionalProperties": false,
@@ -4321,10 +17239,46 @@ export const DaemonRestartInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `daemon.restart`. */
+export const DaemonRestartReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "changed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `daemon.start`. */
 export const DaemonStartInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `daemon.start`. */
+export const DaemonStartReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "changed"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4335,10 +17289,67 @@ export const DaemonStatusInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `daemon.status`. */
+export const DaemonStatusReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "infrastructure": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "pm2Available": {
+      "type": "boolean"
+    },
+    "processName": {
+      "type": "string"
+    },
+    "processes": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ravi": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "pm2Available",
+    "processName",
+    "ravi",
+    "infrastructure",
+    "processes"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `daemon.stop`. */
 export const DaemonStopInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `daemon.stop`. */
+export const DaemonStopReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "changed"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4349,10 +17360,55 @@ export const DaemonUninstallInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `daemon.uninstall`. */
+export const DaemonUninstallReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "changed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `devin.auth.check`. */
 export const DevinAuthCheckInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `devin.auth.check`. */
+export const DevinAuthCheckReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "baseUrl": {
+      "type": "string"
+    },
+    "configuredOrgId": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "self": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "ok",
+    "baseUrl",
+    "self"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4366,6 +17422,27 @@ export const DevinSessionsArchiveInputSchema = {
     }
   },
   "required": [
+    "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `devin.sessions.archive`. */
+export const DevinSessionsArchiveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "session": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "const": "archived",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
     "session"
   ],
   "type": "object"
@@ -4386,6 +17463,33 @@ export const DevinSessionsAttachmentsInputSchema = {
   },
   "required": [
     "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `devin.sessions.attachments`. */
+export const DevinSessionsAttachmentsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "attachments": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "devinId": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "devinId",
+    "total",
+    "attachments"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4497,6 +17601,42 @@ export const DevinSessionsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `devin.sessions.create`. */
+export const DevinSessionsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "maxAcuLimit": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "maxAcuLimitSource": {
+      "type": "string"
+    },
+    "session": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "const": "created",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "maxAcuLimitSource",
+    "maxAcuLimit",
+    "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `devin.sessions.insights`. */
 export const DevinSessionsInsightsInputSchema = {
   "additionalProperties": false,
@@ -4512,6 +17652,41 @@ export const DevinSessionsInsightsInputSchema = {
   },
   "required": [
     "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `devin.sessions.insights`. */
+export const DevinSessionsInsightsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "insights": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "session": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "session",
+    "summary",
+    "insights"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4544,6 +17719,96 @@ export const DevinSessionsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `devin.sessions.list`. */
+export const DevinSessionsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "hasNextPage": {
+      "type": "boolean"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "sessions": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "source": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "source",
+    "sessions"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `devin.sessions.messages`. */
 export const DevinSessionsMessagesInputSchema = {
   "additionalProperties": false,
@@ -4559,6 +17824,33 @@ export const DevinSessionsMessagesInputSchema = {
   },
   "required": [
     "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `devin.sessions.messages`. */
+export const DevinSessionsMessagesReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "devinId": {
+      "type": "string"
+    },
+    "messages": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "devinId",
+    "total",
+    "messages"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4587,6 +17879,27 @@ export const DevinSessionsSendInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `devin.sessions.send`. */
+export const DevinSessionsSendReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "session": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "const": "sent",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `devin.sessions.show`. */
 export const DevinSessionsShowInputSchema = {
   "additionalProperties": false,
@@ -4598,6 +17911,22 @@ export const DevinSessionsShowInputSchema = {
     "sync": {
       "description": "Fetch latest remote state first",
       "type": "boolean"
+    }
+  },
+  "required": [
+    "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `devin.sessions.show`. */
+export const DevinSessionsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "session": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
     }
   },
   "required": [
@@ -4629,6 +17958,50 @@ export const DevinSessionsSyncInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `devin.sessions.sync`. */
+export const DevinSessionsSyncReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifacts": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "attachments": {
+      "type": "number"
+    },
+    "insights": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "messages": {
+      "type": "number"
+    },
+    "session": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "session",
+    "messages",
+    "attachments",
+    "insights",
+    "artifacts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `devin.sessions.terminate`. */
 export const DevinSessionsTerminateInputSchema = {
   "additionalProperties": false,
@@ -4643,6 +18016,31 @@ export const DevinSessionsTerminateInputSchema = {
     }
   },
   "required": [
+    "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `devin.sessions.terminate`. */
+export const DevinSessionsTerminateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "archive": {
+      "type": "boolean"
+    },
+    "session": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "const": "terminated",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "archive",
     "session"
   ],
   "type": "object"
@@ -4667,6 +18065,209 @@ export const EvalRunInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `eval.run`. */
+export const EvalRunReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "execution": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "grade": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "outputDir": {
+      "type": "string"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "session": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "runId",
+    "outputDir",
+    "session",
+    "execution",
+    "grade"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gmail.list`. */
+export const GmailListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connector": {
+      "description": "Connector id (defaults to first active Google)",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Page token for the next page (Gmail nextPageToken)",
+      "type": "string"
+    },
+    "label": {
+      "description": "Filter by label id (repeat for multiple)",
+      "type": "string"
+    },
+    "max": {
+      "description": "Max messages to return (1-100, default 25)",
+      "type": "string"
+    },
+    "q": {
+      "description": "Gmail search query (same as the web search bar)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gmail.list`. */
+export const GmailListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "capability": {
+      "type": "string"
+    },
+    "refreshed": {
+      "type": "boolean"
+    },
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "capability",
+    "refreshed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gmail.read`. */
+export const GmailReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connector": {
+      "description": "Connector id (defaults to first active Google)",
+      "type": "string"
+    },
+    "format": {
+      "description": "full | metadata | raw (default full)",
+      "type": "string"
+    },
+    "id": {
+      "description": "Gmail message id (from `ravi gmail list`)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gmail.read`. */
+export const GmailReadReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "capability": {
+      "type": "string"
+    },
+    "refreshed": {
+      "type": "boolean"
+    },
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "capability",
+    "refreshed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `heartbeat.disable`. */
 export const HeartbeatDisableInputSchema = {
   "additionalProperties": false,
@@ -4678,6 +18279,179 @@ export const HeartbeatDisableInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `heartbeat.disable`. */
+export const HeartbeatDisableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "cwd",
+        "model",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "heartbeat": {
+      "additionalProperties": {},
+      "properties": {
+        "accountId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeEnd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeHours": {
+          "type": "string"
+        },
+        "activeStart": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "intervalDescription": {
+          "type": "string"
+        },
+        "intervalMs": {
+          "type": "number"
+        },
+        "lastRunAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "intervalMs",
+        "intervalDescription",
+        "model",
+        "accountId",
+        "activeStart",
+        "activeEnd",
+        "activeHours",
+        "lastRunAt"
+      ],
+      "type": "object"
+    },
+    "heartbeatFile": {
+      "type": "string"
+    },
+    "heartbeatFileExists": {
+      "type": "boolean"
+    },
+    "property": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "value": {}
+  },
+  "required": [
+    "agent",
+    "heartbeat",
+    "heartbeatFile",
+    "heartbeatFileExists",
+    "status",
+    "target",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4697,6 +18471,179 @@ export const HeartbeatEnableInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `heartbeat.enable`. */
+export const HeartbeatEnableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "cwd",
+        "model",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "heartbeat": {
+      "additionalProperties": {},
+      "properties": {
+        "accountId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeEnd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeHours": {
+          "type": "string"
+        },
+        "activeStart": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "intervalDescription": {
+          "type": "string"
+        },
+        "intervalMs": {
+          "type": "number"
+        },
+        "lastRunAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "intervalMs",
+        "intervalDescription",
+        "model",
+        "accountId",
+        "activeStart",
+        "activeEnd",
+        "activeHours",
+        "lastRunAt"
+      ],
+      "type": "object"
+    },
+    "heartbeatFile": {
+      "type": "string"
+    },
+    "heartbeatFileExists": {
+      "type": "boolean"
+    },
+    "property": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "value": {}
+  },
+  "required": [
+    "agent",
+    "heartbeat",
+    "heartbeatFile",
+    "heartbeatFileExists",
+    "status",
+    "target",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4726,6 +18673,179 @@ export const HeartbeatSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `heartbeat.set`. */
+export const HeartbeatSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "cwd",
+        "model",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "heartbeat": {
+      "additionalProperties": {},
+      "properties": {
+        "accountId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeEnd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeHours": {
+          "type": "string"
+        },
+        "activeStart": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "intervalDescription": {
+          "type": "string"
+        },
+        "intervalMs": {
+          "type": "number"
+        },
+        "lastRunAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "intervalMs",
+        "intervalDescription",
+        "model",
+        "accountId",
+        "activeStart",
+        "activeEnd",
+        "activeHours",
+        "lastRunAt"
+      ],
+      "type": "object"
+    },
+    "heartbeatFile": {
+      "type": "string"
+    },
+    "heartbeatFileExists": {
+      "type": "boolean"
+    },
+    "property": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "value": {}
+  },
+  "required": [
+    "agent",
+    "heartbeat",
+    "heartbeatFile",
+    "heartbeatFileExists",
+    "status",
+    "target",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `heartbeat.show`. */
 export const HeartbeatShowInputSchema = {
   "additionalProperties": false,
@@ -4741,10 +18861,322 @@ export const HeartbeatShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `heartbeat.show`. */
+export const HeartbeatShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": {},
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "cwd",
+        "model",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "heartbeat": {
+      "additionalProperties": {},
+      "properties": {
+        "accountId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeEnd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeHours": {
+          "type": "string"
+        },
+        "activeStart": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "intervalDescription": {
+          "type": "string"
+        },
+        "intervalMs": {
+          "type": "number"
+        },
+        "lastRunAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "intervalMs",
+        "intervalDescription",
+        "model",
+        "accountId",
+        "activeStart",
+        "activeEnd",
+        "activeHours",
+        "lastRunAt"
+      ],
+      "type": "object"
+    },
+    "heartbeatFile": {
+      "type": "string"
+    },
+    "heartbeatFileExists": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "agent",
+    "heartbeat",
+    "heartbeatFile",
+    "heartbeatFileExists"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `heartbeat.status`. */
 export const HeartbeatStatusInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `heartbeat.status`. */
+export const HeartbeatStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "additionalProperties": {},
+            "properties": {
+              "cwd": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "cwd",
+              "model",
+              "provider"
+            ],
+            "type": "object"
+          },
+          "heartbeat": {
+            "additionalProperties": {},
+            "properties": {
+              "accountId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "activeEnd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "activeHours": {
+                "type": "string"
+              },
+              "activeStart": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "intervalDescription": {
+                "type": "string"
+              },
+              "intervalMs": {
+                "type": "number"
+              },
+              "lastRunAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "enabled",
+              "intervalMs",
+              "intervalDescription",
+              "model",
+              "accountId",
+              "activeStart",
+              "activeEnd",
+              "activeHours",
+              "lastRunAt"
+            ],
+            "type": "object"
+          },
+          "heartbeatFile": {
+            "type": "string"
+          },
+          "heartbeatFileExists": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agent",
+          "heartbeat",
+          "heartbeatFile",
+          "heartbeatFileExists"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "agents"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4759,6 +19191,47 @@ export const HeartbeatTriggerInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `heartbeat.trigger`. */
+export const HeartbeatTriggerReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "heartbeatFile": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "sessionName": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "heartbeatFile"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4846,6 +19319,43 @@ export const HooksCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `hooks.create`. */
+export const HooksCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "hook": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "hook"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `hooks.disable`. */
 export const HooksDisableInputSchema = {
   "additionalProperties": false,
@@ -4861,6 +19371,43 @@ export const HooksDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `hooks.disable`. */
+export const HooksDisableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "hook": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "hook"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `hooks.enable`. */
 export const HooksEnableInputSchema = {
   "additionalProperties": false,
@@ -4872,6 +19419,43 @@ export const HooksEnableInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `hooks.enable`. */
+export const HooksEnableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "hook": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "hook"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4896,6 +19480,89 @@ export const HooksListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `hooks.list`. */
+export const HooksListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "hooks": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "hooks"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `hooks.rm`. */
 export const HooksRmInputSchema = {
   "additionalProperties": false,
@@ -4907,6 +19574,43 @@ export const HooksRmInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `hooks.rm`. */
+export const HooksRmReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "hook": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "hook"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4926,6 +19630,22 @@ export const HooksShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `hooks.show`. */
+export const HooksShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "hook": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "hook"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `hooks.test`. */
 export const HooksTestInputSchema = {
   "additionalProperties": false,
@@ -4938,6 +19658,13 @@ export const HooksTestInputSchema = {
   "required": [
     "id"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `hooks.test`. */
+export const HooksTestReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5020,6 +19747,66 @@ export const ImageAtlasSplitInputSchema = {
   },
   "required": [
     "input"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `image.atlas.split`. */
+export const ImageAtlasSplitReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifactId": {
+      "type": "string"
+    },
+    "artifact_id": {
+      "type": "string"
+    },
+    "crops": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "manifestPath": {
+      "type": "string"
+    },
+    "outputDir": {
+      "type": "string"
+    },
+    "parentArtifactId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sent": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "artifactId",
+    "artifact_id",
+    "manifestPath",
+    "outputDir",
+    "parentArtifactId",
+    "crops",
+    "sent"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -5107,6 +19894,164 @@ export const ImageGenerateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `image.generate`. */
+export const ImageGenerateReturnSchema = {
+  "anyOf": [
+    {
+      "additionalProperties": {},
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "autoSend": {
+          "type": "boolean"
+        },
+        "delivery": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "events": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        },
+        "workerPid": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "success",
+        "artifact_id",
+        "artifactId",
+        "status",
+        "hint",
+        "autoSend",
+        "events"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": {},
+      "properties": {
+        "images": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {
+              "artifactId": {
+                "type": "string"
+              },
+              "filePath": {
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "sendCommand": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "filePath",
+              "mimeType",
+              "prompt",
+              "provider",
+              "model",
+              "artifactId",
+              "sendCommand"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "options": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "sent": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "caption": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "chatId": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "instanceId": {
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "transport": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "transport",
+              "accountId",
+              "instanceId",
+              "chatId",
+              "filename",
+              "caption"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "images",
+        "options",
+        "sent"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `inbox.archive`. */
 export const InboxArchiveInputSchema = {
   "additionalProperties": false,
@@ -5122,10 +20067,44 @@ export const InboxArchiveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `inbox.archive`. */
+export const InboxArchiveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "item": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `inbox.disable`. */
 export const InboxDisableInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `inbox.disable`. */
+export const InboxDisableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "enabled",
+    "changed"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5144,10 +20123,44 @@ export const InboxDoneInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `inbox.done`. */
+export const InboxDoneReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "item": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `inbox.enable`. */
 export const InboxEnableInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `inbox.enable`. */
+export const InboxEnableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "enabled",
+    "changed"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5160,6 +20173,29 @@ export const InboxItemsInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `inbox.items`. */
+export const InboxItemsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "items"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5191,6 +20227,29 @@ export const InboxListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `inbox.list`. */
+export const InboxListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `inbox.poll`. */
 export const InboxPollInputSchema = {
   "additionalProperties": false,
@@ -5200,6 +20259,27 @@ export const InboxPollInputSchema = {
       "type": "boolean"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `inbox.poll`. */
+export const InboxPollReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "snapshot": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "ok",
+    "snapshot"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5218,6 +20298,31 @@ export const InboxReadInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `inbox.read`. */
+export const InboxReadReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "events": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "item": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "item",
+    "events"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `inbox.replay`. */
 export const InboxReplayInputSchema = {
   "additionalProperties": false,
@@ -5229,6 +20334,37 @@ export const InboxReplayInputSchema = {
   },
   "required": [
     "ref"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `inbox.replay`. */
+export const InboxReplayReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "itemId": {
+      "type": "string"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "replayedAt": {
+      "type": "string"
+    },
+    "sequence": {
+      "type": "number"
+    },
+    "subject": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "itemId",
+    "sequence",
+    "subject",
+    "replayedAt"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -5252,6 +20388,22 @@ export const InboxSnoozeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `inbox.snooze`. */
+export const InboxSnoozeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "item": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `inbox.sources`. */
 export const InboxSourcesInputSchema = {
   "additionalProperties": false,
@@ -5259,9 +20411,35 @@ export const InboxSourcesInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `inbox.sources`. */
+export const InboxSourcesReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "sources": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "sources"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `inbox.status`. */
 export const InboxStatusInputSchema = {
   "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `inbox.status`. */
+export const InboxStatusReturnSchema = {
+  "additionalProperties": {},
   "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -5340,6 +20518,39 @@ export const InsightsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `insights.create`. */
+export const InsightsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "comment": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "insight": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "insight",
+    "tags"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `insights.list`. */
 export const InsightsListInputSchema = {
   "additionalProperties": false,
@@ -5397,6 +20608,141 @@ export const InsightsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `insights.list`. */
+export const InsightsListReturnSchema = {
+  "anyOf": [
+    {
+      "additionalProperties": {},
+      "properties": {
+        "count": {
+          "type": "number"
+        },
+        "insights": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "pagination": {
+          "additionalProperties": {},
+          "properties": {
+            "hasMore": {
+              "type": "boolean"
+            },
+            "limit": {
+              "type": "number"
+            },
+            "nextCommand": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextOffset": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "offset": {
+              "type": "number"
+            },
+            "returned": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "limit",
+            "offset",
+            "returned",
+            "total",
+            "hasMore",
+            "nextOffset",
+            "nextCommand"
+          ],
+          "type": "object"
+        },
+        "query": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "count",
+        "total",
+        "pagination",
+        "query",
+        "items",
+        "insights"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": {},
+      "properties": {
+        "generatedAt": {
+          "type": "number"
+        },
+        "items": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "query": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "stats": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok",
+        "generatedAt",
+        "query",
+        "stats",
+        "items"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `insights.search`. */
 export const InsightsSearchInputSchema = {
   "additionalProperties": false,
@@ -5417,6 +20763,35 @@ export const InsightsSearchInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `insights.search`. */
+export const InsightsSearchReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "count": {
+      "type": "number"
+    },
+    "insights": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "query": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "count",
+    "query",
+    "insights"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `insights.show`. */
 export const InsightsShowInputSchema = {
   "additionalProperties": false,
@@ -5428,6 +20803,29 @@ export const InsightsShowInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `insights.show`. */
+export const InsightsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "insight": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "insight",
+    "tags"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -5467,6 +20865,13 @@ export const InstancesCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.create`. */
+export const InstancesCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.delete`. */
 export const InstancesDeleteInputSchema = {
   "additionalProperties": false,
@@ -5482,9 +20887,23 @@ export const InstancesDeleteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.delete`. */
+export const InstancesDeleteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.deleted`. */
 export const InstancesDeletedInputSchema = {
   "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `instances.deleted`. */
+export const InstancesDeletedReturnSchema = {
+  "additionalProperties": {},
   "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -5504,6 +20923,13 @@ export const InstancesDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.disable`. */
+export const InstancesDisableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.disconnect`. */
 export const InstancesDisconnectInputSchema = {
   "additionalProperties": false,
@@ -5519,6 +20945,13 @@ export const InstancesDisconnectInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.disconnect`. */
+export const InstancesDisconnectReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.enable`. */
 export const InstancesEnableInputSchema = {
   "additionalProperties": false,
@@ -5531,6 +20964,13 @@ export const InstancesEnableInputSchema = {
   "required": [
     "target"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `instances.enable`. */
+export const InstancesEnableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5554,6 +20994,13 @@ export const InstancesGetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.get`. */
+export const InstancesGetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.list`. */
 export const InstancesListInputSchema = {
   "additionalProperties": false,
@@ -5571,6 +21018,13 @@ export const InstancesListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `instances.list`. */
+export const InstancesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5598,6 +21052,13 @@ export const InstancesPendingApproveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.pending.approve`. */
+export const InstancesPendingApproveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.pending.list`. */
 export const InstancesPendingListInputSchema = {
   "additionalProperties": false,
@@ -5621,6 +21082,13 @@ export const InstancesPendingListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.pending.list`. */
+export const InstancesPendingListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.pending.reject`. */
 export const InstancesPendingRejectInputSchema = {
   "additionalProperties": false,
@@ -5641,6 +21109,13 @@ export const InstancesPendingRejectInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.pending.reject`. */
+export const InstancesPendingRejectReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.restore`. */
 export const InstancesRestoreInputSchema = {
   "additionalProperties": false,
@@ -5653,6 +21128,13 @@ export const InstancesRestoreInputSchema = {
   "required": [
     "name"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `instances.restore`. */
+export const InstancesRestoreReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5705,6 +21187,13 @@ export const InstancesRoutesAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.routes.add`. */
+export const InstancesRoutesAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.routes.deleted`. */
 export const InstancesRoutesDeletedInputSchema = {
   "additionalProperties": false,
@@ -5714,6 +21203,13 @@ export const InstancesRoutesDeletedInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `instances.routes.deleted`. */
+export const InstancesRoutesDeletedReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5744,6 +21240,13 @@ export const InstancesRoutesListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.routes.list`. */
+export const InstancesRoutesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.routes.remove`. */
 export const InstancesRoutesRemoveInputSchema = {
   "additionalProperties": false,
@@ -5768,6 +21271,13 @@ export const InstancesRoutesRemoveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.routes.remove`. */
+export const InstancesRoutesRemoveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.routes.restore`. */
 export const InstancesRoutesRestoreInputSchema = {
   "additionalProperties": false,
@@ -5789,6 +21299,13 @@ export const InstancesRoutesRestoreInputSchema = {
     "name",
     "pattern"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `instances.routes.restore`. */
+export const InstancesRoutesRestoreReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5826,6 +21343,13 @@ export const InstancesRoutesSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.routes.set`. */
+export const InstancesRoutesSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.routes.show`. */
 export const InstancesRoutesShowInputSchema = {
   "additionalProperties": false,
@@ -5843,6 +21367,13 @@ export const InstancesRoutesShowInputSchema = {
     "name",
     "pattern"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `instances.routes.show`. */
+export const InstancesRoutesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5871,6 +21402,13 @@ export const InstancesSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.set`. */
+export const InstancesSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.show`. */
 export const InstancesShowInputSchema = {
   "additionalProperties": false,
@@ -5886,6 +21424,13 @@ export const InstancesShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `instances.show`. */
+export const InstancesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `instances.status`. */
 export const InstancesStatusInputSchema = {
   "additionalProperties": false,
@@ -5898,6 +21443,13 @@ export const InstancesStatusInputSchema = {
   "required": [
     "name"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `instances.status`. */
+export const InstancesStatusReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5920,6 +21472,7722 @@ export const InstancesTargetInputSchema = {
   },
   "required": [
     "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `instances.target`. */
+export const InstancesTargetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.accounts.create`. */
+export const MailAccountsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credentialsRef": {
+      "description": "Reference to existing credential store entry",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stable local account id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Display name",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Provider id, e.g. ravi-mail or gmail",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.accounts.create`. */
+export const MailAccountsCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "credentialsRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "defaultMailboxId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "auth_required",
+            "disabled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "displayName",
+        "status",
+        "defaultMailboxId",
+        "credentialsRef",
+        "capabilities",
+        "settings",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.accounts.list`. */
+export const MailAccountsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by account status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.accounts.list`. */
+export const MailAccountsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accounts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialsRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultMailboxId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "auth_required",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "displayName",
+          "status",
+          "defaultMailboxId",
+          "credentialsRef",
+          "capabilities",
+          "settings",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "accounts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.accounts.sync`. */
+export const MailAccountsSyncInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Local mail account id",
+      "type": "string"
+    },
+    "once": {
+      "description": "Run one foreground tick",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.accounts.sync`. */
+export const MailAccountsSyncReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "credentialsRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "defaultMailboxId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "settings": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "auth_required",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "displayName",
+            "status",
+            "defaultMailboxId",
+            "credentialsRef",
+            "capabilities",
+            "settings",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "inboxCreated": {
+          "type": "number"
+        },
+        "mailboxesImported": {
+          "type": "number"
+        },
+        "messagesImported": {
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "provider": {
+          "const": "ravi-mail",
+          "type": "string"
+        },
+        "status": {
+          "const": "synced",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "account",
+        "status",
+        "provider",
+        "mailboxesImported",
+        "messagesImported",
+        "inboxCreated"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "credentialsRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "defaultMailboxId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "settings": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "auth_required",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "displayName",
+            "status",
+            "defaultMailboxId",
+            "credentialsRef",
+            "capabilities",
+            "settings",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "message": {
+          "type": "string"
+        },
+        "ok": {
+          "const": false,
+          "type": "boolean"
+        },
+        "status": {
+          "const": "adapter_not_started",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "account",
+        "status",
+        "message"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.domains.create`. */
+export const MailDomainsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "domain": {
+      "description": "Managed domain to register, such as ravi.bot",
+      "type": "string"
+    }
+  },
+  "required": [
+    "domain"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.domains.create`. */
+export const MailDomainsCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.domains.list`. */
+export const MailDomainsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum records to request",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset to request",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.domains.list`. */
+export const MailDomainsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.mailboxes.create`. */
+export const MailMailboxesCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Local account id",
+      "type": "string"
+    },
+    "address": {
+      "description": "Mailbox email address",
+      "type": "string"
+    },
+    "default": {
+      "description": "Mark as default mailbox for the account",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Mailbox display name",
+      "type": "string"
+    },
+    "providerMailboxId": {
+      "description": "Provider mailbox id as provenance",
+      "type": "string"
+    },
+    "role": {
+      "description": "primary, alias, shared, system, or unknown",
+      "type": "string"
+    }
+  },
+  "required": [
+    "address"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.mailboxes.create`. */
+export const MailMailboxesCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "mailbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "normalizedAddress": {
+          "type": "string"
+        },
+        "providerMailboxId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "enum": [
+            "primary",
+            "alias",
+            "shared",
+            "system",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "disabled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "address",
+        "normalizedAddress",
+        "displayName",
+        "role",
+        "status",
+        "providerMailboxId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "mailbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.mailboxes.disable`. */
+export const MailMailboxesDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "mailbox": {
+      "description": "Local mailbox id or address",
+      "type": "string"
+    }
+  },
+  "required": [
+    "mailbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.mailboxes.disable`. */
+export const MailMailboxesDisableReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "mailbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "normalizedAddress": {
+          "type": "string"
+        },
+        "providerMailboxId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "enum": [
+            "primary",
+            "alias",
+            "shared",
+            "system",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "disabled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "address",
+        "normalizedAddress",
+        "displayName",
+        "role",
+        "status",
+        "providerMailboxId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "mailbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.mailboxes.list`. */
+export const MailMailboxesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Local account id",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by mailbox status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.mailboxes.list`. */
+export const MailMailboxesListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "mailboxes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "normalizedAddress": {
+            "type": "string"
+          },
+          "providerMailboxId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "enum": [
+              "primary",
+              "alias",
+              "shared",
+              "system",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "address",
+          "normalizedAddress",
+          "displayName",
+          "role",
+          "status",
+          "providerMailboxId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "mailboxes"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.mailboxes.show`. */
+export const MailMailboxesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "mailbox": {
+      "description": "Local mailbox id or address",
+      "type": "string"
+    }
+  },
+  "required": [
+    "mailbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.mailboxes.show`. */
+export const MailMailboxesShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "mailbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "normalizedAddress": {
+          "type": "string"
+        },
+        "providerMailboxId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "enum": [
+            "primary",
+            "alias",
+            "shared",
+            "system",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "disabled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "address",
+        "normalizedAddress",
+        "displayName",
+        "role",
+        "status",
+        "providerMailboxId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "mailbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.messages.import`. */
+export const MailMessagesImportInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "description": "Plaintext body",
+      "type": "string"
+    },
+    "from": {
+      "description": "Sender email",
+      "type": "string"
+    },
+    "mailbox": {
+      "description": "Local mailbox id or address",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Provider id as provenance",
+      "type": "string"
+    },
+    "providerMessageId": {
+      "description": "Provider message id",
+      "type": "string"
+    },
+    "providerThreadId": {
+      "description": "Provider thread id",
+      "type": "string"
+    },
+    "rfcMessageId": {
+      "description": "RFC Message-ID",
+      "type": "string"
+    },
+    "subject": {
+      "description": "Message subject",
+      "type": "string"
+    },
+    "to": {
+      "description": "Recipient email or comma-separated recipients",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.messages.import`. */
+export const MailMessagesImportReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "inboxCreated": {
+      "type": "boolean"
+    },
+    "inboxItem": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "message": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "addresses": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "displayName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "from",
+                      "to",
+                      "cc",
+                      "bcc",
+                      "reply_to",
+                      "sender"
+                    ],
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "normalizedAddress": {
+                    "type": "string"
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "raw": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "kind",
+                  "address",
+                  "normalizedAddress",
+                  "displayName",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "raw"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "contentType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "filename": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "localBlobRef": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "providerAttachmentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "redactionStatus": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sha256": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sizeBytes": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "filename",
+                  "contentType",
+                  "sizeBytes",
+                  "sha256",
+                  "localBlobRef",
+                  "providerAttachmentId",
+                  "redactionStatus",
+                  "metadata"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "bodyRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "dateHeaderAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "direction": {
+              "enum": [
+                "inbound",
+                "outbound",
+                "draft",
+                "system"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "providerHistoryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerThreadId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receivedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rfcMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snippet": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "received",
+                "queued",
+                "sending",
+                "sent",
+                "delivered",
+                "failed",
+                "archived",
+                "trashed",
+                "spam"
+              ],
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subjectNormalized": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "threadId",
+            "mailboxId",
+            "accountId",
+            "direction",
+            "status",
+            "rfcMessageId",
+            "providerMessageId",
+            "providerThreadId",
+            "providerHistoryId",
+            "subject",
+            "subjectNormalized",
+            "snippet",
+            "bodyRedactionStatus",
+            "dateHeaderAt",
+            "receivedAt",
+            "sentAt",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt",
+            "addresses",
+            "attachments"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "bodyRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "dateHeaderAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "direction": {
+              "enum": [
+                "inbound",
+                "outbound",
+                "draft",
+                "system"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "providerHistoryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerThreadId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receivedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rfcMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snippet": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "received",
+                "queued",
+                "sending",
+                "sent",
+                "delivered",
+                "failed",
+                "archived",
+                "trashed",
+                "spam"
+              ],
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subjectNormalized": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "threadId",
+            "mailboxId",
+            "accountId",
+            "direction",
+            "status",
+            "rfcMessageId",
+            "providerMessageId",
+            "providerThreadId",
+            "providerHistoryId",
+            "subject",
+            "subjectNormalized",
+            "snippet",
+            "bodyRedactionStatus",
+            "dateHeaderAt",
+            "receivedAt",
+            "sentAt",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "message",
+    "inboxItem",
+    "inboxCreated"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.messages.list`. */
+export const MailMessagesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "addresses": {
+      "description": "Include local address rows",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "mailbox": {
+      "description": "Local mailbox id or address",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search subject/snippet/body",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by local message status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.messages.list`. */
+export const MailMessagesListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "messages": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "addresses": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "address": {
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "from",
+                        "to",
+                        "cc",
+                        "bcc",
+                        "reply_to",
+                        "sender"
+                      ],
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "normalizedAddress": {
+                      "type": "string"
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "kind",
+                    "address",
+                    "normalizedAddress",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "raw"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attachments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentType": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "filename": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "localBlobRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "providerAttachmentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "redactionStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sizeBytes": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "filename",
+                    "contentType",
+                    "sizeBytes",
+                    "sha256",
+                    "localBlobRef",
+                    "providerAttachmentId",
+                    "redactionStatus",
+                    "metadata"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "addresses",
+              "attachments"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "messages"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.messages.read`. */
+export const MailMessagesReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "addresses": {
+      "description": "Include local address rows",
+      "type": "boolean"
+    },
+    "message": {
+      "description": "Local message id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.messages.read`. */
+export const MailMessagesReadReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "message": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "addresses": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "displayName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "from",
+                      "to",
+                      "cc",
+                      "bcc",
+                      "reply_to",
+                      "sender"
+                    ],
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "normalizedAddress": {
+                    "type": "string"
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "raw": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "kind",
+                  "address",
+                  "normalizedAddress",
+                  "displayName",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "raw"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "contentType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "filename": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "localBlobRef": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "providerAttachmentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "redactionStatus": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sha256": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sizeBytes": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "filename",
+                  "contentType",
+                  "sizeBytes",
+                  "sha256",
+                  "localBlobRef",
+                  "providerAttachmentId",
+                  "redactionStatus",
+                  "metadata"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "bodyRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "dateHeaderAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "direction": {
+              "enum": [
+                "inbound",
+                "outbound",
+                "draft",
+                "system"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "providerHistoryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerThreadId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receivedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rfcMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snippet": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "received",
+                "queued",
+                "sending",
+                "sent",
+                "delivered",
+                "failed",
+                "archived",
+                "trashed",
+                "spam"
+              ],
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subjectNormalized": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "threadId",
+            "mailboxId",
+            "accountId",
+            "direction",
+            "status",
+            "rfcMessageId",
+            "providerMessageId",
+            "providerThreadId",
+            "providerHistoryId",
+            "subject",
+            "subjectNormalized",
+            "snippet",
+            "bodyRedactionStatus",
+            "dateHeaderAt",
+            "receivedAt",
+            "sentAt",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt",
+            "addresses",
+            "attachments"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "bodyRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "dateHeaderAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "direction": {
+              "enum": [
+                "inbound",
+                "outbound",
+                "draft",
+                "system"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "providerHistoryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerThreadId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receivedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rfcMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snippet": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "received",
+                "queued",
+                "sending",
+                "sent",
+                "delivered",
+                "failed",
+                "archived",
+                "trashed",
+                "spam"
+              ],
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subjectNormalized": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "threadId",
+            "mailboxId",
+            "accountId",
+            "direction",
+            "status",
+            "rfcMessageId",
+            "providerMessageId",
+            "providerThreadId",
+            "providerHistoryId",
+            "subject",
+            "subjectNormalized",
+            "snippet",
+            "bodyRedactionStatus",
+            "dateHeaderAt",
+            "receivedAt",
+            "sentAt",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.messages.search`. */
+export const MailMessagesSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "mailbox": {
+      "description": "Local mailbox id or address",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search query",
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.messages.search`. */
+export const MailMessagesSearchReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "messages": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "addresses": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "address": {
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "from",
+                        "to",
+                        "cc",
+                        "bcc",
+                        "reply_to",
+                        "sender"
+                      ],
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "normalizedAddress": {
+                      "type": "string"
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "kind",
+                    "address",
+                    "normalizedAddress",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "raw"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attachments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentType": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "filename": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "localBlobRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "providerAttachmentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "redactionStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sizeBytes": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "filename",
+                    "contentType",
+                    "sizeBytes",
+                    "sha256",
+                    "localBlobRef",
+                    "providerAttachmentId",
+                    "redactionStatus",
+                    "metadata"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "addresses",
+              "attachments"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "messages"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.outbox.inspect`. */
+export const MailOutboxInspectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "description": "Local outbox id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.outbox.inspect`. */
+export const MailOutboxInspectReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "ackedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attemptCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mailboxId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "nextAttemptAt": {
+          "type": "number"
+        },
+        "operation": {
+          "enum": [
+            "send",
+            "reply",
+            "draft",
+            "update_draft",
+            "delete_draft"
+          ],
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "providerResult": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "leased",
+            "sending",
+            "sent",
+            "acked",
+            "failed",
+            "dead"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "mailboxId",
+        "accountId",
+        "messageId",
+        "operation",
+        "idempotencyKey",
+        "payload",
+        "status",
+        "attemptCount",
+        "nextAttemptAt",
+        "lastErrorCode",
+        "providerResult",
+        "createdAt",
+        "updatedAt",
+        "ackedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.outbox.list`. */
+export const MailOutboxListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "mailbox": {
+      "description": "Local mailbox id or address",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Records to skip before returning results",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by outbox status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.outbox.list`. */
+export const MailOutboxListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "ackedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attemptCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mailboxId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "operation": {
+            "enum": [
+              "send",
+              "reply",
+              "draft",
+              "update_draft",
+              "delete_draft"
+            ],
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providerResult": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "leased",
+              "sending",
+              "sent",
+              "acked",
+              "failed",
+              "dead"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "mailboxId",
+          "accountId",
+          "messageId",
+          "operation",
+          "idempotencyKey",
+          "payload",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastErrorCode",
+          "providerResult",
+          "createdAt",
+          "updatedAt",
+          "ackedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.outbox.retry`. */
+export const MailOutboxRetryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "description": "Local outbox id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.outbox.retry`. */
+export const MailOutboxRetryReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "ackedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attemptCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mailboxId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "nextAttemptAt": {
+          "type": "number"
+        },
+        "operation": {
+          "enum": [
+            "send",
+            "reply",
+            "draft",
+            "update_draft",
+            "delete_draft"
+          ],
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "providerResult": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "leased",
+            "sending",
+            "sent",
+            "acked",
+            "failed",
+            "dead"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "mailboxId",
+        "accountId",
+        "messageId",
+        "operation",
+        "idempotencyKey",
+        "payload",
+        "status",
+        "attemptCount",
+        "nextAttemptAt",
+        "lastErrorCode",
+        "providerResult",
+        "createdAt",
+        "updatedAt",
+        "ackedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.outbox.status`. */
+export const MailOutboxStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.outbox.status`. */
+export const MailOutboxStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "counts": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "counts",
+    "total"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.providers.list`. */
+export const MailProvidersListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum records",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Records to skip before returning results",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.providers.list`. */
+export const MailProvidersListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "providers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accounts": {
+            "type": "number"
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "localFirst": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "accounts",
+          "default",
+          "localFirst"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "providers"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.providers.ravi-mail.mailboxes.create`. */
+export const MailProvidersRaviMailMailboxesCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "addressOrLocalPart": {
+      "description": "Full address or local part",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "domain": {
+      "description": "Domain id, slug, or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "addressOrLocalPart"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.providers.ravi-mail.mailboxes.create`. */
+export const MailProvidersRaviMailMailboxesCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.providers.ravi-mail.mailboxes.disable`. */
+export const MailProvidersRaviMailMailboxesDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "mailbox": {
+      "description": "Provider mailbox id or address",
+      "type": "string"
+    }
+  },
+  "required": [
+    "mailbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.providers.ravi-mail.mailboxes.disable`. */
+export const MailProvidersRaviMailMailboxesDisableReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.providers.ravi-mail.mailboxes.list`. */
+export const MailProvidersRaviMailMailboxesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "domain": {
+      "description": "Filter by domain id, slug, or name",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum records to request",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset to request",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.providers.ravi-mail.mailboxes.list`. */
+export const MailProvidersRaviMailMailboxesListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.providers.ravi-mail.mailboxes.show`. */
+export const MailProvidersRaviMailMailboxesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "mailbox": {
+      "description": "Provider mailbox id or address",
+      "type": "string"
+    }
+  },
+  "required": [
+    "mailbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.providers.ravi-mail.mailboxes.show`. */
+export const MailProvidersRaviMailMailboxesShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.providers.ravi-mail.messages.list`. */
+export const MailProvidersRaviMailMessagesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "addresses": {
+      "description": "Decrypt and print address summary metadata",
+      "type": "boolean"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum records to request",
+      "type": "string"
+    },
+    "mailbox": {
+      "description": "Provider mailbox id or address",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Offset to request",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.providers.ravi-mail.messages.list`. */
+export const MailProvidersRaviMailMessagesListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.providers.ravi-mail.messages.read`. */
+export const MailProvidersRaviMailMessagesReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "message": {
+      "description": "Provider message id",
+      "type": "string"
+    },
+    "payload": {
+      "description": "Payload to read: parsed_body, raw_mime, subject, headers, or address_summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.providers.ravi-mail.messages.read`. */
+export const MailProvidersRaviMailMessagesReadReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.providers.ravi-mail.messages.show`. */
+export const MailProvidersRaviMailMessagesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "addresses": {
+      "description": "Decrypt and print address summary metadata",
+      "type": "boolean"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "message": {
+      "description": "Provider message id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.providers.ravi-mail.messages.show`. */
+export const MailProvidersRaviMailMessagesShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.providers.ravi-mail.send`. */
+export const MailProvidersRaviMailSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "description": "Message body",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "from": {
+      "description": "Explicit provider sender mailbox id or address",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for Console retries",
+      "type": "string"
+    },
+    "subject": {
+      "description": "Message subject",
+      "type": "string"
+    },
+    "to": {
+      "description": "Recipient email or comma-separated recipients",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.providers.ravi-mail.send`. */
+export const MailProvidersRaviMailSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.reply`. */
+export const MailReplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "bcc": {
+      "description": "BCC recipient or comma-separated recipients",
+      "type": "string"
+    },
+    "body": {
+      "description": "Reply body",
+      "type": "string"
+    },
+    "cc": {
+      "description": "CC recipient or comma-separated recipients",
+      "type": "string"
+    },
+    "from": {
+      "description": "Local sender mailbox id or address",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Local outbox idempotency key",
+      "type": "string"
+    },
+    "message": {
+      "description": "Local message id to reply to",
+      "type": "string"
+    },
+    "subject": {
+      "description": "Override reply subject",
+      "type": "string"
+    },
+    "to": {
+      "description": "Override recipient or comma-separated recipients",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.reply`. */
+export const MailReplyReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "message": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "addresses": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "displayName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "from",
+                      "to",
+                      "cc",
+                      "bcc",
+                      "reply_to",
+                      "sender"
+                    ],
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "normalizedAddress": {
+                    "type": "string"
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "raw": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "kind",
+                  "address",
+                  "normalizedAddress",
+                  "displayName",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "raw"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "contentType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "filename": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "localBlobRef": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "providerAttachmentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "redactionStatus": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sha256": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sizeBytes": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "filename",
+                  "contentType",
+                  "sizeBytes",
+                  "sha256",
+                  "localBlobRef",
+                  "providerAttachmentId",
+                  "redactionStatus",
+                  "metadata"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "bodyRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "dateHeaderAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "direction": {
+              "enum": [
+                "inbound",
+                "outbound",
+                "draft",
+                "system"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "providerHistoryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerThreadId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receivedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rfcMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snippet": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "received",
+                "queued",
+                "sending",
+                "sent",
+                "delivered",
+                "failed",
+                "archived",
+                "trashed",
+                "spam"
+              ],
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subjectNormalized": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "threadId",
+            "mailboxId",
+            "accountId",
+            "direction",
+            "status",
+            "rfcMessageId",
+            "providerMessageId",
+            "providerThreadId",
+            "providerHistoryId",
+            "subject",
+            "subjectNormalized",
+            "snippet",
+            "bodyRedactionStatus",
+            "dateHeaderAt",
+            "receivedAt",
+            "sentAt",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt",
+            "addresses",
+            "attachments"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "bodyRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "dateHeaderAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "direction": {
+              "enum": [
+                "inbound",
+                "outbound",
+                "draft",
+                "system"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "providerHistoryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerThreadId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receivedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rfcMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snippet": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "received",
+                "queued",
+                "sending",
+                "sent",
+                "delivered",
+                "failed",
+                "archived",
+                "trashed",
+                "spam"
+              ],
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subjectNormalized": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "threadId",
+            "mailboxId",
+            "accountId",
+            "direction",
+            "status",
+            "rfcMessageId",
+            "providerMessageId",
+            "providerThreadId",
+            "providerHistoryId",
+            "subject",
+            "subjectNormalized",
+            "snippet",
+            "bodyRedactionStatus",
+            "dateHeaderAt",
+            "receivedAt",
+            "sentAt",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "ackedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attemptCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mailboxId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "nextAttemptAt": {
+          "type": "number"
+        },
+        "operation": {
+          "enum": [
+            "send",
+            "reply",
+            "draft",
+            "update_draft",
+            "delete_draft"
+          ],
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "providerResult": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "leased",
+            "sending",
+            "sent",
+            "acked",
+            "failed",
+            "dead"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "mailboxId",
+        "accountId",
+        "messageId",
+        "operation",
+        "idempotencyKey",
+        "payload",
+        "status",
+        "attemptCount",
+        "nextAttemptAt",
+        "lastErrorCode",
+        "providerResult",
+        "createdAt",
+        "updatedAt",
+        "ackedAt"
+      ],
+      "type": "object"
+    },
+    "queued": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "queued",
+    "message",
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.send`. */
+export const MailSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "description": "Message body",
+      "type": "string"
+    },
+    "from": {
+      "description": "Local sender mailbox id or address",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Local outbox idempotency key",
+      "type": "string"
+    },
+    "subject": {
+      "description": "Message subject",
+      "type": "string"
+    },
+    "to": {
+      "description": "Recipient email or comma-separated recipients",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.send`. */
+export const MailSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "message": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "addresses": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "displayName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "from",
+                      "to",
+                      "cc",
+                      "bcc",
+                      "reply_to",
+                      "sender"
+                    ],
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "normalizedAddress": {
+                    "type": "string"
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "raw": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "kind",
+                  "address",
+                  "normalizedAddress",
+                  "displayName",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "raw"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "contentType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "filename": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "localBlobRef": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "providerAttachmentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "redactionStatus": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sha256": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sizeBytes": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "filename",
+                  "contentType",
+                  "sizeBytes",
+                  "sha256",
+                  "localBlobRef",
+                  "providerAttachmentId",
+                  "redactionStatus",
+                  "metadata"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "bodyRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "dateHeaderAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "direction": {
+              "enum": [
+                "inbound",
+                "outbound",
+                "draft",
+                "system"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "providerHistoryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerThreadId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receivedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rfcMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snippet": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "received",
+                "queued",
+                "sending",
+                "sent",
+                "delivered",
+                "failed",
+                "archived",
+                "trashed",
+                "spam"
+              ],
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subjectNormalized": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "threadId",
+            "mailboxId",
+            "accountId",
+            "direction",
+            "status",
+            "rfcMessageId",
+            "providerMessageId",
+            "providerThreadId",
+            "providerHistoryId",
+            "subject",
+            "subjectNormalized",
+            "snippet",
+            "bodyRedactionStatus",
+            "dateHeaderAt",
+            "receivedAt",
+            "sentAt",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt",
+            "addresses",
+            "attachments"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "bodyRedactionStatus": {
+              "enum": [
+                "full_local",
+                "preview_only",
+                "redacted",
+                "missing"
+              ],
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "dateHeaderAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "direction": {
+              "enum": [
+                "inbound",
+                "outbound",
+                "draft",
+                "system"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "providerHistoryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProvenance": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "providerThreadId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "receivedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rfcMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "safePayload": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snippet": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "received",
+                "queued",
+                "sending",
+                "sent",
+                "delivered",
+                "failed",
+                "archived",
+                "trashed",
+                "spam"
+              ],
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subjectNormalized": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "threadId",
+            "mailboxId",
+            "accountId",
+            "direction",
+            "status",
+            "rfcMessageId",
+            "providerMessageId",
+            "providerThreadId",
+            "providerHistoryId",
+            "subject",
+            "subjectNormalized",
+            "snippet",
+            "bodyRedactionStatus",
+            "dateHeaderAt",
+            "receivedAt",
+            "sentAt",
+            "safePayload",
+            "providerProvenance",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "ackedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attemptCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mailboxId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "nextAttemptAt": {
+          "type": "number"
+        },
+        "operation": {
+          "enum": [
+            "send",
+            "reply",
+            "draft",
+            "update_draft",
+            "delete_draft"
+          ],
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "providerResult": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "leased",
+            "sending",
+            "sent",
+            "acked",
+            "failed",
+            "dead"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "mailboxId",
+        "accountId",
+        "messageId",
+        "operation",
+        "idempotencyKey",
+        "payload",
+        "status",
+        "attemptCount",
+        "nextAttemptAt",
+        "lastErrorCode",
+        "providerResult",
+        "createdAt",
+        "updatedAt",
+        "ackedAt"
+      ],
+      "type": "object"
+    },
+    "queued": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "queued",
+    "message",
+    "outbox"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `mail.threads.read`. */
+export const MailThreadsReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "addresses": {
+      "description": "Include local address rows",
+      "type": "boolean"
+    },
+    "thread": {
+      "description": "Local thread id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `mail.threads.read`. */
+export const MailThreadsReadReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "messages": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "addresses": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "address": {
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "from",
+                        "to",
+                        "cc",
+                        "bcc",
+                        "reply_to",
+                        "sender"
+                      ],
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "normalizedAddress": {
+                      "type": "string"
+                    },
+                    "platformIdentityId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "kind",
+                    "address",
+                    "normalizedAddress",
+                    "displayName",
+                    "contactId",
+                    "agentId",
+                    "platformIdentityId",
+                    "raw"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "attachments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentType": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "filename": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "localBlobRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "providerAttachmentId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "redactionStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sizeBytes": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "messageId",
+                    "filename",
+                    "contentType",
+                    "sizeBytes",
+                    "sha256",
+                    "localBlobRef",
+                    "providerAttachmentId",
+                    "redactionStatus",
+                    "metadata"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt",
+              "addresses",
+              "attachments"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "bodyRedactionStatus": {
+                "enum": [
+                  "full_local",
+                  "preview_only",
+                  "redacted",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "dateHeaderAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "inbound",
+                  "outbound",
+                  "draft",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "providerHistoryId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerThreadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "receivedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rfcMessageId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "safePayload": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sentAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snippet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "received",
+                  "queued",
+                  "sending",
+                  "sent",
+                  "delivered",
+                  "failed",
+                  "archived",
+                  "trashed",
+                  "spam"
+                ],
+                "type": "string"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subjectNormalized": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "mailboxId",
+              "accountId",
+              "direction",
+              "status",
+              "rfcMessageId",
+              "providerMessageId",
+              "providerThreadId",
+              "providerHistoryId",
+              "subject",
+              "subjectNormalized",
+              "snippet",
+              "bodyRedactionStatus",
+              "dateHeaderAt",
+              "receivedAt",
+              "sentAt",
+              "safePayload",
+              "providerProvenance",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "thread": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastLocalMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestMessageAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "participants": {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        "providerThreadRefs": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "subjectNormalized": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "subjectNormalized",
+        "latestMessageAt",
+        "lastLocalMessageId",
+        "participants",
+        "providerThreadRefs",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "thread",
+    "messages"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -5963,6 +29231,243 @@ export const MediaSendInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `media.send`. */
+export const MediaSendReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "delivery": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "media": {
+      "additionalProperties": {},
+      "properties": {
+        "caption": {
+          "type": "string"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "voiceNote": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "filePath",
+        "filename",
+        "mimeType",
+        "type",
+        "voiceNote"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "chatId": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accountId",
+        "instanceId",
+        "chatId"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "media",
+    "target",
+    "delivery"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `metrics.dates`. */
+export const MetricsDatesInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `metrics.dates`. */
+export const MetricsDatesReturnSchema = {
+  "items": {
+    "type": "string"
+  },
+  "type": "array"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `metrics.rollup`. */
+export const MetricsRollupInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "since": {
+      "description": "Start date YYYY-MM-DD or N days ago",
+      "type": "string"
+    },
+    "through": {
+      "description": "End date YYYY-MM-DD (default: yesterday UTC)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `metrics.rollup`. */
+export const MetricsRollupReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dates": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "rowsWritten": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "dates",
+    "rowsWritten"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `metrics.show`. */
+export const MetricsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Filter to one agent",
+      "type": "string"
+    },
+    "by": {
+      "description": "Group by 'agent' | 'agent-model' | 'date' (default: agent-model)",
+      "type": "string"
+    },
+    "days": {
+      "description": "Last N days (default: 7)",
+      "type": "string"
+    },
+    "since": {
+      "description": "Override start date YYYY-MM-DD",
+      "type": "string"
+    },
+    "through": {
+      "description": "Override end date YYYY-MM-DD",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `metrics.show`. */
+export const MetricsShowReturnSchema = {
+  "items": {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "cacheCreationTokens": {
+        "type": "number"
+      },
+      "cacheReadTokens": {
+        "type": "number"
+      },
+      "costEventCount": {
+        "type": "number"
+      },
+      "date": {
+        "type": "string"
+      },
+      "inputTokens": {
+        "type": "number"
+      },
+      "model": {
+        "type": "string"
+      },
+      "outputTokens": {
+        "type": "number"
+      },
+      "rolledUpAt": {
+        "type": "number"
+      },
+      "toolCalls": {
+        "type": "number"
+      },
+      "toolErrors": {
+        "type": "number"
+      },
+      "totalCostUsd": {
+        "type": "number"
+      },
+      "totalDurationMs": {
+        "type": "number"
+      },
+      "turnsComplete": {
+        "type": "number"
+      },
+      "turnsFailed": {
+        "type": "number"
+      },
+      "turnsInterrupted": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "agentId",
+      "date",
+      "model",
+      "inputTokens",
+      "outputTokens",
+      "cacheReadTokens",
+      "cacheCreationTokens",
+      "totalCostUsd",
+      "costEventCount",
+      "turnsComplete",
+      "turnsFailed",
+      "turnsInterrupted",
+      "toolCalls",
+      "toolErrors",
+      "totalDurationMs",
+      "rolledUpAt"
+    ],
+    "type": "object"
+  },
+  "type": "array"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.list`. */
 export const ObserversListInputSchema = {
   "additionalProperties": false,
@@ -5984,6 +29489,89 @@ export const ObserversListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `observers.list`. */
+export const ObserversListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "bindings": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "bindings"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6010,6 +29598,28 @@ export const ObserversProfilesInitInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `observers.profiles.init`. */
+export const ObserversProfilesInitReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "profileDir": {
+      "type": "string"
+    },
+    "profilePath": {
+      "type": "string"
+    },
+    "sourceKind": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "sourceKind",
+    "profileDir",
+    "profilePath"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.profiles.list`. */
 export const ObserversProfilesListInputSchema = {
   "additionalProperties": false,
@@ -6023,6 +29633,89 @@ export const ObserversProfilesListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `observers.profiles.list`. */
+export const ObserversProfilesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "profiles": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "profiles"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6045,6 +29738,34 @@ export const ObserversProfilesPreviewInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `observers.profiles.preview`. */
+export const ObserversProfilesPreviewReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "eventMarkdown": {
+      "type": "string"
+    },
+    "eventType": {
+      "type": "string"
+    },
+    "profile": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "prompt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile",
+    "eventType",
+    "eventMarkdown",
+    "prompt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.profiles.show`. */
 export const ObserversProfilesShowInputSchema = {
   "additionalProperties": false,
@@ -6056,6 +29777,26 @@ export const ObserversProfilesShowInputSchema = {
   },
   "required": [
     "profileId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `observers.profiles.show`. */
+export const ObserversProfilesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "body": {
+      "type": "string"
+    },
+    "profile": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile",
+    "body"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6072,6 +29813,38 @@ export const ObserversProfilesValidateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `observers.profiles.validate`. */
+export const ObserversProfilesValidateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "errors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "profiles": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ok",
+    "profiles",
+    "errors"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.refresh`. */
 export const ObserversRefreshInputSchema = {
   "additionalProperties": false,
@@ -6083,6 +29856,53 @@ export const ObserversRefreshInputSchema = {
   },
   "required": [
     "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `observers.refresh`. */
+export const ObserversRefreshReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "bindings": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "created": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "skipped": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "source": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "source",
+    "total",
+    "created",
+    "bindings",
+    "skipped"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6102,6 +29922,27 @@ export const ObserversRulesDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `observers.rules.disable`. */
+export const ObserversRulesDisableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "rule": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "rule"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.rules.enable`. */
 export const ObserversRulesEnableInputSchema = {
   "additionalProperties": false,
@@ -6117,6 +29958,27 @@ export const ObserversRulesEnableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `observers.rules.enable`. */
+export const ObserversRulesEnableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "rule": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "rule"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.rules.explain`. */
 export const ObserversRulesExplainInputSchema = {
   "additionalProperties": false,
@@ -6128,6 +29990,40 @@ export const ObserversRulesExplainInputSchema = {
   },
   "required": [
     "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `observers.rules.explain`. */
+export const ObserversRulesExplainReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "bindings": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "rules": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "source": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "source",
+    "rules",
+    "bindings"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6148,6 +30044,89 @@ export const ObserversRulesListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `observers.rules.list`. */
+export const ObserversRulesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "rules": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "rules"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.rules.rm`. */
 export const ObserversRulesRmInputSchema = {
   "additionalProperties": false,
@@ -6159,6 +30138,23 @@ export const ObserversRulesRmInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `observers.rules.rm`. */
+export const ObserversRulesRmReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "deleted": {},
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "deleted"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6263,6 +30259,27 @@ export const ObserversRulesSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `observers.rules.set`. */
+export const ObserversRulesSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "rule": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "rule"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.rules.show`. */
 export const ObserversRulesShowInputSchema = {
   "additionalProperties": false,
@@ -6278,10 +30295,49 @@ export const ObserversRulesShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `observers.rules.show`. */
+export const ObserversRulesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "rule": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "rule"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.rules.validate`. */
 export const ObserversRulesValidateInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `observers.rules.validate`. */
+export const ObserversRulesValidateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "errors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "errors"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6296,6 +30352,665 @@ export const ObserversShowInputSchema = {
   },
   "required": [
     "bindingId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `observers.show`. */
+export const ObserversShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "binding": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "binding"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pages.create`. */
+export const PagesCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "defaultSite": {
+      "description": "Mark this as the project default site when available",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Hosted subdomain slug, e.g. demo for demo.ravi.page",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "Default visibility: private|protected_link|public",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project",
+    "slug"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.create`. */
+export const PagesCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "site": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "site",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pages.domains`. */
+export const PagesDomainsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "hostnames": {
+      "description": "Custom hostname(s), e.g. www.example.com",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    },
+    "site": {
+      "description": "Pages site id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "hostnames",
+    "project",
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.domains`. */
+export const PagesDomainsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bindings": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "hostnames": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "site": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "siteRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "bindings",
+    "consoleUrl",
+    "hostnames",
+    "projectRef",
+    "site",
+    "siteRef",
+    "total"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pages.list`. */
+export const PagesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum sites to return (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of sites to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.list`. */
+export const PagesListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "sites": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "total",
+    "pagination",
+    "sites",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pages.update`. */
+export const PagesUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    },
+    "site": {
+      "description": "Pages site id or slug",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "Default visibility: private|protected_link|public",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project",
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.update`. */
+export const PagesUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "edgeManifestRepair": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "site": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "siteRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "siteRef",
+    "site",
+    "edgeManifestRepair",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pages.visibility`. */
+export const PagesVisibilityInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    },
+    "site": {
+      "description": "Pages site id or slug",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "private|protected_link|public",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project",
+    "site",
+    "visibility"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.visibility`. */
+export const PagesVisibilityReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "edgeManifestRepair": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "site": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "siteRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "siteRef",
+    "site",
+    "edgeManifestRepair",
+    "url"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6325,6 +31040,66 @@ export const PermissionsCheckInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `permissions.check`. */
+export const PermissionsCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "allowed": {
+      "type": "boolean"
+    },
+    "object": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "raw",
+        "type",
+        "id"
+      ],
+      "type": "object"
+    },
+    "permission": {
+      "type": "string"
+    },
+    "subject": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "raw",
+        "type",
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "subject",
+    "permission",
+    "object",
+    "allowed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.clear`. */
 export const PermissionsClearInputSchema = {
   "additionalProperties": false,
@@ -6334,6 +31109,38 @@ export const PermissionsClearInputSchema = {
       "type": "boolean"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.clear`. */
+export const PermissionsClearReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "const": "cleared",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "target",
+    "changedCount",
+    "status"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6362,6 +31169,98 @@ export const PermissionsGrantInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `permissions.grant`. */
+export const PermissionsGrantReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "relation": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        },
+        "objectId": {
+          "type": "string"
+        },
+        "objectMembers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "objectType": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subjectType",
+        "subjectId",
+        "subject",
+        "relation",
+        "objectType",
+        "objectId",
+        "object"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "const": "granted",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": {},
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "target",
+    "changedCount",
+    "status",
+    "relation",
+    "warnings"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.init`. */
 export const PermissionsInitInputSchema = {
   "additionalProperties": false,
@@ -6378,6 +31277,90 @@ export const PermissionsInitInputSchema = {
   "required": [
     "subject",
     "template"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.init`. */
+export const PermissionsInitReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "relations": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "objectMembers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectType",
+          "subjectId",
+          "subject",
+          "relation",
+          "objectType",
+          "objectId",
+          "object"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "status": {
+      "const": "applied",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "target",
+    "changedCount",
+    "status",
+    "relations"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6414,6 +31397,200 @@ export const PermissionsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `permissions.list`. */
+export const PermissionsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "filter": {
+      "additionalProperties": {},
+      "properties": {
+        "objectId": {
+          "type": "string"
+        },
+        "objectType": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "objectMembers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectType",
+          "subjectId",
+          "subject",
+          "relation",
+          "objectType",
+          "objectId",
+          "object"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "relations": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "objectMembers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectType",
+          "subjectId",
+          "subject",
+          "relation",
+          "objectType",
+          "objectId",
+          "object"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "filter",
+    "items",
+    "relations"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.revoke`. */
 export const PermissionsRevokeInputSchema = {
   "additionalProperties": false,
@@ -6439,10 +31616,227 @@ export const PermissionsRevokeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `permissions.revoke`. */
+export const PermissionsRevokeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "relation": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        },
+        "objectId": {
+          "type": "string"
+        },
+        "objectMembers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "objectType": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subjectType",
+        "subjectId",
+        "subject",
+        "relation",
+        "objectType",
+        "objectId",
+        "object"
+      ],
+      "type": "object"
+    },
+    "remainingIndividualRelations": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "objectMembers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectType",
+          "subjectId",
+          "subject",
+          "relation",
+          "objectType",
+          "objectId",
+          "object"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "status": {
+      "const": "revoked",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "target",
+    "changedCount",
+    "status",
+    "relation",
+    "remainingIndividualRelations"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.sync`. */
 export const PermissionsSyncInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.sync`. */
+export const PermissionsSyncReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "relations": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "objectMembers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectType",
+          "subjectId",
+          "subject",
+          "relation",
+          "objectType",
+          "objectId",
+          "object"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "status": {
+      "const": "synced",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "target",
+    "changedCount",
+    "status",
+    "relations"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6493,6 +31887,13 @@ export const ProjectsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.create`. */
+export const ProjectsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.fixtures.seed`. */
 export const ProjectsFixturesSeedInputSchema = {
   "additionalProperties": false,
@@ -6502,6 +31903,29 @@ export const ProjectsFixturesSeedInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.fixtures.seed`. */
+export const ProjectsFixturesSeedReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "fixtures": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "fixtures"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6573,6 +31997,31 @@ export const ProjectsInitInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.init`. */
+export const ProjectsInitReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "workflows": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "details",
+    "workflows"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.link`. */
 export const ProjectsLinkInputSchema = {
   "additionalProperties": false,
@@ -6614,6 +32063,13 @@ export const ProjectsLinkInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.link`. */
+export const ProjectsLinkReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.list`. */
 export const ProjectsListInputSchema = {
   "additionalProperties": false,
@@ -6638,6 +32094,95 @@ export const ProjectsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.list`. */
+export const ProjectsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "filters": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "projects": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "filters",
+    "projects"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.next`. */
 export const ProjectsNextInputSchema = {
   "additionalProperties": false,
@@ -6651,6 +32196,35 @@ export const ProjectsNextInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.next`. */
+export const ProjectsNextReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "filters": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "projects": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "filters",
+    "projects"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6687,6 +32261,13 @@ export const ProjectsResourcesAddInputSchema = {
     "project",
     "target"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.resources.add`. */
+export const ProjectsResourcesAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6741,6 +32322,29 @@ export const ProjectsResourcesImportInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.resources.import`. */
+export const ProjectsResourcesImportReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "resources": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "resources"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.resources.list`. */
 export const ProjectsResourcesListInputSchema = {
   "additionalProperties": false,
@@ -6768,6 +32372,89 @@ export const ProjectsResourcesListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.resources.list`. */
+export const ProjectsResourcesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "resources": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "resources"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.resources.show`. */
 export const ProjectsResourcesShowInputSchema = {
   "additionalProperties": false,
@@ -6788,6 +32475,13 @@ export const ProjectsResourcesShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.resources.show`. */
+export const ProjectsResourcesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.show`. */
 export const ProjectsShowInputSchema = {
   "additionalProperties": false,
@@ -6803,6 +32497,13 @@ export const ProjectsShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.show`. */
+export const ProjectsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.status`. */
 export const ProjectsStatusInputSchema = {
   "additionalProperties": false,
@@ -6815,6 +32516,13 @@ export const ProjectsStatusInputSchema = {
   "required": [
     "project"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.status`. */
+export const ProjectsStatusReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6855,6 +32563,34 @@ export const ProjectsTasksAttachInputSchema = {
     "nodeKey",
     "project",
     "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.tasks.attach`. */
+export const ProjectsTasksAttachReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "defaults": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "workflow": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details",
+    "workflow",
+    "defaults"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6912,6 +32648,34 @@ export const ProjectsTasksCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.tasks.create`. */
+export const ProjectsTasksCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "defaults": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "workflow": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details",
+    "workflow",
+    "defaults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.tasks.dispatch`. */
 export const ProjectsTasksDispatchInputSchema = {
   "additionalProperties": false,
@@ -6936,6 +32700,34 @@ export const ProjectsTasksDispatchInputSchema = {
   "required": [
     "project",
     "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.tasks.dispatch`. */
+export const ProjectsTasksDispatchReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "defaults": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "workflow": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details",
+    "workflow",
+    "defaults"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -6991,6 +32783,13 @@ export const ProjectsUpdateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.update`. */
+export const ProjectsUpdateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.workflows.attach`. */
 export const ProjectsWorkflowsAttachInputSchema = {
   "additionalProperties": false,
@@ -7011,6 +32810,28 @@ export const ProjectsWorkflowsAttachInputSchema = {
   "required": [
     "project",
     "runId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.workflows.attach`. */
+export const ProjectsWorkflowsAttachReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "workflow": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details",
+    "workflow"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -7043,6 +32864,28 @@ export const ProjectsWorkflowsStartInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `projects.workflows.start`. */
+export const ProjectsWorkflowsStartReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "workflow": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details",
+    "workflow"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.cancel`. */
 export const ProxCallsCancelInputSchema = {
   "additionalProperties": false,
@@ -7061,6 +32904,28 @@ export const ProxCallsCancelInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.cancel`. */
+export const ProxCallsCancelReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "message": {
+      "type": "string"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "message",
+    "request_id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.events`. */
 export const ProxCallsEventsInputSchema = {
   "additionalProperties": false,
@@ -7071,6 +32936,33 @@ export const ProxCallsEventsInputSchema = {
   },
   "required": [
     "call_request_id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.events`. */
+export const ProxCallsEventsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "events": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "request_id",
+    "total",
+    "events"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -7132,6 +33024,31 @@ export const ProxCallsProfilesConfigureInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.profiles.configure`. */
+export const ProxCallsProfilesConfigureReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "profile": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "provider_sync": {
+      "anyOf": [
+        {},
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "provider_sync"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.profiles.list`. */
 export const ProxCallsProfilesListInputSchema = {
   "additionalProperties": false,
@@ -7152,6 +33069,80 @@ export const ProxCallsProfilesListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.profiles.list`. */
+export const ProxCallsProfilesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.profiles.show`. */
 export const ProxCallsProfilesShowInputSchema = {
   "additionalProperties": false,
@@ -7163,6 +33154,13 @@ export const ProxCallsProfilesShowInputSchema = {
   "required": [
     "profile_id"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.profiles.show`. */
+export const ProxCallsProfilesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7209,6 +33207,48 @@ export const ProxCallsRequestInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.request`. */
+export const ProxCallsRequestReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "block_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "blocked": {
+      "type": "boolean"
+    },
+    "hint": {
+      "type": "string"
+    },
+    "provider_mode": {
+      "enum": [
+        "stub",
+        "live"
+      ],
+      "type": "string"
+    },
+    "request": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "request",
+    "blocked",
+    "provider_mode",
+    "hint"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.rules`. */
 export const ProxCallsRulesInputSchema = {
   "additionalProperties": false,
@@ -7221,6 +33261,33 @@ export const ProxCallsRulesInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.rules`. */
+export const ProxCallsRulesReturnSchema = {
+  "anyOf": [
+    {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    {
+      "additionalProperties": {},
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "rules",
+        "message"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.show`. */
 export const ProxCallsShowInputSchema = {
   "additionalProperties": false,
@@ -7231,6 +33298,44 @@ export const ProxCallsShowInputSchema = {
   },
   "required": [
     "call_request_id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.show`. */
+export const ProxCallsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "request": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "runs": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "request",
+    "runs",
+    "result"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -7265,6 +33370,13 @@ export const ProxCallsToolsBindInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.tools.bind`. */
+export const ProxCallsToolsBindReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.tools.configure`. */
 export const ProxCallsToolsConfigureInputSchema = {
   "additionalProperties": false,
@@ -7284,6 +33396,13 @@ export const ProxCallsToolsConfigureInputSchema = {
   "required": [
     "tool_id"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.tools.configure`. */
+export const ProxCallsToolsConfigureReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7325,6 +33444,13 @@ export const ProxCallsToolsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.tools.create`. */
+export const ProxCallsToolsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.tools.list`. */
 export const ProxCallsToolsListInputSchema = {
   "additionalProperties": false,
@@ -7346,6 +33472,80 @@ export const ProxCallsToolsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.tools.list`. */
+export const ProxCallsToolsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7375,6 +33575,20 @@ export const ProxCallsToolsRunInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.tools.run`. */
+export const ProxCallsToolsRunReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.tools.runs`. */
 export const ProxCallsToolsRunsInputSchema = {
   "additionalProperties": false,
@@ -7385,6 +33599,33 @@ export const ProxCallsToolsRunsInputSchema = {
   },
   "required": [
     "call_request_id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.tools.runs`. */
+export const ProxCallsToolsRunsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "tool_runs": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "request_id",
+    "total",
+    "tool_runs"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -7403,6 +33644,13 @@ export const ProxCallsToolsShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.tools.show`. */
+export const ProxCallsToolsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.tools.unbind`. */
 export const ProxCallsToolsUnbindInputSchema = {
   "additionalProperties": false,
@@ -7416,6 +33664,25 @@ export const ProxCallsToolsUnbindInputSchema = {
   },
   "required": [
     "profile_id",
+    "tool_id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.tools.unbind`. */
+export const ProxCallsToolsUnbindReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "tool_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
     "tool_id"
   ],
   "type": "object"
@@ -7439,6 +33706,38 @@ export const ProxCallsTranscriptInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.transcript`. */
+export const ProxCallsTranscriptReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "outcome": {
+      "type": "string"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "transcript": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "outcome",
+    "transcript"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.voice-agents.bind-tool`. */
 export const ProxCallsVoiceAgentsBindToolInputSchema = {
   "additionalProperties": false,
@@ -7458,6 +33757,13 @@ export const ProxCallsVoiceAgentsBindToolInputSchema = {
     "tool_id",
     "voice_agent_id"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.voice-agents.bind-tool`. */
+export const ProxCallsVoiceAgentsBindToolReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7491,6 +33797,13 @@ export const ProxCallsVoiceAgentsConfigureInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.voice-agents.configure`. */
+export const ProxCallsVoiceAgentsConfigureReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.voice-agents.create`. */
 export const ProxCallsVoiceAgentsCreateInputSchema = {
   "additionalProperties": false,
@@ -7521,6 +33834,13 @@ export const ProxCallsVoiceAgentsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.voice-agents.create`. */
+export const ProxCallsVoiceAgentsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.voice-agents.list`. */
 export const ProxCallsVoiceAgentsListInputSchema = {
   "additionalProperties": false,
@@ -7541,6 +33861,80 @@ export const ProxCallsVoiceAgentsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.voice-agents.list`. */
+export const ProxCallsVoiceAgentsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.voice-agents.show`. */
 export const ProxCallsVoiceAgentsShowInputSchema = {
   "additionalProperties": false,
@@ -7552,6 +33946,13 @@ export const ProxCallsVoiceAgentsShowInputSchema = {
   "required": [
     "voice_agent_id"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.voice-agents.show`. */
+export const ProxCallsVoiceAgentsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7577,6 +33978,48 @@ export const ProxCallsVoiceAgentsSyncInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `prox.calls.voice-agents.sync`. */
+export const ProxCallsVoiceAgentsSyncReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "dry_run": {
+      "type": "boolean"
+    },
+    "intended_changes": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "provider_agent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provider_sync": {
+      "type": "string"
+    },
+    "voice_agent_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "voice_agent_id",
+    "provider",
+    "dry_run",
+    "intended_changes",
+    "provider_sync"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `prox.calls.voice-agents.unbind-tool`. */
 export const ProxCallsVoiceAgentsUnbindToolInputSchema = {
   "additionalProperties": false,
@@ -7591,6 +34034,25 @@ export const ProxCallsVoiceAgentsUnbindToolInputSchema = {
   "required": [
     "tool_id",
     "voice_agent_id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `prox.calls.voice-agents.unbind-tool`. */
+export const ProxCallsVoiceAgentsUnbindToolReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "tool_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "tool_id"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -7611,6 +34073,93 @@ export const ReactSendInputSchema = {
   "required": [
     "emoji",
     "messageId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `react.send`. */
+export const ReactSendReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "chatId": {
+          "type": "string"
+        },
+        "emoji": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel",
+        "accountId",
+        "chatId",
+        "messageId",
+        "emoji"
+      ],
+      "type": "object"
+    },
+    "reaction": {
+      "additionalProperties": false,
+      "properties": {
+        "emoji": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "messageId",
+        "emoji"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "chatId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel",
+        "accountId",
+        "chatId"
+      ],
+      "type": "object"
+    },
+    "topic": {
+      "const": "ravi.outbound.reaction",
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "topic",
+    "reaction",
+    "target",
+    "event"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -7639,6 +34188,74 @@ export const RoutesExplainInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `routes.explain`. */
+export const RoutesExplainReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "channel": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "configuredRoute": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "instance": {
+      "type": "string"
+    },
+    "liveEffect": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pattern": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "target",
+    "instance",
+    "pattern",
+    "channel",
+    "configuredRoute",
+    "liveEffect"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `routes.list`. */
 export const RoutesListInputSchema = {
   "additionalProperties": false,
@@ -7663,6 +34280,106 @@ export const RoutesListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `routes.list`. */
+export const RoutesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "filter": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "instance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "routes": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "instance",
+    "filter",
+    "routes"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `routes.show`. */
 export const RoutesShowInputSchema = {
   "additionalProperties": false,
@@ -7679,6 +34396,30 @@ export const RoutesShowInputSchema = {
   "required": [
     "name",
     "pattern"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `routes.show`. */
+export const RoutesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "instance": {
+      "type": "string"
+    },
+    "pattern": {
+      "type": "string"
+    },
+    "route": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "instance",
+    "pattern",
+    "route"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -7712,6 +34453,60 @@ export const RulesImportInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `rules.import`. */
+export const RulesImportReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "counts": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "force": {
+      "type": "boolean"
+    },
+    "includeUser": {
+      "type": "boolean"
+    },
+    "rulesDir": {
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "write": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "cwd",
+    "includeUser",
+    "write",
+    "force",
+    "rulesDir",
+    "sources",
+    "candidates",
+    "counts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `rules.sources`. */
 export const RulesSourcesInputSchema = {
   "additionalProperties": false,
@@ -7730,6 +34525,63 @@ export const RulesSourcesInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `rules.sources`. */
+export const RulesSourcesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "counts": {
+      "additionalProperties": false,
+      "properties": {
+        "existingSources": {
+          "type": "number"
+        },
+        "missingSources": {
+          "type": "number"
+        },
+        "sources": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "sources",
+        "existingSources",
+        "missingSources"
+      ],
+      "type": "object"
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "includeUser": {
+      "type": "boolean"
+    },
+    "provider": {
+      "enum": [
+        "all",
+        "claude",
+        "agents"
+      ],
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "cwd",
+    "provider",
+    "includeUser",
+    "sources",
+    "counts"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7797,6 +34649,22 @@ export const RuntimeCredentialsAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `runtime.credentials.add`. */
+export const RuntimeCredentialsAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "credential": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "credential"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.credentials.classify`. */
 export const RuntimeCredentialsClassifyInputSchema = {
   "additionalProperties": false,
@@ -7841,6 +34709,28 @@ export const RuntimeCredentialsClassifyInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `runtime.credentials.classify`. */
+export const RuntimeCredentialsClassifyReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "pressure": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "signal": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "signal",
+    "pressure"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.credentials.disable`. */
 export const RuntimeCredentialsDisableInputSchema = {
   "additionalProperties": false,
@@ -7856,6 +34746,22 @@ export const RuntimeCredentialsDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `runtime.credentials.disable`. */
+export const RuntimeCredentialsDisableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "credential": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "credential"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.credentials.enable`. */
 export const RuntimeCredentialsEnableInputSchema = {
   "additionalProperties": false,
@@ -7867,6 +34773,22 @@ export const RuntimeCredentialsEnableInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.credentials.enable`. */
+export const RuntimeCredentialsEnableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "credential": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "credential"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -7899,6 +34821,22 @@ export const RuntimeCredentialsImportInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `runtime.credentials.import`. */
+export const RuntimeCredentialsImportReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "credential": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "credential"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.credentials.list`. */
 export const RuntimeCredentialsListInputSchema = {
   "additionalProperties": false,
@@ -7928,6 +34866,89 @@ export const RuntimeCredentialsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.credentials.list`. */
+export const RuntimeCredentialsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "credentials": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "providerHealth": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "credentials",
+    "providerHealth"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7967,6 +34988,25 @@ export const RuntimeCredentialsRefreshInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `runtime.credentials.refresh`. */
+export const RuntimeCredentialsRefreshReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "refreshed": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "refreshed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.credentials.reset-health`. */
 export const RuntimeCredentialsResetHealthInputSchema = {
   "additionalProperties": false,
@@ -7978,6 +35018,35 @@ export const RuntimeCredentialsResetHealthInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.credentials.reset-health`. */
+export const RuntimeCredentialsResetHealthReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "credential": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "health": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "credential",
+    "health"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -8010,6 +35079,47 @@ export const RuntimeCredentialsSelectInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `runtime.credentials.select`. */
+export const RuntimeCredentialsSelectReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "rejected": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "selected": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "selected",
+    "candidates",
+    "rejected"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.credentials.status`. */
 export const RuntimeCredentialsStatusInputSchema = {
   "additionalProperties": false,
@@ -8019,6 +35129,35 @@ export const RuntimeCredentialsStatusInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.credentials.status`. */
+export const RuntimeCredentialsStatusReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "credential": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "health": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "credential",
+    "health"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8039,6 +35178,51 @@ export const SdkClientCheckInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sdk.client.check`. */
+export const SdkClientCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "type": "string"
+    },
+    "drift": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "reason",
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "files": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "dir",
+    "drift",
+    "files"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sdk.client.generate`. */
 export const SdkClientGenerateInputSchema = {
   "additionalProperties": false,
@@ -8056,6 +35240,49 @@ export const SdkClientGenerateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sdk.client.generate`. */
+export const SdkClientGenerateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "file": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "path",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "status": {
+      "const": "written",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "dir",
+    "files"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sdk.openapi.check`. */
 export const SdkOpenapiCheckInputSchema = {
   "additionalProperties": false,
@@ -8065,6 +35292,32 @@ export const SdkOpenapiCheckInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sdk.openapi.check`. */
+export const SdkOpenapiCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "drift": {
+      "type": "boolean"
+    },
+    "liveBytes": {
+      "type": "number"
+    },
+    "path": {
+      "type": "string"
+    },
+    "storedBytes": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "path",
+    "drift",
+    "liveBytes",
+    "storedBytes"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8084,6 +35337,50 @@ export const SdkOpenapiEmitInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sdk.openapi.emit`. */
+export const SdkOpenapiEmitReturnSchema = {
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "type": "number"
+        },
+        "status": {
+          "const": "stdout",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "bytes"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "type": "number"
+        },
+        "path": {
+          "type": "string"
+        },
+        "status": {
+          "const": "written",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "path",
+        "bytes"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sdk.swift.check`. */
 export const SdkSwiftCheckInputSchema = {
   "additionalProperties": false,
@@ -8098,6 +35395,51 @@ export const SdkSwiftCheckInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sdk.swift.check`. */
+export const SdkSwiftCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "type": "string"
+    },
+    "drift": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "reason",
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "files": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "dir",
+    "drift",
+    "files"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8118,6 +35460,49 @@ export const SdkSwiftGenerateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sdk.swift.generate`. */
+export const SdkSwiftGenerateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "file": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "path",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "status": {
+      "const": "written",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "dir",
+    "files"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `self.chat`. */
 export const SelfChatInputSchema = {
   "additionalProperties": false,
@@ -8127,6 +35512,30 @@ export const SelfChatInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `self.chat`. */
+export const SelfChatReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "missing",
+        "unavailable"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "status"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8146,10 +35555,222 @@ export const SelfContextInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `self.context`. */
+export const SelfContextReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "chat": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "depth": {
+      "type": "string"
+    },
+    "explain": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "generatedAt": {
+      "type": "number"
+    },
+    "identity": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "knowledge": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "limit": {
+      "type": "number"
+    },
+    "nextReads": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "permissions": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "recent": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "route": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "session": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "generatedAt",
+    "depth",
+    "limit",
+    "identity",
+    "session",
+    "chat",
+    "route",
+    "recent",
+    "permissions",
+    "knowledge",
+    "explain",
+    "nextReads"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `self.explain`. */
 export const SelfExplainInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `self.explain`. */
+export const SelfExplainReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "explain": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "generatedAt": {
+      "type": "number"
+    },
+    "nextReads": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "generatedAt",
+    "explain",
+    "nextReads"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8160,10 +35781,58 @@ export const SelfKnowledgeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `self.knowledge`. */
+export const SelfKnowledgeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "missing",
+        "unavailable"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `self.permissions`. */
 export const SelfPermissionsInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `self.permissions`. */
+export const SelfPermissionsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "missing",
+        "unavailable"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "status"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8179,10 +35848,58 @@ export const SelfRecentInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `self.recent`. */
+export const SelfRecentReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "missing",
+        "unavailable"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `self.route`. */
 export const SelfRouteInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `self.route`. */
+export const SelfRouteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "missing",
+        "unavailable"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "status"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8193,29 +35910,99 @@ export const SelfWhoamiInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `service.start`. */
-export const ServiceStartInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `service.tui`. */
-export const ServiceTuiInputSchema = {
-  "additionalProperties": false,
+/** JSON Schema for the return shape of `self.whoami`. */
+export const SelfWhoamiReturnSchema = {
+  "additionalProperties": {},
   "properties": {
+    "chat": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "generatedAt": {
+      "type": "number"
+    },
+    "identity": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "nextReads": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "route": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
     "session": {
-      "description": "Session key (default: agent:main:main)",
-      "type": "string"
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
     }
   },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `service.wa`. */
-export const ServiceWaInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
+  "required": [
+    "generatedAt",
+    "identity",
+    "session",
+    "chat",
+    "route",
+    "nextReads"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8232,6 +36019,13 @@ export const SessionsActionsInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.actions`. */
+export const SessionsActionsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8279,6 +36073,13 @@ export const SessionsAnswerInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.answer`. */
+export const SessionsAnswerReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.ask`. */
 export const SessionsAskInputSchema = {
   "additionalProperties": false,
@@ -8323,6 +36124,13 @@ export const SessionsAskInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.ask`. */
+export const SessionsAskReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.attach`. */
 export const SessionsAttachInputSchema = {
   "additionalProperties": false,
@@ -8346,6 +36154,13 @@ export const SessionsAttachInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.attach`. */
+export const SessionsAttachReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.delete`. */
 export const SessionsDeleteInputSchema = {
   "additionalProperties": false,
@@ -8358,6 +36173,13 @@ export const SessionsDeleteInputSchema = {
   "required": [
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.delete`. */
+export const SessionsDeleteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8380,6 +36202,13 @@ export const SessionsDeleteMessageInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.delete-message`. */
+export const SessionsDeleteMessageReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.detach`. */
 export const SessionsDetachInputSchema = {
   "additionalProperties": false,
@@ -8396,6 +36225,13 @@ export const SessionsDetachInputSchema = {
   "required": [
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.detach`. */
+export const SessionsDetachReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8423,6 +36259,13 @@ export const SessionsEditMessageInputSchema = {
   "required": [
     "sessionOrMessage"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.edit-message`. */
+export const SessionsEditMessageReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8466,6 +36309,13 @@ export const SessionsExecuteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.execute`. */
+export const SessionsExecuteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.extend`. */
 export const SessionsExtendInputSchema = {
   "additionalProperties": false,
@@ -8482,6 +36332,427 @@ export const SessionsExtendInputSchema = {
   "required": [
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.extend`. */
+export const SessionsExtendReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.add`. */
+export const SessionsFollowupsAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "at": {
+      "description": "One-shot schedule timestamp",
+      "type": "string"
+    },
+    "barrier": {
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
+      "type": "string"
+    },
+    "cron": {
+      "description": "Cron expression",
+      "type": "string"
+    },
+    "description": {
+      "description": "Description for humans",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Create disabled/paused",
+      "type": "boolean"
+    },
+    "every": {
+      "description": "Idle followup after inactivity, e.g. 30m, 2h, 1d",
+      "type": "string"
+    },
+    "message": {
+      "description": "Followup message template",
+      "type": "string"
+    },
+    "name": {
+      "description": "Followup cadence name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope (default: current agent or system:ravi)",
+      "type": "string"
+    },
+    "step": {
+      "description": "Idle followup step; repeat or quote, e.g. --step '2h=First followup' --step '3h=Second followup'",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "targetChat": {
+      "description": "Target one canonical chat id/ref",
+      "type": "string"
+    },
+    "targetList": {
+      "description": "Target every active chat in a reading list",
+      "type": "string"
+    },
+    "targetSession": {
+      "description": "Target one session by name or key",
+      "type": "string"
+    },
+    "timezone": {
+      "description": "Timezone for cron schedules",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.add`. */
+export const SessionsFollowupsAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.inspect`. */
+export const SessionsFollowupsInspectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Followup cadence id",
+      "type": "string"
+    },
+    "runs": {
+      "description": "Number of recent runs (default: 20)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.inspect`. */
+export const SessionsFollowupsInspectReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.list`. */
+export const SessionsFollowupsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "includeDisabled": {
+      "description": "Include paused/disabled cadences",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching rows to skip",
+      "type": "string"
+    },
+    "targetType": {
+      "description": "Filter by target type: session|chat|reading_list",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.list`. */
+export const SessionsFollowupsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.pause`. */
+export const SessionsFollowupsPauseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Followup cadence id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.pause`. */
+export const SessionsFollowupsPauseReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.resume`. */
+export const SessionsFollowupsResumeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Followup cadence id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.resume`. */
+export const SessionsFollowupsResumeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.retry`. */
+export const SessionsFollowupsRetryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cadence": {
+      "description": "Retry failed/dead runs for one cadence",
+      "type": "string"
+    },
+    "run": {
+      "description": "Optional run id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.retry`. */
+export const SessionsFollowupsRetryReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.run`. */
+export const SessionsFollowupsRunInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Followup cadence id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.run`. */
+export const SessionsFollowupsRunReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.runs`. */
+export const SessionsFollowupsRunsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cadence": {
+      "description": "Filter by cadence id",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching rows to skip",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by run status",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.runs`. */
+export const SessionsFollowupsRunsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.snooze`. */
+export const SessionsFollowupsSnoozeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Followup cadence id",
+      "type": "string"
+    },
+    "until": {
+      "description": "Wake-up timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.snooze`. */
+export const SessionsFollowupsSnoozeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8529,6 +36800,13 @@ export const SessionsGoalInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.goal`. */
+export const SessionsGoalReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.info`. */
 export const SessionsInfoInputSchema = {
   "additionalProperties": false,
@@ -8541,6 +36819,13 @@ export const SessionsInfoInputSchema = {
   "required": [
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.info`. */
+export const SessionsInfoReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8584,6 +36869,13 @@ export const SessionsInformInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.inform`. */
+export const SessionsInformReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.keep`. */
 export const SessionsKeepInputSchema = {
   "additionalProperties": false,
@@ -8596,6 +36888,13 @@ export const SessionsKeepInputSchema = {
   "required": [
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.keep`. */
+export const SessionsKeepReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8631,6 +36930,80 @@ export const SessionsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.list`. */
+export const SessionsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.mute`. */
 export const SessionsMuteInputSchema = {
   "additionalProperties": false,
@@ -8647,6 +37020,13 @@ export const SessionsMuteInputSchema = {
   "required": [
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.mute`. */
+export const SessionsMuteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8678,6 +37058,13 @@ export const SessionsPruneInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.prune`. */
+export const SessionsPruneReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.read`. */
 export const SessionsReadInputSchema = {
   "additionalProperties": false,
@@ -8702,6 +37089,13 @@ export const SessionsReadInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.read`. */
+export const SessionsReadReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.rename`. */
 export const SessionsRenameInputSchema = {
   "additionalProperties": false,
@@ -8722,6 +37116,13 @@ export const SessionsRenameInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.rename`. */
+export const SessionsRenameReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.reset`. */
 export const SessionsResetInputSchema = {
   "additionalProperties": false,
@@ -8734,6 +37135,13 @@ export const SessionsResetInputSchema = {
   "required": [
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.reset`. */
+export const SessionsResetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8769,6 +37177,27 @@ export const SessionsRuntimeFollowUpInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.runtime.follow-up`. */
+export const SessionsRuntimeFollowUpReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "error": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "operation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.runtime.fork`. */
 export const SessionsRuntimeForkInputSchema = {
   "additionalProperties": false,
@@ -8796,6 +37225,27 @@ export const SessionsRuntimeForkInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.runtime.fork`. */
+export const SessionsRuntimeForkReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "error": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "operation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.runtime.interrupt`. */
 export const SessionsRuntimeInterruptInputSchema = {
   "additionalProperties": false,
@@ -8815,6 +37265,27 @@ export const SessionsRuntimeInterruptInputSchema = {
   },
   "required": [
     "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.runtime.interrupt`. */
+export const SessionsRuntimeInterruptReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "error": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "operation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -8854,6 +37325,27 @@ export const SessionsRuntimeListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.runtime.list`. */
+export const SessionsRuntimeListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "error": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "operation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.runtime.read`. */
 export const SessionsRuntimeReadInputSchema = {
   "additionalProperties": false,
@@ -8877,6 +37369,27 @@ export const SessionsRuntimeReadInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.runtime.read`. */
+export const SessionsRuntimeReadReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "error": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "operation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.runtime.rollback`. */
 export const SessionsRuntimeRollbackInputSchema = {
   "additionalProperties": false,
@@ -8896,6 +37409,27 @@ export const SessionsRuntimeRollbackInputSchema = {
   },
   "required": [
     "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.runtime.rollback`. */
+export const SessionsRuntimeRollbackReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "error": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "operation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -8928,6 +37462,27 @@ export const SessionsRuntimeSteerInputSchema = {
   "required": [
     "session",
     "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.runtime.steer`. */
+export const SessionsRuntimeSteerReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "data": {},
+    "error": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "operation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -9003,6 +37558,13 @@ export const SessionsSendInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.send`. */
+export const SessionsSendReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.set-display`. */
 export const SessionsSetDisplayInputSchema = {
   "additionalProperties": false,
@@ -9020,6 +37582,13 @@ export const SessionsSetDisplayInputSchema = {
     "displayName",
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.set-display`. */
+export const SessionsSetDisplayReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -9043,6 +37612,13 @@ export const SessionsSetModelInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.set-model`. */
+export const SessionsSetModelReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.set-thinking`. */
 export const SessionsSetThinkingInputSchema = {
   "additionalProperties": false,
@@ -9060,6 +37636,13 @@ export const SessionsSetThinkingInputSchema = {
     "level",
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.set-thinking`. */
+export const SessionsSetThinkingReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -9083,6 +37666,13 @@ export const SessionsSetTtlInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.set-ttl`. */
+export const SessionsSetTtlReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.subscriptions`. */
 export const SessionsSubscriptionsInputSchema = {
   "additionalProperties": false,
@@ -9095,6 +37685,13 @@ export const SessionsSubscriptionsInputSchema = {
   "required": [
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.subscriptions`. */
+export const SessionsSubscriptionsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -9165,6 +37762,13 @@ export const SessionsTraceInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.trace`. */
+export const SessionsTraceReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.unmute`. */
 export const SessionsUnmuteInputSchema = {
   "additionalProperties": false,
@@ -9184,6 +37788,13 @@ export const SessionsUnmuteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `sessions.unmute`. */
+export const SessionsUnmuteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.visibility`. */
 export const SessionsVisibilityInputSchema = {
   "additionalProperties": false,
@@ -9196,6 +37807,13 @@ export const SessionsVisibilityInputSchema = {
   "required": [
     "nameOrKey"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.visibility`. */
+export const SessionsVisibilityReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -9214,6 +37832,106 @@ export const SettingsDeleteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `settings.delete`. */
+export const SettingsDeleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "setting": {
+      "additionalProperties": false,
+      "properties": {
+        "defaultValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "isSet": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "legacy": {
+          "type": "boolean"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "isSet",
+        "known",
+        "legacy",
+        "description",
+        "defaultValue",
+        "hint"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "setting"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `settings.get`. */
 export const SettingsGetInputSchema = {
   "additionalProperties": false,
@@ -9225,6 +37943,85 @@ export const SettingsGetInputSchema = {
   },
   "required": [
     "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `settings.get`. */
+export const SettingsGetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "setting": {
+      "additionalProperties": false,
+      "properties": {
+        "defaultValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "isSet": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "legacy": {
+          "type": "boolean"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "isSet",
+        "known",
+        "legacy",
+        "description",
+        "defaultValue",
+        "hint"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "setting"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -9249,6 +38046,381 @@ export const SettingsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `settings.list`. */
+export const SettingsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "customSettings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isSet": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "isSet",
+          "known",
+          "legacy",
+          "description",
+          "defaultValue",
+          "hint"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isSet": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "section": {
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "isSet",
+          "known",
+          "legacy",
+          "description",
+          "defaultValue",
+          "hint",
+          "section"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "knownSettings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isSet": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "isSet",
+          "known",
+          "legacy",
+          "description",
+          "defaultValue",
+          "hint"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "legacySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "hidden": {
+          "type": "boolean"
+        },
+        "settings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "defaultValue": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "isSet": {
+                "type": "boolean"
+              },
+              "key": {
+                "type": "string"
+              },
+              "known": {
+                "type": "boolean"
+              },
+              "legacy": {
+                "type": "boolean"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "value",
+              "isSet",
+              "known",
+              "legacy",
+              "description",
+              "defaultValue",
+              "hint"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total",
+        "hidden",
+        "settings"
+      ],
+      "type": "object"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "showLegacy": {
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "showLegacy",
+    "knownSettings",
+    "customSettings",
+    "legacySettings",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `settings.set`. */
 export const SettingsSetInputSchema = {
   "additionalProperties": false,
@@ -9269,6 +38441,106 @@ export const SettingsSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `settings.set`. */
+export const SettingsSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "setting": {
+      "additionalProperties": false,
+      "properties": {
+        "defaultValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "isSet": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "legacy": {
+          "type": "boolean"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "isSet",
+        "known",
+        "legacy",
+        "description",
+        "defaultValue",
+        "hint"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "setting"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skill-gates.disable`. */
 export const SkillGatesDisableInputSchema = {
   "additionalProperties": false,
@@ -9284,6 +38556,165 @@ export const SkillGatesDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `skill-gates.disable`. */
+export const SkillGatesDisableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "rule": {
+      "additionalProperties": {},
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "configured": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "defaultRule": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "groupRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "skill",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "rule"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skill-gates.enable`. */
 export const SkillGatesEnableInputSchema = {
   "additionalProperties": false,
@@ -9295,6 +38726,165 @@ export const SkillGatesEnableInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skill-gates.enable`. */
+export const SkillGatesEnableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "rule": {
+      "additionalProperties": {},
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "configured": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "defaultRule": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "groupRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "skill",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "rule"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -9319,6 +38909,371 @@ export const SkillGatesListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `skill-gates.list`. */
+export const SkillGatesListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "configuredTotal": {
+      "type": "number"
+    },
+    "filters": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "defaultRule": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "groupRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "skill",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "rules": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commandRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "defaultRule": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "groupRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolPrefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolRegex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "skill",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "configuredTotal",
+    "items",
+    "rules"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skill-gates.reset`. */
 export const SkillGatesResetInputSchema = {
   "additionalProperties": false,
@@ -9334,6 +39289,25 @@ export const SkillGatesResetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `skill-gates.reset`. */
+export const SkillGatesResetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "deleted"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skill-gates.rm`. */
 export const SkillGatesRmInputSchema = {
   "additionalProperties": false,
@@ -9345,6 +39319,171 @@ export const SkillGatesRmInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skill-gates.rm`. */
+export const SkillGatesRmReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "deleted": {
+      "type": "boolean"
+    },
+    "rule": {
+      "additionalProperties": {},
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "configured": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "defaultRule": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "groupRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "skill",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "action"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -9401,6 +39540,165 @@ export const SkillGatesSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `skill-gates.set`. */
+export const SkillGatesSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "rule": {
+      "additionalProperties": {},
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "configured": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "defaultRule": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "groupRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "skill",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "rule"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skill-gates.show`. */
 export const SkillGatesShowInputSchema = {
   "additionalProperties": false,
@@ -9412,6 +39710,160 @@ export const SkillGatesShowInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skill-gates.show`. */
+export const SkillGatesShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "rule": {
+      "additionalProperties": {},
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commandRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "configured": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "defaultRule": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "groupRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolPrefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolRegex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "skill",
+        "enabled"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "rule"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -9452,6 +39904,82 @@ export const SkillsInstallInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `skills.install`. */
+export const SkillsInstallReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "codexSynced": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "installed": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "pluginName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skillFilePath": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "path",
+          "skillFilePath",
+          "source",
+          "pluginName"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "source": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "source",
+    "installed",
+    "codexSynced"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.list`. */
 export const SkillsListInputSchema = {
   "additionalProperties": false,
@@ -9484,6 +40012,134 @@ export const SkillsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `skills.list`. */
+export const SkillsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "skills": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "pluginName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skillFilePath": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "path",
+          "skillFilePath",
+          "source",
+          "pluginName"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "source": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "source",
+    "skills"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.show`. */
 export const SkillsShowInputSchema = {
   "additionalProperties": false,
@@ -9507,10 +40163,97 @@ export const SkillsShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `skills.show`. */
+export const SkillsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "skill": {
+      "additionalProperties": {},
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "pluginName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skillFilePath": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "path",
+        "skillFilePath",
+        "source",
+        "pluginName",
+        "content"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "skill"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.sync`. */
 export const SkillsSyncInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.sync`. */
+export const SkillsSyncReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "codexSynced": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "codexSynced",
+    "total"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -9530,6 +40273,22 @@ export const SpecsGetInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.get`. */
+export const SpecsGetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "context": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "context"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -9555,6 +40314,89 @@ export const SpecsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.list`. */
+export const SpecsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "specs": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "specs"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -9585,10 +40427,70 @@ export const SpecsNewInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `specs.new`. */
+export const SpecsNewReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "createdFiles": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "missingAncestors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "spec": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "const": "created",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "spec",
+    "createdFiles",
+    "missingAncestors"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `specs.sync`. */
 export const SpecsSyncInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.sync`. */
+export const SpecsSyncReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "rootPath": {
+      "type": "string"
+    },
+    "status": {
+      "const": "synced",
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "status",
+    "total",
+    "rootPath"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -9640,6 +40542,102 @@ export const StickersAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `stickers.add`. */
+export const StickersAddReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "sticker": {
+      "additionalProperties": {},
+      "properties": {
+        "agents": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "avoid": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "channels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "media": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "description",
+        "avoid",
+        "channels",
+        "agents",
+        "media",
+        "enabled",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "action",
+    "sticker"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `stickers.list`. */
 export const StickersListInputSchema = {
   "additionalProperties": false,
@@ -9656,6 +40654,230 @@ export const StickersListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `stickers.list`. */
+export const StickersListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "avoid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "media": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description",
+          "avoid",
+          "channels",
+          "agents",
+          "media",
+          "enabled",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "stickers": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "avoid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "media": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description",
+          "avoid",
+          "channels",
+          "agents",
+          "media",
+          "enabled",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "stickers"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `stickers.remove`. */
 export const StickersRemoveInputSchema = {
   "additionalProperties": false,
@@ -9667,6 +40889,29 @@ export const StickersRemoveInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `stickers.remove`. */
+export const StickersRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "remove",
+      "type": "string"
+    },
+    "stickerId": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "action",
+    "stickerId"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -9702,6 +40947,70 @@ export const StickersSendInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `stickers.send`. */
+export const StickersSendReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "sticker": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "chatId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel",
+        "accountId",
+        "chatId"
+      ],
+      "type": "object"
+    },
+    "topic": {
+      "const": "ravi.stickers.send",
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "topic",
+    "sticker",
+    "target",
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `stickers.show`. */
 export const StickersShowInputSchema = {
   "additionalProperties": false,
@@ -9713,6 +41022,963 @@ export const StickersShowInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `stickers.show`. */
+export const StickersShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "sticker": {
+      "additionalProperties": {},
+      "properties": {
+        "agents": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "avoid": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "channels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "media": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "description",
+        "avoid",
+        "channels",
+        "agents",
+        "media",
+        "enabled",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "sticker"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sync.inspect`. */
+export const SyncInspectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "sync_outbox or sync_inbox id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sync.inspect`. */
+export const SyncInspectReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "found": {
+          "const": false,
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "found",
+        "id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "found": {
+          "const": true,
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "outbox",
+          "type": "string"
+        },
+        "record": {
+          "additionalProperties": false,
+          "properties": {
+            "ackedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "attemptCount": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "domain": {
+              "type": "string"
+            },
+            "entityId": {
+              "type": "string"
+            },
+            "entityRevision": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "entityType": {
+              "type": "string"
+            },
+            "eventId": {
+              "type": "string"
+            },
+            "eventType": {
+              "type": "string"
+            },
+            "evidenceRefs": {
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "idempotencyKey": {
+              "type": "string"
+            },
+            "lastErrorCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "leaseId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "leasedUntil": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextAttemptAt": {
+              "type": "number"
+            },
+            "occurredAt": {
+              "type": "number"
+            },
+            "originInstallationId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "payload": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "schemaVersion": {
+              "type": "number"
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "leased",
+                "sent",
+                "acked",
+                "failed",
+                "dead"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "eventId",
+            "originInstallationId",
+            "domain",
+            "eventType",
+            "entityType",
+            "entityId",
+            "entityRevision",
+            "idempotencyKey",
+            "payload",
+            "evidenceRefs",
+            "schemaVersion",
+            "status",
+            "attemptCount",
+            "nextAttemptAt",
+            "leaseId",
+            "leasedUntil",
+            "lastErrorCode",
+            "occurredAt",
+            "sentAt",
+            "ackedAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "found",
+        "kind",
+        "record"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "found": {
+          "const": true,
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "inbox",
+          "type": "string"
+        },
+        "record": {
+          "additionalProperties": false,
+          "properties": {
+            "appliedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "attemptCount": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "domain": {
+              "type": "string"
+            },
+            "entityId": {
+              "type": "string"
+            },
+            "entityType": {
+              "type": "string"
+            },
+            "eventType": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastErrorCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "payload": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "receivedAt": {
+              "type": "number"
+            },
+            "remoteEventId": {
+              "type": "string"
+            },
+            "remoteSequence": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "applied",
+                "skipped",
+                "failed",
+                "dead"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "remoteSequence",
+            "remoteEventId",
+            "domain",
+            "eventType",
+            "entityType",
+            "entityId",
+            "payload",
+            "status",
+            "attemptCount",
+            "lastErrorCode",
+            "receivedAt",
+            "appliedAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "found",
+        "kind",
+        "record"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sync.pull`. */
+export const SyncPullInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "domain": {
+      "description": "Filter one sync domain",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Max events in batch",
+      "type": "string"
+    },
+    "project": {
+      "description": "Alias for --project-ref",
+      "type": "string"
+    },
+    "projectId": {
+      "description": "Console project id",
+      "type": "string"
+    },
+    "projectRef": {
+      "description": "Console project ref",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Sync scope (organization)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sync.pull`. */
+export const SyncPullReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "applied": {
+      "type": "number"
+    },
+    "cursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "downloaded": {
+      "type": "number"
+    },
+    "enqueued": {
+      "type": "number"
+    },
+    "errorCode": {
+      "type": "string"
+    },
+    "failed": {
+      "type": "number"
+    },
+    "linked": {
+      "type": "boolean"
+    },
+    "skipped": {
+      "type": "number"
+    },
+    "status": {
+      "enum": [
+        "unlinked",
+        "noop",
+        "downloaded",
+        "failed"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "linked",
+    "status",
+    "downloaded",
+    "enqueued",
+    "applied",
+    "skipped",
+    "failed",
+    "cursor"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sync.push`. */
+export const SyncPushInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "domain": {
+      "description": "Filter one sync domain",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Max events in batch",
+      "type": "string"
+    },
+    "maxBytes": {
+      "description": "Max payload bytes in batch",
+      "type": "string"
+    },
+    "project": {
+      "description": "Alias for --project-ref",
+      "type": "string"
+    },
+    "projectId": {
+      "description": "Console project id",
+      "type": "string"
+    },
+    "projectRef": {
+      "description": "Console project ref",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Sync scope (organization)",
+      "type": "string"
+    },
+    "traces": {
+      "description": "Also enqueue and upload runtime trace export batches",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sync.push`. */
+export const SyncPushReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "acked": {
+      "type": "number"
+    },
+    "attempted": {
+      "type": "number"
+    },
+    "errorCode": {
+      "type": "string"
+    },
+    "failed": {
+      "type": "number"
+    },
+    "linked": {
+      "type": "boolean"
+    },
+    "sent": {
+      "type": "number"
+    },
+    "status": {
+      "enum": [
+        "unlinked",
+        "noop",
+        "uploaded",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "trace": {
+      "additionalProperties": false,
+      "properties": {
+        "acked": {
+          "type": "number"
+        },
+        "attempted": {
+          "type": "number"
+        },
+        "errorCode": {
+          "type": "string"
+        },
+        "failed": {
+          "type": "number"
+        },
+        "linked": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "unlinked",
+            "noop",
+            "uploaded",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "linked",
+        "status",
+        "attempted",
+        "acked",
+        "failed"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "linked",
+    "status",
+    "attempted",
+    "sent",
+    "acked",
+    "failed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sync.retry`. */
+export const SyncRetryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dead": {
+      "description": "Also retry dead rows",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Retry one outbox id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sync.retry`. */
+export const SyncRetryReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "retried": {
+      "type": "number"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "retried"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sync.status`. */
+export const SyncStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sync.status`. */
+export const SyncStatusReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cursors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cursorKey": {
+            "type": "string"
+          },
+          "cursorValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "domain": {
+            "type": "string"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/__schema0"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "domain",
+          "cursorKey",
+          "cursorValue",
+          "updatedAt",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "inbox": {
+      "additionalProperties": false,
+      "properties": {
+        "acked": {
+          "type": "number"
+        },
+        "applied": {
+          "type": "number"
+        },
+        "dead": {
+          "type": "number"
+        },
+        "failed": {
+          "type": "number"
+        },
+        "leased": {
+          "type": "number"
+        },
+        "pending": {
+          "type": "number"
+        },
+        "sent": {
+          "type": "number"
+        },
+        "skipped": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "pending",
+        "failed",
+        "dead"
+      ],
+      "type": "object"
+    },
+    "installationId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastDownload": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastError": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastUpload": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "linked": {
+      "type": "boolean"
+    },
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "acked": {
+          "type": "number"
+        },
+        "applied": {
+          "type": "number"
+        },
+        "dead": {
+          "type": "number"
+        },
+        "failed": {
+          "type": "number"
+        },
+        "leased": {
+          "type": "number"
+        },
+        "pending": {
+          "type": "number"
+        },
+        "sent": {
+          "type": "number"
+        },
+        "skipped": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "pending",
+        "failed",
+        "dead"
+      ],
+      "type": "object"
+    },
+    "runner": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "env": {
+          "type": "string"
+        },
+        "pullDomains": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "enabled",
+        "env",
+        "pullDomains"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "linked",
+    "consoleUrl",
+    "installationId",
+    "runner",
+    "outbox",
+    "inbox",
+    "cursors",
+    "lastUpload",
+    "lastDownload",
+    "lastError"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -9744,6 +42010,48 @@ export const TagRulesEvaluateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tag-rules.evaluate`. */
+export const TagRulesEvaluateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "apply": {
+      "type": "boolean"
+    },
+    "outcomes": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ruleId": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "traces": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ruleId",
+    "target",
+    "apply",
+    "outcomes",
+    "traces"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tag-rules.explain`. */
 export const TagRulesExplainInputSchema = {
   "additionalProperties": false,
@@ -9753,6 +42061,43 @@ export const TagRulesExplainInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tag-rules.explain`. */
+export const TagRulesExplainReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "loaded": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "outcomes": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "rules": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "target",
+    "rules",
+    "loaded",
+    "outcomes"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -9772,6 +42117,58 @@ export const TagRulesListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tag-rules.list`. */
+export const TagRulesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "errors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total",
+        "limit",
+        "offset"
+      ],
+      "type": "object"
+    },
+    "rules": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "rules",
+    "errors",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tag-rules.show`. */
 export const TagRulesShowInputSchema = {
   "additionalProperties": false,
@@ -9783,6 +42180,25 @@ export const TagRulesShowInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tag-rules.show`. */
+export const TagRulesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "rule": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "rule"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -9803,10 +42219,85 @@ export const TagRulesTickInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tag-rules.tick`. */
+export const TagRulesTickReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "appliedActions": {
+      "type": "number"
+    },
+    "contacts": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "contactsProcessed": {
+      "type": "number"
+    },
+    "loadErrors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "matched": {
+      "type": "number"
+    },
+    "rulesLoaded": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "rulesLoaded",
+    "loadErrors",
+    "contactsProcessed",
+    "matched",
+    "appliedActions",
+    "contacts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tag-rules.validate`. */
 export const TagRulesValidateInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tag-rules.validate`. */
+export const TagRulesValidateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "errors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ruleCount": {
+      "type": "number"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "error"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "ruleCount",
+    "errors"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -9941,6 +42432,48 @@ export const TagsAttachInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tags.attach`. */
+export const TagsAttachReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "behaviorConsumers": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "binding": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "tag": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tags.create`. */
 export const TagsCreateInputSchema = {
   "additionalProperties": false,
@@ -9973,6 +42506,48 @@ export const TagsCreateInputSchema = {
   },
   "required": [
     "slug"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tags.create`. */
+export const TagsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "behaviorConsumers": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "binding": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "tag": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10104,6 +42679,31 @@ export const TagsDetachInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tags.detach`. */
+export const TagsDetachReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "const": "detached",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tags.list`. */
 export const TagsListInputSchema = {
   "additionalProperties": false,
@@ -10137,6 +42737,95 @@ export const TagsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tags.list`. */
+export const TagsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "filters": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "page": {
+      "additionalProperties": {},
+      "properties": {
+        "count": {
+          "type": "number"
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "order": {
+          "type": "string"
+        },
+        "sort": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "limit",
+        "count",
+        "hasMore",
+        "nextCursor",
+        "nextCommand",
+        "sort",
+        "order"
+      ],
+      "type": "object"
+    },
+    "tags": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "page",
+    "filters",
+    "items",
+    "tags"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -10284,6 +42973,104 @@ export const TagsSearchInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tags.search`. */
+export const TagsSearchReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "behaviorConsumers": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "bindings": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "filters": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "page": {
+      "additionalProperties": {},
+      "properties": {
+        "count": {
+          "type": "number"
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "order": {
+          "type": "string"
+        },
+        "sort": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "limit",
+        "count",
+        "hasMore",
+        "nextCursor",
+        "nextCommand",
+        "sort",
+        "order"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "page",
+    "filters",
+    "items",
+    "bindings",
+    "behaviorConsumers"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tags.set`. */
 export const TagsSetInputSchema = {
   "additionalProperties": false,
@@ -10309,6 +43096,48 @@ export const TagsSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tags.set`. */
+export const TagsSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "behaviorConsumers": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "binding": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "tag": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tags.show`. */
 export const TagsShowInputSchema = {
   "additionalProperties": false,
@@ -10320,6 +43149,40 @@ export const TagsShowInputSchema = {
   },
   "required": [
     "slug"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tags.show`. */
+export const TagsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "behaviorConsumers": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "bindings": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tag": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "tag",
+    "bindings",
+    "behaviorConsumers"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10339,6 +43202,28 @@ export const TasksArchiveInputSchema = {
   },
   "required": [
     "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.archive`. */
+export const TasksArchiveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "event"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10433,6 +43318,47 @@ export const TasksAutomationsAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.automations.add`. */
+export const TasksAutomationsAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "automation": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount",
+    "target",
+    "automation"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.automations.disable`. */
 export const TasksAutomationsDisableInputSchema = {
   "additionalProperties": false,
@@ -10448,6 +43374,47 @@ export const TasksAutomationsDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.automations.disable`. */
+export const TasksAutomationsDisableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "automation": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount",
+    "target",
+    "automation"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.automations.enable`. */
 export const TasksAutomationsEnableInputSchema = {
   "additionalProperties": false,
@@ -10459,6 +43426,47 @@ export const TasksAutomationsEnableInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.automations.enable`. */
+export const TasksAutomationsEnableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "automation": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount",
+    "target",
+    "automation"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10483,6 +43491,95 @@ export const TasksAutomationsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.automations.list`. */
+export const TasksAutomationsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "automations": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "filters": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "filters",
+    "automations"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.automations.rm`. */
 export const TasksAutomationsRmInputSchema = {
   "additionalProperties": false,
@@ -10498,6 +43595,47 @@ export const TasksAutomationsRmInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.automations.rm`. */
+export const TasksAutomationsRmReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "automation": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "changedCount",
+    "target",
+    "automation"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.automations.show`. */
 export const TasksAutomationsShowInputSchema = {
   "additionalProperties": false,
@@ -10509,6 +43647,31 @@ export const TasksAutomationsShowInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.automations.show`. */
+export const TasksAutomationsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "automation": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "runs": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "automation",
+    "runs"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10532,6 +43695,28 @@ export const TasksBlockInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.block`. */
+export const TasksBlockReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.comment`. */
 export const TasksCommentInputSchema = {
   "additionalProperties": false,
@@ -10548,6 +43733,34 @@ export const TasksCommentInputSchema = {
   "required": [
     "body",
     "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.comment`. */
+export const TasksCommentReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "comment": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "event",
+    "comment"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10653,6 +43866,91 @@ export const TasksCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.create`. */
+export const TasksCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "dependencies": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "dependents": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "launchPlan": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "parentTaskId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "readiness": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "relatedEvents": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "taskProfile": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "taskProfile",
+    "event",
+    "relatedEvents",
+    "parentTaskId",
+    "readiness",
+    "dependencies",
+    "dependents",
+    "launchPlan"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.deps.add`. */
 export const TasksDepsAddInputSchema = {
   "additionalProperties": false,
@@ -10669,6 +43967,28 @@ export const TasksDepsAddInputSchema = {
   "required": [
     "dependencyTaskId",
     "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.deps.add`. */
+export const TasksDepsAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "event"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10696,6 +44016,121 @@ export const TasksDepsLsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.deps.ls`. */
+export const TasksDepsLsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "dependencies": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "dependents": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "launchPlan": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "readiness": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "taskId",
+    "total",
+    "pagination",
+    "readiness",
+    "launchPlan",
+    "items",
+    "dependencies",
+    "dependents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.deps.rm`. */
 export const TasksDepsRmInputSchema = {
   "additionalProperties": false,
@@ -10712,6 +44147,28 @@ export const TasksDepsRmInputSchema = {
   "required": [
     "dependencyTaskId",
     "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.deps.rm`. */
+export const TasksDepsRmReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "event"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10767,6 +44224,37 @@ export const TasksDispatchInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.dispatch`. */
+export const TasksDispatchReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "readiness": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "mode",
+    "task",
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.done`. */
 export const TasksDoneInputSchema = {
   "additionalProperties": false,
@@ -10786,6 +44274,28 @@ export const TasksDoneInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.done`. */
+export const TasksDoneReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.fail`. */
 export const TasksFailInputSchema = {
   "additionalProperties": false,
@@ -10801,6 +44311,28 @@ export const TasksFailInputSchema = {
   },
   "required": [
     "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.fail`. */
+export const TasksFailReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "event"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -10893,6 +44425,65 @@ export const TasksListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.list`. */
+export const TasksListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "archiveMode": {
+      "type": "string"
+    },
+    "filters": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "page": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "tasks": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "archiveMode",
+    "limit",
+    "page",
+    "filters",
+    "items",
+    "tasks"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.profiles.init`. */
 export const TasksProfilesInitInputSchema = {
   "additionalProperties": false,
@@ -10917,6 +44508,28 @@ export const TasksProfilesInitInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.profiles.init`. */
+export const TasksProfilesInitReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "manifestPath": {
+      "type": "string"
+    },
+    "profileDir": {
+      "type": "string"
+    },
+    "sourceKind": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "sourceKind",
+    "profileDir",
+    "manifestPath"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.profiles.list`. */
 export const TasksProfilesListInputSchema = {
   "additionalProperties": false,
@@ -10930,6 +44543,89 @@ export const TasksProfilesListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.profiles.list`. */
+export const TasksProfilesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "profiles": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "profiles"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -10983,6 +44679,28 @@ export const TasksProfilesPreviewInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.profiles.preview`. */
+export const TasksProfilesPreviewReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "profile": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "rendered": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile",
+    "rendered"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.profiles.show`. */
 export const TasksProfilesShowInputSchema = {
   "additionalProperties": false,
@@ -10998,6 +44716,13 @@ export const TasksProfilesShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.profiles.show`. */
+export const TasksProfilesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.profiles.validate`. */
 export const TasksProfilesValidateInputSchema = {
   "additionalProperties": false,
@@ -11007,6 +44732,29 @@ export const TasksProfilesValidateInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.profiles.validate`. */
+export const TasksProfilesValidateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "results": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "valid": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid",
+    "results"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -11033,6 +44781,28 @@ export const TasksReportInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.report`. */
+export const TasksReportReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.show`. */
 export const TasksShowInputSchema = {
   "additionalProperties": false,
@@ -11052,6 +44822,88 @@ export const TasksShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tasks.show`. */
+export const TasksShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "comments": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "dependencies": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "dependents": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "historyLimit": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "launchPlan": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "readiness": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "events",
+    "comments",
+    "historyLimit",
+    "readiness",
+    "dependencies",
+    "dependents",
+    "launchPlan"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.unarchive`. */
 export const TasksUnarchiveInputSchema = {
   "additionalProperties": false,
@@ -11063,6 +44915,28 @@ export const TasksUnarchiveInputSchema = {
   },
   "required": [
     "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.unarchive`. */
+export const TasksUnarchiveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "event"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11086,6 +44960,32 @@ export const ThreadsBriefInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `threads.brief`. */
+export const ThreadsBriefReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "brief": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "thread": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "thread",
+    "brief"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `threads.close`. */
 export const ThreadsCloseInputSchema = {
   "additionalProperties": false,
@@ -11104,6 +45004,26 @@ export const ThreadsCloseInputSchema = {
     }
   },
   "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `threads.close`. */
+export const ThreadsCloseReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "thread": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
     "thread"
   ],
   "type": "object"
@@ -11133,6 +45053,32 @@ export const ThreadsCommentInputSchema = {
   "required": [
     "body",
     "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `threads.comment`. */
+export const ThreadsCommentReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "entry": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "thread": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "thread",
+    "entry"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11176,6 +45122,26 @@ export const ThreadsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `threads.create`. */
+export const ThreadsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "thread": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `threads.entries`. */
 export const ThreadsEntriesInputSchema = {
   "additionalProperties": false,
@@ -11199,6 +45165,35 @@ export const ThreadsEntriesInputSchema = {
   },
   "required": [
     "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `threads.entries`. */
+export const ThreadsEntriesReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "thread": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "thread",
+    "entries"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11239,6 +45234,32 @@ export const ThreadsLinkInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `threads.link`. */
+export const ThreadsLinkReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "link": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "thread": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "thread",
+    "link"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `threads.list`. */
 export const ThreadsListInputSchema = {
   "additionalProperties": false,
@@ -11271,6 +45292,81 @@ export const ThreadsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `threads.list`. */
+export const ThreadsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "const": "list",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "items",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `threads.note`. */
 export const ThreadsNoteInputSchema = {
   "additionalProperties": false,
@@ -11299,6 +45395,32 @@ export const ThreadsNoteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `threads.note`. */
+export const ThreadsNoteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "entry": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "thread": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "thread",
+    "entry"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `threads.show`. */
 export const ThreadsShowInputSchema = {
   "additionalProperties": false,
@@ -11322,6 +45444,44 @@ export const ThreadsShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `threads.show`. */
+export const ThreadsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "links": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "thread": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "thread",
+    "entries",
+    "links"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.list`. */
 export const ToolsListInputSchema = {
   "additionalProperties": false,
@@ -11338,6 +45498,114 @@ export const ToolsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tools.list`. */
+export const ToolsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "groups": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "tools"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "tools": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "groups",
+    "tools"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.manifest`. */
 export const ToolsManifestInputSchema = {
   "additionalProperties": false,
@@ -11345,10 +45613,49 @@ export const ToolsManifestInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tools.manifest`. */
+export const ToolsManifestReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "tools": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "tools"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.schema`. */
 export const ToolsSchemaInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tools.schema`. */
+export const ToolsSchemaReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "schema": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -11363,6 +45670,22 @@ export const ToolsShowInputSchema = {
   },
   "required": [
     "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tools.show`. */
+export const ToolsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "tool": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "tool"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11386,6 +45709,46 @@ export const ToolsTestInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `tools.test`. */
+export const ToolsTestReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "args": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "result": {
+      "additionalProperties": {},
+      "properties": {
+        "content": {
+          "items": {},
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "isError",
+        "content"
+      ],
+      "type": "object"
+    },
+    "tool": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "tool",
+    "args",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `transcribe.file`. */
 export const TranscribeFileInputSchema = {
   "additionalProperties": false,
@@ -11402,6 +45765,78 @@ export const TranscribeFileInputSchema = {
   },
   "required": [
     "path"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `transcribe.file`. */
+export const TranscribeFileReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "options": {
+      "additionalProperties": false,
+      "properties": {
+        "lang": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lang"
+      ],
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "filePath": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "number"
+        },
+        "sizeMB": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "filePath",
+        "mimeType",
+        "sizeBytes",
+        "sizeMB"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "transcription": {
+      "additionalProperties": {},
+      "properties": {
+        "chunks": {
+          "type": "number"
+        },
+        "duration": {
+          "type": "number"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "transcription",
+    "source",
+    "options"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11449,6 +45884,50 @@ export const TriggersAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `triggers.add`. */
+export const TriggersAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "trigger": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "trigger"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `triggers.disable`. */
 export const TriggersDisableInputSchema = {
   "additionalProperties": false,
@@ -11464,6 +45943,50 @@ export const TriggersDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `triggers.disable`. */
+export const TriggersDisableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "trigger": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "trigger"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `triggers.enable`. */
 export const TriggersEnableInputSchema = {
   "additionalProperties": false,
@@ -11475,6 +45998,50 @@ export const TriggersEnableInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `triggers.enable`. */
+export const TriggersEnableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "trigger": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "trigger"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11499,6 +46066,89 @@ export const TriggersListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `triggers.list`. */
+export const TriggersListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    },
+    "triggers": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "triggers"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `triggers.rm`. */
 export const TriggersRmInputSchema = {
   "additionalProperties": false,
@@ -11510,6 +46160,50 @@ export const TriggersRmInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `triggers.rm`. */
+export const TriggersRmReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "trigger": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "trigger"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11539,6 +46233,50 @@ export const TriggersSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `triggers.set`. */
+export const TriggersSetReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "trigger": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "trigger"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `triggers.show`. */
 export const TriggersShowInputSchema = {
   "additionalProperties": false,
@@ -11550,6 +46288,22 @@ export const TriggersShowInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `triggers.show`. */
+export const TriggersShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "trigger": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "trigger"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11569,10 +46323,73 @@ export const TriggersTestInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `triggers.test`. */
+export const TriggersTestReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "trigger": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "trigger"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `triggers.topics`. */
 export const TriggersTopicsInputSchema = {
   "additionalProperties": false,
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `triggers.topics`. */
+export const TriggersTopicsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "topics": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "topics"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -11599,6 +46416,73 @@ export const VideoAnalyzeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `video.analyze`. */
+export const VideoAnalyzeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "artifact": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "options": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "video": {
+      "additionalProperties": {},
+      "properties": {
+        "duration": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "topics": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "transcript": {
+          "type": "string"
+        },
+        "visualDescription": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "title",
+        "duration",
+        "summary",
+        "topics",
+        "transcript",
+        "visualDescription"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "artifact",
+    "video",
+    "options"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `watch.connectors`. */
 export const WatchConnectorsInputSchema = {
   "additionalProperties": false,
@@ -11608,6 +46492,38 @@ export const WatchConnectorsInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `watch.connectors`. */
+export const WatchConnectorsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "connectors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "connectors",
+    "items"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -11655,6 +46571,38 @@ export const WatchCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `watch.create`. */
+export const WatchCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "capabilities": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "next": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "watch": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "watch",
+    "capabilities",
+    "next"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `watch.disable`. */
 export const WatchDisableInputSchema = {
   "additionalProperties": false,
@@ -11666,6 +46614,26 @@ export const WatchDisableInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `watch.disable`. */
+export const WatchDisableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "status": {
+      "type": "string"
+    },
+    "watch": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "watch"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11685,6 +46653,26 @@ export const WatchEnableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `watch.enable`. */
+export const WatchEnableReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "status": {
+      "type": "string"
+    },
+    "watch": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "watch"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `watch.events`. */
 export const WatchEventsInputSchema = {
   "additionalProperties": false,
@@ -11696,6 +46684,34 @@ export const WatchEventsInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `watch.events`. */
+export const WatchEventsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "eventTypes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "subjects": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "watchId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "watchId",
+    "eventTypes",
+    "subjects"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11724,6 +46740,89 @@ export const WatchListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `watch.list`. */
+export const WatchListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    },
+    "watches": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "watches"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `watch.rm`. */
 export const WatchRmInputSchema = {
   "additionalProperties": false,
@@ -11734,6 +46833,24 @@ export const WatchRmInputSchema = {
     }
   },
   "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `watch.rm`. */
+export const WatchRmReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "deleted": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "deleted",
     "id"
   ],
   "type": "object"
@@ -11750,6 +46867,22 @@ export const WatchShowInputSchema = {
   },
   "required": [
     "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `watch.show`. */
+export const WatchShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "watch": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "watch"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11793,6 +46926,32 @@ export const WatchTriggerInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `watch.trigger`. */
+export const WatchTriggerReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "status": {
+      "type": "string"
+    },
+    "trigger": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "watch": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "watch",
+    "trigger"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.dm.ack`. */
 export const WhatsappDmAckInputSchema = {
   "additionalProperties": false,
@@ -11814,6 +46973,13 @@ export const WhatsappDmAckInputSchema = {
     "contact",
     "messageId"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `whatsapp.dm.ack`. */
+export const WhatsappDmAckReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -11845,6 +47011,13 @@ export const WhatsappDmReadInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.dm.read`. */
+export const WhatsappDmReadReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.dm.send`. */
 export const WhatsappDmSendInputSchema = {
   "additionalProperties": false,
@@ -11866,6 +47039,13 @@ export const WhatsappDmSendInputSchema = {
     "contact",
     "message"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `whatsapp.dm.send`. */
+export const WhatsappDmSendReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -11893,6 +47073,13 @@ export const WhatsappGroupAddInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.group.add`. */
+export const WhatsappGroupAddReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.group.create`. */
 export const WhatsappGroupCreateInputSchema = {
   "additionalProperties": false,
@@ -11901,9 +47088,35 @@ export const WhatsappGroupCreateInputSchema = {
       "description": "WhatsApp account ID",
       "type": "string"
     },
+    "admin": {
+      "description": "Phone numbers to add and promote as group admins. Can be repeated or comma-separated.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "admins": {
+      "description": "Alias for --admin",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "agent": {
       "description": "Agent to route this group chat to",
       "type": "string"
+    },
+    "agentCwd": {
+      "description": "CWD for --create-agent (default: ~/ravi/<agent>)",
+      "type": "string"
+    },
+    "agentProvider": {
+      "description": "Runtime provider id for --create-agent",
+      "type": "string"
+    },
+    "createAgent": {
+      "description": "Create --agent first when it does not exist",
+      "type": "boolean"
     },
     "name": {
       "description": "Group name/subject",
@@ -11912,12 +47125,23 @@ export const WhatsappGroupCreateInputSchema = {
     "participants": {
       "description": "Phone numbers to add (comma-separated)",
       "type": "string"
+    },
+    "skipTaggedAdmins": {
+      "description": "Do not auto-promote contacts tagged admin",
+      "type": "boolean"
     }
   },
   "required": [
     "name",
     "participants"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `whatsapp.group.create`. */
+export const WhatsappGroupCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -11945,6 +47169,13 @@ export const WhatsappGroupDemoteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.group.demote`. */
+export const WhatsappGroupDemoteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.group.description`. */
 export const WhatsappGroupDescriptionInputSchema = {
   "additionalProperties": false,
@@ -11969,6 +47200,13 @@ export const WhatsappGroupDescriptionInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.group.description`. */
+export const WhatsappGroupDescriptionReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.group.info`. */
 export const WhatsappGroupInfoInputSchema = {
   "additionalProperties": false,
@@ -11985,6 +47223,13 @@ export const WhatsappGroupInfoInputSchema = {
   "required": [
     "groupId"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `whatsapp.group.info`. */
+export const WhatsappGroupInfoReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12007,6 +47252,13 @@ export const WhatsappGroupInviteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.group.invite`. */
+export const WhatsappGroupInviteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.group.join`. */
 export const WhatsappGroupJoinInputSchema = {
   "additionalProperties": false,
@@ -12023,6 +47275,13 @@ export const WhatsappGroupJoinInputSchema = {
   "required": [
     "code"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `whatsapp.group.join`. */
+export const WhatsappGroupJoinReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12045,6 +47304,13 @@ export const WhatsappGroupLeaveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.group.leave`. */
+export const WhatsappGroupLeaveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.group.list`. */
 export const WhatsappGroupListInputSchema = {
   "additionalProperties": false,
@@ -12062,6 +47328,13 @@ export const WhatsappGroupListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `whatsapp.group.list`. */
+export const WhatsappGroupListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12089,6 +47362,13 @@ export const WhatsappGroupPromoteInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.group.promote`. */
+export const WhatsappGroupPromoteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.group.remove`. */
 export const WhatsappGroupRemoveInputSchema = {
   "additionalProperties": false,
@@ -12110,6 +47390,13 @@ export const WhatsappGroupRemoveInputSchema = {
     "groupId",
     "participants"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `whatsapp.group.remove`. */
+export const WhatsappGroupRemoveReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12137,6 +47424,13 @@ export const WhatsappGroupRenameInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.group.rename`. */
+export const WhatsappGroupRenameReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.group.revoke-invite`. */
 export const WhatsappGroupRevokeInviteInputSchema = {
   "additionalProperties": false,
@@ -12153,6 +47447,13 @@ export const WhatsappGroupRevokeInviteInputSchema = {
   "required": [
     "groupId"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `whatsapp.group.revoke-invite`. */
+export const WhatsappGroupRevokeInviteReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12187,6 +47488,13 @@ export const WhatsappGroupSendInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.group.send`. */
+export const WhatsappGroupSendReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `whatsapp.group.settings`. */
 export const WhatsappGroupSettingsInputSchema = {
   "additionalProperties": false,
@@ -12211,6 +47519,13 @@ export const WhatsappGroupSettingsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `whatsapp.group.settings`. */
+export const WhatsappGroupSettingsReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `workflows.runs.archive-node`. */
 export const WorkflowsRunsArchiveNodeInputSchema = {
   "additionalProperties": false,
@@ -12227,6 +47542,22 @@ export const WorkflowsRunsArchiveNodeInputSchema = {
   "required": [
     "nodeKey",
     "runId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `workflows.runs.archive-node`. */
+export const WorkflowsRunsArchiveNodeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -12251,6 +47582,22 @@ export const WorkflowsRunsCancelInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `workflows.runs.cancel`. */
+export const WorkflowsRunsCancelReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `workflows.runs.list`. */
 export const WorkflowsRunsListInputSchema = {
   "additionalProperties": false,
@@ -12264,6 +47611,89 @@ export const WorkflowsRunsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `workflows.runs.list`. */
+export const WorkflowsRunsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "runs": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "runs"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12287,6 +47717,22 @@ export const WorkflowsRunsReleaseInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `workflows.runs.release`. */
+export const WorkflowsRunsReleaseReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `workflows.runs.show`. */
 export const WorkflowsRunsShowInputSchema = {
   "additionalProperties": false,
@@ -12299,6 +47745,13 @@ export const WorkflowsRunsShowInputSchema = {
   "required": [
     "runId"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `workflows.runs.show`. */
+export const WorkflowsRunsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12322,6 +47775,22 @@ export const WorkflowsRunsSkipInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `workflows.runs.skip`. */
+export const WorkflowsRunsSkipReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `workflows.runs.start`. */
 export const WorkflowsRunsStartInputSchema = {
   "additionalProperties": false,
@@ -12338,6 +47807,13 @@ export const WorkflowsRunsStartInputSchema = {
   "required": [
     "specId"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `workflows.runs.start`. */
+export const WorkflowsRunsStartReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12362,6 +47838,22 @@ export const WorkflowsRunsTaskAttachInputSchema = {
     "nodeKey",
     "runId",
     "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `workflows.runs.task-attach`. */
+export const WorkflowsRunsTaskAttachReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -12411,6 +47903,35 @@ export const WorkflowsRunsTaskCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `workflows.runs.task-create`. */
+export const WorkflowsRunsTaskCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "task": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "workflow": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "task",
+    "workflow"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `workflows.specs.create`. */
 export const WorkflowsSpecsCreateInputSchema = {
   "additionalProperties": false,
@@ -12434,6 +47955,13 @@ export const WorkflowsSpecsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `workflows.specs.create`. */
+export const WorkflowsSpecsCreateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `workflows.specs.list`. */
 export const WorkflowsSpecsListInputSchema = {
   "additionalProperties": false,
@@ -12450,6 +47978,89 @@ export const WorkflowsSpecsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `workflows.specs.list`. */
+export const WorkflowsSpecsListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "specs": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "specs"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `workflows.specs.show`. */
 export const WorkflowsSpecsShowInputSchema = {
   "additionalProperties": false,
@@ -12462,5 +48073,12 @@ export const WorkflowsSpecsShowInputSchema = {
   "required": [
     "specId"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `workflows.specs.show`. */
+export const WorkflowsSpecsShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;

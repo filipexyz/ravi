@@ -172,7 +172,7 @@ ravi triggers add "Novo email local" --topic "ravi.inbox.mail.received"
 
 Mensagem salva pelo catálogo:
 ```
-[ravi mail] novo email no inbox: {{data.mail.messageId}}. Assunto: {{data.mail.subject}}. Use ravi mail messages read {{data.mail.messageId}} para ler.
+[ravi mail] novo email no inbox: {{data.mail.messageId}}. De: {{data.mail.fromText}}. Para: {{data.mail.toText}}. Assunto: {{data.mail.subject}}. Use ravi mail messages read {{data.mail.messageId}} para ler.
 ```
 
 Quando disparar, chega como:
@@ -180,7 +180,7 @@ Quando disparar, chega como:
 [Trigger: Novo email local]
 Event: ravi.inbox.mail.received
 
-[ravi mail] novo email no inbox: mail_msg_123. Assunto: Contrato assinado. Use ravi mail messages read mail_msg_123 para ler.
+[ravi mail] novo email no inbox: mail_msg_123. De: Alice <alice@example.com>. Para: nx-luis@ravi.bot. Assunto: Contrato assinado. Use ravi mail messages read mail_msg_123 para ler.
 ```
 
 ## Exemplos

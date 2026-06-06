@@ -5,9 +5,30 @@
 import "reflect-metadata";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { z } from "zod";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
+
+const transcribeFileReturnSchema = z.object({
+  success: z.literal(true),
+  transcription: z
+    .object({
+      text: z.string(),
+      duration: z.number().optional(),
+      chunks: z.number().optional(),
+    })
+    .passthrough(),
+  source: z.object({
+    filePath: z.string(),
+    mimeType: z.string(),
+    sizeBytes: z.number(),
+    sizeMB: z.number(),
+  }),
+  options: z.object({
+    lang: z.string(),
+  }),
+});
 
 const EXT_MIME: Record<string, string> = {
   ".ogg": "audio/ogg",
@@ -26,6 +47,7 @@ const EXT_MIME: Record<string, string> = {
 })
 export class TranscribeCommands {
   @Command({ name: "file", description: "Transcribe a local audio file" })
+  @Returns(transcribeFileReturnSchema)
   async file(
     @Arg("path", { description: "Path to audio file" }) filePath: string,
     @Option({ flags: "--lang <lang>", description: "Language code (default: pt)", defaultValue: "pt" }) _lang?: string,

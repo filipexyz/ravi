@@ -10,6 +10,9 @@ const ROOT_ID = "ravi-wa-overlay-root";
 const DRAWER_ID = "ravi-wa-overlay-drawer";
 const PROFILE_BUTTON_ID = "ravi-wa-profile-toggle";
 const PROFILE_MENU_ID = "ravi-wa-profile-menu";
+const VIBES_BUTTON_ID = "ravi-wa-vibes-toggle";
+const VIBES_MENU_ID = "ravi-wa-vibes-menu";
+const VIBES_COMPOSER_DRAFT_MIN_INTERVAL_MS = 120;
 const PANEL_TOGGLE_ID = "ravi-wa-panel-toggle";
 const PANEL_RAIL_TOGGLE_ID = "ravi-wa-panel-rail-toggle";
 const SESSION_MAIN_HOST_ID = "ravi-wa-session-main-host";
@@ -58,6 +61,14 @@ const WORKSPACE_NAV_ITEMS = [
   { id: "crm", label: "CRM", glyph: "C" },
   { id: "artifacts", label: "Artifacts", glyph: "A" },
   { id: "tasks", label: "Tasks", glyph: "T" },
+];
+const VIBES_SCENES = [
+  { id: "cinematic", label: "cin" },
+  { id: "techno", label: "tech" },
+  { id: "lofi", label: "lofi" },
+  { id: "chiptune", label: "chip" },
+  { id: "piano", label: "piano" },
+  { id: "jazz", label: "jazz" },
 ];
 const TASK_KANBAN_COLUMNS = [
   { id: "waiting", label: "waiting" },
@@ -155,6 +166,7 @@ let chatSessionEditorNotice = null;
 let chatSessionEditorInFlight = false;
 let preferredOmniInstance = loadPreferredOmniInstance();
 let profileMenuOpen = false;
+let vibesMenuOpen = false;
 let overlayPanelVisible = loadOverlayPanelVisible();
 let v3PlaceholdersEnabled = false;
 let selectedOmniChatId = null;
@@ -163,6 +175,9 @@ let selectedOmniRouteAgentId = null;
 let omniDraftSessionName = "";
 let omniDraftNewAgentId = "";
 let omniDraftNewAgentSessionName = "";
+let vibesStatus = null;
+let lastVibesComposerDraftAt = 0;
+let lastVibesComposerDraftLength = 0;
 let currentLayoutHost = null;
 let currentLayoutMain = null;
 let currentLayoutSideBranch = null;
@@ -240,9 +255,13 @@ function boot() {
   document.addEventListener("keydown", handleHumanChatListKeydown, true);
   document.addEventListener("pointerdown", handleChatSessionEditorOutsidePointerDown, true);
   document.addEventListener("keydown", handleChatSessionEditorKeydown, true);
+  document.addEventListener("pointerdown", handleVibesMenuOutsidePointerDown, true);
+  document.addEventListener("keydown", handleVibesMenuKeydown, true);
   document.addEventListener("pointerdown", handleProfileMenuOutsidePointerDown, true);
   document.addEventListener("keydown", handleProfileMenuKeydown, true);
   ensureShell();
+  initVibesControls();
+  initVibesComposerBridge();
   syncLayoutChrome();
   syncWorkspaceLauncher();
   ensureMessagePopover();
@@ -385,10 +404,12 @@ async function refreshSnapshot() {
     });
     if (!snapshot?.ok) {
       setBridgeErrorFromResponse(snapshot, "não consegui carregar o snapshot do Ravi");
+      silenceVibes("snapshot-error");
       return;
     }
     bridgeError = null;
     latestSnapshot = snapshot;
+    syncVibesFromSnapshot(snapshot, context);
     if (
       activeWorkspace === "ravi" &&
       shouldRenderSnapshot("snapshot:ravi", snapshot)
@@ -396,6 +417,7 @@ async function refreshSnapshot() {
       requestRender(snapshot, context);
     }
   } catch (error) {
+    silenceVibes("snapshot-runtime-error");
     handleRuntimeError(error);
   }
 }
@@ -4011,7 +4033,9 @@ function ensureShell() {
     existingRoot?.querySelector?.(`#${DRAWER_ID}`) &&
     existingRoot?.querySelector?.(`#${PANEL_TOGGLE_ID}`) &&
     existingRoot?.querySelector?.(`#${PANEL_RAIL_TOGGLE_ID}`) &&
-    existingRoot?.querySelector?.(`#${PROFILE_BUTTON_ID}`);
+    existingRoot?.querySelector?.(`#${PROFILE_BUTTON_ID}`) &&
+    existingRoot?.querySelector?.(`#${VIBES_BUTTON_ID}`) &&
+    existingRoot?.querySelector?.(`#${VIBES_MENU_ID}`);
   if (shellReady) return;
   existingRoot?.remove();
 
@@ -4036,6 +4060,19 @@ function ensureShell() {
         </div>
         <div class="ravi-wa-drawer-actions">
           <button
+            id="${VIBES_BUTTON_ID}"
+            class="ravi-wa-vibes-toggle"
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-pressed="false"
+            aria-label="Abrir vibes"
+            title="Abrir vibes"
+          >
+            <span class="ravi-wa-vibes-toggle__glyph" aria-hidden="true">♪</span>
+            <span class="ravi-wa-vibes-toggle__dot" aria-hidden="true"></span>
+          </button>
+          <button
             id="${PROFILE_BUTTON_ID}"
             class="ravi-wa-profile-toggle"
             type="button"
@@ -4056,6 +4093,7 @@ function ensureShell() {
           >
             ×
           </button>
+          <div id="${VIBES_MENU_ID}" class="ravi-wa-vibes-menu ravi-hidden" role="menu"></div>
           <div id="${PROFILE_MENU_ID}" class="ravi-wa-profile-menu ravi-hidden" role="menu"></div>
         </div>
       </div>
@@ -4089,10 +4127,16 @@ function ensureShell() {
   document.getElementById(PANEL_RAIL_TOGGLE_ID)?.addEventListener("click", () => {
     setOverlayPanelVisible(true);
   });
+  document.getElementById(VIBES_BUTTON_ID)?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await handleHeaderVibesClick();
+  });
   const profileToggle = document.getElementById(PROFILE_BUTTON_ID);
   profileToggle?.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
+    vibesMenuOpen = false;
     profileMenuOpen = !profileMenuOpen;
     syncHeaderConfigControls();
     if (profileMenuOpen) {
@@ -4111,9 +4155,22 @@ function handleProfileMenuOutsidePointerDown(event) {
   closeProfileMenu();
 }
 
+function handleVibesMenuOutsidePointerDown(event) {
+  if (!vibesMenuOpen) return;
+  const element = resolveEventElement(event.target);
+  if (!(element instanceof Element)) return;
+  if (element.closest(`#${VIBES_MENU_ID}, #${VIBES_BUTTON_ID}`)) return;
+  closeVibesMenu();
+}
+
 function handleProfileMenuKeydown(event) {
   if (!profileMenuOpen || event.key !== "Escape") return;
   closeProfileMenu();
+}
+
+function handleVibesMenuKeydown(event) {
+  if (!vibesMenuOpen || event.key !== "Escape") return;
+  closeVibesMenu();
 }
 
 function closeProfileMenu() {
@@ -4121,10 +4178,364 @@ function closeProfileMenu() {
   syncHeaderConfigControls();
 }
 
+function closeVibesMenu() {
+  vibesMenuOpen = false;
+  syncHeaderConfigControls();
+}
+
 function syncHeaderConfigControls() {
   syncOverlayPanelChrome();
+  syncHeaderVibesButton();
   syncHeaderProfileButton();
+  renderVibesMenu();
   renderProfileMenu();
+}
+
+function getVibesApi() {
+  return globalThis.__RAVI_WA_VIBES__ || null;
+}
+
+function initVibesControls() {
+  const api = getVibesApi();
+  if (!api?.init) {
+    syncHeaderVibesButton();
+    return;
+  }
+  api.onChange?.((status) => {
+    vibesStatus = status;
+    syncHeaderVibesButton();
+    if (vibesMenuOpen && !isVibesVolumeInputFocused()) {
+      renderVibesMenu();
+    }
+  });
+  api
+    .init({ document })
+    .then((status) => {
+      vibesStatus = status;
+      syncHeaderConfigControls();
+      syncVibesFromSnapshot(latestSnapshot, detectChatContext());
+    })
+    .catch(() => {
+      vibesStatus = null;
+      syncHeaderConfigControls();
+    });
+}
+
+function initVibesComposerBridge() {
+  document.addEventListener("input", handleVibesComposerInput, true);
+}
+
+function handleVibesComposerInput(event) {
+  const target = resolveEventElement(event.target);
+  const composer = resolveVibesComposerNode(target);
+  if (!composer) return;
+  syncVibesComposerDraft(composer);
+}
+
+function resolveVibesComposerNode(target) {
+  if (!(target instanceof HTMLElement)) return null;
+  if (target.matches("[data-ravi-session-compose-input]")) return target;
+  const overlayInput = target.closest(`#${ROOT_ID} input, #${ROOT_ID} textarea, #${ROOT_ID} [contenteditable="true"]`);
+  if (overlayInput) return null;
+  const nativeComposer = target.closest("footer [contenteditable='true'], div#main footer div[contenteditable='true']");
+  return nativeComposer instanceof HTMLElement ? nativeComposer : null;
+}
+
+function syncVibesComposerDraft(composer) {
+  const api = getVibesApi();
+  if (!api?.syncComposerDraft) return;
+
+  const length = readVibesComposerLength(composer);
+  const now = Date.now();
+  if (now - lastVibesComposerDraftAt < VIBES_COMPOSER_DRAFT_MIN_INTERVAL_MS && length === lastVibesComposerDraftLength) {
+    return;
+  }
+
+  lastVibesComposerDraftAt = now;
+  lastVibesComposerDraftLength = length;
+  vibesStatus = api.syncComposerDraft({
+    length,
+    context: detectChatContext(),
+  });
+  syncHeaderVibesButton();
+  if (vibesMenuOpen && !isVibesVolumeInputFocused()) {
+    renderVibesMenu();
+  }
+}
+
+function readVibesComposerLength(composer) {
+  if (composer instanceof HTMLInputElement || composer instanceof HTMLTextAreaElement) {
+    return composer.value.length;
+  }
+  return (composer.textContent || "").length;
+}
+
+async function handleHeaderVibesClick() {
+  const api = getVibesApi();
+  if (!api) return;
+  const status = vibesStatus || api.getStatus?.() || null;
+  try {
+    if (!status?.enabled || !status?.started) {
+      vibesStatus = await api.enableFromUserGesture?.();
+      syncVibesFromSnapshot(latestSnapshot, detectChatContext());
+      vibesMenuOpen = true;
+    } else {
+      vibesMenuOpen = !vibesMenuOpen;
+    }
+    profileMenuOpen = false;
+  } catch (error) {
+    console.warn("[RaviOverlay] vibes unavailable", error);
+    vibesStatus = api.getStatus?.() || null;
+    vibesMenuOpen = true;
+  }
+  syncHeaderConfigControls();
+}
+
+function syncHeaderVibesButton() {
+  const button = document.getElementById(VIBES_BUTTON_ID);
+  if (!(button instanceof HTMLElement)) return;
+  const api = getVibesApi();
+  const status = vibesStatus || api?.getStatus?.() || null;
+  const enabled = Boolean(status?.enabled);
+  const audible = Boolean(status?.audible);
+  const started = Boolean(status?.started);
+  const state = status?.state || "idle";
+  button.disabled = !api;
+  button.setAttribute("aria-pressed", enabled && started ? "true" : "false");
+  button.setAttribute("aria-expanded", vibesMenuOpen ? "true" : "false");
+  button.classList.toggle("ravi-wa-vibes-toggle--enabled", enabled);
+  button.classList.toggle("ravi-wa-vibes-toggle--audible", audible);
+  button.classList.toggle("ravi-wa-vibes-toggle--idle", state === "idle");
+  button.classList.toggle("ravi-wa-vibes-toggle--open", vibesMenuOpen);
+  button.setAttribute("data-vibes-state", state);
+  button.title = !api
+    ? "Vibes indisponível"
+    : `Vibes · ${enabled ? formatVibesStateLabel(state) : "off"}`;
+  button.setAttribute("aria-label", button.title);
+}
+
+function syncVibesFromSnapshot(snapshot, context) {
+  const api = getVibesApi();
+  if (!api?.syncSnapshot || !snapshot?.ok) return;
+  vibesStatus = api.syncSnapshot(snapshot, context || detectChatContext());
+  if (isVibesVolumeInputFocused()) {
+    syncHeaderVibesButton();
+  } else {
+    syncHeaderConfigControls();
+  }
+}
+
+function silenceVibes(reason) {
+  const api = getVibesApi();
+  if (!api?.silence) return;
+  api.silence(reason);
+  vibesStatus = api.getStatus?.() || null;
+  if (isVibesVolumeInputFocused()) {
+    syncHeaderVibesButton();
+  } else {
+    syncHeaderConfigControls();
+  }
+}
+
+function renderVibesMenu() {
+  const menu = document.getElementById(VIBES_MENU_ID);
+  if (!(menu instanceof HTMLElement)) return;
+  const api = getVibesApi();
+  const status = vibesStatus || api?.getStatus?.() || null;
+  menu.classList.toggle("ravi-hidden", !vibesMenuOpen);
+  if (!vibesMenuOpen) {
+    menu.innerHTML = "";
+    return;
+  }
+
+  const enabled = Boolean(status?.enabled);
+  const started = Boolean(status?.started);
+  const audible = Boolean(status?.audible);
+  const scene = status?.scene || "jazz";
+  const visual = status?.visual || {};
+  const state = status?.state || "idle";
+  const volume = Number.isFinite(Number(status?.volume)) ? Number(status.volume) : 0.18;
+  const voices = Array.isArray(status?.voices) ? status.voices : [];
+  const sceneLabel = VIBES_SCENES.find((item) => item.id === scene)?.label || scene;
+  const intensity = clampPercent(visual.intensity);
+  const tension = clampPercent(visual.tension);
+  const tempo = clampPercent(visual.cps);
+  const phases = ["idle", "prompting", "thinking", "working", "drop", "resolve"];
+  const activePhase = visual.phase || "idle";
+  const bars = buildVibesBars(visual, state, audible);
+
+  menu.style.setProperty("--ravi-vibes-accent", visual.accent || "#ff8a3d");
+  menu.style.setProperty("--ravi-vibes-accent-2", visual.accent2 || "#4a90d9");
+  menu.innerHTML = `
+    <div class="ravi-wa-vibes-panel" data-scene="${escapeAttribute(scene)}" data-vibes-state="${escapeAttribute(state)}">
+      <div class="ravi-wa-vibes-menu__head">
+        <span class="ravi-wa-vibes-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <div>
+          <strong>${escapeHtml(sceneLabel)}</strong>
+          <span>${escapeHtml(formatVibesStateLabel(state))}</span>
+        </div>
+        <button type="button" class="ravi-wa-vibes-play" data-ravi-vibes-power>
+          ${escapeHtml(enabled && started ? "stop" : "play")}
+        </button>
+      </div>
+      <div class="ravi-wa-vibes-scenes" role="group" aria-label="scene">
+        ${VIBES_SCENES.map((item) => `
+          <button
+            type="button"
+            class="ravi-wa-vibes-scene${item.id === scene ? " ravi-wa-vibes-scene--active" : ""}"
+            data-ravi-vibes-scene="${escapeAttribute(item.id)}"
+            aria-pressed="${item.id === scene ? "true" : "false"}"
+          >${escapeHtml(item.label)}</button>
+        `).join("")}
+      </div>
+      <div class="ravi-wa-vibes-volume">
+        <span>vol</span>
+        <input type="range" min="0" max="0.3" step="0.01" value="${escapeAttribute(volume.toFixed(2))}" data-ravi-vibes-volume />
+        <b>${escapeHtml(String(Math.round((volume / 0.3) * 100)))}</b>
+      </div>
+      <div class="ravi-wa-vibes-meters">
+        ${renderVibesMeter("intensity", intensity)}
+        ${renderVibesMeter("tension", tension)}
+        ${renderVibesMeter("tempo", tempo)}
+      </div>
+      <div class="ravi-wa-vibes-phase" aria-hidden="true">
+        ${phases.map((phase, index) => `
+          ${index ? `<span class="ravi-wa-vibes-phase__sep"></span>` : ""}
+          <span class="${phase === activePhase ? "is-active" : ""}" data-phase="${escapeAttribute(phase)}">${escapeHtml(phase)}</span>
+        `).join("")}
+      </div>
+      <div class="ravi-wa-vibes-bars" aria-hidden="true">${bars}</div>
+      ${renderVibesVoices(voices)}
+      <div class="ravi-wa-vibes-signals">
+        <span>${escapeHtml(status?.engine || "native")}</span>
+        <span>${escapeHtml(activePhase)}</span>
+        <span>${escapeHtml(`${visual.key || "c"}:${visual.scaleMode || "mode"}`)}</span>
+        <span>${escapeHtml(status?.bedActive ? "bed on" : "bed off")}</span>
+        <span>${escapeHtml(`voices ${voices.length || visual.voices || 1}`)}</span>
+        ${status?.profile?.provider ? `<span>${escapeHtml(shorten(status.profile.provider, 12))}</span>` : ""}
+        ${status?.profile?.pathBucket ? `<span>${escapeHtml(status.profile.extension || "path")}</span>` : ""}
+      </div>
+    </div>
+  `;
+
+  menu.querySelector("[data-ravi-vibes-power]")?.addEventListener("click", async () => {
+    if (!api) return;
+    if (enabled && started) {
+      vibesStatus = await api.disable?.();
+    } else {
+      vibesStatus = await api.enableFromUserGesture?.();
+      syncVibesFromSnapshot(latestSnapshot, detectChatContext());
+    }
+    syncHeaderConfigControls();
+  });
+  menu.querySelectorAll("[data-ravi-vibes-scene]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const nextScene = button.getAttribute("data-ravi-vibes-scene");
+      if (!nextScene || !api?.setScene) return;
+      vibesStatus = await api.setScene(nextScene);
+      await api.testAccent?.();
+      syncHeaderConfigControls();
+    });
+  });
+  menu.querySelector("[data-ravi-vibes-volume]")?.addEventListener("input", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || !api?.setVolume) return;
+    vibesStatus = await api.setVolume(target.value);
+    syncVibesVolumeLabel(target);
+    syncHeaderVibesButton();
+  });
+}
+
+function renderVibesVoices(voices) {
+  const lanes = Array.isArray(voices) ? voices.slice(0, 4) : [];
+  if (!lanes.length) return "";
+  return `
+    <div class="ravi-wa-vibes-voices" aria-label="session voices">
+      ${lanes.map((voice) => {
+        const role = voice?.role === "primary" ? "main" : "sub";
+        const state = voice?.state || "idle";
+        const level = Math.max(clampPercent(voice?.intensity), clampPercent(voice?.gain));
+        const pan = Number(voice?.pan);
+        const panLabel = Number.isFinite(pan) ? `${pan > 0 ? "R" : pan < 0 ? "L" : "C"}${Math.round(Math.abs(pan) * 10)}` : "C0";
+        return `
+          <div
+            class="ravi-wa-vibes-voice ravi-wa-vibes-voice--${escapeAttribute(role)}"
+            data-state="${escapeAttribute(state)}"
+            style="--voice-accent: ${escapeAttribute(voice?.accent || "var(--ravi-vibes-accent)")}; --voice-level: ${escapeAttribute(`${Math.max(8, level)}%`)}"
+          >
+            <span class="ravi-wa-vibes-voice__dot" aria-hidden="true"></span>
+            <b>${escapeHtml(shorten(voice?.label || role, 18))}</b>
+            <em>${escapeHtml(formatVibesStateLabel(state))}</em>
+            <i>${escapeHtml(panLabel)}</i>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function isVibesVolumeInputFocused() {
+  const active = document.activeElement;
+  return active instanceof HTMLInputElement && active.matches(`#${VIBES_MENU_ID} [data-ravi-vibes-volume]`);
+}
+
+function syncVibesVolumeLabel(input) {
+  const numeric = Number(input.value);
+  const bounded = Number.isFinite(numeric) ? Math.max(0, Math.min(0.3, numeric)) : 0;
+  const label = input.parentElement?.querySelector("b");
+  if (label) label.textContent = String(Math.round((bounded / 0.3) * 100));
+}
+
+function renderVibesMeter(label, percent) {
+  const value = Math.round(percent);
+  return `
+    <div class="ravi-wa-vibes-meter ravi-wa-vibes-meter--${escapeAttribute(label)}">
+      <div><span>${escapeHtml(label)}</span><b>${escapeHtml((value / 100).toFixed(2))}</b></div>
+      <i><em style="width: ${escapeAttribute(`${value}%`)}"></em></i>
+    </div>
+  `;
+}
+
+function buildVibesBars(visual, state, audible) {
+  const base = clampPercent(visual?.signalLevel ?? visual?.intensity ?? 0.12) / 100;
+  const tension = clampPercent(visual?.tension ?? 0) / 100;
+  const tempo = clampPercent(visual?.cps ?? 0.45) / 100;
+  const seed = String(state || "idle").split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return Array.from({ length: 18 }, (_, index) => {
+    const wave = Math.sin((seed + index * 7) * 0.72) * 0.5 + 0.5;
+    const motion = audible ? 0.18 : 0.06;
+    const height = Math.max(10, Math.min(100, Math.round((0.18 + base * 0.58 + wave * 0.24 + tension * 0.16 + tempo * motion) * 100)));
+    return `<i style="height: ${escapeAttribute(`${height}%`)}"></i>`;
+  }).join("");
+}
+
+function clampPercent(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(100, Math.round(numeric * 100)));
+}
+
+function formatVibesStateLabel(state) {
+  switch (state) {
+    case "queued":
+      return "fila";
+    case "thinking":
+      return "pensando";
+    case "tooling":
+      return "tool";
+    case "responding":
+      return "respondendo";
+    case "awaiting-approval":
+      return "aprovação";
+    case "compacting":
+      return "compactando";
+    case "failed":
+      return "falhou";
+    case "interrupted":
+      return "interrompido";
+    default:
+      return "idle";
+  }
 }
 
 function syncOverlayPanelChrome() {
@@ -4147,6 +4558,7 @@ function setOverlayPanelVisible(visible) {
   overlayPanelVisible = Boolean(visible);
   if (!overlayPanelVisible) {
     profileMenuOpen = false;
+    vibesMenuOpen = false;
     closeMessagePopover();
   }
   persistOverlayPanelVisible(overlayPanelVisible);

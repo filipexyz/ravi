@@ -24,6 +24,26 @@ export interface RaviAppManifest {
   [key: string]: unknown;
 }
 
+export type RaviAppOperationInterface = "builtin" | "cli" | "sdk" | "tool" | "stream";
+
+export interface RaviAppOperationDeclaration {
+  interface: RaviAppOperationInterface;
+  handler?: string;
+  command?: string;
+  namespace?: string;
+  method?: string;
+  name?: string;
+  channel?: string;
+  aliases?: string[];
+  mutating?: boolean;
+  permission?: string;
+  permissions?: string[];
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  json?: boolean;
+  [key: string]: unknown;
+}
+
 export interface RaviAppManifestRecord {
   id: string;
   name: string | null;
@@ -63,4 +83,95 @@ export interface RaviAppCheckResult {
   ok: boolean;
   errors: string[];
   warnings: string[];
+}
+
+export type RaviAppScaffoldFileKind = "manifest" | "spec" | "skill";
+export type RaviAppScaffoldFileAction = "planned" | "created" | "overwritten";
+
+export interface RaviAppScaffoldOptions {
+  id: string;
+  name?: string;
+  description?: string;
+  command?: string;
+  cwd?: string;
+  dryRun?: boolean;
+  force?: boolean;
+  includeUi?: boolean;
+  includeSkill?: boolean;
+  includeSpec?: boolean;
+}
+
+export interface RaviAppScaffoldFileResult {
+  kind: RaviAppScaffoldFileKind;
+  path: string;
+  action: RaviAppScaffoldFileAction;
+}
+
+export interface RaviAppScaffoldResult {
+  id: string;
+  name: string;
+  description: string;
+  command: string;
+  dryRun: boolean;
+  force: boolean;
+  manifestPath: string;
+  specPath: string | null;
+  skillPath: string | null;
+  skill: string | null;
+  files: RaviAppScaffoldFileResult[];
+  manifest: RaviAppManifest;
+  nextCommands: string[];
+}
+
+export interface RaviAppsGuidePrompt {
+  id: string;
+  title: string;
+  prompt: string;
+  commands: string[];
+}
+
+export interface RaviAppsGuideResult {
+  appId: string | null;
+  app: RaviAppManifestRecord | null;
+  skill: string;
+  skillGate: {
+    group: string;
+    skill: string;
+  };
+  prompts: RaviAppsGuidePrompt[];
+  nextCommands: string[];
+}
+
+export interface RaviAppRunOptions extends RaviAppDiscoveryOptions {
+  appId: string;
+  operation?: string;
+  args?: string[];
+  json?: boolean;
+  staticRootCommands?: Set<string>;
+}
+
+export interface RaviAppRunResult {
+  ok: boolean;
+  appId: string | null;
+  operation: string | null;
+  operationId: string | null;
+  interface: RaviAppOperationInterface | null;
+  mutating: boolean;
+  status: "completed" | "failed";
+  durationMs: number;
+  result?: unknown;
+  error?: string;
+  command?: string;
+  handler?: string;
+  channel?: string;
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
+}
+
+export interface RaviAppAliasInvocation {
+  appId: string;
+  operation?: string;
+  args: string[];
+  json: boolean;
 }

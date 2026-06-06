@@ -3,6 +3,15 @@ import { readFileSync, statSync } from "node:fs";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import {
+  declareCommandReturns,
+  tagRuleShowReturnSchema,
+  tagRulesEvaluateReturnSchema,
+  tagRulesExplainReturnSchema,
+  tagRulesListReturnSchema,
+  tagRulesTickReturnSchema,
+  tagRulesValidateReturnSchema,
+} from "./operational-return-schemas.js";
+import {
   evaluateRulesForContact,
   loadTagRulesFromDirectory,
   parseTagRuleFromString,
@@ -264,3 +273,12 @@ export class TagRulesCommands {
     return payload;
   }
 }
+
+declareCommandReturns(TagRulesCommands, {
+  evaluate: tagRulesEvaluateReturnSchema,
+  explain: tagRulesExplainReturnSchema,
+  list: tagRulesListReturnSchema,
+  show: tagRuleShowReturnSchema,
+  tick: tagRulesTickReturnSchema,
+  validate: tagRulesValidateReturnSchema,
+});

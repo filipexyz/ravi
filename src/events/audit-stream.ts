@@ -32,6 +32,7 @@ export const RAVI_EVENTS_SUBJECTS = [
   "ravi.whatsapp.>",
   "ravi.config.changed",
   "ravi.triggers.>",
+  "ravi.sessions.followup.>",
   "ravi.cron.>",
   "ravi.heartbeat.>",
   "ravi._cli.cli.>",

@@ -10,6 +10,7 @@ capabilities:
   - permissions
   - interfaces
   - operations
+  - routing
   - health
 tags:
   - apps
@@ -72,6 +73,9 @@ Canonical manifest protocol: `ravi.app/v1`.
   checks MUST be safe, non-destructive, and support `--json` when CLI-backed.
 - A manifest MAY declare top-level `operations` for UI, SDK, agent, or
   automation use. UI queries and actions MUST reference declared operations.
+- A manifest MAY declare operations with `interface: "builtin"` for
+  router-owned allowlisted operations such as app help, manifest show, or
+  manifest check.
 - App UI declarations MUST satisfy `apps/ui`. They MUST NOT include raw CSS,
   HTML, JavaScript, React components, class names, Tailwind classes, or frontend
   bundles in `ravi.app/v1`.
@@ -98,7 +102,7 @@ The initial manifest contract is:
     "cli": {
       "command": "ravi music",
       "json": true,
-      "health": "ravi music check --json"
+      "health": "musicctl check --json"
     },
     "sdk": {
       "namespace": "music"
@@ -142,15 +146,25 @@ The initial manifest contract is:
     }
   },
   "operations": {
+    "music.help": {
+      "interface": "builtin",
+      "handler": "apps.help",
+      "mutating": false
+    },
+    "music.manifest.show": {
+      "interface": "builtin",
+      "handler": "apps.manifest.show",
+      "mutating": false
+    },
     "music.library.list": {
       "interface": "cli",
-      "command": "ravi music library list --json",
+      "command": "musicctl library list --json",
       "mutating": false,
       "outputSchema": "schemas/music-library-list.v1.json"
     },
     "music.library.sync": {
       "interface": "cli",
-      "command": "ravi music library sync --json",
+      "command": "musicctl library sync --json",
       "mutating": true,
       "permission": "music:write",
       "outputSchema": "schemas/music-library-sync.v1.json"
@@ -220,6 +234,8 @@ during indexing.
 - `interfaces.cli.command` SHOULD reference the canonical user/operator
   command. CLI-backed apps SHOULD satisfy `apps/cli`.
 - `interfaces.cli.json` SHOULD be true for machine-consumed CLIs.
+- `interfaces.cli.health`, when present as an executable command, MUST NOT
+  point back to the same app dynamic alias such as `ravi <app-id> check`.
 - `interfaces.sdk.namespace` SHOULD match the generated SDK namespace when the
   app is exposed through the SDK gateway.
 - `interfaces.stream.channels` SHOULD list stream/control channels for
@@ -239,8 +255,13 @@ during indexing.
   automations.
 - Operation ids SHOULD be fully qualified dot ids such as `apps.list` or
   `music.library.sync`.
-- Each operation MUST declare `interface` as `cli`, `sdk`, `tool`, or `stream`.
+- Each operation MUST declare `interface` as `builtin`, `cli`, `sdk`, `tool`,
+  or `stream`.
+- Builtin operations MUST declare an allowlisted router `handler`.
 - CLI operations MUST declare `command` and SHOULD support `--json`.
+- CLI operations MUST NOT command back into their own public dynamic alias,
+  such as `ravi <app-id> <operation>`, because that recursively re-enters the
+  app router.
 - SDK operations MUST declare `namespace` and `method`.
 - Tool operations MUST declare `name`.
 - Stream operations MUST declare `channel`.
@@ -317,6 +338,12 @@ during indexing.
   component, HTML, JavaScript, class, Tailwind, or bundle keys.
 - Manifest validation MUST fail when operations have malformed ids, undeclared
   interface targets, invalid target metadata, or invalid `mutating` shape.
+- Manifest validation MUST fail when router-executed CLI operations recursively
+  point at `ravi <app-id> ...` for the same app id.
+- Manifest validation MUST fail when executable health commands recursively
+  point at `ravi <app-id> check` for the same app id.
+- Manifest validation MUST fail when builtin operations use handlers outside
+  the router allowlist.
 - Manifest validation SHOULD warn on missing health checks, missing skill for
   agent-operated apps, missing storage ownership for stateful apps, missing
   event declarations for eventful apps, and human-only CLI interfaces.
@@ -347,3 +374,7 @@ during indexing.
   Web OS design system.
 - Defining an app in prose only, with no manifest that UIs, agents, and SDKs can
   inspect.
+- Declaring router-owned operations as CLI commands that call the same dynamic
+  alias and recurse forever.
+- Declaring health checks as the same dynamic app check command and causing
+  check recursion.

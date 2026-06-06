@@ -13,6 +13,7 @@
 import { getDb, dbListAgents } from "../router/router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
+import { resolvePermissionDenialsForGrant } from "./denials.js";
 const log = logger.child("permissions:relations");
 
 // ============================================================================
@@ -105,6 +106,13 @@ export function grantRelation(
     ON CONFLICT(subject_type, subject_id, relation, object_type, object_id) DO UPDATE SET
       source = excluded.source
   `).run(subjectType, subjectId, relation, objectType, objectId, source, Math.floor(Date.now() / 1000));
+
+  if (source === "manual") {
+    const granted = listRelations({ subjectType, subjectId, relation, objectType, objectId })[0];
+    if (granted) {
+      resolvePermissionDenialsForGrant(granted);
+    }
+  }
 }
 
 /**

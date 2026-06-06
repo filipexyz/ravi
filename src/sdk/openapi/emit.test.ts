@@ -29,6 +29,10 @@ class DemoCommands {
 
   @Command({ name: "noop", description: "No inputs, no return" })
   noop() {}
+
+  @Command({ name: "download", description: "Download binary payload" })
+  @Returns.binary()
+  download() {}
 }
 
 @Group({ name: "demo.nested", description: "Nested demo", scope: "admin" })
@@ -120,6 +124,18 @@ describe("openapi emit", () => {
     const schema = noopOp.responses["200"]!.content!["application/json"].schema as Record<string, unknown>;
     expect(schema.type).toBe("object");
     expect(schema.additionalProperties).toBe(true);
+  });
+
+  it("emits binary content when @Returns.binary is declared", () => {
+    const spec = emit(fixture());
+    const downloadOp = spec.paths["/api/v1/demo/download"]!.post;
+    const response = downloadOp.responses["200"]!;
+    expect(response.description).toContain("@Returns.binary()");
+    expect(response.content?.["application/json"]).toBeUndefined();
+    expect(response.content?.["application/octet-stream"]?.schema).toEqual({
+      type: "string",
+      format: "binary",
+    });
   });
 
   it("emits a flat body merging args + options at top level", () => {

@@ -2,6 +2,14 @@ import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
+  declareCommandReturns,
+  tagDetachReturnSchema,
+  tagMutationReturnSchema,
+  tagShowReturnSchema,
+  tagsListReturnSchema,
+  tagsSearchReturnSchema,
+} from "./operational-return-schemas.js";
+import {
   decodeListCursor,
   encodeListCursor,
   parseListLimit,
@@ -1042,3 +1050,13 @@ export class TagCommands {
     return payload;
   }
 }
+
+declareCommandReturns(TagCommands, {
+  attach: tagMutationReturnSchema,
+  create: tagMutationReturnSchema,
+  detach: tagDetachReturnSchema,
+  list: tagsListReturnSchema,
+  search: tagsSearchReturnSchema,
+  set: tagMutationReturnSchema,
+  show: tagShowReturnSchema,
+});

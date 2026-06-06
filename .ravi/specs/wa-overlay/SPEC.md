@@ -6,6 +6,7 @@ domain: wa-overlay
 capabilities:
   - auth
   - migration
+  - vibes
   - voice
 tags:
   - extension
@@ -35,6 +36,7 @@ The overlay owns:
 - local browser storage for overlay UI preferences and active gateway selection;
 - SDK calls to Ravi gateway;
 - display of chat/session/agent state;
+- optional local sonification of Ravi activity state;
 - browser-only media capture when a feature such as voice requires it.
 
 The overlay does NOT own:
@@ -53,3 +55,4 @@ The overlay does NOT own:
 - The overlay MUST NOT create parallel local state that becomes source of truth for sessions, chats, agents, or voice sessions.
 - The overlay SHOULD keep controls compact and avoid replacing WhatsApp Web primary layout unless explicitly toggled.
 - Provider-specific UI labels SHOULD be presentation only; backend decisions MUST use Ravi semantic ids and transport ids.
+- Optional audio feedback MUST be local, explicitly enabled by the operator, and derived from already-authorized gateway streams.

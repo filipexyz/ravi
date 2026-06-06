@@ -3,7 +3,8 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { z } from "zod";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -24,6 +25,91 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+const paginationSchema = z.object({
+  limit: z.number(),
+  offset: z.number(),
+  returned: z.number(),
+  total: z.number(),
+  hasMore: z.boolean(),
+  nextOffset: z.number().nullable(),
+  nextCommand: z.string().nullable(),
+});
+
+const relationFilterSchema = z
+  .object({
+    subjectType: z.string().optional(),
+    subjectId: z.string().optional(),
+    relation: z.string().optional(),
+    objectType: z.string().optional(),
+    objectId: z.string().optional(),
+    source: z.string().optional(),
+  })
+  .passthrough();
+
+const relationSchema = z
+  .object({
+    id: z.string().optional(),
+    subjectType: z.string(),
+    subjectId: z.string(),
+    subject: z.string(),
+    relation: z.string(),
+    objectType: z.string(),
+    objectId: z.string(),
+    object: z.string(),
+    source: z.string().optional(),
+    objectMembers: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
+const relationTargetSchema = z.object({ type: z.string() }).passthrough();
+const warningSchema = z.record(z.string(), z.unknown());
+
+const permissionMutationBaseSchema = z.object({
+  target: relationTargetSchema,
+  changedCount: z.number(),
+});
+
+const permissionsGrantReturnSchema = permissionMutationBaseSchema.extend({
+  status: z.literal("granted"),
+  relation: relationSchema,
+  warnings: z.array(warningSchema),
+});
+
+const permissionsRevokeReturnSchema = permissionMutationBaseSchema.extend({
+  status: z.literal("revoked"),
+  relation: relationSchema,
+  remainingIndividualRelations: z.array(relationSchema),
+});
+
+const permissionsCheckReturnSchema = z.object({
+  subject: z.object({ raw: z.string(), type: z.string(), id: z.string() }),
+  permission: z.string(),
+  object: z.object({ raw: z.string(), type: z.string(), id: z.string() }),
+  allowed: z.boolean(),
+});
+
+const permissionsListReturnSchema = z.object({
+  total: z.number(),
+  pagination: paginationSchema,
+  filter: relationFilterSchema,
+  items: z.array(relationSchema),
+  relations: z.array(relationSchema),
+});
+
+const permissionsSyncReturnSchema = permissionMutationBaseSchema.extend({
+  status: z.literal("synced"),
+  relations: z.array(relationSchema),
+});
+
+const permissionsInitReturnSchema = permissionMutationBaseSchema.extend({
+  status: z.literal("applied"),
+  relations: z.array(relationSchema),
+});
+
+const permissionsClearReturnSchema = permissionMutationBaseSchema.extend({
+  status: z.literal("cleared"),
+});
+
 @Group({
   name: "permissions",
   description: "REBAC permission management",
@@ -31,6 +117,7 @@ function printJson(payload: unknown): void {
 })
 export class PermissionsCommands {
   @Command({ name: "grant", description: "Grant a relation" })
+  @Returns(permissionsGrantReturnSchema)
   grant(
     @Arg("subject", { description: "Subject (e.g., agent:dev)" }) subject: string,
     @Arg("relation", { description: "Relation (e.g., admin, access, execute, write_contacts)" }) relation: string,
@@ -108,6 +195,7 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a relation" })
+  @Returns(permissionsRevokeReturnSchema)
   revoke(
     @Arg("subject", { description: "Subject (e.g., agent:dev)" }) subject: string,
     @Arg("relation", { description: "Relation" }) relation: string,
@@ -166,6 +254,7 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "check", description: "Check if a subject has a permission on an object" })
+  @Returns(permissionsCheckReturnSchema)
   check(
     @Arg("subject", { description: "Subject (e.g., agent:dev)" }) subject: string,
     @Arg("permission", { description: "Permission (e.g., execute, access, admin)" }) permission: string,
@@ -193,6 +282,7 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "list", description: "List relations" })
+  @Returns(permissionsListReturnSchema)
   list(
     @Option({ flags: "--subject <s>", description: "Filter by subject (e.g., agent:dev)" }) subject?: string,
     @Option({ flags: "--object <o>", description: "Filter by object (e.g., group:contacts)" }) object?: string,
@@ -285,6 +375,7 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "sync", description: "Re-sync relations from agent configs" })
+  @Returns(permissionsSyncReturnSchema)
   sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     syncRelationsFromConfig();
     const relations = listRelations({ source: "config" });
@@ -303,6 +394,7 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "init", description: "Apply a permission template to an agent" })
+  @Returns(permissionsInitReturnSchema)
   init(
     @Arg("subject", { description: "Subject (e.g., agent:dev)" }) subject: string,
     @Arg("template", { description: "Template: sdk-tools, all-tools, safe-executables, full-access, tool-groups" })
@@ -407,6 +499,7 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "clear", description: "Clear all manual relations" })
+  @Returns(permissionsClearReturnSchema)
   clear(
     @Option({ flags: "--all", description: "Clear ALL relations (including config)" }) all?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -442,6 +535,7 @@ const VALID_RELATIONS = new Set([
   "read_tagged_contacts", // contacts: (agent, read_tagged_contacts, system, tag)
   "read_contact", // contacts: (agent, read_contact, contact, id)
   "view", // agents: (agent, view, agent, id)
+  "member", // roles: (contact, member, role, operators)
 ]);
 
 /** Valid entity types for relations */
@@ -457,6 +551,8 @@ const VALID_ENTITY_TYPES = new Set([
   "tool",
   "executable",
   "toolgroup",
+  "chat",
+  "role",
 ]);
 
 /**

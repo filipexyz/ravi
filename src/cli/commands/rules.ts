@@ -1,7 +1,9 @@
 import "reflect-metadata";
 import { resolve } from "node:path";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { z } from "zod";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
+import { looseObjectSchema } from "../return-schemas.js";
 import {
   importRaviRules,
   listRaviRulesImportSources,
@@ -12,6 +14,31 @@ import {
 } from "../../runtime/ravi-rules.js";
 
 type SerializedImportCandidate = Omit<RaviRulesImportCandidate, "content">;
+
+const rulesSourcesReturnSchema = z.object({
+  cwd: z.string(),
+  provider: z.enum(["all", "claude", "agents"]),
+  includeUser: z.boolean(),
+  sources: z.array(looseObjectSchema),
+  counts: z.object({
+    sources: z.number(),
+    existingSources: z.number(),
+    missingSources: z.number(),
+  }),
+});
+
+const rulesImportReturnSchema = z
+  .object({
+    cwd: z.string(),
+    includeUser: z.boolean(),
+    write: z.boolean(),
+    force: z.boolean(),
+    rulesDir: z.string(),
+    sources: z.array(looseObjectSchema),
+    candidates: z.array(looseObjectSchema),
+    counts: looseObjectSchema,
+  })
+  .passthrough();
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -54,6 +81,7 @@ function formatSourceStatus(source: RaviRulesImportSource): string {
 })
 export class RulesCommands {
   @Command({ name: "sources", description: "List importable provider rule sources" })
+  @Returns(rulesSourcesReturnSchema)
   async sources(
     @Arg("source", { required: false, description: "Source provider: all, claude, agents", defaultValue: "all" })
     source?: string,
@@ -99,6 +127,7 @@ export class RulesCommands {
   }
 
   @Command({ name: "import", description: "Import provider rules into .ravi/rules/imported" })
+  @Returns(rulesImportReturnSchema)
   async importRules(
     @Arg("source", { required: false, description: "Source provider: all, claude, agents", defaultValue: "all" })
     source?: string,

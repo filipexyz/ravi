@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { spawn } from "node:child_process";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
 
 @Group({
   name: "service",
@@ -13,6 +13,7 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 })
 export class ServiceCommands {
   @Command({ name: "start", description: "Start the bot server" })
+  @CliOnly()
   start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const command = "bun";
     const args = ["src/index.ts"];
@@ -59,6 +60,7 @@ export class ServiceCommands {
   }
 
   @Command({ name: "tui", description: "Start the TUI interface" })
+  @CliOnly()
   tui(
     @Arg("session", {
       required: false,
@@ -108,6 +110,7 @@ export class ServiceCommands {
   }
 
   @Command({ name: "wa", description: "Start WhatsApp gateway (deprecated — use daemon start)" })
+  @CliOnly()
   wa(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const payload = {
       success: true,

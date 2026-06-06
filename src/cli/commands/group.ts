@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { Group, Command, Arg, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import { requestReply } from "../../utils/request-reply.js";
 import { findContactsByTag, getContact, getContactById, normalizePhone, searchContacts } from "../../contacts.js";
 import {
@@ -1078,3 +1079,21 @@ export class GroupCommands {
     return payload;
   }
 }
+
+declareCommandReturns(GroupCommands, {
+  add: commandEnvelopeReturnSchema,
+  create: commandEnvelopeReturnSchema,
+  demote: commandEnvelopeReturnSchema,
+  description: commandEnvelopeReturnSchema,
+  info: commandEnvelopeReturnSchema,
+  invite: commandEnvelopeReturnSchema,
+  join: commandEnvelopeReturnSchema,
+  leave: commandEnvelopeReturnSchema,
+  list: commandEnvelopeReturnSchema,
+  promote: commandEnvelopeReturnSchema,
+  remove: commandEnvelopeReturnSchema,
+  rename: commandEnvelopeReturnSchema,
+  revokeInvite: commandEnvelopeReturnSchema,
+  send: commandEnvelopeReturnSchema,
+  settings: commandEnvelopeReturnSchema,
+});

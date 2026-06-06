@@ -1,7 +1,13 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import {
+  hookListReturnSchema,
+  hookMutationReturnSchema,
+  hookShowReturnSchema,
+  hookTestReturnSchema,
+} from "./operational-return-schemas.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
 import {
   dbCreateHook,
@@ -177,6 +183,7 @@ function serializeHook(hook: HookRecord) {
 })
 export class HooksCommands {
   @Command({ name: "list", description: "List configured hooks" })
+  @Returns(hookListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical hook tag" }) tagSlug?: string,
@@ -247,6 +254,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "show", description: "Show hook details" })
+  @Returns(hookShowReturnSchema)
   show(
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -286,6 +294,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "create", description: "Create a new runtime hook", aliases: ["add"] })
+  @Returns(hookMutationReturnSchema)
   async create(
     @Arg("name", { description: "Hook name" }) name: string,
     @Option({ flags: "--event <name>", description: `Event: ${HOOK_EVENT_NAMES.join(", ")}` }) event?: string,
@@ -365,6 +374,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "enable", description: "Enable a hook" })
+  @Returns(hookMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -390,6 +400,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "disable", description: "Disable a hook" })
+  @Returns(hookMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -419,6 +430,7 @@ export class HooksCommands {
     description: "Delete a hook",
     aliases: ["delete", "remove"],
   })
+  @Returns(hookMutationReturnSchema)
   async remove(
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -444,6 +456,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "test", description: "Execute a hook once with a synthetic event" })
+  @Returns(hookTestReturnSchema)
   async test(
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw execution result" }) asJson?: boolean,

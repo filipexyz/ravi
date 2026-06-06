@@ -10,16 +10,103 @@ export type AdaptersListInput = {
   status?: string;
 };
 
-/** Return shape for `adapters.list`. (no @Returns declared) */
-export type AdaptersListReturn = unknown;
+/** Return shape for `adapters.list`. */
+export type AdaptersListReturn = {
+  adapters: Array<{
+    adapterId: string;
+    adapterName: string;
+    bind: {
+      agentId: string | null;
+      bound: boolean;
+      cliName: string | null;
+      contextId: string | null;
+      contextKey?: unknown;
+      sessionKey: string;
+      sessionName: string | null;
+      [k: string]: unknown;
+    };
+    diagnosticState: "live" | "dead" | "unbound" | "protocol-invalid" | "stopped" | "configured";
+    health: Record<string, unknown>;
+    lastCommand: (Record<string, unknown>) | null;
+    lastEvent: (Record<string, unknown>) | null;
+    lastProtocolError: (Record<string, unknown>) | null;
+    sessionKey: string;
+    sessionName: string | null;
+    status: string;
+    transport: string;
+    updatedAt: number;
+    [k: string]: unknown;
+  }>;
+  count: number;
+  items: Array<{
+    adapterId: string;
+    adapterName: string;
+    bind: {
+      agentId: string | null;
+      bound: boolean;
+      cliName: string | null;
+      contextId: string | null;
+      contextKey?: unknown;
+      sessionKey: string;
+      sessionName: string | null;
+      [k: string]: unknown;
+    };
+    diagnosticState: "live" | "dead" | "unbound" | "protocol-invalid" | "stopped" | "configured";
+    health: Record<string, unknown>;
+    lastCommand: (Record<string, unknown>) | null;
+    lastEvent: (Record<string, unknown>) | null;
+    lastProtocolError: (Record<string, unknown>) | null;
+    sessionKey: string;
+    sessionName: string | null;
+    status: string;
+    transport: string;
+    updatedAt: number;
+    [k: string]: unknown;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+};
 
 /** Input shape for `adapters.show`. */
 export type AdaptersShowInput = {
   adapterId: string;
 };
 
-/** Return shape for `adapters.show`. (no @Returns declared) */
-export type AdaptersShowReturn = unknown;
+/** Return shape for `adapters.show`. */
+export type AdaptersShowReturn = {
+  adapterId: string;
+  adapterName: string;
+  bind: {
+    agentId: string | null;
+    bound: boolean;
+    cliName: string | null;
+    contextId: string | null;
+    contextKey?: unknown;
+    sessionKey: string;
+    sessionName: string | null;
+    [k: string]: unknown;
+  };
+  diagnosticState: "live" | "dead" | "unbound" | "protocol-invalid" | "stopped" | "configured";
+  health: Record<string, unknown>;
+  lastCommand: (Record<string, unknown>) | null;
+  lastEvent: (Record<string, unknown>) | null;
+  lastProtocolError: (Record<string, unknown>) | null;
+  sessionKey: string;
+  sessionName: string | null;
+  status: string;
+  transport: string;
+  updatedAt: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.create`. */
 export type AgentsCreateInput = {
@@ -29,8 +116,15 @@ export type AgentsCreateInput = {
   provider?: string;
 };
 
-/** Return shape for `agents.create`. (no @Returns declared) */
-export type AgentsCreateReturn = unknown;
+/** Return shape for `agents.create`. */
+export type AgentsCreateReturn = {
+  action: "create";
+  agent: Record<string, unknown>;
+  changed: boolean;
+  permissions: Record<string, unknown>;
+  runtimeTarget: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.debounce`. */
 export type AgentsDebounceInput = {
@@ -38,8 +132,15 @@ export type AgentsDebounceInput = {
   ms?: string;
 };
 
-/** Return shape for `agents.debounce`. (no @Returns declared) */
-export type AgentsDebounceReturn = unknown;
+/** Return shape for `agents.debounce`. */
+export type AgentsDebounceReturn = {
+  action?: string;
+  agentId: string;
+  changed?: boolean;
+  debounceMs: number | null;
+  enabled: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.debug`. */
 export type AgentsDebugInput = {
@@ -48,16 +149,32 @@ export type AgentsDebugInput = {
   turns?: string;
 };
 
-/** Return shape for `agents.debug`. (no @Returns declared) */
-export type AgentsDebugReturn = unknown;
+/** Return shape for `agents.debug`. */
+export type AgentsDebugReturn = ({
+  agentId: string;
+  availableSessions: string[];
+  error: string;
+  [k: string]: unknown;
+}) | ({
+  entries: unknown[];
+  session: Record<string, unknown>;
+  transcript: Record<string, unknown>;
+  [k: string]: unknown;
+});
 
 /** Input shape for `agents.delete`. */
 export type AgentsDeleteInput = {
   id: string;
 };
 
-/** Return shape for `agents.delete`. (no @Returns declared) */
-export type AgentsDeleteReturn = unknown;
+/** Return shape for `agents.delete`. */
+export type AgentsDeleteReturn = {
+  action: "delete";
+  agentId: string;
+  before?: Record<string, unknown>;
+  changed: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.list`. */
 export type AgentsListInput = {
@@ -66,8 +183,25 @@ export type AgentsListInput = {
   tag?: string;
 };
 
-/** Return shape for `agents.list`. (no @Returns declared) */
-export type AgentsListReturn = unknown;
+/** Return shape for `agents.list`. */
+export type AgentsListReturn = {
+  agents: Array<Record<string, unknown>>;
+  defaultAgent: string;
+  filters: Record<string, unknown>;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.reset`. */
 export type AgentsResetInput = {
@@ -75,16 +209,32 @@ export type AgentsResetInput = {
   nameOrKey?: string;
 };
 
-/** Return shape for `agents.reset`. (no @Returns declared) */
-export type AgentsResetReturn = unknown;
+/** Return shape for `agents.reset`. */
+export type AgentsResetReturn = {
+  action: "reset";
+  agentId: string;
+  availableSessions?: string[];
+  changed: boolean;
+  count?: number;
+  reason?: string;
+  resetSessions?: Array<Record<string, unknown>>;
+  session?: Record<string, unknown>;
+  target: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.session`. */
 export type AgentsSessionInput = {
   id: string;
 };
 
-/** Return shape for `agents.session`. (no @Returns declared) */
-export type AgentsSessionReturn = unknown;
+/** Return shape for `agents.session`. */
+export type AgentsSessionReturn = {
+  agent: Record<string, unknown>;
+  sessions: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.set`. */
 export type AgentsSetInput = {
@@ -93,16 +243,28 @@ export type AgentsSetInput = {
   value: string;
 };
 
-/** Return shape for `agents.set`. (no @Returns declared) */
-export type AgentsSetReturn = unknown;
+/** Return shape for `agents.set`. */
+export type AgentsSetReturn = {
+  action: "set";
+  agent?: Record<string, unknown>;
+  agentId: string;
+  changed: boolean;
+  key: string;
+  value: unknown;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.show`. */
 export type AgentsShowInput = {
   id: string;
 };
 
-/** Return shape for `agents.show`. (no @Returns declared) */
-export type AgentsShowReturn = unknown;
+/** Return shape for `agents.show`. */
+export type AgentsShowReturn = {
+  agent: Record<string, unknown>;
+  permissionsCommand: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.spec-mode`. */
 export type AgentsSpecModeInput = {
@@ -110,8 +272,14 @@ export type AgentsSpecModeInput = {
   id: string;
 };
 
-/** Return shape for `agents.spec-mode`. (no @Returns declared) */
-export type AgentsSpecModeReturn = unknown;
+/** Return shape for `agents.spec-mode`. */
+export type AgentsSpecModeReturn = {
+  action?: string;
+  agentId: string;
+  changed?: boolean;
+  specMode: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `agents.sync-instructions`. */
 export type AgentsSyncInstructionsInput = {
@@ -119,8 +287,17 @@ export type AgentsSyncInstructionsInput = {
   materializeMissing?: boolean;
 };
 
-/** Return shape for `agents.sync-instructions`. (no @Returns declared) */
-export type AgentsSyncInstructionsReturn = unknown;
+/** Return shape for `agents.sync-instructions`. */
+export type AgentsSyncInstructionsReturn = {
+  alreadyCanonical: number;
+  incomplete: number;
+  manualReview: number;
+  migrated: number;
+  missing: number;
+  results: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `apps.check`. */
 export type AppsCheckInput = {
@@ -139,6 +316,49 @@ export type AppsCheckReturn = {
     source: "repo" | "plugin" | "state";
     warnings: string[];
   }>;
+};
+
+/** Input shape for `apps.guide`. */
+export type AppsGuideInput = {
+  id?: string;
+};
+
+/** Return shape for `apps.guide`. */
+export type AppsGuideReturn = {
+  app: ({
+    description: string | null;
+    errors: string[];
+    id: string;
+    interfaceNames: string[];
+    manifest: unknown | null;
+    name: string | null;
+    path: string;
+    permissions: {
+      mutating: string[];
+      optional: string[];
+      required: string[];
+    };
+    relativePath: string;
+    rootPath: string;
+    schema: string | null;
+    source: "repo" | "plugin" | "state";
+    valid: boolean;
+    version: string | null;
+    warnings: string[];
+  }) | null;
+  appId: string | null;
+  nextCommands: string[];
+  prompts: Array<{
+    commands: string[];
+    id: string;
+    prompt: string;
+    title: string;
+  }>;
+  skill: string;
+  skillGate: {
+    group: string;
+    skill: string;
+  };
 };
 
 /** Input shape for `apps.list`. */
@@ -202,6 +422,110 @@ export type AppsListReturn = {
   total: number;
 };
 
+/** Input shape for `apps.prompts`. */
+export type AppsPromptsInput = {
+  id?: string;
+};
+
+/** Return shape for `apps.prompts`. */
+export type AppsPromptsReturn = {
+  app: ({
+    description: string | null;
+    errors: string[];
+    id: string;
+    interfaceNames: string[];
+    manifest: unknown | null;
+    name: string | null;
+    path: string;
+    permissions: {
+      mutating: string[];
+      optional: string[];
+      required: string[];
+    };
+    relativePath: string;
+    rootPath: string;
+    schema: string | null;
+    source: "repo" | "plugin" | "state";
+    valid: boolean;
+    version: string | null;
+    warnings: string[];
+  }) | null;
+  appId: string | null;
+  nextCommands: string[];
+  prompts: Array<{
+    commands: string[];
+    id: string;
+    prompt: string;
+    title: string;
+  }>;
+  skill: string;
+  skillGate: {
+    group: string;
+    skill: string;
+  };
+};
+
+/** Input shape for `apps.run`. */
+export type AppsRunInput = {
+  args?: string[];
+  id: string;
+  operation?: string;
+};
+
+/** Return shape for `apps.run`. */
+export type AppsRunReturn = {
+  appId: string | null;
+  channel?: string;
+  command?: string;
+  durationMs: number;
+  error?: string;
+  exitCode?: number | null;
+  handler?: string;
+  interface: ("builtin" | "cli" | "sdk" | "tool" | "stream") | null;
+  mutating: boolean;
+  ok: boolean;
+  operation: string | null;
+  operationId: string | null;
+  result?: unknown;
+  status: "completed" | "failed";
+  stderr?: string;
+  stdout?: string;
+};
+
+/** Input shape for `apps.scaffold`. */
+export type AppsScaffoldInput = {
+  command?: string;
+  description?: string;
+  dryRun?: boolean;
+  force?: boolean;
+  id: string;
+  name?: string;
+  skipSkill?: boolean;
+  skipSpec?: boolean;
+  skipUi?: boolean;
+};
+
+/** Return shape for `apps.scaffold`. */
+export type AppsScaffoldReturn = {
+  command: string;
+  description: string;
+  dryRun: boolean;
+  files: Array<{
+    action: "planned" | "created" | "overwritten";
+    kind: "manifest" | "spec" | "skill";
+    path: string;
+  }>;
+  force: boolean;
+  id: string;
+  manifest: unknown;
+  manifestPath: string;
+  name: string;
+  nextCommands: string[];
+  skill: string | null;
+  skillPath: string | null;
+  specPath: string | null;
+};
+
 /** Input shape for `apps.show`. */
 export type AppsShowInput = {
   id: string;
@@ -237,8 +561,11 @@ export type ArtifactsArchiveInput = {
   id: string;
 };
 
-/** Return shape for `artifacts.archive`. (no @Returns declared) */
-export type ArtifactsArchiveReturn = unknown;
+/** Return shape for `artifacts.archive`. */
+export type ArtifactsArchiveReturn = {
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.attach`. */
 export type ArtifactsAttachInput = {
@@ -249,8 +576,11 @@ export type ArtifactsAttachInput = {
   targetType: string;
 };
 
-/** Return shape for `artifacts.attach`. (no @Returns declared) */
-export type ArtifactsAttachReturn = unknown;
+/** Return shape for `artifacts.attach`. */
+export type ArtifactsAttachReturn = {
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.blob`. */
 export type ArtifactsBlobInput = {
@@ -291,8 +621,14 @@ export type ArtifactsCreateInput = {
   uri?: string;
 };
 
-/** Return shape for `artifacts.create`. (no @Returns declared) */
-export type ArtifactsCreateReturn = unknown;
+/** Return shape for `artifacts.create`. */
+export type ArtifactsCreateReturn = {
+  artifact: Record<string, unknown>;
+  package?: Record<string, unknown>;
+  success: true;
+  version?: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.event`. */
 export type ArtifactsEventInput = {
@@ -304,16 +640,26 @@ export type ArtifactsEventInput = {
   status?: string;
 };
 
-/** Return shape for `artifacts.event`. (no @Returns declared) */
-export type ArtifactsEventReturn = unknown;
+/** Return shape for `artifacts.event`. */
+export type ArtifactsEventReturn = {
+  artifact?: Record<string, unknown>;
+  event: Record<string, unknown>;
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.events`. */
 export type ArtifactsEventsInput = {
   id: string;
 };
 
-/** Return shape for `artifacts.events`. (no @Returns declared) */
-export type ArtifactsEventsReturn = unknown;
+/** Return shape for `artifacts.events`. */
+export type ArtifactsEventsReturn = {
+  artifactId: string;
+  events: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.list`. */
 export type ArtifactsListInput = {
@@ -329,8 +675,40 @@ export type ArtifactsListInput = {
   task?: string;
 };
 
-/** Return shape for `artifacts.list`. (no @Returns declared) */
-export type ArtifactsListReturn = unknown;
+/** Return shape for `artifacts.list`. */
+export type ArtifactsListReturn = ({
+  artifacts: Array<Record<string, unknown>>;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+}) | ({
+  generatedAt: number;
+  items: Array<Record<string, unknown>>;
+  ok: true;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  query: Record<string, unknown>;
+  stats: Record<string, unknown>;
+  [k: string]: unknown;
+});
 
 /** Input shape for `artifacts.publish`. */
 export type ArtifactsPublishInput = {
@@ -354,8 +732,18 @@ export type ArtifactsPublishInput = {
   visibility?: string;
 };
 
-/** Return shape for `artifacts.publish`. (no @Returns declared) */
-export type ArtifactsPublishReturn = unknown;
+/** Return shape for `artifacts.publish`. */
+export type ArtifactsPublishReturn = {
+  artifact: unknown;
+  artifactVersion: unknown;
+  localSync?: Record<string, unknown>;
+  publish: unknown;
+  release: unknown;
+  routes: unknown[];
+  upload: Record<string, unknown>;
+  url: string | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.release.activate`. */
 export type ArtifactsReleaseActivateInput = {
@@ -366,8 +754,15 @@ export type ArtifactsReleaseActivateInput = {
   version?: string;
 };
 
-/** Return shape for `artifacts.release.activate`. (no @Returns declared) */
-export type ArtifactsReleaseActivateReturn = unknown;
+/** Return shape for `artifacts.release.activate`. */
+export type ArtifactsReleaseActivateReturn = {
+  localSync?: Record<string, unknown>;
+  release: unknown;
+  routes: unknown[];
+  site: unknown;
+  url: string | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.restore`. */
 export type ArtifactsRestoreInput = {
@@ -376,16 +771,28 @@ export type ArtifactsRestoreInput = {
   version?: string;
 };
 
-/** Return shape for `artifacts.restore`. (no @Returns declared) */
-export type ArtifactsRestoreReturn = unknown;
+/** Return shape for `artifacts.restore`. */
+export type ArtifactsRestoreReturn = {
+  artifact: Record<string, unknown>;
+  restoreVersion: Record<string, unknown>;
+  restoredFrom: Record<string, unknown>;
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.show`. */
 export type ArtifactsShowInput = {
   id: string;
 };
 
-/** Return shape for `artifacts.show`. (no @Returns declared) */
-export type ArtifactsShowReturn = unknown;
+/** Return shape for `artifacts.show`. */
+export type ArtifactsShowReturn = {
+  artifact: Record<string, unknown>;
+  events: Array<Record<string, unknown>>;
+  links: Array<Record<string, unknown>>;
+  versions: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.snapshot`. */
 export type ArtifactsSnapshotInput = {
@@ -398,8 +805,12 @@ export type ArtifactsSnapshotInput = {
   status?: string;
 };
 
-/** Return shape for `artifacts.snapshot`. (no @Returns declared) */
-export type ArtifactsSnapshotReturn = unknown;
+/** Return shape for `artifacts.snapshot`. */
+export type ArtifactsSnapshotReturn = {
+  success: true;
+  version: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.update`. */
 export type ArtifactsUpdateInput = {
@@ -430,8 +841,11 @@ export type ArtifactsUpdateInput = {
   uri?: string;
 };
 
-/** Return shape for `artifacts.update`. (no @Returns declared) */
-export type ArtifactsUpdateReturn = unknown;
+/** Return shape for `artifacts.update`. */
+export type ArtifactsUpdateReturn = {
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.version`. */
 export type ArtifactsVersionInput = {
@@ -439,16 +853,25 @@ export type ArtifactsVersionInput = {
   version?: string;
 };
 
-/** Return shape for `artifacts.version`. (no @Returns declared) */
-export type ArtifactsVersionReturn = unknown;
+/** Return shape for `artifacts.version`. */
+export type ArtifactsVersionReturn = {
+  artifactId: string;
+  version: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `artifacts.versions`. */
 export type ArtifactsVersionsInput = {
   id: string;
 };
 
-/** Return shape for `artifacts.versions`. (no @Returns declared) */
-export type ArtifactsVersionsReturn = unknown;
+/** Return shape for `artifacts.versions`. */
+export type ArtifactsVersionsReturn = {
+  artifactId: string;
+  total: number;
+  versions: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `audio.generate`. */
 export type AudioGenerateInput = {
@@ -463,8 +886,1013 @@ export type AudioGenerateInput = {
   voice?: string;
 };
 
-/** Return shape for `audio.generate`. (no @Returns declared) */
-export type AudioGenerateReturn = unknown;
+/** Return shape for `audio.generate`. */
+export type AudioGenerateReturn = {
+  audio: {
+    filePath: string;
+    mimeType: string;
+    sendCommand: string;
+    text: string;
+    [k: string]: unknown;
+  };
+  options: Record<string, unknown>;
+  sent?: {
+    accountId: string;
+    caption: string;
+    channel?: string;
+    chatId: string;
+    filename: string;
+    instanceId: string;
+    messageId?: string;
+    status?: string;
+    threadId?: string;
+    transport: string;
+    voiceNote: true;
+    [k: string]: unknown;
+  };
+  success: true;
+  [k: string]: unknown;
+};
+
+/** Input shape for `bridges.create`. */
+export type BridgesCreateInput = {
+  allow?: string;
+  console?: string;
+  description?: string;
+  name?: string;
+  project?: string;
+  session?: string;
+};
+
+/** Return shape for `bridges.create`. */
+export type BridgesCreateReturn = {
+  bridge: Record<string, unknown>;
+  bridgeToken: string | null;
+  bridgeUrl: string | null;
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bridges.list`. */
+export type BridgesListInput = {
+  console?: string;
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `bridges.list`. */
+export type BridgesListReturn = {
+  bridges: Array<Record<string, unknown>>;
+  consoleUrl: string;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projectRef: string;
+  success: true;
+  total: number;
+};
+
+/** Input shape for `bridges.revoke`. */
+export type BridgesRevokeInput = {
+  console?: string;
+  id: string;
+  yes?: boolean;
+};
+
+/** Return shape for `bridges.revoke`. */
+export type BridgesRevokeReturn = {
+  bridgeId: string;
+  consoleUrl: string;
+  revoked: boolean;
+  success: true;
+};
+
+/** Input shape for `calendar.accounts.create`. */
+export type CalendarAccountsCreateInput = {
+  credentialsRef?: string;
+  id?: string;
+  name?: string;
+  provider?: string;
+};
+
+/** Return shape for `calendar.accounts.create`. */
+export type CalendarAccountsCreateReturn = {
+  account: {
+    capabilities: Record<string, unknown>;
+    createdAt: number;
+    credentialsRef: string | null;
+    defaultCalendarId: string | null;
+    displayName: string;
+    id: string;
+    provider: string;
+    settings: Record<string, unknown>;
+    status: "active" | "paused" | "auth_required" | "disabled";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `calendar.accounts.list`. */
+export type CalendarAccountsListInput = {
+  limit?: string;
+  offset?: string;
+  provider?: string;
+  status?: string;
+};
+
+/** Return shape for `calendar.accounts.list`. */
+export type CalendarAccountsListReturn = {
+  accounts: Array<{
+    capabilities: Record<string, unknown>;
+    createdAt: number;
+    credentialsRef: string | null;
+    defaultCalendarId: string | null;
+    displayName: string;
+    id: string;
+    provider: string;
+    settings: Record<string, unknown>;
+    status: "active" | "paused" | "auth_required" | "disabled";
+    updatedAt: number;
+  }>;
+};
+
+/** Input shape for `calendar.accounts.sync`. */
+export type CalendarAccountsSyncInput = {
+  account: string;
+  once?: boolean;
+};
+
+/** Return shape for `calendar.accounts.sync`. */
+export type CalendarAccountsSyncReturn = ({
+  account: {
+    capabilities: Record<string, unknown>;
+    createdAt: number;
+    credentialsRef: string | null;
+    defaultCalendarId: string | null;
+    displayName: string;
+    id: string;
+    provider: string;
+    settings: Record<string, unknown>;
+    status: "active" | "paused" | "auth_required" | "disabled";
+    updatedAt: number;
+  };
+  localFirst: true;
+  ok: true;
+  status: "adapter_not_required";
+}) | ({
+  account: {
+    capabilities: Record<string, unknown>;
+    createdAt: number;
+    credentialsRef: string | null;
+    defaultCalendarId: string | null;
+    displayName: string;
+    id: string;
+    provider: string;
+    settings: Record<string, unknown>;
+    status: "active" | "paused" | "auth_required" | "disabled";
+    updatedAt: number;
+  };
+  message: string;
+  ok: false;
+  status: "adapter_not_started";
+});
+
+/** Input shape for `calendar.availability`. */
+export type CalendarAvailabilityInput = {
+  calendar?: string;
+  from?: string;
+  limit?: string;
+  to?: string;
+};
+
+/** Return shape for `calendar.availability`. */
+export type CalendarAvailabilityReturn = {
+  busy: Array<{
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    endAt: number;
+    eventId?: string;
+    redacted: boolean;
+    startAt: number;
+    title: string;
+  }>;
+  window: {
+    from: string;
+    to: string;
+  };
+};
+
+/** Input shape for `calendar.calendars.create`. */
+export type CalendarCalendarsCreateInput = {
+  account?: string;
+  color?: string;
+  default?: boolean;
+  description?: string;
+  name?: string;
+  owner?: string;
+  providerCalendarId?: string;
+  role?: string;
+  timezone?: string;
+  visibility?: string;
+};
+
+/** Return shape for `calendar.calendars.create`. */
+export type CalendarCalendarsCreateReturn = {
+  calendar: {
+    accountId: string;
+    color: string | null;
+    createdAt: number;
+    description: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
+    updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
+  };
+};
+
+/** Input shape for `calendar.calendars.disable`. */
+export type CalendarCalendarsDisableInput = {
+  calendar: string;
+};
+
+/** Return shape for `calendar.calendars.disable`. */
+export type CalendarCalendarsDisableReturn = {
+  calendar: {
+    accountId: string;
+    color: string | null;
+    createdAt: number;
+    description: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
+    updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
+  };
+};
+
+/** Input shape for `calendar.calendars.list`. */
+export type CalendarCalendarsListInput = {
+  account?: string;
+  limit?: string;
+  offset?: string;
+  status?: string;
+};
+
+/** Return shape for `calendar.calendars.list`. */
+export type CalendarCalendarsListReturn = {
+  calendars: Array<{
+    accountId: string;
+    color: string | null;
+    createdAt: number;
+    description: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
+    updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
+  }>;
+};
+
+/** Input shape for `calendar.calendars.share`. */
+export type CalendarCalendarsShareInput = {
+  calendar: string;
+  expiresAt?: string;
+  relation?: string;
+  with?: string;
+};
+
+/** Return shape for `calendar.calendars.share`. */
+export type CalendarCalendarsShareReturn = {
+  calendar: {
+    accountId: string;
+    color: string | null;
+    createdAt: number;
+    description: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
+    updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
+  };
+  member: {
+    calendarId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    id: string;
+    memberId: string;
+    memberType: string;
+    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `calendar.calendars.show`. */
+export type CalendarCalendarsShowInput = {
+  calendar: string;
+  members?: boolean;
+};
+
+/** Return shape for `calendar.calendars.show`. */
+export type CalendarCalendarsShowReturn = {
+  calendar: {
+    accountId: string;
+    color: string | null;
+    createdAt: number;
+    description: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
+    updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
+  };
+  members?: Array<{
+    calendarId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    id: string;
+    memberId: string;
+    memberType: string;
+    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
+    updatedAt: number;
+  }>;
+};
+
+/** Input shape for `calendar.events.cancel`. */
+export type CalendarEventsCancelInput = {
+  event: string;
+  idempotencyKey?: string;
+};
+
+/** Return shape for `calendar.events.cancel`. */
+export type CalendarEventsCancelReturn = {
+  event: ({
+    accountId: string;
+    allDay: boolean;
+    attendees: Array<{
+      agentId: string | null;
+      contactId: string | null;
+      createdAt: number;
+      displayName: string | null;
+      email: string | null;
+      eventId: string;
+      id: string;
+      kind: "organizer" | "required" | "optional" | "resource" | "informational";
+      normalizedEmail: string | null;
+      platformIdentityId: string | null;
+      providerAttendeeId: string | null;
+      raw: Record<string, unknown>;
+      responseStatus: "accepted" | "declined" | "tentative" | "needs_action" | "unknown";
+      updatedAt: number;
+    }>;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    createdAt: number;
+    creatorAgentId: string | null;
+    creatorContactId: string | null;
+    creatorPlatformIdentityId: string | null;
+    deletedAt: number | null;
+    description: string | null;
+    descriptionRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    endAt: number;
+    endTimezone: string | null;
+    etag: string | null;
+    icalUid: string | null;
+    id: string;
+    location: string | null;
+    locationRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    organizerAgentId: string | null;
+    organizerContactId: string | null;
+    organizerPlatformIdentityId: string | null;
+    originalStartAt: number | null;
+    providerEventId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerRecurringEventId: string | null;
+    recurrence: Record<string, unknown>;
+    recurrenceRule: string | null;
+    safePayload: Record<string, unknown>;
+    sequence: number;
+    seriesId: string | null;
+    startAt: number;
+    startTimezone: string | null;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: string;
+    uid: string;
+    updatedAt: number;
+    visibility: "default" | "private" | "public" | "confidential";
+  }) | ({
+    accountId: string;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    endAt: number;
+    id: string;
+    redacted: true;
+    startAt: number;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: "Busy";
+  });
+  outbox: ({
+    accountId: string;
+    attemptCount: number;
+    calendarId: string;
+    createdAt: number;
+    eventId: string;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    nextAttemptAt: number;
+    operation: "create" | "update" | "cancel" | "delete" | "respond";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  }) | null;
+};
+
+/** Input shape for `calendar.events.create`. */
+export type CalendarEventsCreateInput = {
+  attendee?: string;
+  calendar?: string;
+  description?: string;
+  end?: string;
+  idempotencyKey?: string;
+  location?: string;
+  start?: string;
+  timezone?: string;
+  title?: string;
+};
+
+/** Return shape for `calendar.events.create`. */
+export type CalendarEventsCreateReturn = {
+  event: ({
+    accountId: string;
+    allDay: boolean;
+    attendees: Array<{
+      agentId: string | null;
+      contactId: string | null;
+      createdAt: number;
+      displayName: string | null;
+      email: string | null;
+      eventId: string;
+      id: string;
+      kind: "organizer" | "required" | "optional" | "resource" | "informational";
+      normalizedEmail: string | null;
+      platformIdentityId: string | null;
+      providerAttendeeId: string | null;
+      raw: Record<string, unknown>;
+      responseStatus: "accepted" | "declined" | "tentative" | "needs_action" | "unknown";
+      updatedAt: number;
+    }>;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    createdAt: number;
+    creatorAgentId: string | null;
+    creatorContactId: string | null;
+    creatorPlatformIdentityId: string | null;
+    deletedAt: number | null;
+    description: string | null;
+    descriptionRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    endAt: number;
+    endTimezone: string | null;
+    etag: string | null;
+    icalUid: string | null;
+    id: string;
+    location: string | null;
+    locationRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    organizerAgentId: string | null;
+    organizerContactId: string | null;
+    organizerPlatformIdentityId: string | null;
+    originalStartAt: number | null;
+    providerEventId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerRecurringEventId: string | null;
+    recurrence: Record<string, unknown>;
+    recurrenceRule: string | null;
+    safePayload: Record<string, unknown>;
+    sequence: number;
+    seriesId: string | null;
+    startAt: number;
+    startTimezone: string | null;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: string;
+    uid: string;
+    updatedAt: number;
+    visibility: "default" | "private" | "public" | "confidential";
+  }) | ({
+    accountId: string;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    endAt: number;
+    id: string;
+    redacted: true;
+    startAt: number;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: "Busy";
+  });
+  outbox: ({
+    accountId: string;
+    attemptCount: number;
+    calendarId: string;
+    createdAt: number;
+    eventId: string;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    nextAttemptAt: number;
+    operation: "create" | "update" | "cancel" | "delete" | "respond";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  }) | null;
+};
+
+/** Input shape for `calendar.events.list`. */
+export type CalendarEventsListInput = {
+  calendar?: string;
+  from?: string;
+  includeCancelled?: boolean;
+  limit?: string;
+  offset?: string;
+  query?: string;
+  status?: string;
+  to?: string;
+};
+
+/** Return shape for `calendar.events.list`. */
+export type CalendarEventsListReturn = {
+  events: Array<({
+    accountId: string;
+    allDay: boolean;
+    attendees: Array<{
+      agentId: string | null;
+      contactId: string | null;
+      createdAt: number;
+      displayName: string | null;
+      email: string | null;
+      eventId: string;
+      id: string;
+      kind: "organizer" | "required" | "optional" | "resource" | "informational";
+      normalizedEmail: string | null;
+      platformIdentityId: string | null;
+      providerAttendeeId: string | null;
+      raw: Record<string, unknown>;
+      responseStatus: "accepted" | "declined" | "tentative" | "needs_action" | "unknown";
+      updatedAt: number;
+    }>;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    createdAt: number;
+    creatorAgentId: string | null;
+    creatorContactId: string | null;
+    creatorPlatformIdentityId: string | null;
+    deletedAt: number | null;
+    description: string | null;
+    descriptionRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    endAt: number;
+    endTimezone: string | null;
+    etag: string | null;
+    icalUid: string | null;
+    id: string;
+    location: string | null;
+    locationRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    organizerAgentId: string | null;
+    organizerContactId: string | null;
+    organizerPlatformIdentityId: string | null;
+    originalStartAt: number | null;
+    providerEventId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerRecurringEventId: string | null;
+    recurrence: Record<string, unknown>;
+    recurrenceRule: string | null;
+    safePayload: Record<string, unknown>;
+    sequence: number;
+    seriesId: string | null;
+    startAt: number;
+    startTimezone: string | null;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: string;
+    uid: string;
+    updatedAt: number;
+    visibility: "default" | "private" | "public" | "confidential";
+  }) | ({
+    accountId: string;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    endAt: number;
+    id: string;
+    redacted: true;
+    startAt: number;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: "Busy";
+  })>;
+  window: {
+    from: string;
+    to: string;
+  };
+};
+
+/** Input shape for `calendar.events.read`. */
+export type CalendarEventsReadInput = {
+  event: string;
+};
+
+/** Return shape for `calendar.events.read`. */
+export type CalendarEventsReadReturn = {
+  event: ({
+    accountId: string;
+    allDay: boolean;
+    attendees: Array<{
+      agentId: string | null;
+      contactId: string | null;
+      createdAt: number;
+      displayName: string | null;
+      email: string | null;
+      eventId: string;
+      id: string;
+      kind: "organizer" | "required" | "optional" | "resource" | "informational";
+      normalizedEmail: string | null;
+      platformIdentityId: string | null;
+      providerAttendeeId: string | null;
+      raw: Record<string, unknown>;
+      responseStatus: "accepted" | "declined" | "tentative" | "needs_action" | "unknown";
+      updatedAt: number;
+    }>;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    createdAt: number;
+    creatorAgentId: string | null;
+    creatorContactId: string | null;
+    creatorPlatformIdentityId: string | null;
+    deletedAt: number | null;
+    description: string | null;
+    descriptionRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    endAt: number;
+    endTimezone: string | null;
+    etag: string | null;
+    icalUid: string | null;
+    id: string;
+    location: string | null;
+    locationRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    organizerAgentId: string | null;
+    organizerContactId: string | null;
+    organizerPlatformIdentityId: string | null;
+    originalStartAt: number | null;
+    providerEventId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerRecurringEventId: string | null;
+    recurrence: Record<string, unknown>;
+    recurrenceRule: string | null;
+    safePayload: Record<string, unknown>;
+    sequence: number;
+    seriesId: string | null;
+    startAt: number;
+    startTimezone: string | null;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: string;
+    uid: string;
+    updatedAt: number;
+    visibility: "default" | "private" | "public" | "confidential";
+  }) | ({
+    accountId: string;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    endAt: number;
+    id: string;
+    redacted: true;
+    startAt: number;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: "Busy";
+  });
+};
+
+/** Input shape for `calendar.events.respond`. */
+export type CalendarEventsRespondInput = {
+  attendeeAgent?: string;
+  attendeeEmail?: string;
+  event: string;
+  idempotencyKey?: string;
+  status?: string;
+};
+
+/** Return shape for `calendar.events.respond`. */
+export type CalendarEventsRespondReturn = {
+  event: ({
+    accountId: string;
+    allDay: boolean;
+    attendees: Array<{
+      agentId: string | null;
+      contactId: string | null;
+      createdAt: number;
+      displayName: string | null;
+      email: string | null;
+      eventId: string;
+      id: string;
+      kind: "organizer" | "required" | "optional" | "resource" | "informational";
+      normalizedEmail: string | null;
+      platformIdentityId: string | null;
+      providerAttendeeId: string | null;
+      raw: Record<string, unknown>;
+      responseStatus: "accepted" | "declined" | "tentative" | "needs_action" | "unknown";
+      updatedAt: number;
+    }>;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    createdAt: number;
+    creatorAgentId: string | null;
+    creatorContactId: string | null;
+    creatorPlatformIdentityId: string | null;
+    deletedAt: number | null;
+    description: string | null;
+    descriptionRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    endAt: number;
+    endTimezone: string | null;
+    etag: string | null;
+    icalUid: string | null;
+    id: string;
+    location: string | null;
+    locationRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    organizerAgentId: string | null;
+    organizerContactId: string | null;
+    organizerPlatformIdentityId: string | null;
+    originalStartAt: number | null;
+    providerEventId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerRecurringEventId: string | null;
+    recurrence: Record<string, unknown>;
+    recurrenceRule: string | null;
+    safePayload: Record<string, unknown>;
+    sequence: number;
+    seriesId: string | null;
+    startAt: number;
+    startTimezone: string | null;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: string;
+    uid: string;
+    updatedAt: number;
+    visibility: "default" | "private" | "public" | "confidential";
+  }) | ({
+    accountId: string;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    endAt: number;
+    id: string;
+    redacted: true;
+    startAt: number;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: "Busy";
+  });
+  outbox: {
+    accountId: string;
+    attemptCount: number;
+    calendarId: string;
+    createdAt: number;
+    eventId: string;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    nextAttemptAt: number;
+    operation: "create" | "update" | "cancel" | "delete" | "respond";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `calendar.events.update`. */
+export type CalendarEventsUpdateInput = {
+  busy?: string;
+  description?: string;
+  end?: string;
+  event: string;
+  idempotencyKey?: string;
+  location?: string;
+  start?: string;
+  status?: string;
+  title?: string;
+  visibility?: string;
+};
+
+/** Return shape for `calendar.events.update`. */
+export type CalendarEventsUpdateReturn = {
+  event: ({
+    accountId: string;
+    allDay: boolean;
+    attendees: Array<{
+      agentId: string | null;
+      contactId: string | null;
+      createdAt: number;
+      displayName: string | null;
+      email: string | null;
+      eventId: string;
+      id: string;
+      kind: "organizer" | "required" | "optional" | "resource" | "informational";
+      normalizedEmail: string | null;
+      platformIdentityId: string | null;
+      providerAttendeeId: string | null;
+      raw: Record<string, unknown>;
+      responseStatus: "accepted" | "declined" | "tentative" | "needs_action" | "unknown";
+      updatedAt: number;
+    }>;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    createdAt: number;
+    creatorAgentId: string | null;
+    creatorContactId: string | null;
+    creatorPlatformIdentityId: string | null;
+    deletedAt: number | null;
+    description: string | null;
+    descriptionRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    endAt: number;
+    endTimezone: string | null;
+    etag: string | null;
+    icalUid: string | null;
+    id: string;
+    location: string | null;
+    locationRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    organizerAgentId: string | null;
+    organizerContactId: string | null;
+    organizerPlatformIdentityId: string | null;
+    originalStartAt: number | null;
+    providerEventId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerRecurringEventId: string | null;
+    recurrence: Record<string, unknown>;
+    recurrenceRule: string | null;
+    safePayload: Record<string, unknown>;
+    sequence: number;
+    seriesId: string | null;
+    startAt: number;
+    startTimezone: string | null;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: string;
+    uid: string;
+    updatedAt: number;
+    visibility: "default" | "private" | "public" | "confidential";
+  }) | ({
+    accountId: string;
+    busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
+    calendarId: string;
+    endAt: number;
+    id: string;
+    redacted: true;
+    startAt: number;
+    status: "confirmed" | "tentative" | "cancelled" | "draft" | "unknown";
+    title: "Busy";
+  });
+  outbox: ({
+    accountId: string;
+    attemptCount: number;
+    calendarId: string;
+    createdAt: number;
+    eventId: string;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    nextAttemptAt: number;
+    operation: "create" | "update" | "cancel" | "delete" | "respond";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  }) | null;
+};
+
+/** Input shape for `calendar.outbox.inspect`. */
+export type CalendarOutboxInspectInput = {
+  outbox: string;
+};
+
+/** Return shape for `calendar.outbox.inspect`. */
+export type CalendarOutboxInspectReturn = {
+  outbox: {
+    accountId: string;
+    attemptCount: number;
+    calendarId: string;
+    createdAt: number;
+    eventId: string;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    nextAttemptAt: number;
+    operation: "create" | "update" | "cancel" | "delete" | "respond";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `calendar.outbox.list`. */
+export type CalendarOutboxListInput = {
+  calendar?: string;
+  limit?: string;
+  offset?: string;
+  status?: string;
+};
+
+/** Return shape for `calendar.outbox.list`. */
+export type CalendarOutboxListReturn = {
+  outbox: Array<{
+    accountId: string;
+    attemptCount: number;
+    calendarId: string;
+    createdAt: number;
+    eventId: string;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    nextAttemptAt: number;
+    operation: "create" | "update" | "cancel" | "delete" | "respond";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  }>;
+};
+
+/** Input shape for `calendar.outbox.retry`. */
+export type CalendarOutboxRetryInput = {
+  outbox: string;
+};
+
+/** Return shape for `calendar.outbox.retry`. */
+export type CalendarOutboxRetryReturn = {
+  outbox: {
+    accountId: string;
+    attemptCount: number;
+    calendarId: string;
+    createdAt: number;
+    eventId: string;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    nextAttemptAt: number;
+    operation: "create" | "update" | "cancel" | "delete" | "respond";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `calendar.outbox.status`. */
+export type CalendarOutboxStatusInput = Record<string, never>;
+
+/** Return shape for `calendar.outbox.status`. */
+export type CalendarOutboxStatusReturn = {
+  counts: Record<string, number>;
+  total: number;
+};
 
 /** Input shape for `chats.backfill-provider-timestamps`. */
 export type ChatsBackfillProviderTimestampsInput = {
@@ -473,8 +1901,8 @@ export type ChatsBackfillProviderTimestampsInput = {
   limit?: string;
 };
 
-/** Return shape for `chats.backfill-provider-timestamps`. (no @Returns declared) */
-export type ChatsBackfillProviderTimestampsReturn = unknown;
+/** Return shape for `chats.backfill-provider-timestamps`. */
+export type ChatsBackfillProviderTimestampsReturn = Record<string, unknown>;
 
 /** Input shape for `chats.list`. */
 export type ChatsListInput = {
@@ -489,8 +1917,8 @@ export type ChatsListInput = {
   type?: string;
 };
 
-/** Return shape for `chats.list`. (no @Returns declared) */
-export type ChatsListReturn = unknown;
+/** Return shape for `chats.list`. */
+export type ChatsListReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.add`. */
 export type ChatsListsAddInput = {
@@ -504,8 +1932,8 @@ export type ChatsListsAddInput = {
   reason?: string;
 };
 
-/** Return shape for `chats.lists.add`. (no @Returns declared) */
-export type ChatsListsAddReturn = unknown;
+/** Return shape for `chats.lists.add`. */
+export type ChatsListsAddReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.create`. */
 export type ChatsListsCreateInput = {
@@ -516,8 +1944,8 @@ export type ChatsListsCreateInput = {
   visibility?: string;
 };
 
-/** Return shape for `chats.lists.create`. (no @Returns declared) */
-export type ChatsListsCreateReturn = unknown;
+/** Return shape for `chats.lists.create`. */
+export type ChatsListsCreateReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.delta`. */
 export type ChatsListsDeltaInput = {
@@ -532,8 +1960,8 @@ export type ChatsListsDeltaInput = {
   reader?: string;
 };
 
-/** Return shape for `chats.lists.delta`. (no @Returns declared) */
-export type ChatsListsDeltaReturn = unknown;
+/** Return shape for `chats.lists.delta`. */
+export type ChatsListsDeltaReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.list`. */
 export type ChatsListsListInput = {
@@ -543,8 +1971,8 @@ export type ChatsListsListInput = {
   owner?: string;
 };
 
-/** Return shape for `chats.lists.list`. (no @Returns declared) */
-export type ChatsListsListReturn = unknown;
+/** Return shape for `chats.lists.list`. */
+export type ChatsListsListReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.mark-read`. */
 export type ChatsListsMarkReadInput = {
@@ -559,8 +1987,8 @@ export type ChatsListsMarkReadInput = {
   reason?: string;
 };
 
-/** Return shape for `chats.lists.mark-read`. (no @Returns declared) */
-export type ChatsListsMarkReadReturn = unknown;
+/** Return shape for `chats.lists.mark-read`. */
+export type ChatsListsMarkReadReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.members`. */
 export type ChatsListsMembersInput = {
@@ -572,8 +2000,8 @@ export type ChatsListsMembersInput = {
   reader?: string;
 };
 
-/** Return shape for `chats.lists.members`. (no @Returns declared) */
-export type ChatsListsMembersReturn = unknown;
+/** Return shape for `chats.lists.members`. */
+export type ChatsListsMembersReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.remove`. */
 export type ChatsListsRemoveInput = {
@@ -584,8 +2012,8 @@ export type ChatsListsRemoveInput = {
   owner?: string;
 };
 
-/** Return shape for `chats.lists.remove`. (no @Returns declared) */
-export type ChatsListsRemoveReturn = unknown;
+/** Return shape for `chats.lists.remove`. */
+export type ChatsListsRemoveReturn = Record<string, unknown>;
 
 /** Input shape for `chats.read`. */
 export type ChatsReadInput = {
@@ -599,8 +2027,51 @@ export type ChatsReadInput = {
   type?: string;
 };
 
-/** Return shape for `chats.read`. (no @Returns declared) */
-export type ChatsReadReturn = unknown;
+/** Return shape for `chats.read`. */
+export type ChatsReadReturn = Record<string, unknown>;
+
+/** Input shape for `cloud.projects.create`. */
+export type CloudProjectsCreateInput = {
+  console?: string;
+  defaultPageSite?: string;
+  description?: string;
+  name?: string;
+  slug: string;
+  visibility?: string;
+};
+
+/** Return shape for `cloud.projects.create`. */
+export type CloudProjectsCreateReturn = {
+  consoleUrl: string;
+  project: Record<string, unknown>;
+  redirectTo: string | null;
+  success: true;
+};
+
+/** Input shape for `cloud.projects.list`. */
+export type CloudProjectsListInput = {
+  console?: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `cloud.projects.list`. */
+export type CloudProjectsListReturn = {
+  consoleUrl: string;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projects: Array<Record<string, unknown>>;
+  success: true;
+  total: number;
+};
 
 /** Input shape for `commands.list`. */
 export type CommandsListInput = {
@@ -610,8 +2081,57 @@ export type CommandsListInput = {
   tag?: string;
 };
 
-/** Return shape for `commands.list`. (no @Returns declared) */
-export type CommandsListReturn = unknown;
+/** Return shape for `commands.list`. */
+export type CommandsListReturn = {
+  agent: Record<string, unknown>;
+  commands: Array<{
+    argumentHint: string | null;
+    arguments: unknown[];
+    description: string | null;
+    disabled: boolean;
+    id: string;
+    issues: Array<{
+      code: string;
+      id: string | null;
+      level: string;
+      message: string;
+      path: string | null;
+      scope: string | null;
+      [k: string]: unknown;
+    }>;
+    path: string;
+    relativePath: string;
+    scope: string;
+    shadowedBy: string | null;
+    shadows: string[];
+    title: string | null;
+    token: string;
+    [k: string]: unknown;
+  }>;
+  issues: Array<{
+    code: string;
+    id: string | null;
+    level: string;
+    message: string;
+    path: string | null;
+    scope: string | null;
+    [k: string]: unknown;
+  }>;
+  items: Array<Record<string, unknown>>;
+  locations: Record<string, unknown>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `commands.run`. */
 export type CommandsRunInput = {
@@ -620,8 +2140,38 @@ export type CommandsRunInput = {
   name: string;
 };
 
-/** Return shape for `commands.run`. (no @Returns declared) */
-export type CommandsRunReturn = unknown;
+/** Return shape for `commands.run`. */
+export type CommandsRunReturn = {
+  agent: Record<string, unknown>;
+  command: {
+    argumentHint: string | null;
+    arguments: unknown[];
+    description: string | null;
+    disabled: boolean;
+    id: string;
+    issues: Array<{
+      code: string;
+      id: string | null;
+      level: string;
+      message: string;
+      path: string | null;
+      scope: string | null;
+      [k: string]: unknown;
+    }>;
+    path: string;
+    relativePath: string;
+    scope: string;
+    shadowedBy: string | null;
+    shadows: string[];
+    title: string | null;
+    token: string;
+    [k: string]: unknown;
+  };
+  metadata: Record<string, unknown>;
+  positionalArguments: unknown[];
+  prompt: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `commands.show`. */
 export type CommandsShowInput = {
@@ -629,16 +2179,130 @@ export type CommandsShowInput = {
   name: string;
 };
 
-/** Return shape for `commands.show`. (no @Returns declared) */
-export type CommandsShowReturn = unknown;
+/** Return shape for `commands.show`. */
+export type CommandsShowReturn = {
+  agent: Record<string, unknown>;
+  command: {
+    argumentHint: string | null;
+    arguments: unknown[];
+    description: string | null;
+    disabled: boolean;
+    id: string;
+    issues: Array<{
+      code: string;
+      id: string | null;
+      level: string;
+      message: string;
+      path: string | null;
+      scope: string | null;
+      [k: string]: unknown;
+    }>;
+    path: string;
+    relativePath: string;
+    scope: string;
+    shadowedBy: string | null;
+    shadows: string[];
+    title: string | null;
+    token: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `commands.validate`. */
 export type CommandsValidateInput = {
   agent?: string;
 };
 
-/** Return shape for `commands.validate`. (no @Returns declared) */
-export type CommandsValidateReturn = unknown;
+/** Return shape for `commands.validate`. */
+export type CommandsValidateReturn = {
+  agent: Record<string, unknown>;
+  effectiveTotal: number;
+  errors: Array<{
+    code: string;
+    id: string | null;
+    level: string;
+    message: string;
+    path: string | null;
+    scope: string | null;
+    [k: string]: unknown;
+  }>;
+  total: number;
+  valid: boolean;
+  warnings: Array<{
+    code: string;
+    id: string | null;
+    level: string;
+    message: string;
+    path: string | null;
+    scope: string | null;
+    [k: string]: unknown;
+  }>;
+  [k: string]: unknown;
+};
+
+/** Input shape for `connectors.list`. */
+export type ConnectorsListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+  provider?: string;
+};
+
+/** Return shape for `connectors.list`. */
+export type ConnectorsListReturn = {
+  connections: Array<{
+    createdAt: string;
+    displayName: string;
+    id: string;
+    projectId: string;
+    provider: string;
+    requiresReauth: boolean;
+    scopes: string[];
+    status: string;
+  }>;
+  pagination: {
+    limit: number;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+};
+
+/** Input shape for `connectors.revoke`. */
+export type ConnectorsRevokeInput = {
+  id: string;
+  yes?: boolean;
+};
+
+/** Return shape for `connectors.revoke`. */
+export type ConnectorsRevokeReturn = {
+  id: string;
+  revoked: true;
+};
+
+/** Input shape for `connectors.show`. */
+export type ConnectorsShowInput = {
+  id: string;
+};
+
+/** Return shape for `connectors.show`. */
+export type ConnectorsShowReturn = {
+  connection: {
+    capabilities: string[];
+    createdAt: string;
+    displayName: string;
+    externalAccountLogin: string | null;
+    grantedAt: string;
+    id: string;
+    lastReauthAt: string | null;
+    projectId: string;
+    provider: string;
+    requiresReauth: boolean;
+    scopes: string[];
+    status: string;
+  };
+};
 
 /** Input shape for `contacts.activity`. */
 export type ContactsActivityInput = {
@@ -648,8 +2312,8 @@ export type ContactsActivityInput = {
   raw?: boolean;
 };
 
-/** Return shape for `contacts.activity`. (no @Returns declared) */
-export type ContactsActivityReturn = unknown;
+/** Return shape for `contacts.activity`. */
+export type ContactsActivityReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.add`. */
 export type ContactsAddInput = {
@@ -659,16 +2323,16 @@ export type ContactsAddInput = {
   name?: string;
 };
 
-/** Return shape for `contacts.add`. (no @Returns declared) */
-export type ContactsAddReturn = unknown;
+/** Return shape for `contacts.add`. */
+export type ContactsAddReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.allow`. */
 export type ContactsAllowInput = {
   contact: string;
 };
 
-/** Return shape for `contacts.allow`. (no @Returns declared) */
-export type ContactsAllowReturn = unknown;
+/** Return shape for `contacts.allow`. */
+export type ContactsAllowReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.approve`. */
 export type ContactsApproveInput = {
@@ -677,8 +2341,8 @@ export type ContactsApproveInput = {
   mode?: string;
 };
 
-/** Return shape for `contacts.approve`. (no @Returns declared) */
-export type ContactsApproveReturn = unknown;
+/** Return shape for `contacts.approve`. */
+export type ContactsApproveReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.backfill`. */
 export type ContactsBackfillInput = {
@@ -692,30 +2356,30 @@ export type ContactsBackfillInput = {
   mode?: string;
 };
 
-/** Return shape for `contacts.backfill`. (no @Returns declared) */
-export type ContactsBackfillReturn = unknown;
+/** Return shape for `contacts.backfill`. */
+export type ContactsBackfillReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.block`. */
 export type ContactsBlockInput = {
   contact: string;
 };
 
-/** Return shape for `contacts.block`. (no @Returns declared) */
-export type ContactsBlockReturn = unknown;
+/** Return shape for `contacts.block`. */
+export type ContactsBlockReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.check`. */
 export type ContactsCheckInput = {
   contact: string;
 };
 
-/** Return shape for `contacts.check`. (no @Returns declared) */
-export type ContactsCheckReturn = unknown;
+/** Return shape for `contacts.check`. */
+export type ContactsCheckReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.duplicates`. */
 export type ContactsDuplicatesInput = Record<string, never>;
 
-/** Return shape for `contacts.duplicates`. (no @Returns declared) */
-export type ContactsDuplicatesReturn = unknown;
+/** Return shape for `contacts.duplicates`. */
+export type ContactsDuplicatesReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.find`. */
 export type ContactsFindInput = {
@@ -723,24 +2387,24 @@ export type ContactsFindInput = {
   tag?: boolean;
 };
 
-/** Return shape for `contacts.find`. (no @Returns declared) */
-export type ContactsFindReturn = unknown;
+/** Return shape for `contacts.find`. */
+export type ContactsFindReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.get`. */
 export type ContactsGetInput = {
   contact: string;
 };
 
-/** Return shape for `contacts.get`. (no @Returns declared) */
-export type ContactsGetReturn = unknown;
+/** Return shape for `contacts.get`. */
+export type ContactsGetReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.info`. */
 export type ContactsInfoInput = {
   contact: string;
 };
 
-/** Return shape for `contacts.info`. (no @Returns declared) */
-export type ContactsInfoReturn = unknown;
+/** Return shape for `contacts.info`. */
+export type ContactsInfoReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.link`. */
 export type ContactsLinkInput = {
@@ -751,8 +2415,8 @@ export type ContactsLinkInput = {
   reason?: string;
 };
 
-/** Return shape for `contacts.link`. (no @Returns declared) */
-export type ContactsLinkReturn = unknown;
+/** Return shape for `contacts.link`. */
+export type ContactsLinkReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.list`. */
 export type ContactsListInput = {
@@ -761,8 +2425,8 @@ export type ContactsListInput = {
   status?: string;
 };
 
-/** Return shape for `contacts.list`. (no @Returns declared) */
-export type ContactsListReturn = unknown;
+/** Return shape for `contacts.list`. */
+export type ContactsListReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.merge`. */
 export type ContactsMergeInput = {
@@ -770,8 +2434,8 @@ export type ContactsMergeInput = {
   target: string;
 };
 
-/** Return shape for `contacts.merge`. (no @Returns declared) */
-export type ContactsMergeReturn = unknown;
+/** Return shape for `contacts.merge`. */
+export type ContactsMergeReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.messages`. */
 export type ContactsMessagesInput = {
@@ -780,8 +2444,8 @@ export type ContactsMessagesInput = {
   offset?: string;
 };
 
-/** Return shape for `contacts.messages`. (no @Returns declared) */
-export type ContactsMessagesReturn = unknown;
+/** Return shape for `contacts.messages`. */
+export type ContactsMessagesReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.metadata.list`. */
 export type ContactsMetadataListInput = {
@@ -791,8 +2455,8 @@ export type ContactsMetadataListInput = {
   scope?: string;
 };
 
-/** Return shape for `contacts.metadata.list`. (no @Returns declared) */
-export type ContactsMetadataListReturn = unknown;
+/** Return shape for `contacts.metadata.list`. */
+export type ContactsMetadataListReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.metadata.remove`. */
 export type ContactsMetadataRemoveInput = {
@@ -802,8 +2466,8 @@ export type ContactsMetadataRemoveInput = {
   source?: string;
 };
 
-/** Return shape for `contacts.metadata.remove`. (no @Returns declared) */
-export type ContactsMetadataRemoveReturn = unknown;
+/** Return shape for `contacts.metadata.remove`. */
+export type ContactsMetadataRemoveReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.metadata.set`. */
 export type ContactsMetadataSetInput = {
@@ -814,8 +2478,8 @@ export type ContactsMetadataSetInput = {
   value: string;
 };
 
-/** Return shape for `contacts.metadata.set`. (no @Returns declared) */
-export type ContactsMetadataSetReturn = unknown;
+/** Return shape for `contacts.metadata.set`. */
+export type ContactsMetadataSetReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.note`. */
 export type ContactsNoteInput = {
@@ -825,16 +2489,16 @@ export type ContactsNoteInput = {
   text: string;
 };
 
-/** Return shape for `contacts.note`. (no @Returns declared) */
-export type ContactsNoteReturn = unknown;
+/** Return shape for `contacts.note`. */
+export type ContactsNoteReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.pending`. */
 export type ContactsPendingInput = {
   account?: string;
 };
 
-/** Return shape for `contacts.pending`. (no @Returns declared) */
-export type ContactsPendingReturn = unknown;
+/** Return shape for `contacts.pending`. */
+export type ContactsPendingReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.profile`. */
 export type ContactsProfileInput = {
@@ -843,16 +2507,16 @@ export type ContactsProfileInput = {
   limit?: string;
 };
 
-/** Return shape for `contacts.profile`. (no @Returns declared) */
-export type ContactsProfileReturn = unknown;
+/** Return shape for `contacts.profile`. */
+export type ContactsProfileReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.remove`. */
 export type ContactsRemoveInput = {
   contact: string;
 };
 
-/** Return shape for `contacts.remove`. (no @Returns declared) */
-export type ContactsRemoveReturn = unknown;
+/** Return shape for `contacts.remove`. */
+export type ContactsRemoveReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.sessions`. */
 export type ContactsSessionsInput = {
@@ -861,8 +2525,8 @@ export type ContactsSessionsInput = {
   offset?: string;
 };
 
-/** Return shape for `contacts.sessions`. (no @Returns declared) */
-export type ContactsSessionsReturn = unknown;
+/** Return shape for `contacts.sessions`. */
+export type ContactsSessionsReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.set`. */
 export type ContactsSetInput = {
@@ -871,8 +2535,8 @@ export type ContactsSetInput = {
   value: string;
 };
 
-/** Return shape for `contacts.set`. (no @Returns declared) */
-export type ContactsSetReturn = unknown;
+/** Return shape for `contacts.set`. */
+export type ContactsSetReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.tag`. */
 export type ContactsTagInput = {
@@ -880,8 +2544,8 @@ export type ContactsTagInput = {
   tag: string;
 };
 
-/** Return shape for `contacts.tag`. (no @Returns declared) */
-export type ContactsTagReturn = unknown;
+/** Return shape for `contacts.tag`. */
+export type ContactsTagReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.timeline`. */
 export type ContactsTimelineInput = {
@@ -892,8 +2556,8 @@ export type ContactsTimelineInput = {
   scope?: string;
 };
 
-/** Return shape for `contacts.timeline`. (no @Returns declared) */
-export type ContactsTimelineReturn = unknown;
+/** Return shape for `contacts.timeline`. */
+export type ContactsTimelineReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.unlink`. */
 export type ContactsUnlinkInput = {
@@ -903,8 +2567,8 @@ export type ContactsUnlinkInput = {
   reason?: string;
 };
 
-/** Return shape for `contacts.unlink`. (no @Returns declared) */
-export type ContactsUnlinkReturn = unknown;
+/** Return shape for `contacts.unlink`. */
+export type ContactsUnlinkReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.untag`. */
 export type ContactsUntagInput = {
@@ -912,8 +2576,8 @@ export type ContactsUntagInput = {
   tag: string;
 };
 
-/** Return shape for `contacts.untag`. (no @Returns declared) */
-export type ContactsUntagReturn = unknown;
+/** Return shape for `contacts.untag`. */
+export type ContactsUntagReturn = Record<string, unknown>;
 
 /** Input shape for `context.authorize`. */
 export type ContextAuthorizeInput = {
@@ -922,14 +2586,14 @@ export type ContextAuthorizeInput = {
   permission: string;
 };
 
-/** Return shape for `context.authorize`. (no @Returns declared) */
-export type ContextAuthorizeReturn = unknown;
+/** Return shape for `context.authorize`. */
+export type ContextAuthorizeReturn = Record<string, unknown>;
 
 /** Input shape for `context.capabilities`. */
 export type ContextCapabilitiesInput = Record<string, never>;
 
-/** Return shape for `context.capabilities`. (no @Returns declared) */
-export type ContextCapabilitiesReturn = unknown;
+/** Return shape for `context.capabilities`. */
+export type ContextCapabilitiesReturn = Record<string, unknown>;
 
 /** Input shape for `context.check`. */
 export type ContextCheckInput = {
@@ -938,8 +2602,8 @@ export type ContextCheckInput = {
   permission: string;
 };
 
-/** Return shape for `context.check`. (no @Returns declared) */
-export type ContextCheckReturn = unknown;
+/** Return shape for `context.check`. */
+export type ContextCheckReturn = Record<string, unknown>;
 
 /** Input shape for `context.cleanup-agent-runtime`. */
 export type ContextCleanupAgentRuntimeInput = {
@@ -950,14 +2614,14 @@ export type ContextCleanupAgentRuntimeInput = {
   session?: string;
 };
 
-/** Return shape for `context.cleanup-agent-runtime`. (no @Returns declared) */
-export type ContextCleanupAgentRuntimeReturn = unknown;
+/** Return shape for `context.cleanup-agent-runtime`. */
+export type ContextCleanupAgentRuntimeReturn = Record<string, unknown>;
 
 /** Input shape for `context.codex-bash-hook`. */
 export type ContextCodexBashHookInput = Record<string, never>;
 
-/** Return shape for `context.codex-bash-hook`. (no @Returns declared) */
-export type ContextCodexBashHookReturn = unknown;
+/** Return shape for `context.codex-bash-hook`. */
+export type ContextCodexBashHookReturn = Record<string, unknown>;
 
 /** Input shape for `context.credentials.add`. */
 export type ContextCredentialsAddInput = {
@@ -966,8 +2630,8 @@ export type ContextCredentialsAddInput = {
   setDefault?: boolean;
 };
 
-/** Return shape for `context.credentials.add`. (no @Returns declared) */
-export type ContextCredentialsAddReturn = unknown;
+/** Return shape for `context.credentials.add`. */
+export type ContextCredentialsAddReturn = Record<string, unknown>;
 
 /** Input shape for `context.credentials.list`. */
 export type ContextCredentialsListInput = {
@@ -975,32 +2639,32 @@ export type ContextCredentialsListInput = {
   offset?: string;
 };
 
-/** Return shape for `context.credentials.list`. (no @Returns declared) */
-export type ContextCredentialsListReturn = unknown;
+/** Return shape for `context.credentials.list`. */
+export type ContextCredentialsListReturn = Record<string, unknown>;
 
 /** Input shape for `context.credentials.remove`. */
 export type ContextCredentialsRemoveInput = {
   contextKey: string;
 };
 
-/** Return shape for `context.credentials.remove`. (no @Returns declared) */
-export type ContextCredentialsRemoveReturn = unknown;
+/** Return shape for `context.credentials.remove`. */
+export type ContextCredentialsRemoveReturn = Record<string, unknown>;
 
 /** Input shape for `context.credentials.set-default`. */
 export type ContextCredentialsSetDefaultInput = {
   contextKey: string;
 };
 
-/** Return shape for `context.credentials.set-default`. (no @Returns declared) */
-export type ContextCredentialsSetDefaultReturn = unknown;
+/** Return shape for `context.credentials.set-default`. */
+export type ContextCredentialsSetDefaultReturn = Record<string, unknown>;
 
 /** Input shape for `context.info`. */
 export type ContextInfoInput = {
   contextId: string;
 };
 
-/** Return shape for `context.info`. (no @Returns declared) */
-export type ContextInfoReturn = unknown;
+/** Return shape for `context.info`. */
+export type ContextInfoReturn = Record<string, unknown>;
 
 /** Input shape for `context.issue`. */
 export type ContextIssueInput = {
@@ -1010,16 +2674,16 @@ export type ContextIssueInput = {
   ttl?: string;
 };
 
-/** Return shape for `context.issue`. (no @Returns declared) */
-export type ContextIssueReturn = unknown;
+/** Return shape for `context.issue`. */
+export type ContextIssueReturn = Record<string, unknown>;
 
 /** Input shape for `context.lineage`. */
 export type ContextLineageInput = {
   contextId: string;
 };
 
-/** Return shape for `context.lineage`. (no @Returns declared) */
-export type ContextLineageReturn = unknown;
+/** Return shape for `context.lineage`. */
+export type ContextLineageReturn = Record<string, unknown>;
 
 /** Input shape for `context.list`. */
 export type ContextListInput = {
@@ -1031,8 +2695,8 @@ export type ContextListInput = {
   session?: string;
 };
 
-/** Return shape for `context.list`. (no @Returns declared) */
-export type ContextListReturn = unknown;
+/** Return shape for `context.list`. */
+export type ContextListReturn = Record<string, unknown>;
 
 /** Input shape for `context.revoke`. */
 export type ContextRevokeInput = {
@@ -1041,20 +2705,20 @@ export type ContextRevokeInput = {
   reason?: string;
 };
 
-/** Return shape for `context.revoke`. (no @Returns declared) */
-export type ContextRevokeReturn = unknown;
+/** Return shape for `context.revoke`. */
+export type ContextRevokeReturn = Record<string, unknown>;
 
 /** Input shape for `context.visibility`. */
 export type ContextVisibilityInput = Record<string, never>;
 
-/** Return shape for `context.visibility`. (no @Returns declared) */
-export type ContextVisibilityReturn = unknown;
+/** Return shape for `context.visibility`. */
+export type ContextVisibilityReturn = Record<string, unknown>;
 
 /** Input shape for `context.whoami`. */
 export type ContextWhoamiInput = Record<string, never>;
 
-/** Return shape for `context.whoami`. (no @Returns declared) */
-export type ContextWhoamiReturn = unknown;
+/** Return shape for `context.whoami`. */
+export type ContextWhoamiReturn = Record<string, unknown>;
 
 /** Input shape for `costs.agent`. */
 export type CostsAgentInput = {
@@ -1062,8 +2726,25 @@ export type CostsAgentInput = {
   hours?: string;
 };
 
-/** Return shape for `costs.agent`. (no @Returns declared) */
-export type CostsAgentReturn = unknown;
+/** Return shape for `costs.agent`. */
+export type CostsAgentReturn = {
+  agentId: string;
+  summary: {
+    total_cache_creation: number;
+    total_cache_read: number;
+    total_cost: number;
+    total_input: number;
+    total_output: number;
+    total_tokens: number;
+    turns: number;
+  };
+  window: {
+    effectiveHours: number;
+    requestedHours: string | null;
+    sinceMs: number;
+    untilMs: number;
+  };
+};
 
 /** Input shape for `costs.agents`. */
 export type CostsAgentsInput = {
@@ -1071,24 +2752,74 @@ export type CostsAgentsInput = {
   limit?: string;
 };
 
-/** Return shape for `costs.agents`. (no @Returns declared) */
-export type CostsAgentsReturn = unknown;
+/** Return shape for `costs.agents`. */
+export type CostsAgentsReturn = {
+  agents: Array<{
+    agentId: string;
+    models: string[];
+    total_cache_creation: number;
+    total_cache_read: number;
+    total_cost: number;
+    total_input: number;
+    total_output: number;
+    total_tokens: number;
+    turns: number;
+    [k: string]: unknown;
+  }>;
+  limit: number;
+  totalAgents: number;
+  window: {
+    effectiveHours: number;
+    requestedHours: string | null;
+    sinceMs: number;
+    untilMs: number;
+  };
+};
 
 /** Input shape for `costs.session`. */
 export type CostsSessionInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `costs.session`. (no @Returns declared) */
-export type CostsSessionReturn = unknown;
+/** Return shape for `costs.session`. */
+export type CostsSessionReturn = {
+  agentId: string | null;
+  sessionKey: string;
+  sessionName: string | null;
+  summary: {
+    total_cache_creation: number;
+    total_cache_read: number;
+    total_cost: number;
+    total_input: number;
+    total_output: number;
+    total_tokens: number;
+    turns: number;
+  };
+};
 
 /** Input shape for `costs.summary`. */
 export type CostsSummaryInput = {
   hours?: string;
 };
 
-/** Return shape for `costs.summary`. (no @Returns declared) */
-export type CostsSummaryReturn = unknown;
+/** Return shape for `costs.summary`. */
+export type CostsSummaryReturn = {
+  summary: {
+    total_cache_creation: number;
+    total_cache_read: number;
+    total_cost: number;
+    total_input: number;
+    total_output: number;
+    total_tokens: number;
+    turns: number;
+  };
+  window: {
+    effectiveHours: number;
+    requestedHours: string | null;
+    sinceMs: number;
+    untilMs: number;
+  };
+};
 
 /** Input shape for `costs.top-sessions`. */
 export type CostsTopSessionsInput = {
@@ -1096,16 +2827,42 @@ export type CostsTopSessionsInput = {
   limit?: string;
 };
 
-/** Return shape for `costs.top-sessions`. (no @Returns declared) */
-export type CostsTopSessionsReturn = unknown;
+/** Return shape for `costs.top-sessions`. */
+export type CostsTopSessionsReturn = {
+  limit: number;
+  sessions: Array<{
+    agentId: string;
+    name: string;
+    sessionKey: string;
+    sessionName: string | null;
+    total_cache_creation: number;
+    total_cache_read: number;
+    total_cost: number;
+    total_input: number;
+    total_output: number;
+    total_tokens: number;
+    turns: number;
+    [k: string]: unknown;
+  }>;
+  window: {
+    effectiveHours: number;
+    requestedHours: string | null;
+    sinceMs: number;
+    untilMs: number;
+  };
+};
 
 /** Input shape for `crm.account`. */
 export type CrmAccountInput = {
   account: string;
 };
 
-/** Return shape for `crm.account`. (no @Returns declared) */
-export type CrmAccountReturn = unknown;
+/** Return shape for `crm.account`. */
+export type CrmAccountReturn = {
+  crm: Record<string, unknown>;
+  target: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.account.create`. */
 export type CrmAccountCreateInput = {
@@ -1116,8 +2873,12 @@ export type CrmAccountCreateInput = {
   owner?: string;
 };
 
-/** Return shape for `crm.account.create`. (no @Returns declared) */
-export type CrmAccountCreateReturn = unknown;
+/** Return shape for `crm.account.create`. */
+export type CrmAccountCreateReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.account.link-contact`. */
 export type CrmAccountLinkContactInput = {
@@ -1127,16 +2888,24 @@ export type CrmAccountLinkContactInput = {
   role?: string;
 };
 
-/** Return shape for `crm.account.link-contact`. (no @Returns declared) */
-export type CrmAccountLinkContactReturn = unknown;
+/** Return shape for `crm.account.link-contact`. */
+export type CrmAccountLinkContactReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.account.show`. */
 export type CrmAccountShowInput = {
   account: string;
 };
 
-/** Return shape for `crm.account.show`. (no @Returns declared) */
-export type CrmAccountShowReturn = unknown;
+/** Return shape for `crm.account.show`. */
+export type CrmAccountShowReturn = {
+  crm: Record<string, unknown>;
+  target: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.board`. */
 export type CrmBoardInput = {
@@ -1144,16 +2913,25 @@ export type CrmBoardInput = {
   pipeline?: string;
 };
 
-/** Return shape for `crm.board`. (no @Returns declared) */
-export type CrmBoardReturn = unknown;
+/** Return shape for `crm.board`. */
+export type CrmBoardReturn = {
+  opportunities: Array<Record<string, unknown>>;
+  stages?: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.contact`. */
 export type CrmContactInput = {
   contact: string;
 };
 
-/** Return shape for `crm.contact`. (no @Returns declared) */
-export type CrmContactReturn = unknown;
+/** Return shape for `crm.contact`. */
+export type CrmContactReturn = {
+  crm: Record<string, unknown>;
+  target: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.contact.set`. */
 export type CrmContactSetInput = {
@@ -1163,16 +2941,24 @@ export type CrmContactSetInput = {
   value: string;
 };
 
-/** Return shape for `crm.contact.set`. (no @Returns declared) */
-export type CrmContactSetReturn = unknown;
+/** Return shape for `crm.contact.set`. */
+export type CrmContactSetReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.contact.show`. */
 export type CrmContactShowInput = {
   contact: string;
 };
 
-/** Return shape for `crm.contact.show`. (no @Returns declared) */
-export type CrmContactShowReturn = unknown;
+/** Return shape for `crm.contact.show`. */
+export type CrmContactShowReturn = {
+  crm: Record<string, unknown>;
+  target: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.contacts`. */
 export type CrmContactsInput = {
@@ -1182,16 +2968,34 @@ export type CrmContactsInput = {
   status?: string;
 };
 
-/** Return shape for `crm.contacts`. (no @Returns declared) */
-export type CrmContactsReturn = unknown;
+/** Return shape for `crm.contacts`. */
+export type CrmContactsReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.fact.confirm`. */
 export type CrmFactConfirmInput = {
   fact: string;
 };
 
-/** Return shape for `crm.fact.confirm`. (no @Returns declared) */
-export type CrmFactConfirmReturn = unknown;
+/** Return shape for `crm.fact.confirm`. */
+export type CrmFactConfirmReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.fact.list`. */
 export type CrmFactListInput = {
@@ -1206,8 +3010,22 @@ export type CrmFactListInput = {
   status?: string;
 };
 
-/** Return shape for `crm.fact.list`. (no @Returns declared) */
-export type CrmFactListReturn = unknown;
+/** Return shape for `crm.fact.list`. */
+export type CrmFactListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.fact.propose`. */
 export type CrmFactProposeInput = {
@@ -1223,16 +3041,24 @@ export type CrmFactProposeInput = {
   value: string;
 };
 
-/** Return shape for `crm.fact.propose`. (no @Returns declared) */
-export type CrmFactProposeReturn = unknown;
+/** Return shape for `crm.fact.propose`. */
+export type CrmFactProposeReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.fact.reject`. */
 export type CrmFactRejectInput = {
   fact: string;
 };
 
-/** Return shape for `crm.fact.reject`. (no @Returns declared) */
-export type CrmFactRejectReturn = unknown;
+/** Return shape for `crm.fact.reject`. */
+export type CrmFactRejectReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.next`. */
 export type CrmNextInput = {
@@ -1248,24 +3074,46 @@ export type CrmNextInput = {
   taskType?: string;
 };
 
-/** Return shape for `crm.next`. (no @Returns declared) */
-export type CrmNextReturn = unknown;
+/** Return shape for `crm.next`. */
+export type CrmNextReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.opportunity`. */
 export type CrmOpportunityInput = {
   opportunity: string;
 };
 
-/** Return shape for `crm.opportunity`. (no @Returns declared) */
-export type CrmOpportunityReturn = unknown;
+/** Return shape for `crm.opportunity`. */
+export type CrmOpportunityReturn = {
+  opportunity: Record<string, unknown>;
+  target: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.opportunity.contacts`. */
 export type CrmOpportunityContactsInput = {
   opportunity: string;
 };
 
-/** Return shape for `crm.opportunity.contacts`. (no @Returns declared) */
-export type CrmOpportunityContactsReturn = unknown;
+/** Return shape for `crm.opportunity.contacts`. */
+export type CrmOpportunityContactsReturn = {
+  contacts: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.opportunity.create`. */
 export type CrmOpportunityCreateInput = {
@@ -1279,8 +3127,12 @@ export type CrmOpportunityCreateInput = {
   value?: string;
 };
 
-/** Return shape for `crm.opportunity.create`. (no @Returns declared) */
-export type CrmOpportunityCreateReturn = unknown;
+/** Return shape for `crm.opportunity.create`. */
+export type CrmOpportunityCreateReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.opportunity.link-contact`. */
 export type CrmOpportunityLinkContactInput = {
@@ -1291,8 +3143,12 @@ export type CrmOpportunityLinkContactInput = {
   role?: string;
 };
 
-/** Return shape for `crm.opportunity.link-contact`. (no @Returns declared) */
-export type CrmOpportunityLinkContactReturn = unknown;
+/** Return shape for `crm.opportunity.link-contact`. */
+export type CrmOpportunityLinkContactReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.opportunity.move`. */
 export type CrmOpportunityMoveInput = {
@@ -1301,16 +3157,24 @@ export type CrmOpportunityMoveInput = {
   stage: string;
 };
 
-/** Return shape for `crm.opportunity.move`. (no @Returns declared) */
-export type CrmOpportunityMoveReturn = unknown;
+/** Return shape for `crm.opportunity.move`. */
+export type CrmOpportunityMoveReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.opportunity.show`. */
 export type CrmOpportunityShowInput = {
   opportunity: string;
 };
 
-/** Return shape for `crm.opportunity.show`. (no @Returns declared) */
-export type CrmOpportunityShowReturn = unknown;
+/** Return shape for `crm.opportunity.show`. */
+export type CrmOpportunityShowReturn = {
+  opportunity: Record<string, unknown>;
+  target: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.create`. */
 export type CrmPipelineCreateInput = {
@@ -1321,8 +3185,12 @@ export type CrmPipelineCreateInput = {
   name: string;
 };
 
-/** Return shape for `crm.pipeline.create`. (no @Returns declared) */
-export type CrmPipelineCreateReturn = unknown;
+/** Return shape for `crm.pipeline.create`. */
+export type CrmPipelineCreateReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.list`. */
 export type CrmPipelineListInput = {
@@ -1332,8 +3200,22 @@ export type CrmPipelineListInput = {
   offset?: string;
 };
 
-/** Return shape for `crm.pipeline.list`. (no @Returns declared) */
-export type CrmPipelineListReturn = unknown;
+/** Return shape for `crm.pipeline.list`. */
+export type CrmPipelineListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.set`. */
 export type CrmPipelineSetInput = {
@@ -1342,16 +3224,20 @@ export type CrmPipelineSetInput = {
   value: string;
 };
 
-/** Return shape for `crm.pipeline.set`. (no @Returns declared) */
-export type CrmPipelineSetReturn = unknown;
+/** Return shape for `crm.pipeline.set`. */
+export type CrmPipelineSetReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.show`. */
 export type CrmPipelineShowInput = {
   pipeline: string;
 };
 
-/** Return shape for `crm.pipeline.show`. (no @Returns declared) */
-export type CrmPipelineShowReturn = unknown;
+/** Return shape for `crm.pipeline.show`. */
+export type CrmPipelineShowReturn = Record<string, unknown>;
 
 /** Input shape for `crm.pipeline.stage.add`. */
 export type CrmPipelineStageAddInput = {
@@ -1366,8 +3252,12 @@ export type CrmPipelineStageAddInput = {
   terminal?: boolean;
 };
 
-/** Return shape for `crm.pipeline.stage.add`. (no @Returns declared) */
-export type CrmPipelineStageAddReturn = unknown;
+/** Return shape for `crm.pipeline.stage.add`. */
+export type CrmPipelineStageAddReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.stage.archive`. */
 export type CrmPipelineStageArchiveInput = {
@@ -1375,8 +3265,12 @@ export type CrmPipelineStageArchiveInput = {
   stage: string;
 };
 
-/** Return shape for `crm.pipeline.stage.archive`. (no @Returns declared) */
-export type CrmPipelineStageArchiveReturn = unknown;
+/** Return shape for `crm.pipeline.stage.archive`. */
+export type CrmPipelineStageArchiveReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.stage.list`. */
 export type CrmPipelineStageListInput = {
@@ -1386,8 +3280,22 @@ export type CrmPipelineStageListInput = {
   pipeline: string;
 };
 
-/** Return shape for `crm.pipeline.stage.list`. (no @Returns declared) */
-export type CrmPipelineStageListReturn = unknown;
+/** Return shape for `crm.pipeline.stage.list`. */
+export type CrmPipelineStageListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.stage.set`. */
 export type CrmPipelineStageSetInput = {
@@ -1397,8 +3305,12 @@ export type CrmPipelineStageSetInput = {
   value: string;
 };
 
-/** Return shape for `crm.pipeline.stage.set`. (no @Returns declared) */
-export type CrmPipelineStageSetReturn = unknown;
+/** Return shape for `crm.pipeline.stage.set`. */
+export type CrmPipelineStageSetReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.stage.show`. */
 export type CrmPipelineStageShowInput = {
@@ -1406,8 +3318,8 @@ export type CrmPipelineStageShowInput = {
   stage: string;
 };
 
-/** Return shape for `crm.pipeline.stage.show`. (no @Returns declared) */
-export type CrmPipelineStageShowReturn = unknown;
+/** Return shape for `crm.pipeline.stage.show`. */
+export type CrmPipelineStageShowReturn = Record<string, unknown>;
 
 /** Input shape for `crm.pipeline.stage.topic.add`. */
 export type CrmPipelineStageTopicAddInput = {
@@ -1422,8 +3334,12 @@ export type CrmPipelineStageTopicAddInput = {
   type?: string;
 };
 
-/** Return shape for `crm.pipeline.stage.topic.add`. (no @Returns declared) */
-export type CrmPipelineStageTopicAddReturn = unknown;
+/** Return shape for `crm.pipeline.stage.topic.add`. */
+export type CrmPipelineStageTopicAddReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.stage.topic.archive`. */
 export type CrmPipelineStageTopicArchiveInput = {
@@ -1432,8 +3348,12 @@ export type CrmPipelineStageTopicArchiveInput = {
   topic: string;
 };
 
-/** Return shape for `crm.pipeline.stage.topic.archive`. (no @Returns declared) */
-export type CrmPipelineStageTopicArchiveReturn = unknown;
+/** Return shape for `crm.pipeline.stage.topic.archive`. */
+export type CrmPipelineStageTopicArchiveReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.stage.topic.set`. */
 export type CrmPipelineStageTopicSetInput = {
@@ -1444,8 +3364,12 @@ export type CrmPipelineStageTopicSetInput = {
   value: string;
 };
 
-/** Return shape for `crm.pipeline.stage.topic.set`. (no @Returns declared) */
-export type CrmPipelineStageTopicSetReturn = unknown;
+/** Return shape for `crm.pipeline.stage.topic.set`. */
+export type CrmPipelineStageTopicSetReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.pipeline.stage.topics`. */
 export type CrmPipelineStageTopicsInput = {
@@ -1456,8 +3380,22 @@ export type CrmPipelineStageTopicsInput = {
   stage: string;
 };
 
-/** Return shape for `crm.pipeline.stage.topics`. (no @Returns declared) */
-export type CrmPipelineStageTopicsReturn = unknown;
+/** Return shape for `crm.pipeline.stage.topics`. */
+export type CrmPipelineStageTopicsReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.task.cancel`. */
 export type CrmTaskCancelInput = {
@@ -1465,8 +3403,12 @@ export type CrmTaskCancelInput = {
   task: string;
 };
 
-/** Return shape for `crm.task.cancel`. (no @Returns declared) */
-export type CrmTaskCancelReturn = unknown;
+/** Return shape for `crm.task.cancel`. */
+export type CrmTaskCancelReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.task.create`. */
 export type CrmTaskCreateInput = {
@@ -1486,16 +3428,24 @@ export type CrmTaskCreateInput = {
   title: string;
 };
 
-/** Return shape for `crm.task.create`. (no @Returns declared) */
-export type CrmTaskCreateReturn = unknown;
+/** Return shape for `crm.task.create`. */
+export type CrmTaskCreateReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.task.done`. */
 export type CrmTaskDoneInput = {
   task: string;
 };
 
-/** Return shape for `crm.task.done`. (no @Returns declared) */
-export type CrmTaskDoneReturn = unknown;
+/** Return shape for `crm.task.done`. */
+export type CrmTaskDoneReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.task.list`. */
 export type CrmTaskListInput = {
@@ -1512,16 +3462,34 @@ export type CrmTaskListInput = {
   taskType?: string;
 };
 
-/** Return shape for `crm.task.list`. (no @Returns declared) */
-export type CrmTaskListReturn = unknown;
+/** Return shape for `crm.task.list`. */
+export type CrmTaskListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.task.show`. */
 export type CrmTaskShowInput = {
   task: string;
 };
 
-/** Return shape for `crm.task.show`. (no @Returns declared) */
-export type CrmTaskShowReturn = unknown;
+/** Return shape for `crm.task.show`. */
+export type CrmTaskShowReturn = {
+  target: string;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `crm.task.snooze`. */
 export type CrmTaskSnoozeInput = {
@@ -1530,8 +3498,12 @@ export type CrmTaskSnoozeInput = {
   until?: string;
 };
 
-/** Return shape for `crm.task.snooze`. (no @Returns declared) */
-export type CrmTaskSnoozeReturn = unknown;
+/** Return shape for `crm.task.snooze`. */
+export type CrmTaskSnoozeReturn = {
+  changedCount: number;
+  status: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `cron.add`. */
 export type CronAddInput = {
@@ -1553,24 +3525,51 @@ export type CronAddInput = {
   tz?: string;
 };
 
-/** Return shape for `cron.add`. (no @Returns declared) */
-export type CronAddReturn = unknown;
+/** Return shape for `cron.add`. */
+export type CronAddReturn = {
+  changedCount: number;
+  job: (Record<string, unknown>) | null;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `cron.disable`. */
 export type CronDisableInput = {
   id: string;
 };
 
-/** Return shape for `cron.disable`. (no @Returns declared) */
-export type CronDisableReturn = unknown;
+/** Return shape for `cron.disable`. */
+export type CronDisableReturn = {
+  changedCount: number;
+  job: (Record<string, unknown>) | null;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `cron.enable`. */
 export type CronEnableInput = {
   id: string;
 };
 
-/** Return shape for `cron.enable`. (no @Returns declared) */
-export type CronEnableReturn = unknown;
+/** Return shape for `cron.enable`. */
+export type CronEnableReturn = {
+  changedCount: number;
+  job: (Record<string, unknown>) | null;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `cron.list`. */
 export type CronListInput = {
@@ -1579,24 +3578,57 @@ export type CronListInput = {
   tag?: string;
 };
 
-/** Return shape for `cron.list`. (no @Returns declared) */
-export type CronListReturn = unknown;
+/** Return shape for `cron.list`. */
+export type CronListReturn = {
+  items: Array<Record<string, unknown>>;
+  jobs: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `cron.rm`. */
 export type CronRmInput = {
   id: string;
 };
 
-/** Return shape for `cron.rm`. (no @Returns declared) */
-export type CronRmReturn = unknown;
+/** Return shape for `cron.rm`. */
+export type CronRmReturn = {
+  changedCount: number;
+  job: (Record<string, unknown>) | null;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `cron.run`. */
 export type CronRunInput = {
   id: string;
 };
 
-/** Return shape for `cron.run`. (no @Returns declared) */
-export type CronRunReturn = unknown;
+/** Return shape for `cron.run`. */
+export type CronRunReturn = {
+  changedCount: number;
+  job: (Record<string, unknown>) | null;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `cron.set`. */
 export type CronSetInput = {
@@ -1605,22 +3637,41 @@ export type CronSetInput = {
   value: string;
 };
 
-/** Return shape for `cron.set`. (no @Returns declared) */
-export type CronSetReturn = unknown;
+/** Return shape for `cron.set`. */
+export type CronSetReturn = {
+  changedCount: number;
+  job: (Record<string, unknown>) | null;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `cron.show`. */
 export type CronShowInput = {
   id: string;
 };
 
-/** Return shape for `cron.show`. (no @Returns declared) */
-export type CronShowReturn = unknown;
+/** Return shape for `cron.show`. */
+export type CronShowReturn = {
+  job: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `daemon.env`. */
 export type DaemonEnvInput = Record<string, never>;
 
-/** Return shape for `daemon.env`. (no @Returns declared) */
-export type DaemonEnvReturn = unknown;
+/** Return shape for `daemon.env`. */
+export type DaemonEnvReturn = {
+  action: "env";
+  created: boolean;
+  existedBefore: boolean;
+  openedEditor: boolean;
+  path: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `daemon.init-admin-key`. */
 export type DaemonInitAdminKeyInput = {
@@ -1630,14 +3681,22 @@ export type DaemonInitAdminKeyInput = {
   printOnly?: boolean;
 };
 
-/** Return shape for `daemon.init-admin-key`. (no @Returns declared) */
-export type DaemonInitAdminKeyReturn = unknown;
+/** Return shape for `daemon.init-admin-key`. */
+export type DaemonInitAdminKeyReturn = {
+  action: "init-admin-key";
+  changed: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `daemon.install`. */
 export type DaemonInstallInput = Record<string, never>;
 
-/** Return shape for `daemon.install`. (no @Returns declared) */
-export type DaemonInstallReturn = unknown;
+/** Return shape for `daemon.install`. */
+export type DaemonInstallReturn = {
+  action: string;
+  changed: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `daemon.logs`. */
 export type DaemonLogsInput = {
@@ -1647,8 +3706,11 @@ export type DaemonLogsInput = {
   tail?: string;
 };
 
-/** Return shape for `daemon.logs`. (no @Returns declared) */
-export type DaemonLogsReturn = unknown;
+/** Return shape for `daemon.logs`. */
+export type DaemonLogsReturn = {
+  action: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `daemon.restart`. */
 export type DaemonRestartInput = {
@@ -1656,46 +3718,79 @@ export type DaemonRestartInput = {
   message?: string;
 };
 
-/** Return shape for `daemon.restart`. (no @Returns declared) */
-export type DaemonRestartReturn = unknown;
+/** Return shape for `daemon.restart`. */
+export type DaemonRestartReturn = {
+  action: string;
+  changed: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `daemon.start`. */
 export type DaemonStartInput = Record<string, never>;
 
-/** Return shape for `daemon.start`. (no @Returns declared) */
-export type DaemonStartReturn = unknown;
+/** Return shape for `daemon.start`. */
+export type DaemonStartReturn = {
+  action: string;
+  changed: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `daemon.status`. */
 export type DaemonStatusInput = Record<string, never>;
 
-/** Return shape for `daemon.status`. (no @Returns declared) */
-export type DaemonStatusReturn = unknown;
+/** Return shape for `daemon.status`. */
+export type DaemonStatusReturn = {
+  infrastructure: Record<string, unknown>;
+  pm2Available: boolean;
+  processName: string;
+  processes: Array<Record<string, unknown>>;
+  ravi: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `daemon.stop`. */
 export type DaemonStopInput = Record<string, never>;
 
-/** Return shape for `daemon.stop`. (no @Returns declared) */
-export type DaemonStopReturn = unknown;
+/** Return shape for `daemon.stop`. */
+export type DaemonStopReturn = {
+  action: string;
+  changed: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `daemon.uninstall`. */
 export type DaemonUninstallInput = Record<string, never>;
 
-/** Return shape for `daemon.uninstall`. (no @Returns declared) */
-export type DaemonUninstallReturn = unknown;
+/** Return shape for `daemon.uninstall`. */
+export type DaemonUninstallReturn = {
+  action: string;
+  changed: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.auth.check`. */
 export type DevinAuthCheckInput = Record<string, never>;
 
-/** Return shape for `devin.auth.check`. (no @Returns declared) */
-export type DevinAuthCheckReturn = unknown;
+/** Return shape for `devin.auth.check`. */
+export type DevinAuthCheckReturn = {
+  baseUrl: string;
+  configuredOrgId?: string;
+  ok: boolean;
+  self: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.archive`. */
 export type DevinSessionsArchiveInput = {
   session: string;
 };
 
-/** Return shape for `devin.sessions.archive`. (no @Returns declared) */
-export type DevinSessionsArchiveReturn = unknown;
+/** Return shape for `devin.sessions.archive`. */
+export type DevinSessionsArchiveReturn = {
+  session: Record<string, unknown>;
+  status: "archived";
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.attachments`. */
 export type DevinSessionsAttachmentsInput = {
@@ -1703,8 +3798,13 @@ export type DevinSessionsAttachmentsInput = {
   session: string;
 };
 
-/** Return shape for `devin.sessions.attachments`. (no @Returns declared) */
-export type DevinSessionsAttachmentsReturn = unknown;
+/** Return shape for `devin.sessions.attachments`. */
+export type DevinSessionsAttachmentsReturn = {
+  attachments: Array<Record<string, unknown>>;
+  devinId: string;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.create`. */
 export type DevinSessionsCreateInput = {
@@ -1730,8 +3830,14 @@ export type DevinSessionsCreateInput = {
   title?: string;
 };
 
-/** Return shape for `devin.sessions.create`. (no @Returns declared) */
-export type DevinSessionsCreateReturn = unknown;
+/** Return shape for `devin.sessions.create`. */
+export type DevinSessionsCreateReturn = {
+  maxAcuLimit: number | null;
+  maxAcuLimitSource: string;
+  session: Record<string, unknown>;
+  status: "created";
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.insights`. */
 export type DevinSessionsInsightsInput = {
@@ -1739,8 +3845,13 @@ export type DevinSessionsInsightsInput = {
   session: string;
 };
 
-/** Return shape for `devin.sessions.insights`. (no @Returns declared) */
-export type DevinSessionsInsightsReturn = unknown;
+/** Return shape for `devin.sessions.insights`. */
+export type DevinSessionsInsightsReturn = {
+  insights: Record<string, unknown>;
+  session: Record<string, unknown>;
+  summary: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.list`. */
 export type DevinSessionsListInput = {
@@ -1751,8 +3862,25 @@ export type DevinSessionsListInput = {
   tag?: string;
 };
 
-/** Return shape for `devin.sessions.list`. (no @Returns declared) */
-export type DevinSessionsListReturn = unknown;
+/** Return shape for `devin.sessions.list`. */
+export type DevinSessionsListReturn = {
+  hasNextPage?: boolean;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  sessions: Array<Record<string, unknown>>;
+  source: string;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.messages`. */
 export type DevinSessionsMessagesInput = {
@@ -1760,8 +3888,13 @@ export type DevinSessionsMessagesInput = {
   session: string;
 };
 
-/** Return shape for `devin.sessions.messages`. (no @Returns declared) */
-export type DevinSessionsMessagesReturn = unknown;
+/** Return shape for `devin.sessions.messages`. */
+export type DevinSessionsMessagesReturn = {
+  devinId: string;
+  messages: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.send`. */
 export type DevinSessionsSendInput = {
@@ -1770,8 +3903,12 @@ export type DevinSessionsSendInput = {
   session: string;
 };
 
-/** Return shape for `devin.sessions.send`. (no @Returns declared) */
-export type DevinSessionsSendReturn = unknown;
+/** Return shape for `devin.sessions.send`. */
+export type DevinSessionsSendReturn = {
+  session: Record<string, unknown>;
+  status: "sent";
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.show`. */
 export type DevinSessionsShowInput = {
@@ -1779,8 +3916,11 @@ export type DevinSessionsShowInput = {
   sync?: boolean;
 };
 
-/** Return shape for `devin.sessions.show`. (no @Returns declared) */
-export type DevinSessionsShowReturn = unknown;
+/** Return shape for `devin.sessions.show`. */
+export type DevinSessionsShowReturn = {
+  session: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.sync`. */
 export type DevinSessionsSyncInput = {
@@ -1789,8 +3929,15 @@ export type DevinSessionsSyncInput = {
   session: string;
 };
 
-/** Return shape for `devin.sessions.sync`. (no @Returns declared) */
-export type DevinSessionsSyncReturn = unknown;
+/** Return shape for `devin.sessions.sync`. */
+export type DevinSessionsSyncReturn = {
+  artifacts: string[];
+  attachments: number;
+  insights: (Record<string, unknown>) | null;
+  messages: number;
+  session: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `devin.sessions.terminate`. */
 export type DevinSessionsTerminateInput = {
@@ -1798,8 +3945,13 @@ export type DevinSessionsTerminateInput = {
   session: string;
 };
 
-/** Return shape for `devin.sessions.terminate`. (no @Returns declared) */
-export type DevinSessionsTerminateReturn = unknown;
+/** Return shape for `devin.sessions.terminate`. */
+export type DevinSessionsTerminateReturn = {
+  archive: boolean;
+  session: Record<string, unknown>;
+  status: "terminated";
+  [k: string]: unknown;
+};
 
 /** Input shape for `eval.run`. */
 export type EvalRunInput = {
@@ -1807,16 +3959,84 @@ export type EvalRunInput = {
   specPath: string;
 };
 
-/** Return shape for `eval.run`. (no @Returns declared) */
-export type EvalRunReturn = unknown;
+/** Return shape for `eval.run`. */
+export type EvalRunReturn = {
+  execution: Record<string, unknown>;
+  grade: Record<string, unknown>;
+  outputDir: string;
+  runId: string;
+  session: Record<string, unknown>;
+  [k: string]: unknown;
+};
+
+/** Input shape for `gmail.list`. */
+export type GmailListInput = {
+  connector?: string;
+  cursor?: string;
+  label?: string;
+  max?: string;
+  q?: string;
+};
+
+/** Return shape for `gmail.list`. */
+export type GmailListReturn = {
+  capability: string;
+  refreshed: boolean;
+  result?: unknown;
+};
+
+/** Input shape for `gmail.read`. */
+export type GmailReadInput = {
+  connector?: string;
+  format?: string;
+  id: string;
+};
+
+/** Return shape for `gmail.read`. */
+export type GmailReadReturn = {
+  capability: string;
+  refreshed: boolean;
+  result?: unknown;
+};
 
 /** Input shape for `heartbeat.disable`. */
 export type HeartbeatDisableInput = {
   id: string;
 };
 
-/** Return shape for `heartbeat.disable`. (no @Returns declared) */
-export type HeartbeatDisableReturn = unknown;
+/** Return shape for `heartbeat.disable`. */
+export type HeartbeatDisableReturn = {
+  agent: {
+    cwd: string;
+    id: string;
+    model: string | null;
+    name: string | null;
+    provider: string | null;
+    [k: string]: unknown;
+  };
+  changedCount: number;
+  heartbeat: {
+    accountId: string | null;
+    activeEnd: string | null;
+    activeHours: string;
+    activeStart: string | null;
+    enabled: boolean;
+    intervalDescription: string;
+    intervalMs: number;
+    lastRunAt: number | null;
+    model: string | null;
+    [k: string]: unknown;
+  };
+  heartbeatFile: string;
+  heartbeatFileExists: boolean;
+  property?: string;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  value?: unknown;
+};
 
 /** Input shape for `heartbeat.enable`. */
 export type HeartbeatEnableInput = {
@@ -1824,8 +4044,39 @@ export type HeartbeatEnableInput = {
   interval?: string;
 };
 
-/** Return shape for `heartbeat.enable`. (no @Returns declared) */
-export type HeartbeatEnableReturn = unknown;
+/** Return shape for `heartbeat.enable`. */
+export type HeartbeatEnableReturn = {
+  agent: {
+    cwd: string;
+    id: string;
+    model: string | null;
+    name: string | null;
+    provider: string | null;
+    [k: string]: unknown;
+  };
+  changedCount: number;
+  heartbeat: {
+    accountId: string | null;
+    activeEnd: string | null;
+    activeHours: string;
+    activeStart: string | null;
+    enabled: boolean;
+    intervalDescription: string;
+    intervalMs: number;
+    lastRunAt: number | null;
+    model: string | null;
+    [k: string]: unknown;
+  };
+  heartbeatFile: string;
+  heartbeatFileExists: boolean;
+  property?: string;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  value?: unknown;
+};
 
 /** Input shape for `heartbeat.set`. */
 export type HeartbeatSetInput = {
@@ -1834,30 +4085,121 @@ export type HeartbeatSetInput = {
   value: string;
 };
 
-/** Return shape for `heartbeat.set`. (no @Returns declared) */
-export type HeartbeatSetReturn = unknown;
+/** Return shape for `heartbeat.set`. */
+export type HeartbeatSetReturn = {
+  agent: {
+    cwd: string;
+    id: string;
+    model: string | null;
+    name: string | null;
+    provider: string | null;
+    [k: string]: unknown;
+  };
+  changedCount: number;
+  heartbeat: {
+    accountId: string | null;
+    activeEnd: string | null;
+    activeHours: string;
+    activeStart: string | null;
+    enabled: boolean;
+    intervalDescription: string;
+    intervalMs: number;
+    lastRunAt: number | null;
+    model: string | null;
+    [k: string]: unknown;
+  };
+  heartbeatFile: string;
+  heartbeatFileExists: boolean;
+  property?: string;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  value?: unknown;
+};
 
 /** Input shape for `heartbeat.show`. */
 export type HeartbeatShowInput = {
   id: string;
 };
 
-/** Return shape for `heartbeat.show`. (no @Returns declared) */
-export type HeartbeatShowReturn = unknown;
+/** Return shape for `heartbeat.show`. */
+export type HeartbeatShowReturn = {
+  agent: {
+    cwd: string;
+    id: string;
+    model: string | null;
+    name: string | null;
+    provider: string | null;
+    [k: string]: unknown;
+  };
+  heartbeat: {
+    accountId: string | null;
+    activeEnd: string | null;
+    activeHours: string;
+    activeStart: string | null;
+    enabled: boolean;
+    intervalDescription: string;
+    intervalMs: number;
+    lastRunAt: number | null;
+    model: string | null;
+    [k: string]: unknown;
+  };
+  heartbeatFile: string;
+  heartbeatFileExists: boolean;
+};
 
 /** Input shape for `heartbeat.status`. */
 export type HeartbeatStatusInput = Record<string, never>;
 
-/** Return shape for `heartbeat.status`. (no @Returns declared) */
-export type HeartbeatStatusReturn = unknown;
+/** Return shape for `heartbeat.status`. */
+export type HeartbeatStatusReturn = {
+  agents: Array<{
+    agent: {
+      cwd: string;
+      id: string;
+      model: string | null;
+      name: string | null;
+      provider: string | null;
+      [k: string]: unknown;
+    };
+    heartbeat: {
+      accountId: string | null;
+      activeEnd: string | null;
+      activeHours: string;
+      activeStart: string | null;
+      enabled: boolean;
+      intervalDescription: string;
+      intervalMs: number;
+      lastRunAt: number | null;
+      model: string | null;
+      [k: string]: unknown;
+    };
+    heartbeatFile: string;
+    heartbeatFileExists: boolean;
+  }>;
+  total: number;
+};
 
 /** Input shape for `heartbeat.trigger`. */
 export type HeartbeatTriggerInput = {
   id: string;
 };
 
-/** Return shape for `heartbeat.trigger`. (no @Returns declared) */
-export type HeartbeatTriggerReturn = unknown;
+/** Return shape for `heartbeat.trigger`. */
+export type HeartbeatTriggerReturn = {
+  changedCount: number;
+  heartbeatFile: string;
+  reason?: string;
+  sessionName?: string;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `hooks.create`. */
 export type HooksCreateInput = {
@@ -1881,24 +4223,51 @@ export type HooksCreateInput = {
   workspace?: string;
 };
 
-/** Return shape for `hooks.create`. (no @Returns declared) */
-export type HooksCreateReturn = unknown;
+/** Return shape for `hooks.create`. */
+export type HooksCreateReturn = {
+  changedCount: number;
+  hook: Record<string, unknown>;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `hooks.disable`. */
 export type HooksDisableInput = {
   id: string;
 };
 
-/** Return shape for `hooks.disable`. (no @Returns declared) */
-export type HooksDisableReturn = unknown;
+/** Return shape for `hooks.disable`. */
+export type HooksDisableReturn = {
+  changedCount: number;
+  hook: Record<string, unknown>;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `hooks.enable`. */
 export type HooksEnableInput = {
   id: string;
 };
 
-/** Return shape for `hooks.enable`. (no @Returns declared) */
-export type HooksEnableReturn = unknown;
+/** Return shape for `hooks.enable`. */
+export type HooksEnableReturn = {
+  changedCount: number;
+  hook: Record<string, unknown>;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `hooks.list`. */
 export type HooksListInput = {
@@ -1907,32 +4276,59 @@ export type HooksListInput = {
   tag?: string;
 };
 
-/** Return shape for `hooks.list`. (no @Returns declared) */
-export type HooksListReturn = unknown;
+/** Return shape for `hooks.list`. */
+export type HooksListReturn = {
+  hooks: Array<Record<string, unknown>>;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `hooks.rm`. */
 export type HooksRmInput = {
   id: string;
 };
 
-/** Return shape for `hooks.rm`. (no @Returns declared) */
-export type HooksRmReturn = unknown;
+/** Return shape for `hooks.rm`. */
+export type HooksRmReturn = {
+  changedCount: number;
+  hook: Record<string, unknown>;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `hooks.show`. */
 export type HooksShowInput = {
   id: string;
 };
 
-/** Return shape for `hooks.show`. (no @Returns declared) */
-export type HooksShowReturn = unknown;
+/** Return shape for `hooks.show`. */
+export type HooksShowReturn = {
+  hook: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `hooks.test`. */
 export type HooksTestInput = {
   id: string;
 };
 
-/** Return shape for `hooks.test`. (no @Returns declared) */
-export type HooksTestReturn = unknown;
+/** Return shape for `hooks.test`. */
+export type HooksTestReturn = Record<string, unknown>;
 
 /** Input shape for `image.atlas.split`. */
 export type ImageAtlasSplitInput = {
@@ -1956,8 +4352,18 @@ export type ImageAtlasSplitInput = {
   to?: string;
 };
 
-/** Return shape for `image.atlas.split`. (no @Returns declared) */
-export type ImageAtlasSplitReturn = unknown;
+/** Return shape for `image.atlas.split`. */
+export type ImageAtlasSplitReturn = {
+  artifactId: string;
+  artifact_id: string;
+  crops: Array<Record<string, unknown>>;
+  manifestPath: string;
+  outputDir: string;
+  parentArtifactId: string | null;
+  sent: Array<Record<string, unknown>>;
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `image.generate`. */
 export type ImageGenerateInput = {
@@ -1981,44 +4387,100 @@ export type ImageGenerateInput = {
   sync?: boolean;
 };
 
-/** Return shape for `image.generate`. (no @Returns declared) */
-export type ImageGenerateReturn = unknown;
+/** Return shape for `image.generate`. */
+export type ImageGenerateReturn = ({
+  artifactId: string;
+  artifact_id: string;
+  autoSend: boolean;
+  delivery?: Record<string, unknown>;
+  events: string;
+  hint: string;
+  status: string;
+  success: true;
+  workerPid?: number;
+  [k: string]: unknown;
+}) | ({
+  images: Array<{
+    artifactId: string;
+    filePath: string;
+    mimeType: string;
+    model: string;
+    prompt: string;
+    provider: string;
+    sendCommand: string;
+    [k: string]: unknown;
+  }>;
+  options: Record<string, unknown>;
+  sent: Array<{
+    accountId: string;
+    caption: string;
+    channel?: string;
+    chatId: string;
+    filename: string;
+    instanceId: string;
+    messageId?: string;
+    status?: string;
+    threadId?: string;
+    transport: string;
+    [k: string]: unknown;
+  }>;
+  success: true;
+  [k: string]: unknown;
+});
 
 /** Input shape for `inbox.archive`. */
 export type InboxArchiveInput = {
   item: string;
 };
 
-/** Return shape for `inbox.archive`. (no @Returns declared) */
-export type InboxArchiveReturn = unknown;
+/** Return shape for `inbox.archive`. */
+export type InboxArchiveReturn = {
+  item: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.disable`. */
 export type InboxDisableInput = Record<string, never>;
 
-/** Return shape for `inbox.disable`. (no @Returns declared) */
-export type InboxDisableReturn = unknown;
+/** Return shape for `inbox.disable`. */
+export type InboxDisableReturn = {
+  changed: boolean;
+  enabled: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.done`. */
 export type InboxDoneInput = {
   item: string;
 };
 
-/** Return shape for `inbox.done`. (no @Returns declared) */
-export type InboxDoneReturn = unknown;
+/** Return shape for `inbox.done`. */
+export type InboxDoneReturn = {
+  item: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.enable`. */
 export type InboxEnableInput = Record<string, never>;
 
-/** Return shape for `inbox.enable`. (no @Returns declared) */
-export type InboxEnableReturn = unknown;
+/** Return shape for `inbox.enable`. */
+export type InboxEnableReturn = {
+  changed: boolean;
+  enabled: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.items`. */
 export type InboxItemsInput = {
   limit?: string;
 };
 
-/** Return shape for `inbox.items`. (no @Returns declared) */
-export type InboxItemsReturn = unknown;
+/** Return shape for `inbox.items`. */
+export type InboxItemsReturn = {
+  items: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.list`. */
 export type InboxListInput = {
@@ -2029,32 +4491,51 @@ export type InboxListInput = {
   status?: string;
 };
 
-/** Return shape for `inbox.list`. (no @Returns declared) */
-export type InboxListReturn = unknown;
+/** Return shape for `inbox.list`. */
+export type InboxListReturn = {
+  items: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.poll`. */
 export type InboxPollInput = {
   once?: boolean;
 };
 
-/** Return shape for `inbox.poll`. (no @Returns declared) */
-export type InboxPollReturn = unknown;
+/** Return shape for `inbox.poll`. */
+export type InboxPollReturn = {
+  ok: true;
+  snapshot: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.read`. */
 export type InboxReadInput = {
   item: string;
 };
 
-/** Return shape for `inbox.read`. (no @Returns declared) */
-export type InboxReadReturn = unknown;
+/** Return shape for `inbox.read`. */
+export type InboxReadReturn = {
+  events: Array<Record<string, unknown>>;
+  item: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.replay`. */
 export type InboxReplayInput = {
   ref: string;
 };
 
-/** Return shape for `inbox.replay`. (no @Returns declared) */
-export type InboxReplayReturn = unknown;
+/** Return shape for `inbox.replay`. */
+export type InboxReplayReturn = {
+  itemId: string;
+  ok: true;
+  replayedAt: string;
+  sequence: number;
+  subject: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.snooze`. */
 export type InboxSnoozeInput = {
@@ -2062,20 +4543,26 @@ export type InboxSnoozeInput = {
   until?: string;
 };
 
-/** Return shape for `inbox.snooze`. (no @Returns declared) */
-export type InboxSnoozeReturn = unknown;
+/** Return shape for `inbox.snooze`. */
+export type InboxSnoozeReturn = {
+  item: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.sources`. */
 export type InboxSourcesInput = Record<string, never>;
 
-/** Return shape for `inbox.sources`. (no @Returns declared) */
-export type InboxSourcesReturn = unknown;
+/** Return shape for `inbox.sources`. */
+export type InboxSourcesReturn = {
+  sources: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `inbox.status`. */
 export type InboxStatusInput = Record<string, never>;
 
-/** Return shape for `inbox.status`. (no @Returns declared) */
-export type InboxStatusReturn = unknown;
+/** Return shape for `inbox.status`. */
+export type InboxStatusReturn = Record<string, unknown>;
 
 /** Input shape for `insights.create`. */
 export type InsightsCreateInput = {
@@ -2096,8 +4583,14 @@ export type InsightsCreateInput = {
   task?: string;
 };
 
-/** Return shape for `insights.create`. (no @Returns declared) */
-export type InsightsCreateReturn = unknown;
+/** Return shape for `insights.create`. */
+export type InsightsCreateReturn = {
+  comment?: Record<string, unknown>;
+  insight: Record<string, unknown>;
+  success: true;
+  tags: string[];
+  [k: string]: unknown;
+};
 
 /** Input shape for `insights.list`. */
 export type InsightsListInput = {
@@ -2115,8 +4608,32 @@ export type InsightsListInput = {
   task?: string;
 };
 
-/** Return shape for `insights.list`. (no @Returns declared) */
-export type InsightsListReturn = unknown;
+/** Return shape for `insights.list`. */
+export type InsightsListReturn = ({
+  count: number;
+  insights: Array<Record<string, unknown>>;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  query: Record<string, unknown>;
+  total: number;
+  [k: string]: unknown;
+}) | ({
+  generatedAt: number;
+  items: Array<Record<string, unknown>>;
+  ok: true;
+  query: Record<string, unknown>;
+  stats: Record<string, unknown>;
+  [k: string]: unknown;
+});
 
 /** Input shape for `insights.search`. */
 export type InsightsSearchInput = {
@@ -2124,16 +4641,25 @@ export type InsightsSearchInput = {
   text: string;
 };
 
-/** Return shape for `insights.search`. (no @Returns declared) */
-export type InsightsSearchReturn = unknown;
+/** Return shape for `insights.search`. */
+export type InsightsSearchReturn = {
+  count: number;
+  insights: Array<Record<string, unknown>>;
+  query: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `insights.show`. */
 export type InsightsShowInput = {
   id: string;
 };
 
-/** Return shape for `insights.show`. (no @Returns declared) */
-export type InsightsShowReturn = unknown;
+/** Return shape for `insights.show`. */
+export type InsightsShowReturn = {
+  insight: Record<string, unknown>;
+  tags: string[];
+  [k: string]: unknown;
+};
 
 /** Input shape for `instances.create`. */
 export type InstancesCreateInput = {
@@ -2145,46 +4671,46 @@ export type InstancesCreateInput = {
   name: string;
 };
 
-/** Return shape for `instances.create`. (no @Returns declared) */
-export type InstancesCreateReturn = unknown;
+/** Return shape for `instances.create`. */
+export type InstancesCreateReturn = Record<string, unknown>;
 
 /** Input shape for `instances.delete`. */
 export type InstancesDeleteInput = {
   name: string;
 };
 
-/** Return shape for `instances.delete`. (no @Returns declared) */
-export type InstancesDeleteReturn = unknown;
+/** Return shape for `instances.delete`. */
+export type InstancesDeleteReturn = Record<string, unknown>;
 
 /** Input shape for `instances.deleted`. */
 export type InstancesDeletedInput = Record<string, never>;
 
-/** Return shape for `instances.deleted`. (no @Returns declared) */
-export type InstancesDeletedReturn = unknown;
+/** Return shape for `instances.deleted`. */
+export type InstancesDeletedReturn = Record<string, unknown>;
 
 /** Input shape for `instances.disable`. */
 export type InstancesDisableInput = {
   target: string;
 };
 
-/** Return shape for `instances.disable`. (no @Returns declared) */
-export type InstancesDisableReturn = unknown;
+/** Return shape for `instances.disable`. */
+export type InstancesDisableReturn = Record<string, unknown>;
 
 /** Input shape for `instances.disconnect`. */
 export type InstancesDisconnectInput = {
   name: string;
 };
 
-/** Return shape for `instances.disconnect`. (no @Returns declared) */
-export type InstancesDisconnectReturn = unknown;
+/** Return shape for `instances.disconnect`. */
+export type InstancesDisconnectReturn = Record<string, unknown>;
 
 /** Input shape for `instances.enable`. */
 export type InstancesEnableInput = {
   target: string;
 };
 
-/** Return shape for `instances.enable`. (no @Returns declared) */
-export type InstancesEnableReturn = unknown;
+/** Return shape for `instances.enable`. */
+export type InstancesEnableReturn = Record<string, unknown>;
 
 /** Input shape for `instances.get`. */
 export type InstancesGetInput = {
@@ -2192,8 +4718,8 @@ export type InstancesGetInput = {
   name: string;
 };
 
-/** Return shape for `instances.get`. (no @Returns declared) */
-export type InstancesGetReturn = unknown;
+/** Return shape for `instances.get`. */
+export type InstancesGetReturn = Record<string, unknown>;
 
 /** Input shape for `instances.list`. */
 export type InstancesListInput = {
@@ -2202,8 +4728,8 @@ export type InstancesListInput = {
   tag?: string;
 };
 
-/** Return shape for `instances.list`. (no @Returns declared) */
-export type InstancesListReturn = unknown;
+/** Return shape for `instances.list`. */
+export type InstancesListReturn = Record<string, unknown>;
 
 /** Input shape for `instances.pending.approve`. */
 export type InstancesPendingApproveInput = {
@@ -2212,8 +4738,8 @@ export type InstancesPendingApproveInput = {
   name: string;
 };
 
-/** Return shape for `instances.pending.approve`. (no @Returns declared) */
-export type InstancesPendingApproveReturn = unknown;
+/** Return shape for `instances.pending.approve`. */
+export type InstancesPendingApproveReturn = Record<string, unknown>;
 
 /** Input shape for `instances.pending.list`. */
 export type InstancesPendingListInput = {
@@ -2222,8 +4748,8 @@ export type InstancesPendingListInput = {
   offset?: string;
 };
 
-/** Return shape for `instances.pending.list`. (no @Returns declared) */
-export type InstancesPendingListReturn = unknown;
+/** Return shape for `instances.pending.list`. */
+export type InstancesPendingListReturn = Record<string, unknown>;
 
 /** Input shape for `instances.pending.reject`. */
 export type InstancesPendingRejectInput = {
@@ -2231,16 +4757,16 @@ export type InstancesPendingRejectInput = {
   name: string;
 };
 
-/** Return shape for `instances.pending.reject`. (no @Returns declared) */
-export type InstancesPendingRejectReturn = unknown;
+/** Return shape for `instances.pending.reject`. */
+export type InstancesPendingRejectReturn = Record<string, unknown>;
 
 /** Input shape for `instances.restore`. */
 export type InstancesRestoreInput = {
   name: string;
 };
 
-/** Return shape for `instances.restore`. (no @Returns declared) */
-export type InstancesRestoreReturn = unknown;
+/** Return shape for `instances.restore`. */
+export type InstancesRestoreReturn = Record<string, unknown>;
 
 /** Input shape for `instances.routes.add`. */
 export type InstancesRoutesAddInput = {
@@ -2255,16 +4781,16 @@ export type InstancesRoutesAddInput = {
   session?: string;
 };
 
-/** Return shape for `instances.routes.add`. (no @Returns declared) */
-export type InstancesRoutesAddReturn = unknown;
+/** Return shape for `instances.routes.add`. */
+export type InstancesRoutesAddReturn = Record<string, unknown>;
 
 /** Input shape for `instances.routes.deleted`. */
 export type InstancesRoutesDeletedInput = {
   name?: string;
 };
 
-/** Return shape for `instances.routes.deleted`. (no @Returns declared) */
-export type InstancesRoutesDeletedReturn = unknown;
+/** Return shape for `instances.routes.deleted`. */
+export type InstancesRoutesDeletedReturn = Record<string, unknown>;
 
 /** Input shape for `instances.routes.list`. */
 export type InstancesRoutesListInput = {
@@ -2274,8 +4800,8 @@ export type InstancesRoutesListInput = {
   tag?: string;
 };
 
-/** Return shape for `instances.routes.list`. (no @Returns declared) */
-export type InstancesRoutesListReturn = unknown;
+/** Return shape for `instances.routes.list`. */
+export type InstancesRoutesListReturn = Record<string, unknown>;
 
 /** Input shape for `instances.routes.remove`. */
 export type InstancesRoutesRemoveInput = {
@@ -2284,8 +4810,8 @@ export type InstancesRoutesRemoveInput = {
   pattern: string;
 };
 
-/** Return shape for `instances.routes.remove`. (no @Returns declared) */
-export type InstancesRoutesRemoveReturn = unknown;
+/** Return shape for `instances.routes.remove`. */
+export type InstancesRoutesRemoveReturn = Record<string, unknown>;
 
 /** Input shape for `instances.routes.restore`. */
 export type InstancesRoutesRestoreInput = {
@@ -2294,8 +4820,8 @@ export type InstancesRoutesRestoreInput = {
   pattern: string;
 };
 
-/** Return shape for `instances.routes.restore`. (no @Returns declared) */
-export type InstancesRoutesRestoreReturn = unknown;
+/** Return shape for `instances.routes.restore`. */
+export type InstancesRoutesRestoreReturn = Record<string, unknown>;
 
 /** Input shape for `instances.routes.set`. */
 export type InstancesRoutesSetInput = {
@@ -2306,8 +4832,8 @@ export type InstancesRoutesSetInput = {
   value: string;
 };
 
-/** Return shape for `instances.routes.set`. (no @Returns declared) */
-export type InstancesRoutesSetReturn = unknown;
+/** Return shape for `instances.routes.set`. */
+export type InstancesRoutesSetReturn = Record<string, unknown>;
 
 /** Input shape for `instances.routes.show`. */
 export type InstancesRoutesShowInput = {
@@ -2315,8 +4841,8 @@ export type InstancesRoutesShowInput = {
   pattern: string;
 };
 
-/** Return shape for `instances.routes.show`. (no @Returns declared) */
-export type InstancesRoutesShowReturn = unknown;
+/** Return shape for `instances.routes.show`. */
+export type InstancesRoutesShowReturn = Record<string, unknown>;
 
 /** Input shape for `instances.set`. */
 export type InstancesSetInput = {
@@ -2325,24 +4851,24 @@ export type InstancesSetInput = {
   value: string;
 };
 
-/** Return shape for `instances.set`. (no @Returns declared) */
-export type InstancesSetReturn = unknown;
+/** Return shape for `instances.set`. */
+export type InstancesSetReturn = Record<string, unknown>;
 
 /** Input shape for `instances.show`. */
 export type InstancesShowInput = {
   name: string;
 };
 
-/** Return shape for `instances.show`. (no @Returns declared) */
-export type InstancesShowReturn = unknown;
+/** Return shape for `instances.show`. */
+export type InstancesShowReturn = Record<string, unknown>;
 
 /** Input shape for `instances.status`. */
 export type InstancesStatusInput = {
   name: string;
 };
 
-/** Return shape for `instances.status`. (no @Returns declared) */
-export type InstancesStatusReturn = unknown;
+/** Return shape for `instances.status`. */
+export type InstancesStatusReturn = Record<string, unknown>;
 
 /** Input shape for `instances.target`. */
 export type InstancesTargetInput = {
@@ -2351,8 +4877,1036 @@ export type InstancesTargetInput = {
   pattern?: string;
 };
 
-/** Return shape for `instances.target`. (no @Returns declared) */
-export type InstancesTargetReturn = unknown;
+/** Return shape for `instances.target`. */
+export type InstancesTargetReturn = Record<string, unknown>;
+
+/** Input shape for `mail.accounts.create`. */
+export type MailAccountsCreateInput = {
+  credentialsRef?: string;
+  id?: string;
+  name?: string;
+  provider?: string;
+};
+
+/** Return shape for `mail.accounts.create`. */
+export type MailAccountsCreateReturn = {
+  account: {
+    capabilities: Record<string, unknown>;
+    createdAt: number;
+    credentialsRef: string | null;
+    defaultMailboxId: string | null;
+    displayName: string;
+    id: string;
+    provider: string;
+    settings: Record<string, unknown>;
+    status: "active" | "paused" | "auth_required" | "disabled";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `mail.accounts.list`. */
+export type MailAccountsListInput = {
+  limit?: string;
+  offset?: string;
+  provider?: string;
+  status?: string;
+};
+
+/** Return shape for `mail.accounts.list`. */
+export type MailAccountsListReturn = {
+  accounts: Array<{
+    capabilities: Record<string, unknown>;
+    createdAt: number;
+    credentialsRef: string | null;
+    defaultMailboxId: string | null;
+    displayName: string;
+    id: string;
+    provider: string;
+    settings: Record<string, unknown>;
+    status: "active" | "paused" | "auth_required" | "disabled";
+    updatedAt: number;
+  }>;
+};
+
+/** Input shape for `mail.accounts.sync`. */
+export type MailAccountsSyncInput = {
+  account: string;
+  once?: boolean;
+};
+
+/** Return shape for `mail.accounts.sync`. */
+export type MailAccountsSyncReturn = ({
+  account: {
+    capabilities: Record<string, unknown>;
+    createdAt: number;
+    credentialsRef: string | null;
+    defaultMailboxId: string | null;
+    displayName: string;
+    id: string;
+    provider: string;
+    settings: Record<string, unknown>;
+    status: "active" | "paused" | "auth_required" | "disabled";
+    updatedAt: number;
+  };
+  inboxCreated: number;
+  mailboxesImported: number;
+  messagesImported: number;
+  ok: true;
+  provider: "ravi-mail";
+  status: "synced";
+}) | ({
+  account: {
+    capabilities: Record<string, unknown>;
+    createdAt: number;
+    credentialsRef: string | null;
+    defaultMailboxId: string | null;
+    displayName: string;
+    id: string;
+    provider: string;
+    settings: Record<string, unknown>;
+    status: "active" | "paused" | "auth_required" | "disabled";
+    updatedAt: number;
+  };
+  message: string;
+  ok: false;
+  status: "adapter_not_started";
+});
+
+/** Input shape for `mail.domains.create`. */
+export type MailDomainsCreateInput = {
+  console?: string;
+  domain: string;
+};
+
+/** Return shape for `mail.domains.create`. */
+export type MailDomainsCreateReturn = Record<string, unknown>;
+
+/** Input shape for `mail.domains.list`. */
+export type MailDomainsListInput = {
+  console?: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `mail.domains.list`. */
+export type MailDomainsListReturn = Record<string, unknown>;
+
+/** Input shape for `mail.mailboxes.create`. */
+export type MailMailboxesCreateInput = {
+  account?: string;
+  address: string;
+  default?: boolean;
+  name?: string;
+  providerMailboxId?: string;
+  role?: string;
+};
+
+/** Return shape for `mail.mailboxes.create`. */
+export type MailMailboxesCreateReturn = {
+  mailbox: {
+    accountId: string;
+    address: string;
+    createdAt: number;
+    displayName: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    normalizedAddress: string;
+    providerMailboxId: string | null;
+    role: "primary" | "alias" | "shared" | "system" | "unknown";
+    status: "active" | "paused" | "disabled";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `mail.mailboxes.disable`. */
+export type MailMailboxesDisableInput = {
+  mailbox: string;
+};
+
+/** Return shape for `mail.mailboxes.disable`. */
+export type MailMailboxesDisableReturn = {
+  mailbox: {
+    accountId: string;
+    address: string;
+    createdAt: number;
+    displayName: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    normalizedAddress: string;
+    providerMailboxId: string | null;
+    role: "primary" | "alias" | "shared" | "system" | "unknown";
+    status: "active" | "paused" | "disabled";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `mail.mailboxes.list`. */
+export type MailMailboxesListInput = {
+  account?: string;
+  limit?: string;
+  offset?: string;
+  status?: string;
+};
+
+/** Return shape for `mail.mailboxes.list`. */
+export type MailMailboxesListReturn = {
+  mailboxes: Array<{
+    accountId: string;
+    address: string;
+    createdAt: number;
+    displayName: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    normalizedAddress: string;
+    providerMailboxId: string | null;
+    role: "primary" | "alias" | "shared" | "system" | "unknown";
+    status: "active" | "paused" | "disabled";
+    updatedAt: number;
+  }>;
+};
+
+/** Input shape for `mail.mailboxes.show`. */
+export type MailMailboxesShowInput = {
+  mailbox: string;
+};
+
+/** Return shape for `mail.mailboxes.show`. */
+export type MailMailboxesShowReturn = {
+  mailbox: {
+    accountId: string;
+    address: string;
+    createdAt: number;
+    displayName: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    normalizedAddress: string;
+    providerMailboxId: string | null;
+    role: "primary" | "alias" | "shared" | "system" | "unknown";
+    status: "active" | "paused" | "disabled";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `mail.messages.import`. */
+export type MailMessagesImportInput = {
+  body?: string;
+  from?: string;
+  mailbox?: string;
+  provider?: string;
+  providerMessageId?: string;
+  providerThreadId?: string;
+  rfcMessageId?: string;
+  subject?: string;
+  to?: string;
+};
+
+/** Return shape for `mail.messages.import`. */
+export type MailMessagesImportReturn = {
+  inboxCreated: boolean;
+  inboxItem: (Record<string, unknown>) | null;
+  message: ({
+    accountId: string;
+    addresses: Array<{
+      address: string;
+      agentId: string | null;
+      contactId: string | null;
+      displayName: string | null;
+      id: string;
+      kind: "from" | "to" | "cc" | "bcc" | "reply_to" | "sender";
+      messageId: string;
+      normalizedAddress: string;
+      platformIdentityId: string | null;
+      raw: Record<string, unknown>;
+    }>;
+    attachments: Array<{
+      contentType: string | null;
+      filename: string | null;
+      id: string;
+      localBlobRef: string | null;
+      messageId: string;
+      metadata: Record<string, unknown>;
+      providerAttachmentId: string | null;
+      redactionStatus: string | null;
+      sha256: string | null;
+      sizeBytes: number | null;
+    }>;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  }) | ({
+    accountId: string;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  });
+};
+
+/** Input shape for `mail.messages.list`. */
+export type MailMessagesListInput = {
+  addresses?: boolean;
+  limit?: string;
+  mailbox?: string;
+  offset?: string;
+  query?: string;
+  status?: string;
+};
+
+/** Return shape for `mail.messages.list`. */
+export type MailMessagesListReturn = {
+  messages: Array<({
+    accountId: string;
+    addresses: Array<{
+      address: string;
+      agentId: string | null;
+      contactId: string | null;
+      displayName: string | null;
+      id: string;
+      kind: "from" | "to" | "cc" | "bcc" | "reply_to" | "sender";
+      messageId: string;
+      normalizedAddress: string;
+      platformIdentityId: string | null;
+      raw: Record<string, unknown>;
+    }>;
+    attachments: Array<{
+      contentType: string | null;
+      filename: string | null;
+      id: string;
+      localBlobRef: string | null;
+      messageId: string;
+      metadata: Record<string, unknown>;
+      providerAttachmentId: string | null;
+      redactionStatus: string | null;
+      sha256: string | null;
+      sizeBytes: number | null;
+    }>;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  }) | ({
+    accountId: string;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  })>;
+};
+
+/** Input shape for `mail.messages.read`. */
+export type MailMessagesReadInput = {
+  addresses?: boolean;
+  message: string;
+};
+
+/** Return shape for `mail.messages.read`. */
+export type MailMessagesReadReturn = {
+  message: ({
+    accountId: string;
+    addresses: Array<{
+      address: string;
+      agentId: string | null;
+      contactId: string | null;
+      displayName: string | null;
+      id: string;
+      kind: "from" | "to" | "cc" | "bcc" | "reply_to" | "sender";
+      messageId: string;
+      normalizedAddress: string;
+      platformIdentityId: string | null;
+      raw: Record<string, unknown>;
+    }>;
+    attachments: Array<{
+      contentType: string | null;
+      filename: string | null;
+      id: string;
+      localBlobRef: string | null;
+      messageId: string;
+      metadata: Record<string, unknown>;
+      providerAttachmentId: string | null;
+      redactionStatus: string | null;
+      sha256: string | null;
+      sizeBytes: number | null;
+    }>;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  }) | ({
+    accountId: string;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  });
+};
+
+/** Input shape for `mail.messages.search`. */
+export type MailMessagesSearchInput = {
+  limit?: string;
+  mailbox?: string;
+  query: string;
+};
+
+/** Return shape for `mail.messages.search`. */
+export type MailMessagesSearchReturn = {
+  messages: Array<({
+    accountId: string;
+    addresses: Array<{
+      address: string;
+      agentId: string | null;
+      contactId: string | null;
+      displayName: string | null;
+      id: string;
+      kind: "from" | "to" | "cc" | "bcc" | "reply_to" | "sender";
+      messageId: string;
+      normalizedAddress: string;
+      platformIdentityId: string | null;
+      raw: Record<string, unknown>;
+    }>;
+    attachments: Array<{
+      contentType: string | null;
+      filename: string | null;
+      id: string;
+      localBlobRef: string | null;
+      messageId: string;
+      metadata: Record<string, unknown>;
+      providerAttachmentId: string | null;
+      redactionStatus: string | null;
+      sha256: string | null;
+      sizeBytes: number | null;
+    }>;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  }) | ({
+    accountId: string;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  })>;
+};
+
+/** Input shape for `mail.outbox.inspect`. */
+export type MailOutboxInspectInput = {
+  outbox: string;
+};
+
+/** Return shape for `mail.outbox.inspect`. */
+export type MailOutboxInspectReturn = {
+  outbox: {
+    accountId: string;
+    ackedAt: number | null;
+    attemptCount: number;
+    createdAt: number;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    mailboxId: string;
+    messageId: string;
+    nextAttemptAt: number;
+    operation: "send" | "reply" | "draft" | "update_draft" | "delete_draft";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `mail.outbox.list`. */
+export type MailOutboxListInput = {
+  limit?: string;
+  mailbox?: string;
+  offset?: string;
+  status?: string;
+};
+
+/** Return shape for `mail.outbox.list`. */
+export type MailOutboxListReturn = {
+  outbox: Array<{
+    accountId: string;
+    ackedAt: number | null;
+    attemptCount: number;
+    createdAt: number;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    mailboxId: string;
+    messageId: string;
+    nextAttemptAt: number;
+    operation: "send" | "reply" | "draft" | "update_draft" | "delete_draft";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  }>;
+};
+
+/** Input shape for `mail.outbox.retry`. */
+export type MailOutboxRetryInput = {
+  outbox: string;
+};
+
+/** Return shape for `mail.outbox.retry`. */
+export type MailOutboxRetryReturn = {
+  outbox: {
+    accountId: string;
+    ackedAt: number | null;
+    attemptCount: number;
+    createdAt: number;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    mailboxId: string;
+    messageId: string;
+    nextAttemptAt: number;
+    operation: "send" | "reply" | "draft" | "update_draft" | "delete_draft";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `mail.outbox.status`. */
+export type MailOutboxStatusInput = Record<string, never>;
+
+/** Return shape for `mail.outbox.status`. */
+export type MailOutboxStatusReturn = {
+  counts: Record<string, number>;
+  total: number;
+};
+
+/** Input shape for `mail.providers.list`. */
+export type MailProvidersListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `mail.providers.list`. */
+export type MailProvidersListReturn = {
+  providers: Array<{
+    accounts: number;
+    default: boolean;
+    localFirst: boolean;
+    provider: string;
+  }>;
+};
+
+/** Input shape for `mail.providers.ravi-mail.mailboxes.create`. */
+export type MailProvidersRaviMailMailboxesCreateInput = {
+  addressOrLocalPart: string;
+  console?: string;
+  domain?: string;
+};
+
+/** Return shape for `mail.providers.ravi-mail.mailboxes.create`. */
+export type MailProvidersRaviMailMailboxesCreateReturn = Record<string, unknown>;
+
+/** Input shape for `mail.providers.ravi-mail.mailboxes.disable`. */
+export type MailProvidersRaviMailMailboxesDisableInput = {
+  console?: string;
+  mailbox: string;
+};
+
+/** Return shape for `mail.providers.ravi-mail.mailboxes.disable`. */
+export type MailProvidersRaviMailMailboxesDisableReturn = Record<string, unknown>;
+
+/** Input shape for `mail.providers.ravi-mail.mailboxes.list`. */
+export type MailProvidersRaviMailMailboxesListInput = {
+  console?: string;
+  domain?: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `mail.providers.ravi-mail.mailboxes.list`. */
+export type MailProvidersRaviMailMailboxesListReturn = Record<string, unknown>;
+
+/** Input shape for `mail.providers.ravi-mail.mailboxes.show`. */
+export type MailProvidersRaviMailMailboxesShowInput = {
+  console?: string;
+  mailbox: string;
+};
+
+/** Return shape for `mail.providers.ravi-mail.mailboxes.show`. */
+export type MailProvidersRaviMailMailboxesShowReturn = Record<string, unknown>;
+
+/** Input shape for `mail.providers.ravi-mail.messages.list`. */
+export type MailProvidersRaviMailMessagesListInput = {
+  addresses?: boolean;
+  console?: string;
+  limit?: string;
+  mailbox?: string;
+  offset?: string;
+};
+
+/** Return shape for `mail.providers.ravi-mail.messages.list`. */
+export type MailProvidersRaviMailMessagesListReturn = Record<string, unknown>;
+
+/** Input shape for `mail.providers.ravi-mail.messages.read`. */
+export type MailProvidersRaviMailMessagesReadInput = {
+  console?: string;
+  message: string;
+  payload?: string;
+};
+
+/** Return shape for `mail.providers.ravi-mail.messages.read`. */
+export type MailProvidersRaviMailMessagesReadReturn = Record<string, unknown>;
+
+/** Input shape for `mail.providers.ravi-mail.messages.show`. */
+export type MailProvidersRaviMailMessagesShowInput = {
+  addresses?: boolean;
+  console?: string;
+  message: string;
+};
+
+/** Return shape for `mail.providers.ravi-mail.messages.show`. */
+export type MailProvidersRaviMailMessagesShowReturn = Record<string, unknown>;
+
+/** Input shape for `mail.providers.ravi-mail.send`. */
+export type MailProvidersRaviMailSendInput = {
+  body?: string;
+  console?: string;
+  from?: string;
+  idempotencyKey?: string;
+  subject?: string;
+  to?: string;
+};
+
+/** Return shape for `mail.providers.ravi-mail.send`. */
+export type MailProvidersRaviMailSendReturn = Record<string, unknown>;
+
+/** Input shape for `mail.reply`. */
+export type MailReplyInput = {
+  bcc?: string;
+  body?: string;
+  cc?: string;
+  from?: string;
+  idempotencyKey?: string;
+  message: string;
+  subject?: string;
+  to?: string;
+};
+
+/** Return shape for `mail.reply`. */
+export type MailReplyReturn = {
+  message: ({
+    accountId: string;
+    addresses: Array<{
+      address: string;
+      agentId: string | null;
+      contactId: string | null;
+      displayName: string | null;
+      id: string;
+      kind: "from" | "to" | "cc" | "bcc" | "reply_to" | "sender";
+      messageId: string;
+      normalizedAddress: string;
+      platformIdentityId: string | null;
+      raw: Record<string, unknown>;
+    }>;
+    attachments: Array<{
+      contentType: string | null;
+      filename: string | null;
+      id: string;
+      localBlobRef: string | null;
+      messageId: string;
+      metadata: Record<string, unknown>;
+      providerAttachmentId: string | null;
+      redactionStatus: string | null;
+      sha256: string | null;
+      sizeBytes: number | null;
+    }>;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  }) | ({
+    accountId: string;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  });
+  outbox: {
+    accountId: string;
+    ackedAt: number | null;
+    attemptCount: number;
+    createdAt: number;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    mailboxId: string;
+    messageId: string;
+    nextAttemptAt: number;
+    operation: "send" | "reply" | "draft" | "update_draft" | "delete_draft";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  };
+  queued: true;
+};
+
+/** Input shape for `mail.send`. */
+export type MailSendInput = {
+  body?: string;
+  from?: string;
+  idempotencyKey?: string;
+  subject?: string;
+  to?: string;
+};
+
+/** Return shape for `mail.send`. */
+export type MailSendReturn = {
+  message: ({
+    accountId: string;
+    addresses: Array<{
+      address: string;
+      agentId: string | null;
+      contactId: string | null;
+      displayName: string | null;
+      id: string;
+      kind: "from" | "to" | "cc" | "bcc" | "reply_to" | "sender";
+      messageId: string;
+      normalizedAddress: string;
+      platformIdentityId: string | null;
+      raw: Record<string, unknown>;
+    }>;
+    attachments: Array<{
+      contentType: string | null;
+      filename: string | null;
+      id: string;
+      localBlobRef: string | null;
+      messageId: string;
+      metadata: Record<string, unknown>;
+      providerAttachmentId: string | null;
+      redactionStatus: string | null;
+      sha256: string | null;
+      sizeBytes: number | null;
+    }>;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  }) | ({
+    accountId: string;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  });
+  outbox: {
+    accountId: string;
+    ackedAt: number | null;
+    attemptCount: number;
+    createdAt: number;
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    mailboxId: string;
+    messageId: string;
+    nextAttemptAt: number;
+    operation: "send" | "reply" | "draft" | "update_draft" | "delete_draft";
+    payload: Record<string, unknown>;
+    providerResult: (Record<string, unknown>) | null;
+    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  };
+  queued: true;
+};
+
+/** Input shape for `mail.threads.read`. */
+export type MailThreadsReadInput = {
+  addresses?: boolean;
+  thread: string;
+};
+
+/** Return shape for `mail.threads.read`. */
+export type MailThreadsReadReturn = {
+  messages: Array<({
+    accountId: string;
+    addresses: Array<{
+      address: string;
+      agentId: string | null;
+      contactId: string | null;
+      displayName: string | null;
+      id: string;
+      kind: "from" | "to" | "cc" | "bcc" | "reply_to" | "sender";
+      messageId: string;
+      normalizedAddress: string;
+      platformIdentityId: string | null;
+      raw: Record<string, unknown>;
+    }>;
+    attachments: Array<{
+      contentType: string | null;
+      filename: string | null;
+      id: string;
+      localBlobRef: string | null;
+      messageId: string;
+      metadata: Record<string, unknown>;
+      providerAttachmentId: string | null;
+      redactionStatus: string | null;
+      sha256: string | null;
+      sizeBytes: number | null;
+    }>;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  }) | ({
+    accountId: string;
+    bodyRedactionStatus: "full_local" | "preview_only" | "redacted" | "missing";
+    createdAt: number;
+    dateHeaderAt: number | null;
+    direction: "inbound" | "outbound" | "draft" | "system";
+    id: string;
+    mailboxId: string;
+    providerHistoryId: string | null;
+    providerMessageId: string | null;
+    providerProvenance: Record<string, unknown>;
+    providerThreadId: string | null;
+    receivedAt: number | null;
+    rfcMessageId: string | null;
+    safePayload: Record<string, unknown>;
+    sentAt: number | null;
+    snippet: string | null;
+    status: "received" | "queued" | "sending" | "sent" | "delivered" | "failed" | "archived" | "trashed" | "spam";
+    subject: string | null;
+    subjectNormalized: string | null;
+    threadId: string;
+    updatedAt: number;
+  })>;
+  thread: {
+    createdAt: number;
+    id: string;
+    lastLocalMessageId: string | null;
+    latestMessageAt: number | null;
+    metadata: Record<string, unknown>;
+    participants: unknown[];
+    providerThreadRefs: Record<string, unknown>;
+    subjectNormalized: string | null;
+    updatedAt: number;
+  };
+};
 
 /** Input shape for `media.send`. */
 export type MediaSendInput = {
@@ -2365,8 +5919,75 @@ export type MediaSendInput = {
   to?: string;
 };
 
-/** Return shape for `media.send`. (no @Returns declared) */
-export type MediaSendReturn = unknown;
+/** Return shape for `media.send`. */
+export type MediaSendReturn = {
+  delivery: Record<string, unknown>;
+  media: {
+    caption?: string;
+    filePath: string;
+    filename: string;
+    mimeType: string;
+    type: string;
+    voiceNote: boolean;
+    [k: string]: unknown;
+  };
+  success: true;
+  target: {
+    accountId: string;
+    channel?: string;
+    chatId: string;
+    instanceId: string;
+    threadId?: string;
+    [k: string]: unknown;
+  };
+};
+
+/** Input shape for `metrics.dates`. */
+export type MetricsDatesInput = Record<string, never>;
+
+/** Return shape for `metrics.dates`. */
+export type MetricsDatesReturn = string[];
+
+/** Input shape for `metrics.rollup`. */
+export type MetricsRollupInput = {
+  since?: string;
+  through?: string;
+};
+
+/** Return shape for `metrics.rollup`. */
+export type MetricsRollupReturn = {
+  dates: string[];
+  rowsWritten: number;
+};
+
+/** Input shape for `metrics.show`. */
+export type MetricsShowInput = {
+  agent?: string;
+  by?: string;
+  days?: string;
+  since?: string;
+  through?: string;
+};
+
+/** Return shape for `metrics.show`. */
+export type MetricsShowReturn = Array<{
+  agentId: string;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  costEventCount: number;
+  date: string;
+  inputTokens: number;
+  model: string;
+  outputTokens: number;
+  rolledUpAt: number;
+  toolCalls: number;
+  toolErrors: number;
+  totalCostUsd: number;
+  totalDurationMs: number;
+  turnsComplete: number;
+  turnsFailed: number;
+  turnsInterrupted: number;
+}>;
 
 /** Input shape for `observers.list`. */
 export type ObserversListInput = {
@@ -2376,8 +5997,23 @@ export type ObserversListInput = {
   session?: string;
 };
 
-/** Return shape for `observers.list`. (no @Returns declared) */
-export type ObserversListReturn = unknown;
+/** Return shape for `observers.list`. */
+export type ObserversListReturn = {
+  bindings: Array<Record<string, unknown>>;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.profiles.init`. */
 export type ObserversProfilesInitInput = {
@@ -2386,8 +6022,13 @@ export type ObserversProfilesInitInput = {
   source?: string;
 };
 
-/** Return shape for `observers.profiles.init`. (no @Returns declared) */
-export type ObserversProfilesInitReturn = unknown;
+/** Return shape for `observers.profiles.init`. */
+export type ObserversProfilesInitReturn = {
+  profileDir: string;
+  profilePath: string;
+  sourceKind: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.profiles.list`. */
 export type ObserversProfilesListInput = {
@@ -2395,8 +6036,23 @@ export type ObserversProfilesListInput = {
   offset?: string;
 };
 
-/** Return shape for `observers.profiles.list`. (no @Returns declared) */
-export type ObserversProfilesListReturn = unknown;
+/** Return shape for `observers.profiles.list`. */
+export type ObserversProfilesListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  profiles: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.profiles.preview`. */
 export type ObserversProfilesPreviewInput = {
@@ -2404,56 +6060,91 @@ export type ObserversProfilesPreviewInput = {
   profileId: string;
 };
 
-/** Return shape for `observers.profiles.preview`. (no @Returns declared) */
-export type ObserversProfilesPreviewReturn = unknown;
+/** Return shape for `observers.profiles.preview`. */
+export type ObserversProfilesPreviewReturn = {
+  eventMarkdown: string;
+  eventType: string;
+  profile: Record<string, unknown>;
+  prompt: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.profiles.show`. */
 export type ObserversProfilesShowInput = {
   profileId: string;
 };
 
-/** Return shape for `observers.profiles.show`. (no @Returns declared) */
-export type ObserversProfilesShowReturn = unknown;
+/** Return shape for `observers.profiles.show`. */
+export type ObserversProfilesShowReturn = {
+  body: string;
+  profile: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.profiles.validate`. */
 export type ObserversProfilesValidateInput = {
   profileId?: string;
 };
 
-/** Return shape for `observers.profiles.validate`. (no @Returns declared) */
-export type ObserversProfilesValidateReturn = unknown;
+/** Return shape for `observers.profiles.validate`. */
+export type ObserversProfilesValidateReturn = {
+  errors: Array<Record<string, unknown>>;
+  ok: boolean;
+  profiles: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.refresh`. */
 export type ObserversRefreshInput = {
   session: string;
 };
 
-/** Return shape for `observers.refresh`. (no @Returns declared) */
-export type ObserversRefreshReturn = unknown;
+/** Return shape for `observers.refresh`. */
+export type ObserversRefreshReturn = {
+  bindings: Array<Record<string, unknown>>;
+  created: Array<Record<string, unknown>>;
+  skipped: Array<Record<string, unknown>>;
+  source: Record<string, unknown>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.rules.disable`. */
 export type ObserversRulesDisableInput = {
   id: string;
 };
 
-/** Return shape for `observers.rules.disable`. (no @Returns declared) */
-export type ObserversRulesDisableReturn = unknown;
+/** Return shape for `observers.rules.disable`. */
+export type ObserversRulesDisableReturn = {
+  rule: Record<string, unknown>;
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.rules.enable`. */
 export type ObserversRulesEnableInput = {
   id: string;
 };
 
-/** Return shape for `observers.rules.enable`. (no @Returns declared) */
-export type ObserversRulesEnableReturn = unknown;
+/** Return shape for `observers.rules.enable`. */
+export type ObserversRulesEnableReturn = {
+  rule: Record<string, unknown>;
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.rules.explain`. */
 export type ObserversRulesExplainInput = {
   session: string;
 };
 
-/** Return shape for `observers.rules.explain`. (no @Returns declared) */
-export type ObserversRulesExplainReturn = unknown;
+/** Return shape for `observers.rules.explain`. */
+export type ObserversRulesExplainReturn = {
+  bindings: Array<Record<string, unknown>>;
+  rules: Array<Record<string, unknown>>;
+  source: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.rules.list`. */
 export type ObserversRulesListInput = {
@@ -2461,16 +6152,35 @@ export type ObserversRulesListInput = {
   offset?: string;
 };
 
-/** Return shape for `observers.rules.list`. (no @Returns declared) */
-export type ObserversRulesListReturn = unknown;
+/** Return shape for `observers.rules.list`. */
+export type ObserversRulesListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  rules: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.rules.rm`. */
 export type ObserversRulesRmInput = {
   id: string;
 };
 
-/** Return shape for `observers.rules.rm`. (no @Returns declared) */
-export type ObserversRulesRmReturn = unknown;
+/** Return shape for `observers.rules.rm`. */
+export type ObserversRulesRmReturn = {
+  deleted: unknown;
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.rules.set`. */
 export type ObserversRulesSetInput = {
@@ -2498,30 +6208,147 @@ export type ObserversRulesSetInput = {
   tagTarget?: string;
 };
 
-/** Return shape for `observers.rules.set`. (no @Returns declared) */
-export type ObserversRulesSetReturn = unknown;
+/** Return shape for `observers.rules.set`. */
+export type ObserversRulesSetReturn = {
+  rule: Record<string, unknown>;
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.rules.show`. */
 export type ObserversRulesShowInput = {
   id: string;
 };
 
-/** Return shape for `observers.rules.show`. (no @Returns declared) */
-export type ObserversRulesShowReturn = unknown;
+/** Return shape for `observers.rules.show`. */
+export type ObserversRulesShowReturn = {
+  rule: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.rules.validate`. */
 export type ObserversRulesValidateInput = Record<string, never>;
 
-/** Return shape for `observers.rules.validate`. (no @Returns declared) */
-export type ObserversRulesValidateReturn = unknown;
+/** Return shape for `observers.rules.validate`. */
+export type ObserversRulesValidateReturn = {
+  errors: Array<Record<string, unknown>>;
+  ok: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `observers.show`. */
 export type ObserversShowInput = {
   bindingId: string;
 };
 
-/** Return shape for `observers.show`. (no @Returns declared) */
-export type ObserversShowReturn = unknown;
+/** Return shape for `observers.show`. */
+export type ObserversShowReturn = {
+  binding: Record<string, unknown>;
+  [k: string]: unknown;
+};
+
+/** Input shape for `pages.create`. */
+export type PagesCreateInput = {
+  console?: string;
+  defaultSite?: boolean;
+  project: string;
+  slug: string;
+  visibility?: string;
+};
+
+/** Return shape for `pages.create`. */
+export type PagesCreateReturn = {
+  consoleUrl: string;
+  projectRef: string;
+  site: Record<string, unknown>;
+  success: true;
+  url: string | null;
+};
+
+/** Input shape for `pages.domains`. */
+export type PagesDomainsInput = {
+  console?: string;
+  hostnames: string[];
+  project: string;
+  site: string;
+};
+
+/** Return shape for `pages.domains`. */
+export type PagesDomainsReturn = {
+  bindings: Array<Record<string, unknown>>;
+  consoleUrl: string;
+  hostnames: string[];
+  projectRef: string;
+  site: Record<string, unknown>;
+  siteRef: string;
+  success: true;
+  total: number;
+};
+
+/** Input shape for `pages.list`. */
+export type PagesListInput = {
+  console?: string;
+  limit?: string;
+  offset?: string;
+  project: string;
+};
+
+/** Return shape for `pages.list`. */
+export type PagesListReturn = {
+  consoleUrl: string;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projectRef: string;
+  sites: Array<Record<string, unknown>>;
+  success: true;
+  total: number;
+};
+
+/** Input shape for `pages.update`. */
+export type PagesUpdateInput = {
+  console?: string;
+  project: string;
+  site: string;
+  visibility?: string;
+};
+
+/** Return shape for `pages.update`. */
+export type PagesUpdateReturn = {
+  consoleUrl: string;
+  edgeManifestRepair: unknown;
+  projectRef: string;
+  site: Record<string, unknown>;
+  siteRef: string;
+  success: true;
+  url: string | null;
+};
+
+/** Input shape for `pages.visibility`. */
+export type PagesVisibilityInput = {
+  console?: string;
+  project: string;
+  site: string;
+  visibility: string;
+};
+
+/** Return shape for `pages.visibility`. */
+export type PagesVisibilityReturn = {
+  consoleUrl: string;
+  edgeManifestRepair: unknown;
+  projectRef: string;
+  site: Record<string, unknown>;
+  siteRef: string;
+  success: true;
+  url: string | null;
+};
 
 /** Input shape for `permissions.check`. */
 export type PermissionsCheckInput = {
@@ -2530,16 +6357,36 @@ export type PermissionsCheckInput = {
   subject: string;
 };
 
-/** Return shape for `permissions.check`. (no @Returns declared) */
-export type PermissionsCheckReturn = unknown;
+/** Return shape for `permissions.check`. */
+export type PermissionsCheckReturn = {
+  allowed: boolean;
+  object: {
+    id: string;
+    raw: string;
+    type: string;
+  };
+  permission: string;
+  subject: {
+    id: string;
+    raw: string;
+    type: string;
+  };
+};
 
 /** Input shape for `permissions.clear`. */
 export type PermissionsClearInput = {
   all?: boolean;
 };
 
-/** Return shape for `permissions.clear`. (no @Returns declared) */
-export type PermissionsClearReturn = unknown;
+/** Return shape for `permissions.clear`. */
+export type PermissionsClearReturn = {
+  changedCount: number;
+  status: "cleared";
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+};
 
 /** Input shape for `permissions.grant`. */
 export type PermissionsGrantInput = {
@@ -2548,8 +6395,29 @@ export type PermissionsGrantInput = {
   subject: string;
 };
 
-/** Return shape for `permissions.grant`. (no @Returns declared) */
-export type PermissionsGrantReturn = unknown;
+/** Return shape for `permissions.grant`. */
+export type PermissionsGrantReturn = {
+  changedCount: number;
+  relation: {
+    id?: string;
+    object: string;
+    objectId: string;
+    objectMembers?: string[];
+    objectType: string;
+    relation: string;
+    source?: string;
+    subject: string;
+    subjectId: string;
+    subjectType: string;
+    [k: string]: unknown;
+  };
+  status: "granted";
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  warnings: Array<Record<string, unknown>>;
+};
 
 /** Input shape for `permissions.init`. */
 export type PermissionsInitInput = {
@@ -2557,8 +6425,28 @@ export type PermissionsInitInput = {
   template: string;
 };
 
-/** Return shape for `permissions.init`. (no @Returns declared) */
-export type PermissionsInitReturn = unknown;
+/** Return shape for `permissions.init`. */
+export type PermissionsInitReturn = {
+  changedCount: number;
+  relations: Array<{
+    id?: string;
+    object: string;
+    objectId: string;
+    objectMembers?: string[];
+    objectType: string;
+    relation: string;
+    source?: string;
+    subject: string;
+    subjectId: string;
+    subjectType: string;
+    [k: string]: unknown;
+  }>;
+  status: "applied";
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+};
 
 /** Input shape for `permissions.list`. */
 export type PermissionsListInput = {
@@ -2570,8 +6458,54 @@ export type PermissionsListInput = {
   subject?: string;
 };
 
-/** Return shape for `permissions.list`. (no @Returns declared) */
-export type PermissionsListReturn = unknown;
+/** Return shape for `permissions.list`. */
+export type PermissionsListReturn = {
+  filter: {
+    objectId?: string;
+    objectType?: string;
+    relation?: string;
+    source?: string;
+    subjectId?: string;
+    subjectType?: string;
+    [k: string]: unknown;
+  };
+  items: Array<{
+    id?: string;
+    object: string;
+    objectId: string;
+    objectMembers?: string[];
+    objectType: string;
+    relation: string;
+    source?: string;
+    subject: string;
+    subjectId: string;
+    subjectType: string;
+    [k: string]: unknown;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  relations: Array<{
+    id?: string;
+    object: string;
+    objectId: string;
+    objectMembers?: string[];
+    objectType: string;
+    relation: string;
+    source?: string;
+    subject: string;
+    subjectId: string;
+    subjectType: string;
+    [k: string]: unknown;
+  }>;
+  total: number;
+};
 
 /** Input shape for `permissions.revoke`. */
 export type PermissionsRevokeInput = {
@@ -2580,14 +6514,67 @@ export type PermissionsRevokeInput = {
   subject: string;
 };
 
-/** Return shape for `permissions.revoke`. (no @Returns declared) */
-export type PermissionsRevokeReturn = unknown;
+/** Return shape for `permissions.revoke`. */
+export type PermissionsRevokeReturn = {
+  changedCount: number;
+  relation: {
+    id?: string;
+    object: string;
+    objectId: string;
+    objectMembers?: string[];
+    objectType: string;
+    relation: string;
+    source?: string;
+    subject: string;
+    subjectId: string;
+    subjectType: string;
+    [k: string]: unknown;
+  };
+  remainingIndividualRelations: Array<{
+    id?: string;
+    object: string;
+    objectId: string;
+    objectMembers?: string[];
+    objectType: string;
+    relation: string;
+    source?: string;
+    subject: string;
+    subjectId: string;
+    subjectType: string;
+    [k: string]: unknown;
+  }>;
+  status: "revoked";
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+};
 
 /** Input shape for `permissions.sync`. */
 export type PermissionsSyncInput = Record<string, never>;
 
-/** Return shape for `permissions.sync`. (no @Returns declared) */
-export type PermissionsSyncReturn = unknown;
+/** Return shape for `permissions.sync`. */
+export type PermissionsSyncReturn = {
+  changedCount: number;
+  relations: Array<{
+    id?: string;
+    object: string;
+    objectId: string;
+    objectMembers?: string[];
+    objectType: string;
+    relation: string;
+    source?: string;
+    subject: string;
+    subjectId: string;
+    subjectType: string;
+    [k: string]: unknown;
+  }>;
+  status: "synced";
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+};
 
 /** Input shape for `projects.create`. */
 export type ProjectsCreateInput = {
@@ -2602,16 +6589,20 @@ export type ProjectsCreateInput = {
   title: string;
 };
 
-/** Return shape for `projects.create`. (no @Returns declared) */
-export type ProjectsCreateReturn = unknown;
+/** Return shape for `projects.create`. */
+export type ProjectsCreateReturn = Record<string, unknown>;
 
 /** Input shape for `projects.fixtures.seed`. */
 export type ProjectsFixturesSeedInput = {
   ownerAgent?: string;
 };
 
-/** Return shape for `projects.fixtures.seed`. (no @Returns declared) */
-export type ProjectsFixturesSeedReturn = unknown;
+/** Return shape for `projects.fixtures.seed`. */
+export type ProjectsFixturesSeedReturn = {
+  fixtures: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.init`. */
 export type ProjectsInitInput = {
@@ -2629,8 +6620,12 @@ export type ProjectsInitInput = {
   workflowTemplate?: string[];
 };
 
-/** Return shape for `projects.init`. (no @Returns declared) */
-export type ProjectsInitReturn = unknown;
+/** Return shape for `projects.init`. */
+export type ProjectsInitReturn = {
+  details: Record<string, unknown>;
+  workflows: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.link`. */
 export type ProjectsLinkInput = {
@@ -2643,8 +6638,8 @@ export type ProjectsLinkInput = {
   target: string;
 };
 
-/** Return shape for `projects.link`. (no @Returns declared) */
-export type ProjectsLinkReturn = unknown;
+/** Return shape for `projects.link`. */
+export type ProjectsLinkReturn = Record<string, unknown>;
 
 /** Input shape for `projects.list`. */
 export type ProjectsListInput = {
@@ -2654,8 +6649,24 @@ export type ProjectsListInput = {
   tag?: string;
 };
 
-/** Return shape for `projects.list`. (no @Returns declared) */
-export type ProjectsListReturn = unknown;
+/** Return shape for `projects.list`. */
+export type ProjectsListReturn = {
+  filters: Record<string, unknown>;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  projects: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.next`. */
 export type ProjectsNextInput = {
@@ -2663,8 +6674,13 @@ export type ProjectsNextInput = {
   tag?: string;
 };
 
-/** Return shape for `projects.next`. (no @Returns declared) */
-export type ProjectsNextReturn = unknown;
+/** Return shape for `projects.next`. */
+export type ProjectsNextReturn = {
+  filters: Record<string, unknown>;
+  projects: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.resources.add`. */
 export type ProjectsResourcesAddInput = {
@@ -2676,8 +6692,8 @@ export type ProjectsResourcesAddInput = {
   type?: string;
 };
 
-/** Return shape for `projects.resources.add`. (no @Returns declared) */
-export type ProjectsResourcesAddReturn = unknown;
+/** Return shape for `projects.resources.add`. */
+export type ProjectsResourcesAddReturn = Record<string, unknown>;
 
 /** Input shape for `projects.resources.import`. */
 export type ProjectsResourcesImportInput = {
@@ -2690,8 +6706,12 @@ export type ProjectsResourcesImportInput = {
   worktree?: string[];
 };
 
-/** Return shape for `projects.resources.import`. (no @Returns declared) */
-export type ProjectsResourcesImportReturn = unknown;
+/** Return shape for `projects.resources.import`. */
+export type ProjectsResourcesImportReturn = {
+  resources: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.resources.list`. */
 export type ProjectsResourcesListInput = {
@@ -2701,8 +6721,23 @@ export type ProjectsResourcesListInput = {
   type?: string;
 };
 
-/** Return shape for `projects.resources.list`. (no @Returns declared) */
-export type ProjectsResourcesListReturn = unknown;
+/** Return shape for `projects.resources.list`. */
+export type ProjectsResourcesListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  resources: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.resources.show`. */
 export type ProjectsResourcesShowInput = {
@@ -2710,24 +6745,24 @@ export type ProjectsResourcesShowInput = {
   resource: string;
 };
 
-/** Return shape for `projects.resources.show`. (no @Returns declared) */
-export type ProjectsResourcesShowReturn = unknown;
+/** Return shape for `projects.resources.show`. */
+export type ProjectsResourcesShowReturn = Record<string, unknown>;
 
 /** Input shape for `projects.show`. */
 export type ProjectsShowInput = {
   project: string;
 };
 
-/** Return shape for `projects.show`. (no @Returns declared) */
-export type ProjectsShowReturn = unknown;
+/** Return shape for `projects.show`. */
+export type ProjectsShowReturn = Record<string, unknown>;
 
 /** Input shape for `projects.status`. */
 export type ProjectsStatusInput = {
   project: string;
 };
 
-/** Return shape for `projects.status`. (no @Returns declared) */
-export type ProjectsStatusReturn = unknown;
+/** Return shape for `projects.status`. */
+export type ProjectsStatusReturn = Record<string, unknown>;
 
 /** Input shape for `projects.tasks.attach`. */
 export type ProjectsTasksAttachInput = {
@@ -2740,8 +6775,13 @@ export type ProjectsTasksAttachInput = {
   workflow?: string;
 };
 
-/** Return shape for `projects.tasks.attach`. (no @Returns declared) */
-export type ProjectsTasksAttachReturn = unknown;
+/** Return shape for `projects.tasks.attach`. */
+export type ProjectsTasksAttachReturn = {
+  defaults: Record<string, unknown>;
+  details: Record<string, unknown>;
+  workflow: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.tasks.create`. */
 export type ProjectsTasksCreateInput = {
@@ -2757,8 +6797,13 @@ export type ProjectsTasksCreateInput = {
   workflow?: string;
 };
 
-/** Return shape for `projects.tasks.create`. (no @Returns declared) */
-export type ProjectsTasksCreateReturn = unknown;
+/** Return shape for `projects.tasks.create`. */
+export type ProjectsTasksCreateReturn = {
+  defaults: Record<string, unknown>;
+  details: Record<string, unknown>;
+  workflow: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.tasks.dispatch`. */
 export type ProjectsTasksDispatchInput = {
@@ -2768,8 +6813,13 @@ export type ProjectsTasksDispatchInput = {
   taskId: string;
 };
 
-/** Return shape for `projects.tasks.dispatch`. (no @Returns declared) */
-export type ProjectsTasksDispatchReturn = unknown;
+/** Return shape for `projects.tasks.dispatch`. */
+export type ProjectsTasksDispatchReturn = {
+  defaults: Record<string, unknown>;
+  details: Record<string, unknown>;
+  workflow: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.update`. */
 export type ProjectsUpdateInput = {
@@ -2785,8 +6835,8 @@ export type ProjectsUpdateInput = {
   touchSignal?: boolean;
 };
 
-/** Return shape for `projects.update`. (no @Returns declared) */
-export type ProjectsUpdateReturn = unknown;
+/** Return shape for `projects.update`. */
+export type ProjectsUpdateReturn = Record<string, unknown>;
 
 /** Input shape for `projects.workflows.attach`. */
 export type ProjectsWorkflowsAttachInput = {
@@ -2795,8 +6845,12 @@ export type ProjectsWorkflowsAttachInput = {
   runId: string;
 };
 
-/** Return shape for `projects.workflows.attach`. (no @Returns declared) */
-export type ProjectsWorkflowsAttachReturn = unknown;
+/** Return shape for `projects.workflows.attach`. */
+export type ProjectsWorkflowsAttachReturn = {
+  details: Record<string, unknown>;
+  workflow: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.workflows.start`. */
 export type ProjectsWorkflowsStartInput = {
@@ -2806,8 +6860,12 @@ export type ProjectsWorkflowsStartInput = {
   specId: string;
 };
 
-/** Return shape for `projects.workflows.start`. (no @Returns declared) */
-export type ProjectsWorkflowsStartReturn = unknown;
+/** Return shape for `projects.workflows.start`. */
+export type ProjectsWorkflowsStartReturn = {
+  details: Record<string, unknown>;
+  workflow: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.cancel`. */
 export type ProxCallsCancelInput = {
@@ -2815,16 +6873,26 @@ export type ProxCallsCancelInput = {
   reason?: string;
 };
 
-/** Return shape for `prox.calls.cancel`. (no @Returns declared) */
-export type ProxCallsCancelReturn = unknown;
+/** Return shape for `prox.calls.cancel`. */
+export type ProxCallsCancelReturn = {
+  message: string;
+  request_id: string;
+  success: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.events`. */
 export type ProxCallsEventsInput = {
   call_request_id: string;
 };
 
-/** Return shape for `prox.calls.events`. (no @Returns declared) */
-export type ProxCallsEventsReturn = unknown;
+/** Return shape for `prox.calls.events`. */
+export type ProxCallsEventsReturn = {
+  events: Array<Record<string, unknown>>;
+  request_id: string;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.profiles.configure`. */
 export type ProxCallsProfilesConfigureInput = {
@@ -2841,8 +6909,12 @@ export type ProxCallsProfilesConfigureInput = {
   voicemailPolicy?: string;
 };
 
-/** Return shape for `prox.calls.profiles.configure`. (no @Returns declared) */
-export type ProxCallsProfilesConfigureReturn = unknown;
+/** Return shape for `prox.calls.profiles.configure`. */
+export type ProxCallsProfilesConfigureReturn = {
+  profile: Record<string, unknown>;
+  provider_sync: unknown | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.profiles.list`. */
 export type ProxCallsProfilesListInput = {
@@ -2851,16 +6923,30 @@ export type ProxCallsProfilesListInput = {
   tag?: string;
 };
 
-/** Return shape for `prox.calls.profiles.list`. (no @Returns declared) */
-export type ProxCallsProfilesListReturn = unknown;
+/** Return shape for `prox.calls.profiles.list`. */
+export type ProxCallsProfilesListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.profiles.show`. */
 export type ProxCallsProfilesShowInput = {
   profile_id: string;
 };
 
-/** Return shape for `prox.calls.profiles.show`. (no @Returns declared) */
-export type ProxCallsProfilesShowReturn = unknown;
+/** Return shape for `prox.calls.profiles.show`. */
+export type ProxCallsProfilesShowReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.request`. */
 export type ProxCallsRequestInput = {
@@ -2874,24 +6960,40 @@ export type ProxCallsRequestInput = {
   var?: string[];
 };
 
-/** Return shape for `prox.calls.request`. (no @Returns declared) */
-export type ProxCallsRequestReturn = unknown;
+/** Return shape for `prox.calls.request`. */
+export type ProxCallsRequestReturn = {
+  block_reason?: string | null;
+  blocked: boolean;
+  hint: string;
+  provider_mode: "stub" | "live";
+  request: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.rules`. */
 export type ProxCallsRulesInput = {
   scope?: string;
 };
 
-/** Return shape for `prox.calls.rules`. (no @Returns declared) */
-export type ProxCallsRulesReturn = unknown;
+/** Return shape for `prox.calls.rules`. */
+export type ProxCallsRulesReturn = (Record<string, unknown>) | ({
+  message: string;
+  rules: null;
+  [k: string]: unknown;
+});
 
 /** Input shape for `prox.calls.show`. */
 export type ProxCallsShowInput = {
   call_request_id: string;
 };
 
-/** Return shape for `prox.calls.show`. (no @Returns declared) */
-export type ProxCallsShowReturn = unknown;
+/** Return shape for `prox.calls.show`. */
+export type ProxCallsShowReturn = {
+  request: Record<string, unknown>;
+  result: (Record<string, unknown>) | null;
+  runs: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.tools.bind`. */
 export type ProxCallsToolsBindInput = {
@@ -2902,8 +7004,8 @@ export type ProxCallsToolsBindInput = {
   tool_id: string;
 };
 
-/** Return shape for `prox.calls.tools.bind`. (no @Returns declared) */
-export type ProxCallsToolsBindReturn = unknown;
+/** Return shape for `prox.calls.tools.bind`. */
+export type ProxCallsToolsBindReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.tools.configure`. */
 export type ProxCallsToolsConfigureInput = {
@@ -2912,8 +7014,8 @@ export type ProxCallsToolsConfigureInput = {
   tool_id: string;
 };
 
-/** Return shape for `prox.calls.tools.configure`. (no @Returns declared) */
-export type ProxCallsToolsConfigureReturn = unknown;
+/** Return shape for `prox.calls.tools.configure`. */
+export type ProxCallsToolsConfigureReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.tools.create`. */
 export type ProxCallsToolsCreateInput = {
@@ -2926,8 +7028,8 @@ export type ProxCallsToolsCreateInput = {
   tool_id: string;
 };
 
-/** Return shape for `prox.calls.tools.create`. (no @Returns declared) */
-export type ProxCallsToolsCreateReturn = unknown;
+/** Return shape for `prox.calls.tools.create`. */
+export type ProxCallsToolsCreateReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.tools.list`. */
 export type ProxCallsToolsListInput = {
@@ -2937,8 +7039,22 @@ export type ProxCallsToolsListInput = {
   tag?: string;
 };
 
-/** Return shape for `prox.calls.tools.list`. (no @Returns declared) */
-export type ProxCallsToolsListReturn = unknown;
+/** Return shape for `prox.calls.tools.list`. */
+export type ProxCallsToolsListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.tools.run`. */
 export type ProxCallsToolsRunInput = {
@@ -2948,24 +7064,32 @@ export type ProxCallsToolsRunInput = {
   tool_id: string;
 };
 
-/** Return shape for `prox.calls.tools.run`. (no @Returns declared) */
-export type ProxCallsToolsRunReturn = unknown;
+/** Return shape for `prox.calls.tools.run`. */
+export type ProxCallsToolsRunReturn = {
+  ok: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.tools.runs`. */
 export type ProxCallsToolsRunsInput = {
   call_request_id: string;
 };
 
-/** Return shape for `prox.calls.tools.runs`. (no @Returns declared) */
-export type ProxCallsToolsRunsReturn = unknown;
+/** Return shape for `prox.calls.tools.runs`. */
+export type ProxCallsToolsRunsReturn = {
+  request_id: string;
+  tool_runs: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.tools.show`. */
 export type ProxCallsToolsShowInput = {
   tool_id: string;
 };
 
-/** Return shape for `prox.calls.tools.show`. (no @Returns declared) */
-export type ProxCallsToolsShowReturn = unknown;
+/** Return shape for `prox.calls.tools.show`. */
+export type ProxCallsToolsShowReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.tools.unbind`. */
 export type ProxCallsToolsUnbindInput = {
@@ -2973,8 +7097,12 @@ export type ProxCallsToolsUnbindInput = {
   tool_id: string;
 };
 
-/** Return shape for `prox.calls.tools.unbind`. (no @Returns declared) */
-export type ProxCallsToolsUnbindReturn = unknown;
+/** Return shape for `prox.calls.tools.unbind`. */
+export type ProxCallsToolsUnbindReturn = {
+  success: true;
+  tool_id: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.transcript`. */
 export type ProxCallsTranscriptInput = {
@@ -2982,8 +7110,14 @@ export type ProxCallsTranscriptInput = {
   sync?: boolean;
 };
 
-/** Return shape for `prox.calls.transcript`. (no @Returns declared) */
-export type ProxCallsTranscriptReturn = unknown;
+/** Return shape for `prox.calls.transcript`. */
+export type ProxCallsTranscriptReturn = {
+  outcome: string;
+  request_id: string;
+  summary?: string | null;
+  transcript: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.voice-agents.bind-tool`. */
 export type ProxCallsVoiceAgentsBindToolInput = {
@@ -2992,8 +7126,8 @@ export type ProxCallsVoiceAgentsBindToolInput = {
   voice_agent_id: string;
 };
 
-/** Return shape for `prox.calls.voice-agents.bind-tool`. (no @Returns declared) */
-export type ProxCallsVoiceAgentsBindToolReturn = unknown;
+/** Return shape for `prox.calls.voice-agents.bind-tool`. */
+export type ProxCallsVoiceAgentsBindToolReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.voice-agents.configure`. */
 export type ProxCallsVoiceAgentsConfigureInput = {
@@ -3004,8 +7138,8 @@ export type ProxCallsVoiceAgentsConfigureInput = {
   voice_agent_id: string;
 };
 
-/** Return shape for `prox.calls.voice-agents.configure`. (no @Returns declared) */
-export type ProxCallsVoiceAgentsConfigureReturn = unknown;
+/** Return shape for `prox.calls.voice-agents.configure`. */
+export type ProxCallsVoiceAgentsConfigureReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.voice-agents.create`. */
 export type ProxCallsVoiceAgentsCreateInput = {
@@ -3016,8 +7150,8 @@ export type ProxCallsVoiceAgentsCreateInput = {
   voice_agent_id: string;
 };
 
-/** Return shape for `prox.calls.voice-agents.create`. (no @Returns declared) */
-export type ProxCallsVoiceAgentsCreateReturn = unknown;
+/** Return shape for `prox.calls.voice-agents.create`. */
+export type ProxCallsVoiceAgentsCreateReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.voice-agents.list`. */
 export type ProxCallsVoiceAgentsListInput = {
@@ -3026,16 +7160,30 @@ export type ProxCallsVoiceAgentsListInput = {
   tag?: string;
 };
 
-/** Return shape for `prox.calls.voice-agents.list`. (no @Returns declared) */
-export type ProxCallsVoiceAgentsListReturn = unknown;
+/** Return shape for `prox.calls.voice-agents.list`. */
+export type ProxCallsVoiceAgentsListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.voice-agents.show`. */
 export type ProxCallsVoiceAgentsShowInput = {
   voice_agent_id: string;
 };
 
-/** Return shape for `prox.calls.voice-agents.show`. (no @Returns declared) */
-export type ProxCallsVoiceAgentsShowReturn = unknown;
+/** Return shape for `prox.calls.voice-agents.show`. */
+export type ProxCallsVoiceAgentsShowReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.voice-agents.sync`. */
 export type ProxCallsVoiceAgentsSyncInput = {
@@ -3044,8 +7192,16 @@ export type ProxCallsVoiceAgentsSyncInput = {
   voice_agent_id: string;
 };
 
-/** Return shape for `prox.calls.voice-agents.sync`. (no @Returns declared) */
-export type ProxCallsVoiceAgentsSyncReturn = unknown;
+/** Return shape for `prox.calls.voice-agents.sync`. */
+export type ProxCallsVoiceAgentsSyncReturn = {
+  dry_run: boolean;
+  intended_changes: Record<string, unknown>;
+  provider: string;
+  provider_agent_id?: string | null;
+  provider_sync: string;
+  voice_agent_id: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `prox.calls.voice-agents.unbind-tool`. */
 export type ProxCallsVoiceAgentsUnbindToolInput = {
@@ -3053,8 +7209,12 @@ export type ProxCallsVoiceAgentsUnbindToolInput = {
   voice_agent_id: string;
 };
 
-/** Return shape for `prox.calls.voice-agents.unbind-tool`. (no @Returns declared) */
-export type ProxCallsVoiceAgentsUnbindToolReturn = unknown;
+/** Return shape for `prox.calls.voice-agents.unbind-tool`. */
+export type ProxCallsVoiceAgentsUnbindToolReturn = {
+  success: true;
+  tool_id: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `react.send`. */
 export type ReactSendInput = {
@@ -3062,8 +7222,28 @@ export type ReactSendInput = {
   messageId: string;
 };
 
-/** Return shape for `react.send`. (no @Returns declared) */
-export type ReactSendReturn = unknown;
+/** Return shape for `react.send`. */
+export type ReactSendReturn = {
+  event: {
+    accountId: string;
+    channel: string;
+    chatId: string;
+    emoji: string;
+    messageId: string;
+    [k: string]: unknown;
+  };
+  reaction: {
+    emoji: string;
+    messageId: string;
+  };
+  success: true;
+  target: {
+    accountId: string;
+    channel: string;
+    chatId: string;
+  };
+  topic: "ravi.outbound.reaction";
+};
 
 /** Input shape for `routes.explain`. */
 export type RoutesExplainInput = {
@@ -3072,8 +7252,16 @@ export type RoutesExplainInput = {
   pattern: string;
 };
 
-/** Return shape for `routes.explain`. (no @Returns declared) */
-export type RoutesExplainReturn = unknown;
+/** Return shape for `routes.explain`. */
+export type RoutesExplainReturn = {
+  channel: string | null;
+  configuredRoute: (Record<string, unknown>) | null;
+  instance: string;
+  liveEffect: (Record<string, unknown>) | null;
+  pattern: string | null;
+  target: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `routes.list`. */
 export type RoutesListInput = {
@@ -3083,8 +7271,25 @@ export type RoutesListInput = {
   tag?: string;
 };
 
-/** Return shape for `routes.list`. (no @Returns declared) */
-export type RoutesListReturn = unknown;
+/** Return shape for `routes.list`. */
+export type RoutesListReturn = {
+  filter: Record<string, unknown>;
+  instance: string | null;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  routes: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `routes.show`. */
 export type RoutesShowInput = {
@@ -3092,8 +7297,13 @@ export type RoutesShowInput = {
   pattern: string;
 };
 
-/** Return shape for `routes.show`. (no @Returns declared) */
-export type RoutesShowReturn = unknown;
+/** Return shape for `routes.show`. */
+export type RoutesShowReturn = {
+  instance: string;
+  pattern: string;
+  route: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `rules.import`. */
 export type RulesImportInput = {
@@ -3104,8 +7314,18 @@ export type RulesImportInput = {
   write?: boolean;
 };
 
-/** Return shape for `rules.import`. (no @Returns declared) */
-export type RulesImportReturn = unknown;
+/** Return shape for `rules.import`. */
+export type RulesImportReturn = {
+  candidates: Array<Record<string, unknown>>;
+  counts: Record<string, unknown>;
+  cwd: string;
+  force: boolean;
+  includeUser: boolean;
+  rulesDir: string;
+  sources: Array<Record<string, unknown>>;
+  write: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `rules.sources`. */
 export type RulesSourcesInput = {
@@ -3114,8 +7334,18 @@ export type RulesSourcesInput = {
   source?: string;
 };
 
-/** Return shape for `rules.sources`. (no @Returns declared) */
-export type RulesSourcesReturn = unknown;
+/** Return shape for `rules.sources`. */
+export type RulesSourcesReturn = {
+  counts: {
+    existingSources: number;
+    missingSources: number;
+    sources: number;
+  };
+  cwd: string;
+  includeUser: boolean;
+  provider: "all" | "claude" | "agents";
+  sources: Array<Record<string, unknown>>;
+};
 
 /** Input shape for `runtime.credentials.add`. */
 export type RuntimeCredentialsAddInput = {
@@ -3135,8 +7365,11 @@ export type RuntimeCredentialsAddInput = {
   upstream?: string;
 };
 
-/** Return shape for `runtime.credentials.add`. (no @Returns declared) */
-export type RuntimeCredentialsAddReturn = unknown;
+/** Return shape for `runtime.credentials.add`. */
+export type RuntimeCredentialsAddReturn = {
+  credential: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `runtime.credentials.classify`. */
 export type RuntimeCredentialsClassifyInput = {
@@ -3151,24 +7384,34 @@ export type RuntimeCredentialsClassifyInput = {
   upstream?: string;
 };
 
-/** Return shape for `runtime.credentials.classify`. (no @Returns declared) */
-export type RuntimeCredentialsClassifyReturn = unknown;
+/** Return shape for `runtime.credentials.classify`. */
+export type RuntimeCredentialsClassifyReturn = {
+  pressure: Record<string, unknown>;
+  signal: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `runtime.credentials.disable`. */
 export type RuntimeCredentialsDisableInput = {
   id: string;
 };
 
-/** Return shape for `runtime.credentials.disable`. (no @Returns declared) */
-export type RuntimeCredentialsDisableReturn = unknown;
+/** Return shape for `runtime.credentials.disable`. */
+export type RuntimeCredentialsDisableReturn = {
+  credential: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `runtime.credentials.enable`. */
 export type RuntimeCredentialsEnableInput = {
   id: string;
 };
 
-/** Return shape for `runtime.credentials.enable`. (no @Returns declared) */
-export type RuntimeCredentialsEnableReturn = unknown;
+/** Return shape for `runtime.credentials.enable`. */
+export type RuntimeCredentialsEnableReturn = {
+  credential: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `runtime.credentials.import`. */
 export type RuntimeCredentialsImportInput = {
@@ -3179,8 +7422,11 @@ export type RuntimeCredentialsImportInput = {
   provider?: string;
 };
 
-/** Return shape for `runtime.credentials.import`. (no @Returns declared) */
-export type RuntimeCredentialsImportReturn = unknown;
+/** Return shape for `runtime.credentials.import`. */
+export type RuntimeCredentialsImportReturn = {
+  credential: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `runtime.credentials.list`. */
 export type RuntimeCredentialsListInput = {
@@ -3192,8 +7438,23 @@ export type RuntimeCredentialsListInput = {
   upstream?: string;
 };
 
-/** Return shape for `runtime.credentials.list`. (no @Returns declared) */
-export type RuntimeCredentialsListReturn = unknown;
+/** Return shape for `runtime.credentials.list`. */
+export type RuntimeCredentialsListReturn = {
+  credentials: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  providerHealth: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `runtime.credentials.refresh`. */
 export type RuntimeCredentialsRefreshInput = {
@@ -3206,16 +7467,23 @@ export type RuntimeCredentialsRefreshInput = {
   upstream?: string;
 };
 
-/** Return shape for `runtime.credentials.refresh`. (no @Returns declared) */
-export type RuntimeCredentialsRefreshReturn = unknown;
+/** Return shape for `runtime.credentials.refresh`. */
+export type RuntimeCredentialsRefreshReturn = {
+  refreshed: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `runtime.credentials.reset-health`. */
 export type RuntimeCredentialsResetHealthInput = {
   id: string;
 };
 
-/** Return shape for `runtime.credentials.reset-health`. (no @Returns declared) */
-export type RuntimeCredentialsResetHealthReturn = unknown;
+/** Return shape for `runtime.credentials.reset-health`. */
+export type RuntimeCredentialsResetHealthReturn = {
+  credential: Record<string, unknown>;
+  health: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `runtime.credentials.select`. */
 export type RuntimeCredentialsSelectInput = {
@@ -3226,16 +7494,25 @@ export type RuntimeCredentialsSelectInput = {
   upstream?: string;
 };
 
-/** Return shape for `runtime.credentials.select`. (no @Returns declared) */
-export type RuntimeCredentialsSelectReturn = unknown;
+/** Return shape for `runtime.credentials.select`. */
+export type RuntimeCredentialsSelectReturn = {
+  candidates: Array<Record<string, unknown>>;
+  rejected: Array<Record<string, unknown>>;
+  selected: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `runtime.credentials.status`. */
 export type RuntimeCredentialsStatusInput = {
   id?: string;
 };
 
-/** Return shape for `runtime.credentials.status`. (no @Returns declared) */
-export type RuntimeCredentialsStatusReturn = unknown;
+/** Return shape for `runtime.credentials.status`. */
+export type RuntimeCredentialsStatusReturn = {
+  credential: Record<string, unknown>;
+  health: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sdk.client.check`. */
 export type SdkClientCheckInput = {
@@ -3243,8 +7520,16 @@ export type SdkClientCheckInput = {
   version?: string;
 };
 
-/** Return shape for `sdk.client.check`. (no @Returns declared) */
-export type SdkClientCheckReturn = unknown;
+/** Return shape for `sdk.client.check`. */
+export type SdkClientCheckReturn = {
+  dir: string;
+  drift: Array<{
+    file: string;
+    path: string;
+    reason: string;
+  }>;
+  files: string[];
+};
 
 /** Input shape for `sdk.client.generate`. */
 export type SdkClientGenerateInput = {
@@ -3252,16 +7537,29 @@ export type SdkClientGenerateInput = {
   version?: string;
 };
 
-/** Return shape for `sdk.client.generate`. (no @Returns declared) */
-export type SdkClientGenerateReturn = unknown;
+/** Return shape for `sdk.client.generate`. */
+export type SdkClientGenerateReturn = {
+  dir: string;
+  files: Array<{
+    bytes: number;
+    file: string;
+    path: string;
+  }>;
+  status: "written";
+};
 
 /** Input shape for `sdk.openapi.check`. */
 export type SdkOpenapiCheckInput = {
   against?: string;
 };
 
-/** Return shape for `sdk.openapi.check`. (no @Returns declared) */
-export type SdkOpenapiCheckReturn = unknown;
+/** Return shape for `sdk.openapi.check`. */
+export type SdkOpenapiCheckReturn = {
+  drift: boolean;
+  liveBytes: number;
+  path: string;
+  storedBytes: number;
+};
 
 /** Input shape for `sdk.openapi.emit`. */
 export type SdkOpenapiEmitInput = {
@@ -3269,8 +7567,15 @@ export type SdkOpenapiEmitInput = {
   stdout?: boolean;
 };
 
-/** Return shape for `sdk.openapi.emit`. (no @Returns declared) */
-export type SdkOpenapiEmitReturn = unknown;
+/** Return shape for `sdk.openapi.emit`. */
+export type SdkOpenapiEmitReturn = ({
+  bytes: number;
+  status: "stdout";
+}) | ({
+  bytes: number;
+  path: string;
+  status: "written";
+});
 
 /** Input shape for `sdk.swift.check`. */
 export type SdkSwiftCheckInput = {
@@ -3278,8 +7583,16 @@ export type SdkSwiftCheckInput = {
   version?: string;
 };
 
-/** Return shape for `sdk.swift.check`. (no @Returns declared) */
-export type SdkSwiftCheckReturn = unknown;
+/** Return shape for `sdk.swift.check`. */
+export type SdkSwiftCheckReturn = {
+  dir: string;
+  drift: Array<{
+    file: string;
+    path: string;
+    reason: string;
+  }>;
+  files: string[];
+};
 
 /** Input shape for `sdk.swift.generate`. */
 export type SdkSwiftGenerateInput = {
@@ -3287,16 +7600,29 @@ export type SdkSwiftGenerateInput = {
   version?: string;
 };
 
-/** Return shape for `sdk.swift.generate`. (no @Returns declared) */
-export type SdkSwiftGenerateReturn = unknown;
+/** Return shape for `sdk.swift.generate`. */
+export type SdkSwiftGenerateReturn = {
+  dir: string;
+  files: Array<{
+    bytes: number;
+    file: string;
+    path: string;
+  }>;
+  status: "written";
+};
 
 /** Input shape for `self.chat`. */
 export type SelfChatInput = {
   depth?: string;
 };
 
-/** Return shape for `self.chat`. (no @Returns declared) */
-export type SelfChatReturn = unknown;
+/** Return shape for `self.chat`. */
+export type SelfChatReturn = {
+  data?: unknown;
+  reason?: string;
+  status: "ok" | "partial" | "missing" | "unavailable";
+  [k: string]: unknown;
+};
 
 /** Input shape for `self.context`. */
 export type SelfContextInput = {
@@ -3304,66 +7630,138 @@ export type SelfContextInput = {
   limit?: string;
 };
 
-/** Return shape for `self.context`. (no @Returns declared) */
-export type SelfContextReturn = unknown;
+/** Return shape for `self.context`. */
+export type SelfContextReturn = {
+  chat: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
+  depth: string;
+  explain: Array<Record<string, unknown>>;
+  generatedAt: number;
+  identity: Record<string, unknown>;
+  knowledge: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
+  limit: number;
+  nextReads: string[];
+  permissions: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
+  recent: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
+  route: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
+  session: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `self.explain`. */
 export type SelfExplainInput = Record<string, never>;
 
-/** Return shape for `self.explain`. (no @Returns declared) */
-export type SelfExplainReturn = unknown;
+/** Return shape for `self.explain`. */
+export type SelfExplainReturn = {
+  explain: Array<Record<string, unknown>>;
+  generatedAt: number;
+  nextReads: string[];
+  [k: string]: unknown;
+};
 
 /** Input shape for `self.knowledge`. */
 export type SelfKnowledgeInput = Record<string, never>;
 
-/** Return shape for `self.knowledge`. (no @Returns declared) */
-export type SelfKnowledgeReturn = unknown;
+/** Return shape for `self.knowledge`. */
+export type SelfKnowledgeReturn = {
+  data?: unknown;
+  reason?: string;
+  status: "ok" | "partial" | "missing" | "unavailable";
+  [k: string]: unknown;
+};
 
 /** Input shape for `self.permissions`. */
 export type SelfPermissionsInput = Record<string, never>;
 
-/** Return shape for `self.permissions`. (no @Returns declared) */
-export type SelfPermissionsReturn = unknown;
+/** Return shape for `self.permissions`. */
+export type SelfPermissionsReturn = {
+  data?: unknown;
+  reason?: string;
+  status: "ok" | "partial" | "missing" | "unavailable";
+  [k: string]: unknown;
+};
 
 /** Input shape for `self.recent`. */
 export type SelfRecentInput = {
   limit?: string;
 };
 
-/** Return shape for `self.recent`. (no @Returns declared) */
-export type SelfRecentReturn = unknown;
+/** Return shape for `self.recent`. */
+export type SelfRecentReturn = {
+  data?: unknown;
+  reason?: string;
+  status: "ok" | "partial" | "missing" | "unavailable";
+  [k: string]: unknown;
+};
 
 /** Input shape for `self.route`. */
 export type SelfRouteInput = Record<string, never>;
 
-/** Return shape for `self.route`. (no @Returns declared) */
-export type SelfRouteReturn = unknown;
+/** Return shape for `self.route`. */
+export type SelfRouteReturn = {
+  data?: unknown;
+  reason?: string;
+  status: "ok" | "partial" | "missing" | "unavailable";
+  [k: string]: unknown;
+};
 
 /** Input shape for `self.whoami`. */
 export type SelfWhoamiInput = Record<string, never>;
 
-/** Return shape for `self.whoami`. (no @Returns declared) */
-export type SelfWhoamiReturn = unknown;
-
-/** Input shape for `service.start`. */
-export type ServiceStartInput = Record<string, never>;
-
-/** Return shape for `service.start`. (no @Returns declared) */
-export type ServiceStartReturn = unknown;
-
-/** Input shape for `service.tui`. */
-export type ServiceTuiInput = {
-  session?: string;
+/** Return shape for `self.whoami`. */
+export type SelfWhoamiReturn = {
+  chat: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
+  generatedAt: number;
+  identity: Record<string, unknown>;
+  nextReads: string[];
+  route: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
+  session: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
 };
-
-/** Return shape for `service.tui`. (no @Returns declared) */
-export type ServiceTuiReturn = unknown;
-
-/** Input shape for `service.wa`. */
-export type ServiceWaInput = Record<string, never>;
-
-/** Return shape for `service.wa`. (no @Returns declared) */
-export type ServiceWaReturn = unknown;
 
 /** Input shape for `sessions.actions`. */
 export type SessionsActionsInput = {
@@ -3371,8 +7769,8 @@ export type SessionsActionsInput = {
   nameOrKey?: string;
 };
 
-/** Return shape for `sessions.actions`. (no @Returns declared) */
-export type SessionsActionsReturn = unknown;
+/** Return shape for `sessions.actions`. */
+export type SessionsActionsReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.answer`. */
 export type SessionsAnswerInput = {
@@ -3386,8 +7784,8 @@ export type SessionsAnswerInput = {
   to?: string;
 };
 
-/** Return shape for `sessions.answer`. (no @Returns declared) */
-export type SessionsAnswerReturn = unknown;
+/** Return shape for `sessions.answer`. */
+export type SessionsAnswerReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.ask`. */
 export type SessionsAskInput = {
@@ -3401,8 +7799,8 @@ export type SessionsAskInput = {
   to?: string;
 };
 
-/** Return shape for `sessions.ask`. (no @Returns declared) */
-export type SessionsAskReturn = unknown;
+/** Return shape for `sessions.ask`. */
+export type SessionsAskReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.attach`. */
 export type SessionsAttachInput = {
@@ -3411,16 +7809,16 @@ export type SessionsAttachInput = {
   reason?: string;
 };
 
-/** Return shape for `sessions.attach`. (no @Returns declared) */
-export type SessionsAttachReturn = unknown;
+/** Return shape for `sessions.attach`. */
+export type SessionsAttachReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.delete`. */
 export type SessionsDeleteInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.delete`. (no @Returns declared) */
-export type SessionsDeleteReturn = unknown;
+/** Return shape for `sessions.delete`. */
+export type SessionsDeleteReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.delete-message`. */
 export type SessionsDeleteMessageInput = {
@@ -3428,8 +7826,8 @@ export type SessionsDeleteMessageInput = {
   sessionOrMessage: string;
 };
 
-/** Return shape for `sessions.delete-message`. (no @Returns declared) */
-export type SessionsDeleteMessageReturn = unknown;
+/** Return shape for `sessions.delete-message`. */
+export type SessionsDeleteMessageReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.detach`. */
 export type SessionsDetachInput = {
@@ -3437,8 +7835,8 @@ export type SessionsDetachInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.detach`. (no @Returns declared) */
-export type SessionsDetachReturn = unknown;
+/** Return shape for `sessions.detach`. */
+export type SessionsDetachReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.edit-message`. */
 export type SessionsEditMessageInput = {
@@ -3448,8 +7846,8 @@ export type SessionsEditMessageInput = {
   textArg?: string;
 };
 
-/** Return shape for `sessions.edit-message`. (no @Returns declared) */
-export type SessionsEditMessageReturn = unknown;
+/** Return shape for `sessions.edit-message`. */
+export type SessionsEditMessageReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.execute`. */
 export type SessionsExecuteInput = {
@@ -3462,8 +7860,8 @@ export type SessionsExecuteInput = {
   to?: string;
 };
 
-/** Return shape for `sessions.execute`. (no @Returns declared) */
-export type SessionsExecuteReturn = unknown;
+/** Return shape for `sessions.execute`. */
+export type SessionsExecuteReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.extend`. */
 export type SessionsExtendInput = {
@@ -3471,8 +7869,130 @@ export type SessionsExtendInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.extend`. (no @Returns declared) */
-export type SessionsExtendReturn = unknown;
+/** Return shape for `sessions.extend`. */
+export type SessionsExtendReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.followups.add`. */
+export type SessionsFollowupsAddInput = {
+  at?: string;
+  barrier?: string;
+  cron?: string;
+  description?: string;
+  disabled?: boolean;
+  every?: string;
+  message?: string;
+  name: string;
+  owner?: string;
+  step?: string[];
+  targetChat?: string;
+  targetList?: string;
+  targetSession?: string;
+  timezone?: string;
+};
+
+/** Return shape for `sessions.followups.add`. */
+export type SessionsFollowupsAddReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.followups.inspect`. */
+export type SessionsFollowupsInspectInput = {
+  id: string;
+  runs?: string;
+};
+
+/** Return shape for `sessions.followups.inspect`. */
+export type SessionsFollowupsInspectReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.followups.list`. */
+export type SessionsFollowupsListInput = {
+  includeDisabled?: boolean;
+  limit?: string;
+  offset?: string;
+  targetType?: string;
+};
+
+/** Return shape for `sessions.followups.list`. */
+export type SessionsFollowupsListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
+
+/** Input shape for `sessions.followups.pause`. */
+export type SessionsFollowupsPauseInput = {
+  id: string;
+};
+
+/** Return shape for `sessions.followups.pause`. */
+export type SessionsFollowupsPauseReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.followups.resume`. */
+export type SessionsFollowupsResumeInput = {
+  id: string;
+};
+
+/** Return shape for `sessions.followups.resume`. */
+export type SessionsFollowupsResumeReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.followups.retry`. */
+export type SessionsFollowupsRetryInput = {
+  cadence?: string;
+  run?: string;
+};
+
+/** Return shape for `sessions.followups.retry`. */
+export type SessionsFollowupsRetryReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.followups.run`. */
+export type SessionsFollowupsRunInput = {
+  id: string;
+};
+
+/** Return shape for `sessions.followups.run`. */
+export type SessionsFollowupsRunReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.followups.runs`. */
+export type SessionsFollowupsRunsInput = {
+  cadence?: string;
+  limit?: string;
+  offset?: string;
+  status?: string;
+};
+
+/** Return shape for `sessions.followups.runs`. */
+export type SessionsFollowupsRunsReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
+
+/** Input shape for `sessions.followups.snooze`. */
+export type SessionsFollowupsSnoozeInput = {
+  id: string;
+  until?: string;
+};
+
+/** Return shape for `sessions.followups.snooze`. */
+export type SessionsFollowupsSnoozeReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.goal`. */
 export type SessionsGoalInput = {
@@ -3486,16 +8006,16 @@ export type SessionsGoalInput = {
   tokens?: string;
 };
 
-/** Return shape for `sessions.goal`. (no @Returns declared) */
-export type SessionsGoalReturn = unknown;
+/** Return shape for `sessions.goal`. */
+export type SessionsGoalReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.info`. */
 export type SessionsInfoInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.info`. (no @Returns declared) */
-export type SessionsInfoReturn = unknown;
+/** Return shape for `sessions.info`. */
+export type SessionsInfoReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.inform`. */
 export type SessionsInformInput = {
@@ -3508,16 +8028,16 @@ export type SessionsInformInput = {
   to?: string;
 };
 
-/** Return shape for `sessions.inform`. (no @Returns declared) */
-export type SessionsInformReturn = unknown;
+/** Return shape for `sessions.inform`. */
+export type SessionsInformReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.keep`. */
 export type SessionsKeepInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.keep`. (no @Returns declared) */
-export type SessionsKeepReturn = unknown;
+/** Return shape for `sessions.keep`. */
+export type SessionsKeepReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.list`. */
 export type SessionsListInput = {
@@ -3529,8 +8049,22 @@ export type SessionsListInput = {
   tag?: string;
 };
 
-/** Return shape for `sessions.list`. (no @Returns declared) */
-export type SessionsListReturn = unknown;
+/** Return shape for `sessions.list`. */
+export type SessionsListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.mute`. */
 export type SessionsMuteInput = {
@@ -3538,8 +8072,8 @@ export type SessionsMuteInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.mute`. (no @Returns declared) */
-export type SessionsMuteReturn = unknown;
+/** Return shape for `sessions.mute`. */
+export type SessionsMuteReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.prune`. */
 export type SessionsPruneInput = {
@@ -3550,8 +8084,8 @@ export type SessionsPruneInput = {
   namePrefix?: string;
 };
 
-/** Return shape for `sessions.prune`. (no @Returns declared) */
-export type SessionsPruneReturn = unknown;
+/** Return shape for `sessions.prune`. */
+export type SessionsPruneReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.read`. */
 export type SessionsReadInput = {
@@ -3561,8 +8095,8 @@ export type SessionsReadInput = {
   workspace?: boolean;
 };
 
-/** Return shape for `sessions.read`. (no @Returns declared) */
-export type SessionsReadReturn = unknown;
+/** Return shape for `sessions.read`. */
+export type SessionsReadReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.rename`. */
 export type SessionsRenameInput = {
@@ -3570,16 +8104,16 @@ export type SessionsRenameInput = {
   newName: string;
 };
 
-/** Return shape for `sessions.rename`. (no @Returns declared) */
-export type SessionsRenameReturn = unknown;
+/** Return shape for `sessions.rename`. */
+export type SessionsRenameReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.reset`. */
 export type SessionsResetInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.reset`. (no @Returns declared) */
-export type SessionsResetReturn = unknown;
+/** Return shape for `sessions.reset`. */
+export type SessionsResetReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.runtime.follow-up`. */
 export type SessionsRuntimeFollowUpInput = {
@@ -3590,8 +8124,14 @@ export type SessionsRuntimeFollowUpInput = {
   turn?: string;
 };
 
-/** Return shape for `sessions.runtime.follow-up`. (no @Returns declared) */
-export type SessionsRuntimeFollowUpReturn = unknown;
+/** Return shape for `sessions.runtime.follow-up`. */
+export type SessionsRuntimeFollowUpReturn = {
+  data?: unknown;
+  error?: string;
+  ok: boolean;
+  operation?: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.runtime.fork`. */
 export type SessionsRuntimeForkInput = {
@@ -3601,8 +8141,14 @@ export type SessionsRuntimeForkInput = {
   threadId?: string;
 };
 
-/** Return shape for `sessions.runtime.fork`. (no @Returns declared) */
-export type SessionsRuntimeForkReturn = unknown;
+/** Return shape for `sessions.runtime.fork`. */
+export type SessionsRuntimeForkReturn = {
+  data?: unknown;
+  error?: string;
+  ok: boolean;
+  operation?: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.runtime.interrupt`. */
 export type SessionsRuntimeInterruptInput = {
@@ -3611,8 +8157,14 @@ export type SessionsRuntimeInterruptInput = {
   turn?: string;
 };
 
-/** Return shape for `sessions.runtime.interrupt`. (no @Returns declared) */
-export type SessionsRuntimeInterruptReturn = unknown;
+/** Return shape for `sessions.runtime.interrupt`. */
+export type SessionsRuntimeInterruptReturn = {
+  data?: unknown;
+  error?: string;
+  ok: boolean;
+  operation?: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.runtime.list`. */
 export type SessionsRuntimeListInput = {
@@ -3624,8 +8176,14 @@ export type SessionsRuntimeListInput = {
   session: string;
 };
 
-/** Return shape for `sessions.runtime.list`. (no @Returns declared) */
-export type SessionsRuntimeListReturn = unknown;
+/** Return shape for `sessions.runtime.list`. */
+export type SessionsRuntimeListReturn = {
+  data?: unknown;
+  error?: string;
+  ok: boolean;
+  operation?: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.runtime.read`. */
 export type SessionsRuntimeReadInput = {
@@ -3634,8 +8192,14 @@ export type SessionsRuntimeReadInput = {
   threadId?: string;
 };
 
-/** Return shape for `sessions.runtime.read`. (no @Returns declared) */
-export type SessionsRuntimeReadReturn = unknown;
+/** Return shape for `sessions.runtime.read`. */
+export type SessionsRuntimeReadReturn = {
+  data?: unknown;
+  error?: string;
+  ok: boolean;
+  operation?: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.runtime.rollback`. */
 export type SessionsRuntimeRollbackInput = {
@@ -3644,8 +8208,14 @@ export type SessionsRuntimeRollbackInput = {
   turns?: string;
 };
 
-/** Return shape for `sessions.runtime.rollback`. (no @Returns declared) */
-export type SessionsRuntimeRollbackReturn = unknown;
+/** Return shape for `sessions.runtime.rollback`. */
+export type SessionsRuntimeRollbackReturn = {
+  data?: unknown;
+  error?: string;
+  ok: boolean;
+  operation?: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.runtime.steer`. */
 export type SessionsRuntimeSteerInput = {
@@ -3656,8 +8226,14 @@ export type SessionsRuntimeSteerInput = {
   turn?: string;
 };
 
-/** Return shape for `sessions.runtime.steer`. (no @Returns declared) */
-export type SessionsRuntimeSteerReturn = unknown;
+/** Return shape for `sessions.runtime.steer`. */
+export type SessionsRuntimeSteerReturn = {
+  data?: unknown;
+  error?: string;
+  ok: boolean;
+  operation?: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.send`. */
 export type SessionsSendInput = {
@@ -3678,8 +8254,8 @@ export type SessionsSendInput = {
   wait?: boolean;
 };
 
-/** Return shape for `sessions.send`. (no @Returns declared) */
-export type SessionsSendReturn = unknown;
+/** Return shape for `sessions.send`. */
+export type SessionsSendReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.set-display`. */
 export type SessionsSetDisplayInput = {
@@ -3687,8 +8263,8 @@ export type SessionsSetDisplayInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.set-display`. (no @Returns declared) */
-export type SessionsSetDisplayReturn = unknown;
+/** Return shape for `sessions.set-display`. */
+export type SessionsSetDisplayReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.set-model`. */
 export type SessionsSetModelInput = {
@@ -3696,8 +8272,8 @@ export type SessionsSetModelInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.set-model`. (no @Returns declared) */
-export type SessionsSetModelReturn = unknown;
+/** Return shape for `sessions.set-model`. */
+export type SessionsSetModelReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.set-thinking`. */
 export type SessionsSetThinkingInput = {
@@ -3705,8 +8281,8 @@ export type SessionsSetThinkingInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.set-thinking`. (no @Returns declared) */
-export type SessionsSetThinkingReturn = unknown;
+/** Return shape for `sessions.set-thinking`. */
+export type SessionsSetThinkingReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.set-ttl`. */
 export type SessionsSetTtlInput = {
@@ -3714,16 +8290,16 @@ export type SessionsSetTtlInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.set-ttl`. (no @Returns declared) */
-export type SessionsSetTtlReturn = unknown;
+/** Return shape for `sessions.set-ttl`. */
+export type SessionsSetTtlReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.subscriptions`. */
 export type SessionsSubscriptionsInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.subscriptions`. (no @Returns declared) */
-export type SessionsSubscriptionsReturn = unknown;
+/** Return shape for `sessions.subscriptions`. */
+export type SessionsSubscriptionsReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.trace`. */
 export type SessionsTraceInput = {
@@ -3743,8 +8319,8 @@ export type SessionsTraceInput = {
   until?: string;
 };
 
-/** Return shape for `sessions.trace`. (no @Returns declared) */
-export type SessionsTraceReturn = unknown;
+/** Return shape for `sessions.trace`. */
+export type SessionsTraceReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.unmute`. */
 export type SessionsUnmuteInput = {
@@ -3752,32 +8328,60 @@ export type SessionsUnmuteInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.unmute`. (no @Returns declared) */
-export type SessionsUnmuteReturn = unknown;
+/** Return shape for `sessions.unmute`. */
+export type SessionsUnmuteReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.visibility`. */
 export type SessionsVisibilityInput = {
   nameOrKey: string;
 };
 
-/** Return shape for `sessions.visibility`. (no @Returns declared) */
-export type SessionsVisibilityReturn = unknown;
+/** Return shape for `sessions.visibility`. */
+export type SessionsVisibilityReturn = Record<string, unknown>;
 
 /** Input shape for `settings.delete`. */
 export type SettingsDeleteInput = {
   key: string;
 };
 
-/** Return shape for `settings.delete`. (no @Returns declared) */
-export type SettingsDeleteReturn = unknown;
+/** Return shape for `settings.delete`. */
+export type SettingsDeleteReturn = {
+  changedCount: number;
+  setting: {
+    defaultValue: string | null;
+    description: string | null;
+    hint: string | null;
+    isSet: boolean;
+    key: string;
+    known: boolean;
+    legacy: boolean;
+    value: string | null;
+  };
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+};
 
 /** Input shape for `settings.get`. */
 export type SettingsGetInput = {
   key: string;
 };
 
-/** Return shape for `settings.get`. (no @Returns declared) */
-export type SettingsGetReturn = unknown;
+/** Return shape for `settings.get`. */
+export type SettingsGetReturn = {
+  setting: {
+    defaultValue: string | null;
+    description: string | null;
+    hint: string | null;
+    isSet: boolean;
+    key: string;
+    known: boolean;
+    legacy: boolean;
+    value: string | null;
+  };
+};
 
 /** Input shape for `settings.list`. */
 export type SettingsListInput = {
@@ -3786,8 +8390,66 @@ export type SettingsListInput = {
   offset?: string;
 };
 
-/** Return shape for `settings.list`. (no @Returns declared) */
-export type SettingsListReturn = unknown;
+/** Return shape for `settings.list`. */
+export type SettingsListReturn = {
+  customSettings: Array<{
+    defaultValue: string | null;
+    description: string | null;
+    hint: string | null;
+    isSet: boolean;
+    key: string;
+    known: boolean;
+    legacy: boolean;
+    value: string | null;
+  }>;
+  items: Array<{
+    defaultValue: string | null;
+    description: string | null;
+    hint: string | null;
+    isSet: boolean;
+    key: string;
+    known: boolean;
+    legacy: boolean;
+    section: string;
+    value: string | null;
+  }>;
+  knownSettings: Array<{
+    defaultValue: string | null;
+    description: string | null;
+    hint: string | null;
+    isSet: boolean;
+    key: string;
+    known: boolean;
+    legacy: boolean;
+    value: string | null;
+  }>;
+  legacySettings: {
+    hidden: boolean;
+    settings: Array<{
+      defaultValue: string | null;
+      description: string | null;
+      hint: string | null;
+      isSet: boolean;
+      key: string;
+      known: boolean;
+      legacy: boolean;
+      value: string | null;
+    }>;
+    total: number;
+  };
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  showLegacy: boolean;
+  total: number;
+};
 
 /** Input shape for `settings.set`. */
 export type SettingsSetInput = {
@@ -3795,24 +8457,85 @@ export type SettingsSetInput = {
   value: string;
 };
 
-/** Return shape for `settings.set`. (no @Returns declared) */
-export type SettingsSetReturn = unknown;
+/** Return shape for `settings.set`. */
+export type SettingsSetReturn = {
+  changedCount: number;
+  setting: {
+    defaultValue: string | null;
+    description: string | null;
+    hint: string | null;
+    isSet: boolean;
+    key: string;
+    known: boolean;
+    legacy: boolean;
+    value: string | null;
+  };
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+};
 
 /** Input shape for `skill-gates.disable`. */
 export type SkillGatesDisableInput = {
   id: string;
 };
 
-/** Return shape for `skill-gates.disable`. (no @Returns declared) */
-export type SkillGatesDisableReturn = unknown;
+/** Return shape for `skill-gates.disable`. */
+export type SkillGatesDisableReturn = {
+  rule: {
+    command?: string | null;
+    commandPrefix?: string | null;
+    commandRegex?: string | null;
+    configured?: (Record<string, unknown>) | null;
+    createdAt?: number;
+    defaultRule?: (Record<string, unknown>) | null;
+    disabled?: boolean;
+    enabled: boolean;
+    groupRegex?: string | null;
+    id: string;
+    pattern?: string | null;
+    skill: string | null;
+    source?: string;
+    tool?: string | null;
+    toolPrefix?: string | null;
+    toolRegex?: string | null;
+    updatedAt?: number;
+    [k: string]: unknown;
+  };
+  success: true;
+};
 
 /** Input shape for `skill-gates.enable`. */
 export type SkillGatesEnableInput = {
   id: string;
 };
 
-/** Return shape for `skill-gates.enable`. (no @Returns declared) */
-export type SkillGatesEnableReturn = unknown;
+/** Return shape for `skill-gates.enable`. */
+export type SkillGatesEnableReturn = {
+  rule: {
+    command?: string | null;
+    commandPrefix?: string | null;
+    commandRegex?: string | null;
+    configured?: (Record<string, unknown>) | null;
+    createdAt?: number;
+    defaultRule?: (Record<string, unknown>) | null;
+    disabled?: boolean;
+    enabled: boolean;
+    groupRegex?: string | null;
+    id: string;
+    pattern?: string | null;
+    skill: string | null;
+    source?: string;
+    tool?: string | null;
+    toolPrefix?: string | null;
+    toolRegex?: string | null;
+    updatedAt?: number;
+    [k: string]: unknown;
+  };
+  success: true;
+};
 
 /** Input shape for `skill-gates.list`. */
 export type SkillGatesListInput = {
@@ -3821,24 +8544,106 @@ export type SkillGatesListInput = {
   tag?: string;
 };
 
-/** Return shape for `skill-gates.list`. (no @Returns declared) */
-export type SkillGatesListReturn = unknown;
+/** Return shape for `skill-gates.list`. */
+export type SkillGatesListReturn = {
+  configuredTotal: number;
+  filters?: Record<string, unknown>;
+  items: Array<{
+    command?: string | null;
+    commandPrefix?: string | null;
+    commandRegex?: string | null;
+    configured?: (Record<string, unknown>) | null;
+    createdAt?: number;
+    defaultRule?: (Record<string, unknown>) | null;
+    disabled?: boolean;
+    enabled: boolean;
+    groupRegex?: string | null;
+    id: string;
+    pattern?: string | null;
+    skill: string | null;
+    source?: string;
+    tool?: string | null;
+    toolPrefix?: string | null;
+    toolRegex?: string | null;
+    updatedAt?: number;
+    [k: string]: unknown;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  rules: Array<{
+    command?: string | null;
+    commandPrefix?: string | null;
+    commandRegex?: string | null;
+    configured?: (Record<string, unknown>) | null;
+    createdAt?: number;
+    defaultRule?: (Record<string, unknown>) | null;
+    disabled?: boolean;
+    enabled: boolean;
+    groupRegex?: string | null;
+    id: string;
+    pattern?: string | null;
+    skill: string | null;
+    source?: string;
+    tool?: string | null;
+    toolPrefix?: string | null;
+    toolRegex?: string | null;
+    updatedAt?: number;
+    [k: string]: unknown;
+  }>;
+  total: number;
+};
 
 /** Input shape for `skill-gates.reset`. */
 export type SkillGatesResetInput = {
   id: string;
 };
 
-/** Return shape for `skill-gates.reset`. (no @Returns declared) */
-export type SkillGatesResetReturn = unknown;
+/** Return shape for `skill-gates.reset`. */
+export type SkillGatesResetReturn = {
+  deleted: boolean;
+  success: true;
+};
 
 /** Input shape for `skill-gates.rm`. */
 export type SkillGatesRmInput = {
   id: string;
 };
 
-/** Return shape for `skill-gates.rm`. (no @Returns declared) */
-export type SkillGatesRmReturn = unknown;
+/** Return shape for `skill-gates.rm`. */
+export type SkillGatesRmReturn = {
+  action: string;
+  deleted?: boolean;
+  rule?: {
+    command?: string | null;
+    commandPrefix?: string | null;
+    commandRegex?: string | null;
+    configured?: (Record<string, unknown>) | null;
+    createdAt?: number;
+    defaultRule?: (Record<string, unknown>) | null;
+    disabled?: boolean;
+    enabled: boolean;
+    groupRegex?: string | null;
+    id: string;
+    pattern?: string | null;
+    skill: string | null;
+    source?: string;
+    tool?: string | null;
+    toolPrefix?: string | null;
+    toolRegex?: string | null;
+    updatedAt?: number;
+    [k: string]: unknown;
+  };
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `skill-gates.set`. */
 export type SkillGatesSetInput = {
@@ -3854,16 +8659,59 @@ export type SkillGatesSetInput = {
   toolRegex?: string;
 };
 
-/** Return shape for `skill-gates.set`. (no @Returns declared) */
-export type SkillGatesSetReturn = unknown;
+/** Return shape for `skill-gates.set`. */
+export type SkillGatesSetReturn = {
+  rule: {
+    command?: string | null;
+    commandPrefix?: string | null;
+    commandRegex?: string | null;
+    configured?: (Record<string, unknown>) | null;
+    createdAt?: number;
+    defaultRule?: (Record<string, unknown>) | null;
+    disabled?: boolean;
+    enabled: boolean;
+    groupRegex?: string | null;
+    id: string;
+    pattern?: string | null;
+    skill: string | null;
+    source?: string;
+    tool?: string | null;
+    toolPrefix?: string | null;
+    toolRegex?: string | null;
+    updatedAt?: number;
+    [k: string]: unknown;
+  };
+  success: true;
+};
 
 /** Input shape for `skill-gates.show`. */
 export type SkillGatesShowInput = {
   id: string;
 };
 
-/** Return shape for `skill-gates.show`. (no @Returns declared) */
-export type SkillGatesShowReturn = unknown;
+/** Return shape for `skill-gates.show`. */
+export type SkillGatesShowReturn = {
+  rule: {
+    command?: string | null;
+    commandPrefix?: string | null;
+    commandRegex?: string | null;
+    configured?: (Record<string, unknown>) | null;
+    createdAt?: number;
+    defaultRule?: (Record<string, unknown>) | null;
+    disabled?: boolean;
+    enabled: boolean;
+    groupRegex?: string | null;
+    id: string;
+    pattern?: string | null;
+    skill: string | null;
+    source?: string;
+    tool?: string | null;
+    toolPrefix?: string | null;
+    toolRegex?: string | null;
+    updatedAt?: number;
+    [k: string]: unknown;
+  };
+};
 
 /** Input shape for `skills.install`. */
 export type SkillsInstallInput = {
@@ -3876,8 +8724,22 @@ export type SkillsInstallInput = {
   source?: string;
 };
 
-/** Return shape for `skills.install`. (no @Returns declared) */
-export type SkillsInstallReturn = unknown;
+/** Return shape for `skills.install`. */
+export type SkillsInstallReturn = {
+  codexSynced: string[];
+  installed: Array<{
+    description: string | null;
+    name: string;
+    path: string;
+    pluginName: string | null;
+    skillFilePath: string;
+    source: string;
+    [k: string]: unknown;
+  }>;
+  source: string;
+  success: true;
+  [k: string]: unknown;
+};
 
 /** Input shape for `skills.list`. */
 export type SkillsListInput = {
@@ -3889,8 +8751,32 @@ export type SkillsListInput = {
   tag?: string;
 };
 
-/** Return shape for `skills.list`. (no @Returns declared) */
-export type SkillsListReturn = unknown;
+/** Return shape for `skills.list`. */
+export type SkillsListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  skills: Array<{
+    description: string | null;
+    name: string;
+    path: string;
+    pluginName: string | null;
+    skillFilePath: string;
+    source: string;
+    [k: string]: unknown;
+  }>;
+  source: string;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `skills.show`. */
 export type SkillsShowInput = {
@@ -3899,14 +8785,31 @@ export type SkillsShowInput = {
   source?: string;
 };
 
-/** Return shape for `skills.show`. (no @Returns declared) */
-export type SkillsShowReturn = unknown;
+/** Return shape for `skills.show`. */
+export type SkillsShowReturn = {
+  skill: {
+    content: string;
+    description: string | null;
+    name: string;
+    path: string;
+    pluginName: string | null;
+    skillFilePath: string;
+    source: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `skills.sync`. */
 export type SkillsSyncInput = Record<string, never>;
 
-/** Return shape for `skills.sync`. (no @Returns declared) */
-export type SkillsSyncReturn = unknown;
+/** Return shape for `skills.sync`. */
+export type SkillsSyncReturn = {
+  codexSynced: string[];
+  success: true;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `specs.get`. */
 export type SpecsGetInput = {
@@ -3914,8 +8817,11 @@ export type SpecsGetInput = {
   mode?: string;
 };
 
-/** Return shape for `specs.get`. (no @Returns declared) */
-export type SpecsGetReturn = unknown;
+/** Return shape for `specs.get`. */
+export type SpecsGetReturn = {
+  context: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `specs.list`. */
 export type SpecsListInput = {
@@ -3925,8 +8831,23 @@ export type SpecsListInput = {
   offset?: string;
 };
 
-/** Return shape for `specs.list`. (no @Returns declared) */
-export type SpecsListReturn = unknown;
+/** Return shape for `specs.list`. */
+export type SpecsListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  specs: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `specs.new`. */
 export type SpecsNewInput = {
@@ -3936,14 +8857,25 @@ export type SpecsNewInput = {
   title?: string;
 };
 
-/** Return shape for `specs.new`. (no @Returns declared) */
-export type SpecsNewReturn = unknown;
+/** Return shape for `specs.new`. */
+export type SpecsNewReturn = {
+  createdFiles: string[];
+  missingAncestors: Array<Record<string, unknown>>;
+  spec: Record<string, unknown>;
+  status: "created";
+  [k: string]: unknown;
+};
 
 /** Input shape for `specs.sync`. */
 export type SpecsSyncInput = Record<string, never>;
 
-/** Return shape for `specs.sync`. (no @Returns declared) */
-export type SpecsSyncReturn = unknown;
+/** Return shape for `specs.sync`. */
+export type SpecsSyncReturn = {
+  rootPath: string;
+  status: "synced";
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `stickers.add`. */
 export type StickersAddInput = {
@@ -3958,8 +8890,24 @@ export type StickersAddInput = {
   overwrite?: boolean;
 };
 
-/** Return shape for `stickers.add`. (no @Returns declared) */
-export type StickersAddReturn = unknown;
+/** Return shape for `stickers.add`. */
+export type StickersAddReturn = {
+  action: string;
+  sticker: {
+    agents: string[];
+    avoid: string | null;
+    channels: string[];
+    createdAt: number | null;
+    description: string;
+    enabled: boolean;
+    id: string;
+    label: string;
+    media: Record<string, unknown>;
+    updatedAt: number | null;
+    [k: string]: unknown;
+  };
+  success: boolean;
+};
 
 /** Input shape for `stickers.list`. */
 export type StickersListInput = {
@@ -3967,16 +8915,58 @@ export type StickersListInput = {
   offset?: string;
 };
 
-/** Return shape for `stickers.list`. (no @Returns declared) */
-export type StickersListReturn = unknown;
+/** Return shape for `stickers.list`. */
+export type StickersListReturn = {
+  items: Array<{
+    agents: string[];
+    avoid: string | null;
+    channels: string[];
+    createdAt: number | null;
+    description: string;
+    enabled: boolean;
+    id: string;
+    label: string;
+    media: Record<string, unknown>;
+    updatedAt: number | null;
+    [k: string]: unknown;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  stickers: Array<{
+    agents: string[];
+    avoid: string | null;
+    channels: string[];
+    createdAt: number | null;
+    description: string;
+    enabled: boolean;
+    id: string;
+    label: string;
+    media: Record<string, unknown>;
+    updatedAt: number | null;
+    [k: string]: unknown;
+  }>;
+  total: number;
+};
 
 /** Input shape for `stickers.remove`. */
 export type StickersRemoveInput = {
   id: string;
 };
 
-/** Return shape for `stickers.remove`. (no @Returns declared) */
-export type StickersRemoveReturn = unknown;
+/** Return shape for `stickers.remove`. */
+export type StickersRemoveReturn = {
+  action: "remove";
+  stickerId: string;
+  success: boolean;
+};
 
 /** Input shape for `stickers.send`. */
 export type StickersSendInput = {
@@ -3987,16 +8977,213 @@ export type StickersSendInput = {
   to?: string;
 };
 
-/** Return shape for `stickers.send`. (no @Returns declared) */
-export type StickersSendReturn = unknown;
+/** Return shape for `stickers.send`. */
+export type StickersSendReturn = {
+  event: Record<string, unknown>;
+  sticker: {
+    id: string;
+    label: string;
+  };
+  success: true;
+  target: {
+    accountId: string;
+    channel: string;
+    chatId: string;
+  };
+  topic: "ravi.stickers.send";
+};
 
 /** Input shape for `stickers.show`. */
 export type StickersShowInput = {
   id: string;
 };
 
-/** Return shape for `stickers.show`. (no @Returns declared) */
-export type StickersShowReturn = unknown;
+/** Return shape for `stickers.show`. */
+export type StickersShowReturn = {
+  sticker: {
+    agents: string[];
+    avoid: string | null;
+    channels: string[];
+    createdAt: number | null;
+    description: string;
+    enabled: boolean;
+    id: string;
+    label: string;
+    media: Record<string, unknown>;
+    updatedAt: number | null;
+    [k: string]: unknown;
+  };
+};
+
+/** Input shape for `sync.inspect`. */
+export type SyncInspectInput = {
+  id: string;
+};
+
+/** Return shape for `sync.inspect`. */
+export type SyncInspectReturn = ({
+  found: false;
+  id: string;
+}) | ({
+  found: true;
+  kind: "outbox";
+  record: {
+    ackedAt: number | null;
+    attemptCount: number;
+    createdAt: number;
+    domain: string;
+    entityId: string;
+    entityRevision: number | null;
+    entityType: string;
+    eventId: string;
+    eventType: string;
+    evidenceRefs: unknown[];
+    id: string;
+    idempotencyKey: string;
+    lastErrorCode: string | null;
+    leaseId: string | null;
+    leasedUntil: number | null;
+    nextAttemptAt: number;
+    occurredAt: number;
+    originInstallationId: string | null;
+    payload: unknown;
+    schemaVersion: number;
+    sentAt: number | null;
+    status: "pending" | "leased" | "sent" | "acked" | "failed" | "dead";
+    updatedAt: number;
+  };
+}) | ({
+  found: true;
+  kind: "inbox";
+  record: {
+    appliedAt: number | null;
+    attemptCount: number;
+    createdAt: number;
+    domain: string;
+    entityId: string;
+    entityType: string;
+    eventType: string;
+    id: string;
+    lastErrorCode: string | null;
+    payload: unknown;
+    receivedAt: number;
+    remoteEventId: string;
+    remoteSequence: string | null;
+    status: "pending" | "applied" | "skipped" | "failed" | "dead";
+    updatedAt: number;
+  };
+});
+
+/** Input shape for `sync.pull`. */
+export type SyncPullInput = {
+  domain?: string;
+  limit?: string;
+  project?: string;
+  projectId?: string;
+  projectRef?: string;
+  scope?: string;
+};
+
+/** Return shape for `sync.pull`. */
+export type SyncPullReturn = {
+  applied: number;
+  cursor: string | null;
+  downloaded: number;
+  enqueued: number;
+  errorCode?: string;
+  failed: number;
+  linked: boolean;
+  skipped: number;
+  status: "unlinked" | "noop" | "downloaded" | "failed";
+};
+
+/** Input shape for `sync.push`. */
+export type SyncPushInput = {
+  domain?: string;
+  limit?: string;
+  maxBytes?: string;
+  project?: string;
+  projectId?: string;
+  projectRef?: string;
+  scope?: string;
+  traces?: boolean;
+};
+
+/** Return shape for `sync.push`. */
+export type SyncPushReturn = {
+  acked: number;
+  attempted: number;
+  errorCode?: string;
+  failed: number;
+  linked: boolean;
+  sent: number;
+  status: "unlinked" | "noop" | "uploaded" | "failed";
+  trace?: {
+    acked: number;
+    attempted: number;
+    errorCode?: string;
+    failed: number;
+    linked: boolean;
+    status: "unlinked" | "noop" | "uploaded" | "failed";
+  };
+};
+
+/** Input shape for `sync.retry`. */
+export type SyncRetryInput = {
+  dead?: boolean;
+  id?: string;
+};
+
+/** Return shape for `sync.retry`. */
+export type SyncRetryReturn = {
+  retried: number;
+  success: true;
+};
+
+/** Input shape for `sync.status`. */
+export type SyncStatusInput = Record<string, never>;
+
+/** Return shape for `sync.status`. */
+export type SyncStatusReturn = {
+  consoleUrl: string | null;
+  cursors: Array<{
+    cursorKey: string;
+    cursorValue: string | null;
+    domain: string;
+    meta: unknown | null;
+    updatedAt: number;
+  }>;
+  inbox: {
+    acked?: number;
+    applied?: number;
+    dead: number;
+    failed: number;
+    leased?: number;
+    pending: number;
+    sent?: number;
+    skipped?: number;
+  };
+  installationId: string | null;
+  lastDownload: string | null;
+  lastError: string | null;
+  lastUpload: string | null;
+  linked: boolean;
+  outbox: {
+    acked?: number;
+    applied?: number;
+    dead: number;
+    failed: number;
+    leased?: number;
+    pending: number;
+    sent?: number;
+    skipped?: number;
+  };
+  runner: {
+    enabled: boolean;
+    env: string;
+    pullDomains: string[];
+  };
+};
 
 /** Input shape for `tag-rules.evaluate`. */
 export type TagRulesEvaluateInput = {
@@ -4006,16 +9193,29 @@ export type TagRulesEvaluateInput = {
   target?: string;
 };
 
-/** Return shape for `tag-rules.evaluate`. (no @Returns declared) */
-export type TagRulesEvaluateReturn = unknown;
+/** Return shape for `tag-rules.evaluate`. */
+export type TagRulesEvaluateReturn = {
+  apply: boolean;
+  outcomes: Array<Record<string, unknown>>;
+  ruleId: string;
+  target: Record<string, unknown>;
+  traces: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tag-rules.explain`. */
 export type TagRulesExplainInput = {
   target?: string;
 };
 
-/** Return shape for `tag-rules.explain`. (no @Returns declared) */
-export type TagRulesExplainReturn = unknown;
+/** Return shape for `tag-rules.explain`. */
+export type TagRulesExplainReturn = {
+  loaded: Record<string, unknown>;
+  outcomes: Array<Record<string, unknown>>;
+  rules: Record<string, unknown>;
+  target: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tag-rules.list`. */
 export type TagRulesListInput = {
@@ -4023,16 +9223,31 @@ export type TagRulesListInput = {
   offset?: string;
 };
 
-/** Return shape for `tag-rules.list`. (no @Returns declared) */
-export type TagRulesListReturn = unknown;
+/** Return shape for `tag-rules.list`. */
+export type TagRulesListReturn = {
+  errors: Array<Record<string, unknown>>;
+  pagination: {
+    limit: number;
+    offset: number;
+    returned?: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  rules: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tag-rules.show`. */
 export type TagRulesShowInput = {
   id: string;
 };
 
-/** Return shape for `tag-rules.show`. (no @Returns declared) */
-export type TagRulesShowReturn = unknown;
+/** Return shape for `tag-rules.show`. */
+export type TagRulesShowReturn = {
+  rule: Record<string, unknown>;
+  source?: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tag-rules.tick`. */
 export type TagRulesTickInput = {
@@ -4040,14 +9255,27 @@ export type TagRulesTickInput = {
   limit?: string;
 };
 
-/** Return shape for `tag-rules.tick`. (no @Returns declared) */
-export type TagRulesTickReturn = unknown;
+/** Return shape for `tag-rules.tick`. */
+export type TagRulesTickReturn = {
+  appliedActions: number;
+  contacts: Array<Record<string, unknown>>;
+  contactsProcessed: number;
+  loadErrors: Array<Record<string, unknown>>;
+  matched: number;
+  rulesLoaded: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tag-rules.validate`. */
 export type TagRulesValidateInput = Record<string, never>;
 
-/** Return shape for `tag-rules.validate`. (no @Returns declared) */
-export type TagRulesValidateReturn = unknown;
+/** Return shape for `tag-rules.validate`. */
+export type TagRulesValidateReturn = {
+  errors: Array<Record<string, unknown>>;
+  ruleCount: number;
+  status: "ok" | "error";
+  [k: string]: unknown;
+};
 
 /** Input shape for `tags.attach`. */
 export type TagsAttachInput = {
@@ -4083,8 +9311,16 @@ export type TagsAttachInput = {
   workflowSpec?: string;
 };
 
-/** Return shape for `tags.attach`. (no @Returns declared) */
-export type TagsAttachReturn = unknown;
+/** Return shape for `tags.attach`. */
+export type TagsAttachReturn = {
+  behaviorConsumers?: Array<Record<string, unknown>>;
+  binding?: Record<string, unknown>;
+  changedCount: number;
+  status: string;
+  tag?: Record<string, unknown>;
+  target: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tags.create`. */
 export type TagsCreateInput = {
@@ -4096,8 +9332,16 @@ export type TagsCreateInput = {
   source?: string;
 };
 
-/** Return shape for `tags.create`. (no @Returns declared) */
-export type TagsCreateReturn = unknown;
+/** Return shape for `tags.create`. */
+export type TagsCreateReturn = {
+  behaviorConsumers?: Array<Record<string, unknown>>;
+  binding?: Record<string, unknown>;
+  changedCount: number;
+  status: string;
+  tag?: Record<string, unknown>;
+  target: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tags.detach`. */
 export type TagsDetachInput = {
@@ -4132,8 +9376,13 @@ export type TagsDetachInput = {
   workflowSpec?: string;
 };
 
-/** Return shape for `tags.detach`. (no @Returns declared) */
-export type TagsDetachReturn = unknown;
+/** Return shape for `tags.detach`. */
+export type TagsDetachReturn = {
+  changedCount: number;
+  status: "detached";
+  target: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tags.list`. */
 export type TagsListInput = {
@@ -4146,8 +9395,24 @@ export type TagsListInput = {
   source?: string;
 };
 
-/** Return shape for `tags.list`. (no @Returns declared) */
-export type TagsListReturn = unknown;
+/** Return shape for `tags.list`. */
+export type TagsListReturn = {
+  filters: Record<string, unknown>;
+  items: Array<Record<string, unknown>>;
+  page: {
+    count: number;
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextCursor: string | null;
+    order: string;
+    sort: string;
+    [k: string]: unknown;
+  };
+  tags: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tags.search`. */
 export type TagsSearchInput = {
@@ -4187,8 +9452,25 @@ export type TagsSearchInput = {
   workflowSpec?: string;
 };
 
-/** Return shape for `tags.search`. (no @Returns declared) */
-export type TagsSearchReturn = unknown;
+/** Return shape for `tags.search`. */
+export type TagsSearchReturn = {
+  behaviorConsumers: Array<Record<string, unknown>>;
+  bindings: Array<Record<string, unknown>>;
+  filters: Record<string, unknown>;
+  items: Array<Record<string, unknown>>;
+  page: {
+    count: number;
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextCursor: string | null;
+    order: string;
+    sort: string;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tags.set`. */
 export type TagsSetInput = {
@@ -4197,16 +9479,29 @@ export type TagsSetInput = {
   value: string;
 };
 
-/** Return shape for `tags.set`. (no @Returns declared) */
-export type TagsSetReturn = unknown;
+/** Return shape for `tags.set`. */
+export type TagsSetReturn = {
+  behaviorConsumers?: Array<Record<string, unknown>>;
+  binding?: Record<string, unknown>;
+  changedCount: number;
+  status: string;
+  tag?: Record<string, unknown>;
+  target: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tags.show`. */
 export type TagsShowInput = {
   slug: string;
 };
 
-/** Return shape for `tags.show`. (no @Returns declared) */
-export type TagsShowReturn = unknown;
+/** Return shape for `tags.show`. */
+export type TagsShowReturn = {
+  behaviorConsumers: Array<Record<string, unknown>>;
+  bindings: Array<Record<string, unknown>>;
+  tag: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.archive`. */
 export type TasksArchiveInput = {
@@ -4214,8 +9509,12 @@ export type TasksArchiveInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.archive`. (no @Returns declared) */
-export type TasksArchiveReturn = unknown;
+/** Return shape for `tasks.archive`. */
+export type TasksArchiveReturn = {
+  event: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.automations.add`. */
 export type TasksAutomationsAddInput = {
@@ -4240,24 +9539,54 @@ export type TasksAutomationsAddInput = {
   title?: string;
 };
 
-/** Return shape for `tasks.automations.add`. (no @Returns declared) */
-export type TasksAutomationsAddReturn = unknown;
+/** Return shape for `tasks.automations.add`. */
+export type TasksAutomationsAddReturn = {
+  automation: Record<string, unknown>;
+  changedCount: number;
+  status: string;
+  target: {
+    id: string;
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.automations.disable`. */
 export type TasksAutomationsDisableInput = {
   id: string;
 };
 
-/** Return shape for `tasks.automations.disable`. (no @Returns declared) */
-export type TasksAutomationsDisableReturn = unknown;
+/** Return shape for `tasks.automations.disable`. */
+export type TasksAutomationsDisableReturn = {
+  automation: Record<string, unknown>;
+  changedCount: number;
+  status: string;
+  target: {
+    id: string;
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.automations.enable`. */
 export type TasksAutomationsEnableInput = {
   id: string;
 };
 
-/** Return shape for `tasks.automations.enable`. (no @Returns declared) */
-export type TasksAutomationsEnableReturn = unknown;
+/** Return shape for `tasks.automations.enable`. */
+export type TasksAutomationsEnableReturn = {
+  automation: Record<string, unknown>;
+  changedCount: number;
+  status: string;
+  target: {
+    id: string;
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.automations.list`. */
 export type TasksAutomationsListInput = {
@@ -4266,24 +9595,54 @@ export type TasksAutomationsListInput = {
   tag?: string;
 };
 
-/** Return shape for `tasks.automations.list`. (no @Returns declared) */
-export type TasksAutomationsListReturn = unknown;
+/** Return shape for `tasks.automations.list`. */
+export type TasksAutomationsListReturn = {
+  automations: Array<Record<string, unknown>>;
+  filters: Record<string, unknown>;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.automations.rm`. */
 export type TasksAutomationsRmInput = {
   id: string;
 };
 
-/** Return shape for `tasks.automations.rm`. (no @Returns declared) */
-export type TasksAutomationsRmReturn = unknown;
+/** Return shape for `tasks.automations.rm`. */
+export type TasksAutomationsRmReturn = {
+  automation: Record<string, unknown>;
+  changedCount: number;
+  status: string;
+  target: {
+    id: string;
+    type: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.automations.show`. */
 export type TasksAutomationsShowInput = {
   id: string;
 };
 
-/** Return shape for `tasks.automations.show`. (no @Returns declared) */
-export type TasksAutomationsShowReturn = unknown;
+/** Return shape for `tasks.automations.show`. */
+export type TasksAutomationsShowReturn = {
+  automation: Record<string, unknown>;
+  runs: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.block`. */
 export type TasksBlockInput = {
@@ -4291,8 +9650,12 @@ export type TasksBlockInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.block`. (no @Returns declared) */
-export type TasksBlockReturn = unknown;
+/** Return shape for `tasks.block`. */
+export type TasksBlockReturn = {
+  event: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.comment`. */
 export type TasksCommentInput = {
@@ -4300,8 +9663,13 @@ export type TasksCommentInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.comment`. (no @Returns declared) */
-export type TasksCommentReturn = unknown;
+/** Return shape for `tasks.comment`. */
+export type TasksCommentReturn = {
+  comment: Record<string, unknown>;
+  event: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.create`. */
 export type TasksCreateInput = {
@@ -4327,8 +9695,19 @@ export type TasksCreateInput = {
   worktreePath?: string;
 };
 
-/** Return shape for `tasks.create`. (no @Returns declared) */
-export type TasksCreateReturn = unknown;
+/** Return shape for `tasks.create`. */
+export type TasksCreateReturn = {
+  dependencies: Array<Record<string, unknown>>;
+  dependents: Array<Record<string, unknown>>;
+  event: Record<string, unknown>;
+  launchPlan: (Record<string, unknown>) | null;
+  parentTaskId: string | null;
+  readiness: Record<string, unknown>;
+  relatedEvents: Array<Record<string, unknown>>;
+  task: Record<string, unknown>;
+  taskProfile: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.deps.add`. */
 export type TasksDepsAddInput = {
@@ -4336,8 +9715,12 @@ export type TasksDepsAddInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.deps.add`. (no @Returns declared) */
-export type TasksDepsAddReturn = unknown;
+/** Return shape for `tasks.deps.add`. */
+export type TasksDepsAddReturn = {
+  event: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.deps.ls`. */
 export type TasksDepsLsInput = {
@@ -4346,8 +9729,27 @@ export type TasksDepsLsInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.deps.ls`. (no @Returns declared) */
-export type TasksDepsLsReturn = unknown;
+/** Return shape for `tasks.deps.ls`. */
+export type TasksDepsLsReturn = {
+  dependencies: Array<Record<string, unknown>>;
+  dependents: Array<Record<string, unknown>>;
+  items: Array<Record<string, unknown>>;
+  launchPlan: (Record<string, unknown>) | null;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  readiness: Record<string, unknown>;
+  taskId: string;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.deps.rm`. */
 export type TasksDepsRmInput = {
@@ -4355,8 +9757,12 @@ export type TasksDepsRmInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.deps.rm`. (no @Returns declared) */
-export type TasksDepsRmReturn = unknown;
+/** Return shape for `tasks.deps.rm`. */
+export type TasksDepsRmReturn = {
+  event: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.dispatch`. */
 export type TasksDispatchInput = {
@@ -4372,8 +9778,14 @@ export type TasksDispatchInput = {
   thinking?: string;
 };
 
-/** Return shape for `tasks.dispatch`. (no @Returns declared) */
-export type TasksDispatchReturn = unknown;
+/** Return shape for `tasks.dispatch`. */
+export type TasksDispatchReturn = {
+  event: Record<string, unknown>;
+  mode: string;
+  readiness?: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.done`. */
 export type TasksDoneInput = {
@@ -4381,8 +9793,12 @@ export type TasksDoneInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.done`. (no @Returns declared) */
-export type TasksDoneReturn = unknown;
+/** Return shape for `tasks.done`. */
+export type TasksDoneReturn = {
+  event: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.fail`. */
 export type TasksFailInput = {
@@ -4390,8 +9806,12 @@ export type TasksFailInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.fail`. (no @Returns declared) */
-export type TasksFailReturn = unknown;
+/** Return shape for `tasks.fail`. */
+export type TasksFailReturn = {
+  event: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.list`. */
 export type TasksListInput = {
@@ -4417,8 +9837,17 @@ export type TasksListInput = {
   until?: string;
 };
 
-/** Return shape for `tasks.list`. (no @Returns declared) */
-export type TasksListReturn = unknown;
+/** Return shape for `tasks.list`. */
+export type TasksListReturn = {
+  archiveMode: string;
+  filters: Record<string, unknown>;
+  items: Array<Record<string, unknown>>;
+  limit: number | null;
+  page: Record<string, unknown>;
+  tasks: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.profiles.init`. */
 export type TasksProfilesInitInput = {
@@ -4427,8 +9856,13 @@ export type TasksProfilesInitInput = {
   source?: string;
 };
 
-/** Return shape for `tasks.profiles.init`. (no @Returns declared) */
-export type TasksProfilesInitReturn = unknown;
+/** Return shape for `tasks.profiles.init`. */
+export type TasksProfilesInitReturn = {
+  manifestPath: string;
+  profileDir: string;
+  sourceKind: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.profiles.list`. */
 export type TasksProfilesListInput = {
@@ -4436,8 +9870,23 @@ export type TasksProfilesListInput = {
   offset?: string;
 };
 
-/** Return shape for `tasks.profiles.list`. (no @Returns declared) */
-export type TasksProfilesListReturn = unknown;
+/** Return shape for `tasks.profiles.list`. */
+export type TasksProfilesListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  profiles: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.profiles.preview`. */
 export type TasksProfilesPreviewInput = {
@@ -4452,24 +9901,32 @@ export type TasksProfilesPreviewInput = {
   worktreePath?: string;
 };
 
-/** Return shape for `tasks.profiles.preview`. (no @Returns declared) */
-export type TasksProfilesPreviewReturn = unknown;
+/** Return shape for `tasks.profiles.preview`. */
+export type TasksProfilesPreviewReturn = {
+  profile: Record<string, unknown>;
+  rendered: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.profiles.show`. */
 export type TasksProfilesShowInput = {
   profileId: string;
 };
 
-/** Return shape for `tasks.profiles.show`. (no @Returns declared) */
-export type TasksProfilesShowReturn = unknown;
+/** Return shape for `tasks.profiles.show`. */
+export type TasksProfilesShowReturn = Record<string, unknown>;
 
 /** Input shape for `tasks.profiles.validate`. */
 export type TasksProfilesValidateInput = {
   profileId?: string;
 };
 
-/** Return shape for `tasks.profiles.validate`. (no @Returns declared) */
-export type TasksProfilesValidateReturn = unknown;
+/** Return shape for `tasks.profiles.validate`. */
+export type TasksProfilesValidateReturn = {
+  results: Array<Record<string, unknown>>;
+  valid: boolean;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.report`. */
 export type TasksReportInput = {
@@ -4478,8 +9935,12 @@ export type TasksReportInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.report`. (no @Returns declared) */
-export type TasksReportReturn = unknown;
+/** Return shape for `tasks.report`. */
+export type TasksReportReturn = {
+  event: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.show`. */
 export type TasksShowInput = {
@@ -4487,16 +9948,30 @@ export type TasksShowInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.show`. (no @Returns declared) */
-export type TasksShowReturn = unknown;
+/** Return shape for `tasks.show`. */
+export type TasksShowReturn = {
+  comments: Array<Record<string, unknown>>;
+  dependencies: Array<Record<string, unknown>>;
+  dependents: Array<Record<string, unknown>>;
+  events: Array<Record<string, unknown>>;
+  historyLimit: number | null;
+  launchPlan: (Record<string, unknown>) | null;
+  readiness: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tasks.unarchive`. */
 export type TasksUnarchiveInput = {
   taskId: string;
 };
 
-/** Return shape for `tasks.unarchive`. (no @Returns declared) */
-export type TasksUnarchiveReturn = unknown;
+/** Return shape for `tasks.unarchive`. */
+export type TasksUnarchiveReturn = {
+  event: Record<string, unknown>;
+  task: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `threads.brief`. */
 export type ThreadsBriefInput = {
@@ -4504,8 +9979,13 @@ export type ThreadsBriefInput = {
   thread: string;
 };
 
-/** Return shape for `threads.brief`. (no @Returns declared) */
-export type ThreadsBriefReturn = unknown;
+/** Return shape for `threads.brief`. */
+export type ThreadsBriefReturn = {
+  action: string;
+  brief: Record<string, unknown>;
+  thread: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `threads.close`. */
 export type ThreadsCloseInput = {
@@ -4514,8 +9994,12 @@ export type ThreadsCloseInput = {
   thread: string;
 };
 
-/** Return shape for `threads.close`. (no @Returns declared) */
-export type ThreadsCloseReturn = unknown;
+/** Return shape for `threads.close`. */
+export type ThreadsCloseReturn = {
+  action: string;
+  thread: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `threads.comment`. */
 export type ThreadsCommentInput = {
@@ -4525,8 +10009,13 @@ export type ThreadsCommentInput = {
   visibility?: string;
 };
 
-/** Return shape for `threads.comment`. (no @Returns declared) */
-export type ThreadsCommentReturn = unknown;
+/** Return shape for `threads.comment`. */
+export type ThreadsCommentReturn = {
+  action: string;
+  entry: Record<string, unknown>;
+  thread: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `threads.create`. */
 export type ThreadsCreateInput = {
@@ -4539,8 +10028,12 @@ export type ThreadsCreateInput = {
   title?: string;
 };
 
-/** Return shape for `threads.create`. (no @Returns declared) */
-export type ThreadsCreateReturn = unknown;
+/** Return shape for `threads.create`. */
+export type ThreadsCreateReturn = {
+  action: string;
+  thread: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `threads.entries`. */
 export type ThreadsEntriesInput = {
@@ -4550,8 +10043,13 @@ export type ThreadsEntriesInput = {
   thread: string;
 };
 
-/** Return shape for `threads.entries`. (no @Returns declared) */
-export type ThreadsEntriesReturn = unknown;
+/** Return shape for `threads.entries`. */
+export type ThreadsEntriesReturn = {
+  action: string;
+  entries: Array<Record<string, unknown>>;
+  thread: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `threads.link`. */
 export type ThreadsLinkInput = {
@@ -4563,8 +10061,13 @@ export type ThreadsLinkInput = {
   visibility?: string;
 };
 
-/** Return shape for `threads.link`. (no @Returns declared) */
-export type ThreadsLinkReturn = unknown;
+/** Return shape for `threads.link`. */
+export type ThreadsLinkReturn = {
+  action: string;
+  link: Record<string, unknown>;
+  thread: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `threads.list`. */
 export type ThreadsListInput = {
@@ -4576,8 +10079,22 @@ export type ThreadsListInput = {
   status?: string;
 };
 
-/** Return shape for `threads.list`. (no @Returns declared) */
-export type ThreadsListReturn = unknown;
+/** Return shape for `threads.list`. */
+export type ThreadsListReturn = {
+  action: "list";
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `threads.note`. */
 export type ThreadsNoteInput = {
@@ -4587,8 +10104,13 @@ export type ThreadsNoteInput = {
   visibility?: string;
 };
 
-/** Return shape for `threads.note`. (no @Returns declared) */
-export type ThreadsNoteReturn = unknown;
+/** Return shape for `threads.note`. */
+export type ThreadsNoteReturn = {
+  action: string;
+  entry: Record<string, unknown>;
+  thread: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `threads.show`. */
 export type ThreadsShowInput = {
@@ -4597,8 +10119,14 @@ export type ThreadsShowInput = {
   thread: string;
 };
 
-/** Return shape for `threads.show`. (no @Returns declared) */
-export type ThreadsShowReturn = unknown;
+/** Return shape for `threads.show`. */
+export type ThreadsShowReturn = {
+  action: string;
+  entries: Array<Record<string, unknown>>;
+  links: Array<Record<string, unknown>>;
+  thread: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tools.list`. */
 export type ToolsListInput = {
@@ -4606,28 +10134,58 @@ export type ToolsListInput = {
   offset?: string;
 };
 
-/** Return shape for `tools.list`. (no @Returns declared) */
-export type ToolsListReturn = unknown;
+/** Return shape for `tools.list`. */
+export type ToolsListReturn = {
+  groups: Array<{
+    name: string;
+    tools: Array<Record<string, unknown>>;
+    [k: string]: unknown;
+  }>;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  tools: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tools.manifest`. */
 export type ToolsManifestInput = Record<string, never>;
 
-/** Return shape for `tools.manifest`. (no @Returns declared) */
-export type ToolsManifestReturn = unknown;
+/** Return shape for `tools.manifest`. */
+export type ToolsManifestReturn = {
+  tools: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tools.schema`. */
 export type ToolsSchemaInput = Record<string, never>;
 
-/** Return shape for `tools.schema`. (no @Returns declared) */
-export type ToolsSchemaReturn = unknown;
+/** Return shape for `tools.schema`. */
+export type ToolsSchemaReturn = {
+  schema: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tools.show`. */
 export type ToolsShowInput = {
   name: string;
 };
 
-/** Return shape for `tools.show`. (no @Returns declared) */
-export type ToolsShowReturn = unknown;
+/** Return shape for `tools.show`. */
+export type ToolsShowReturn = {
+  tool: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `tools.test`. */
 export type ToolsTestInput = {
@@ -4635,8 +10193,17 @@ export type ToolsTestInput = {
   name: string;
 };
 
-/** Return shape for `tools.test`. (no @Returns declared) */
-export type ToolsTestReturn = unknown;
+/** Return shape for `tools.test`. */
+export type ToolsTestReturn = {
+  args: Record<string, unknown>;
+  result: {
+    content: unknown[];
+    isError: boolean;
+    [k: string]: unknown;
+  };
+  tool: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `transcribe.file`. */
 export type TranscribeFileInput = {
@@ -4644,8 +10211,25 @@ export type TranscribeFileInput = {
   path: string;
 };
 
-/** Return shape for `transcribe.file`. (no @Returns declared) */
-export type TranscribeFileReturn = unknown;
+/** Return shape for `transcribe.file`. */
+export type TranscribeFileReturn = {
+  options: {
+    lang: string;
+  };
+  source: {
+    filePath: string;
+    mimeType: string;
+    sizeBytes: number;
+    sizeMB: number;
+  };
+  success: true;
+  transcription: {
+    chunks?: number;
+    duration?: number;
+    text: string;
+    [k: string]: unknown;
+  };
+};
 
 /** Input shape for `triggers.add`. */
 export type TriggersAddInput = {
@@ -4659,24 +10243,51 @@ export type TriggersAddInput = {
   topic?: string;
 };
 
-/** Return shape for `triggers.add`. (no @Returns declared) */
-export type TriggersAddReturn = unknown;
+/** Return shape for `triggers.add`. */
+export type TriggersAddReturn = {
+  changedCount: number;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  trigger: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `triggers.disable`. */
 export type TriggersDisableInput = {
   id: string;
 };
 
-/** Return shape for `triggers.disable`. (no @Returns declared) */
-export type TriggersDisableReturn = unknown;
+/** Return shape for `triggers.disable`. */
+export type TriggersDisableReturn = {
+  changedCount: number;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  trigger: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `triggers.enable`. */
 export type TriggersEnableInput = {
   id: string;
 };
 
-/** Return shape for `triggers.enable`. (no @Returns declared) */
-export type TriggersEnableReturn = unknown;
+/** Return shape for `triggers.enable`. */
+export type TriggersEnableReturn = {
+  changedCount: number;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  trigger: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `triggers.list`. */
 export type TriggersListInput = {
@@ -4685,16 +10296,40 @@ export type TriggersListInput = {
   tag?: string;
 };
 
-/** Return shape for `triggers.list`. (no @Returns declared) */
-export type TriggersListReturn = unknown;
+/** Return shape for `triggers.list`. */
+export type TriggersListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  triggers: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `triggers.rm`. */
 export type TriggersRmInput = {
   id: string;
 };
 
-/** Return shape for `triggers.rm`. (no @Returns declared) */
-export type TriggersRmReturn = unknown;
+/** Return shape for `triggers.rm`. */
+export type TriggersRmReturn = {
+  changedCount: number;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  trigger: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `triggers.set`. */
 export type TriggersSetInput = {
@@ -4703,30 +10338,54 @@ export type TriggersSetInput = {
   value: string;
 };
 
-/** Return shape for `triggers.set`. (no @Returns declared) */
-export type TriggersSetReturn = unknown;
+/** Return shape for `triggers.set`. */
+export type TriggersSetReturn = {
+  changedCount: number;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  trigger: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `triggers.show`. */
 export type TriggersShowInput = {
   id: string;
 };
 
-/** Return shape for `triggers.show`. (no @Returns declared) */
-export type TriggersShowReturn = unknown;
+/** Return shape for `triggers.show`. */
+export type TriggersShowReturn = {
+  trigger: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `triggers.test`. */
 export type TriggersTestInput = {
   id: string;
 };
 
-/** Return shape for `triggers.test`. (no @Returns declared) */
-export type TriggersTestReturn = unknown;
+/** Return shape for `triggers.test`. */
+export type TriggersTestReturn = {
+  changedCount: number;
+  status: string;
+  target: {
+    type: string;
+    [k: string]: unknown;
+  };
+  trigger: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `triggers.topics`. */
 export type TriggersTopicsInput = Record<string, never>;
 
-/** Return shape for `triggers.topics`. (no @Returns declared) */
-export type TriggersTopicsReturn = unknown;
+/** Return shape for `triggers.topics`. */
+export type TriggersTopicsReturn = {
+  topics: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `video.analyze`. */
 export type VideoAnalyzeInput = {
@@ -4735,16 +10394,36 @@ export type VideoAnalyzeInput = {
   url: string;
 };
 
-/** Return shape for `video.analyze`. (no @Returns declared) */
-export type VideoAnalyzeReturn = unknown;
+/** Return shape for `video.analyze`. */
+export type VideoAnalyzeReturn = {
+  artifact: Record<string, unknown>;
+  options: Record<string, unknown>;
+  success: true;
+  video: {
+    duration: string;
+    source: string;
+    summary: string;
+    title: string;
+    topics: string[];
+    transcript: string;
+    visualDescription: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `watch.connectors`. */
 export type WatchConnectorsInput = {
   provider?: string;
 };
 
-/** Return shape for `watch.connectors`. (no @Returns declared) */
-export type WatchConnectorsReturn = unknown;
+/** Return shape for `watch.connectors`. */
+export type WatchConnectorsReturn = {
+  connectors: Array<Record<string, unknown>>;
+  items: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `watch.create`. */
 export type WatchCreateInput = {
@@ -4758,32 +10437,51 @@ export type WatchCreateInput = {
   resourceId?: string;
 };
 
-/** Return shape for `watch.create`. (no @Returns declared) */
-export type WatchCreateReturn = unknown;
+/** Return shape for `watch.create`. */
+export type WatchCreateReturn = {
+  capabilities: Record<string, unknown>;
+  next: Record<string, unknown>;
+  status: string;
+  watch: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `watch.disable`. */
 export type WatchDisableInput = {
   id: string;
 };
 
-/** Return shape for `watch.disable`. (no @Returns declared) */
-export type WatchDisableReturn = unknown;
+/** Return shape for `watch.disable`. */
+export type WatchDisableReturn = {
+  status: string;
+  watch: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `watch.enable`. */
 export type WatchEnableInput = {
   id: string;
 };
 
-/** Return shape for `watch.enable`. (no @Returns declared) */
-export type WatchEnableReturn = unknown;
+/** Return shape for `watch.enable`. */
+export type WatchEnableReturn = {
+  status: string;
+  watch: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `watch.events`. */
 export type WatchEventsInput = {
   id: string;
 };
 
-/** Return shape for `watch.events`. (no @Returns declared) */
-export type WatchEventsReturn = unknown;
+/** Return shape for `watch.events`. */
+export type WatchEventsReturn = {
+  eventTypes: string[];
+  subjects: string[];
+  watchId: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `watch.list`. */
 export type WatchListInput = {
@@ -4793,24 +10491,46 @@ export type WatchListInput = {
   status?: string;
 };
 
-/** Return shape for `watch.list`. (no @Returns declared) */
-export type WatchListReturn = unknown;
+/** Return shape for `watch.list`. */
+export type WatchListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
+  watches: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `watch.rm`. */
 export type WatchRmInput = {
   id: string;
 };
 
-/** Return shape for `watch.rm`. (no @Returns declared) */
-export type WatchRmReturn = unknown;
+/** Return shape for `watch.rm`. */
+export type WatchRmReturn = {
+  deleted: boolean;
+  id: string;
+  [k: string]: unknown;
+};
 
 /** Input shape for `watch.show`. */
 export type WatchShowInput = {
   id: string;
 };
 
-/** Return shape for `watch.show`. (no @Returns declared) */
-export type WatchShowReturn = unknown;
+/** Return shape for `watch.show`. */
+export type WatchShowReturn = {
+  watch: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `watch.trigger`. */
 export type WatchTriggerInput = {
@@ -4823,8 +10543,13 @@ export type WatchTriggerInput = {
   session?: string;
 };
 
-/** Return shape for `watch.trigger`. (no @Returns declared) */
-export type WatchTriggerReturn = unknown;
+/** Return shape for `watch.trigger`. */
+export type WatchTriggerReturn = {
+  status: string;
+  trigger: Record<string, unknown>;
+  watch: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `whatsapp.dm.ack`. */
 export type WhatsappDmAckInput = {
@@ -4833,8 +10558,8 @@ export type WhatsappDmAckInput = {
   messageId: string;
 };
 
-/** Return shape for `whatsapp.dm.ack`. (no @Returns declared) */
-export type WhatsappDmAckReturn = unknown;
+/** Return shape for `whatsapp.dm.ack`. */
+export type WhatsappDmAckReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.dm.read`. */
 export type WhatsappDmReadInput = {
@@ -4844,8 +10569,8 @@ export type WhatsappDmReadInput = {
   noAck?: boolean;
 };
 
-/** Return shape for `whatsapp.dm.read`. (no @Returns declared) */
-export type WhatsappDmReadReturn = unknown;
+/** Return shape for `whatsapp.dm.read`. */
+export type WhatsappDmReadReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.dm.send`. */
 export type WhatsappDmSendInput = {
@@ -4854,8 +10579,8 @@ export type WhatsappDmSendInput = {
   message: string;
 };
 
-/** Return shape for `whatsapp.dm.send`. (no @Returns declared) */
-export type WhatsappDmSendReturn = unknown;
+/** Return shape for `whatsapp.dm.send`. */
+export type WhatsappDmSendReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.add`. */
 export type WhatsappGroupAddInput = {
@@ -4864,19 +10589,25 @@ export type WhatsappGroupAddInput = {
   participants: string;
 };
 
-/** Return shape for `whatsapp.group.add`. (no @Returns declared) */
-export type WhatsappGroupAddReturn = unknown;
+/** Return shape for `whatsapp.group.add`. */
+export type WhatsappGroupAddReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.create`. */
 export type WhatsappGroupCreateInput = {
   account?: string;
+  admin?: string[];
+  admins?: string[];
   agent?: string;
+  agentCwd?: string;
+  agentProvider?: string;
+  createAgent?: boolean;
   name: string;
   participants: string;
+  skipTaggedAdmins?: boolean;
 };
 
-/** Return shape for `whatsapp.group.create`. (no @Returns declared) */
-export type WhatsappGroupCreateReturn = unknown;
+/** Return shape for `whatsapp.group.create`. */
+export type WhatsappGroupCreateReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.demote`. */
 export type WhatsappGroupDemoteInput = {
@@ -4885,8 +10616,8 @@ export type WhatsappGroupDemoteInput = {
   participants: string;
 };
 
-/** Return shape for `whatsapp.group.demote`. (no @Returns declared) */
-export type WhatsappGroupDemoteReturn = unknown;
+/** Return shape for `whatsapp.group.demote`. */
+export type WhatsappGroupDemoteReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.description`. */
 export type WhatsappGroupDescriptionInput = {
@@ -4895,8 +10626,8 @@ export type WhatsappGroupDescriptionInput = {
   text: string;
 };
 
-/** Return shape for `whatsapp.group.description`. (no @Returns declared) */
-export type WhatsappGroupDescriptionReturn = unknown;
+/** Return shape for `whatsapp.group.description`. */
+export type WhatsappGroupDescriptionReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.info`. */
 export type WhatsappGroupInfoInput = {
@@ -4904,8 +10635,8 @@ export type WhatsappGroupInfoInput = {
   groupId: string;
 };
 
-/** Return shape for `whatsapp.group.info`. (no @Returns declared) */
-export type WhatsappGroupInfoReturn = unknown;
+/** Return shape for `whatsapp.group.info`. */
+export type WhatsappGroupInfoReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.invite`. */
 export type WhatsappGroupInviteInput = {
@@ -4913,8 +10644,8 @@ export type WhatsappGroupInviteInput = {
   groupId: string;
 };
 
-/** Return shape for `whatsapp.group.invite`. (no @Returns declared) */
-export type WhatsappGroupInviteReturn = unknown;
+/** Return shape for `whatsapp.group.invite`. */
+export type WhatsappGroupInviteReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.join`. */
 export type WhatsappGroupJoinInput = {
@@ -4922,8 +10653,8 @@ export type WhatsappGroupJoinInput = {
   code: string;
 };
 
-/** Return shape for `whatsapp.group.join`. (no @Returns declared) */
-export type WhatsappGroupJoinReturn = unknown;
+/** Return shape for `whatsapp.group.join`. */
+export type WhatsappGroupJoinReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.leave`. */
 export type WhatsappGroupLeaveInput = {
@@ -4931,8 +10662,8 @@ export type WhatsappGroupLeaveInput = {
   groupId: string;
 };
 
-/** Return shape for `whatsapp.group.leave`. (no @Returns declared) */
-export type WhatsappGroupLeaveReturn = unknown;
+/** Return shape for `whatsapp.group.leave`. */
+export type WhatsappGroupLeaveReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.list`. */
 export type WhatsappGroupListInput = {
@@ -4941,8 +10672,8 @@ export type WhatsappGroupListInput = {
   offset?: string;
 };
 
-/** Return shape for `whatsapp.group.list`. (no @Returns declared) */
-export type WhatsappGroupListReturn = unknown;
+/** Return shape for `whatsapp.group.list`. */
+export type WhatsappGroupListReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.promote`. */
 export type WhatsappGroupPromoteInput = {
@@ -4951,8 +10682,8 @@ export type WhatsappGroupPromoteInput = {
   participants: string;
 };
 
-/** Return shape for `whatsapp.group.promote`. (no @Returns declared) */
-export type WhatsappGroupPromoteReturn = unknown;
+/** Return shape for `whatsapp.group.promote`. */
+export type WhatsappGroupPromoteReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.remove`. */
 export type WhatsappGroupRemoveInput = {
@@ -4961,8 +10692,8 @@ export type WhatsappGroupRemoveInput = {
   participants: string;
 };
 
-/** Return shape for `whatsapp.group.remove`. (no @Returns declared) */
-export type WhatsappGroupRemoveReturn = unknown;
+/** Return shape for `whatsapp.group.remove`. */
+export type WhatsappGroupRemoveReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.rename`. */
 export type WhatsappGroupRenameInput = {
@@ -4971,8 +10702,8 @@ export type WhatsappGroupRenameInput = {
   name: string;
 };
 
-/** Return shape for `whatsapp.group.rename`. (no @Returns declared) */
-export type WhatsappGroupRenameReturn = unknown;
+/** Return shape for `whatsapp.group.rename`. */
+export type WhatsappGroupRenameReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.revoke-invite`. */
 export type WhatsappGroupRevokeInviteInput = {
@@ -4980,8 +10711,8 @@ export type WhatsappGroupRevokeInviteInput = {
   groupId: string;
 };
 
-/** Return shape for `whatsapp.group.revoke-invite`. (no @Returns declared) */
-export type WhatsappGroupRevokeInviteReturn = unknown;
+/** Return shape for `whatsapp.group.revoke-invite`. */
+export type WhatsappGroupRevokeInviteReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.send`. */
 export type WhatsappGroupSendInput = {
@@ -4991,8 +10722,8 @@ export type WhatsappGroupSendInput = {
   message: string;
 };
 
-/** Return shape for `whatsapp.group.send`. (no @Returns declared) */
-export type WhatsappGroupSendReturn = unknown;
+/** Return shape for `whatsapp.group.send`. */
+export type WhatsappGroupSendReturn = Record<string, unknown>;
 
 /** Input shape for `whatsapp.group.settings`. */
 export type WhatsappGroupSettingsInput = {
@@ -5001,8 +10732,8 @@ export type WhatsappGroupSettingsInput = {
   setting: string;
 };
 
-/** Return shape for `whatsapp.group.settings`. (no @Returns declared) */
-export type WhatsappGroupSettingsReturn = unknown;
+/** Return shape for `whatsapp.group.settings`. */
+export type WhatsappGroupSettingsReturn = Record<string, unknown>;
 
 /** Input shape for `workflows.runs.archive-node`. */
 export type WorkflowsRunsArchiveNodeInput = {
@@ -5010,8 +10741,11 @@ export type WorkflowsRunsArchiveNodeInput = {
   runId: string;
 };
 
-/** Return shape for `workflows.runs.archive-node`. (no @Returns declared) */
-export type WorkflowsRunsArchiveNodeReturn = unknown;
+/** Return shape for `workflows.runs.archive-node`. */
+export type WorkflowsRunsArchiveNodeReturn = {
+  details: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `workflows.runs.cancel`. */
 export type WorkflowsRunsCancelInput = {
@@ -5019,8 +10753,11 @@ export type WorkflowsRunsCancelInput = {
   runId: string;
 };
 
-/** Return shape for `workflows.runs.cancel`. (no @Returns declared) */
-export type WorkflowsRunsCancelReturn = unknown;
+/** Return shape for `workflows.runs.cancel`. */
+export type WorkflowsRunsCancelReturn = {
+  details: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `workflows.runs.list`. */
 export type WorkflowsRunsListInput = {
@@ -5028,8 +10765,23 @@ export type WorkflowsRunsListInput = {
   offset?: string;
 };
 
-/** Return shape for `workflows.runs.list`. (no @Returns declared) */
-export type WorkflowsRunsListReturn = unknown;
+/** Return shape for `workflows.runs.list`. */
+export type WorkflowsRunsListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  runs: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `workflows.runs.release`. */
 export type WorkflowsRunsReleaseInput = {
@@ -5037,16 +10789,19 @@ export type WorkflowsRunsReleaseInput = {
   runId: string;
 };
 
-/** Return shape for `workflows.runs.release`. (no @Returns declared) */
-export type WorkflowsRunsReleaseReturn = unknown;
+/** Return shape for `workflows.runs.release`. */
+export type WorkflowsRunsReleaseReturn = {
+  details: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `workflows.runs.show`. */
 export type WorkflowsRunsShowInput = {
   runId: string;
 };
 
-/** Return shape for `workflows.runs.show`. (no @Returns declared) */
-export type WorkflowsRunsShowReturn = unknown;
+/** Return shape for `workflows.runs.show`. */
+export type WorkflowsRunsShowReturn = Record<string, unknown>;
 
 /** Input shape for `workflows.runs.skip`. */
 export type WorkflowsRunsSkipInput = {
@@ -5054,8 +10809,11 @@ export type WorkflowsRunsSkipInput = {
   runId: string;
 };
 
-/** Return shape for `workflows.runs.skip`. (no @Returns declared) */
-export type WorkflowsRunsSkipReturn = unknown;
+/** Return shape for `workflows.runs.skip`. */
+export type WorkflowsRunsSkipReturn = {
+  details: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `workflows.runs.start`. */
 export type WorkflowsRunsStartInput = {
@@ -5063,8 +10821,8 @@ export type WorkflowsRunsStartInput = {
   specId: string;
 };
 
-/** Return shape for `workflows.runs.start`. (no @Returns declared) */
-export type WorkflowsRunsStartReturn = unknown;
+/** Return shape for `workflows.runs.start`. */
+export type WorkflowsRunsStartReturn = Record<string, unknown>;
 
 /** Input shape for `workflows.runs.task-attach`. */
 export type WorkflowsRunsTaskAttachInput = {
@@ -5073,8 +10831,11 @@ export type WorkflowsRunsTaskAttachInput = {
   taskId: string;
 };
 
-/** Return shape for `workflows.runs.task-attach`. (no @Returns declared) */
-export type WorkflowsRunsTaskAttachReturn = unknown;
+/** Return shape for `workflows.runs.task-attach`. */
+export type WorkflowsRunsTaskAttachReturn = {
+  details: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
 /** Input shape for `workflows.runs.task-create`. */
 export type WorkflowsRunsTaskCreateInput = {
@@ -5088,8 +10849,12 @@ export type WorkflowsRunsTaskCreateInput = {
   title?: string;
 };
 
-/** Return shape for `workflows.runs.task-create`. (no @Returns declared) */
-export type WorkflowsRunsTaskCreateReturn = unknown;
+/** Return shape for `workflows.runs.task-create`. */
+export type WorkflowsRunsTaskCreateReturn = {
+  task: Record<string, unknown>;
+  workflow: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `workflows.specs.create`. */
 export type WorkflowsSpecsCreateInput = {
@@ -5098,8 +10863,8 @@ export type WorkflowsSpecsCreateInput = {
   specId: string;
 };
 
-/** Return shape for `workflows.specs.create`. (no @Returns declared) */
-export type WorkflowsSpecsCreateReturn = unknown;
+/** Return shape for `workflows.specs.create`. */
+export type WorkflowsSpecsCreateReturn = Record<string, unknown>;
 
 /** Input shape for `workflows.specs.list`. */
 export type WorkflowsSpecsListInput = {
@@ -5107,13 +10872,28 @@ export type WorkflowsSpecsListInput = {
   offset?: string;
 };
 
-/** Return shape for `workflows.specs.list`. (no @Returns declared) */
-export type WorkflowsSpecsListReturn = unknown;
+/** Return shape for `workflows.specs.list`. */
+export type WorkflowsSpecsListReturn = {
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  specs: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
 
 /** Input shape for `workflows.specs.show`. */
 export type WorkflowsSpecsShowInput = {
   specId: string;
 };
 
-/** Return shape for `workflows.specs.show`. (no @Returns declared) */
-export type WorkflowsSpecsShowReturn = unknown;
+/** Return shape for `workflows.specs.show`. */
+export type WorkflowsSpecsShowReturn = Record<string, unknown>;

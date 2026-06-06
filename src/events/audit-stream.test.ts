@@ -33,6 +33,7 @@ describe("RAVI_EVENTS stream subjects", () => {
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.session.reset.completed");
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.session.delete.requested");
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.session.delete.completed");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.sessions.followup.>");
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi._cli.cli.>");
     expect(RAVI_EVENTS_SUBJECTS).not.toContain("ravi.session.*.prompt");
     expect(RAVI_EVENTS_SUBJECTS).not.toContain("ravi.*.cli.>");

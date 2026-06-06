@@ -144,6 +144,11 @@ describe("evaluateSkillGate", () => {
       source: "inferred",
       ruleId: "skill-gates",
     });
+    expect(runtimeSkillGateForCommand("bin/ravi apps guide --json")).toMatchObject({
+      skill: "ravi-system-apps",
+      source: "inferred",
+      ruleId: "apps",
+    });
     expect(runtimeSkillGateForCommand("bin/ravi context codex-bash-hook")).toBeUndefined();
     expect(runtimeSkillGateForCommand('echo "ravi tasks list"')).toBeUndefined();
   });

@@ -21,7 +21,14 @@ const APP_LOCAL_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const APP_OPERATION_ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 const VALID_SOURCES = new Set<RaviAppManifestSource>(["repo", "plugin", "state"]);
 const VALID_INTERFACES = new Set(["cli", "sdk", "stream", "tool", "ui"]);
-const VALID_OPERATION_INTERFACES = new Set(["cli", "sdk", "tool", "stream"]);
+export const RAVI_APP_BUILTIN_OPERATION_HANDLERS = new Set([
+  "apps.help",
+  "apps.manifest.show",
+  "apps.manifest.check",
+  "apps.stub.list",
+]);
+
+const VALID_OPERATION_INTERFACES = new Set(["builtin", "cli", "sdk", "tool", "stream"]);
 const VALID_STORAGE_KINDS = new Set(["state", "cache", "artifact-index", "config", "ledger"]);
 const VALID_EVENT_DURABILITY = new Set(["ephemeral", "logged", "replayable"]);
 const VALID_UI_VIEW_TYPES = new Set([
@@ -63,6 +70,7 @@ const SECRET_VALUE_PATTERNS = [
 ];
 
 const DIRECTORY_SKIPLIST = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
+const STATIC_APP_ROOT_EXCEPTIONS = new Set(["apps"]);
 
 export function normalizeAppId(value: string): string {
   const id = value.trim().toLowerCase();
@@ -282,7 +290,7 @@ function validateManifest(
     validateInterfaceBlocks(manifest, operationIds, errors, warnings);
   }
 
-  validateOperations(manifest.operations, manifest.interfaces, errors, warnings);
+  validateOperations(manifest.operations, manifest.interfaces, manifest.id, errors, warnings);
 
   if (manifest.permissions !== undefined && !isObject(manifest.permissions)) {
     errors.push("permissions must be an object when present.");
@@ -299,6 +307,8 @@ function validateManifest(
     warnings.push("health checks are not declared.");
   } else if (!isObject(manifest.health)) {
     warnings.push("health should be an object when present.");
+  } else {
+    validateHealth(manifest.health, manifest.id, errors, warnings);
   }
   if (manifest.versioning !== undefined && !isObject(manifest.versioning)) {
     warnings.push("versioning should be an object when present.");
@@ -333,6 +343,9 @@ function validateInterfaceBlocks(
       if (value.json !== true) {
         warnings.push("interfaces.cli.json should be true for machine-consumed CLI apps.");
       }
+      if (typeof value.health === "string" && isRecursiveDynamicAppCommand(manifest.id, value.health)) {
+        errors.push(`interfaces.cli.health must not recursively invoke ravi ${manifest.id.split("/").join(" ")}.`);
+      }
     }
     if (name === "sdk" && (typeof value.namespace !== "string" || !value.namespace.trim())) {
       warnings.push("interfaces.sdk.namespace should declare the generated SDK namespace.");
@@ -346,7 +359,13 @@ function validateInterfaceBlocks(
   }
 }
 
-function validateOperations(value: unknown, interfaces: unknown, errors: string[], warnings: string[]): void {
+function validateOperations(
+  value: unknown,
+  interfaces: unknown,
+  appId: unknown,
+  errors: string[],
+  warnings: string[],
+): void {
   if (value === undefined) return;
   if (!isObject(value)) {
     errors.push("operations must be an object when present.");
@@ -372,7 +391,7 @@ function validateOperations(value: unknown, interfaces: unknown, errors: string[
     const interfaceName = operation.interface;
     if (typeof interfaceName !== "string" || !VALID_OPERATION_INTERFACES.has(interfaceName)) {
       errors.push(`${path}.interface must be one of ${Array.from(VALID_OPERATION_INTERFACES).join("|")}.`);
-    } else if (!isObject(declaredInterfaces[interfaceName])) {
+    } else if (interfaceName !== "builtin" && !isObject(declaredInterfaces[interfaceName])) {
       errors.push(`${path}.interface references undeclared interfaces.${interfaceName}.`);
     }
 
@@ -392,7 +411,7 @@ function validateOperations(value: unknown, interfaces: unknown, errors: string[
       warnings.push(`${path} is mutating and should declare permission or permissions.`);
     }
 
-    validateOperationTarget(operation, path, errors, warnings);
+    validateOperationTarget(operation, path, typeof appId === "string" ? appId.trim() : "", errors, warnings);
     validateOperationSchemaReference(operation.inputSchema, `${path}.inputSchema`, errors);
     validateOperationSchemaReference(operation.outputSchema, `${path}.outputSchema`, errors);
   }
@@ -401,15 +420,30 @@ function validateOperations(value: unknown, interfaces: unknown, errors: string[
 function validateOperationTarget(
   operation: Record<string, unknown>,
   path: string,
+  appId: string,
   errors: string[],
   warnings: string[],
 ): void {
   const interfaceName = operation.interface;
 
+  if (interfaceName === "builtin") {
+    if (typeof operation.handler !== "string" || !operation.handler.trim()) {
+      errors.push(`${path}.handler is required for builtin operations.`);
+      return;
+    }
+    if (!RAVI_APP_BUILTIN_OPERATION_HANDLERS.has(operation.handler.trim())) {
+      errors.push(`${path}.handler must be one of ${Array.from(RAVI_APP_BUILTIN_OPERATION_HANDLERS).join("|")}.`);
+    }
+    return;
+  }
+
   if (interfaceName === "cli") {
     if (typeof operation.command !== "string" || !operation.command.trim()) {
       errors.push(`${path}.command is required for cli operations.`);
       return;
+    }
+    if (isRecursiveDynamicAppCommand(appId, operation.command)) {
+      errors.push(`${path}.command must not recursively invoke ravi ${appId.split("/").join(" ")}.`);
     }
     if (!/(^|\s)--json(\s|$)/.test(operation.command) && operation.json !== true) {
       warnings.push(`${path}.command should support --json for Web OS snapshots and actions.`);
@@ -437,6 +471,27 @@ function validateOperationTarget(
   if (interfaceName === "stream") {
     validateEventTopic(operation.channel, `${path}.channel`, errors);
   }
+}
+
+function validateHealth(value: Record<string, unknown>, appId: unknown, errors: string[], warnings: string[]): void {
+  if (value.checks === undefined) return;
+  if (!Array.isArray(value.checks)) {
+    warnings.push("health.checks should be an array when present.");
+    return;
+  }
+
+  value.checks.forEach((check, index) => {
+    if (!isObject(check)) {
+      warnings.push(`health.checks[${index}] should be an object.`);
+      return;
+    }
+    if (check.type === "cli" && typeof check.command === "string") {
+      const id = typeof appId === "string" ? appId.trim() : "";
+      if (isRecursiveDynamicAppCommand(id, check.command)) {
+        errors.push(`health.checks[${index}].command must not recursively invoke ravi ${id.split("/").join(" ")}.`);
+      }
+    }
+  });
 }
 
 function validateOperationSchemaReference(value: unknown, path: string, errors: string[]): void {
@@ -1094,4 +1149,16 @@ function stringOrNull(value: unknown): string | null {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isRecursiveDynamicAppCommand(appId: string, command: string): boolean {
+  if (!appId || STATIC_APP_ROOT_EXCEPTIONS.has(appId)) return false;
+  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  if (tokens[0] !== "ravi") return false;
+
+  const slashForm = tokens[1] === appId;
+  if (slashForm) return true;
+
+  const appSegments = appId.split("/");
+  return appSegments.every((segment, index) => tokens[index + 1] === segment);
 }

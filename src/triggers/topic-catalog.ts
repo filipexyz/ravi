@@ -319,7 +319,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     title: "Local inbox mail received",
     description: "New email projected into the native local inbox.",
     payload:
-      "{ version, eventType, inboxItemId, sourceDomain, sourceType, sourceId, mail: { messageId, threadId, mailboxId, subject, snippet, ... }, inbox, occurredAt, createdAt }",
+      "{ version, eventType, inboxItemId, sourceDomain, sourceType, sourceId, mail: { messageId, threadId, mailboxId, fromText, toText, subject, snippet, ... }, inbox, occurredAt, createdAt }",
     schema: {
       version: 1,
       fields: [
@@ -350,6 +350,14 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
         },
         { path: "mail.receivedAt", type: ["number", "null"], description: "Received timestamp in ms when known." },
         { path: "mail.from", type: "array", required: true, description: "Safe sender addresses." },
+        { path: "mail.fromText", type: "string", required: true, description: "Agent-facing sender address text." },
+        { path: "mail.to", type: "array", required: true, description: "Safe recipient addresses." },
+        { path: "mail.toText", type: "string", required: true, description: "Agent-facing recipient address text." },
+        {
+          path: "mail.attachments",
+          type: "array",
+          description: "Metadata-only attachment list; never raw bytes or remote URLs.",
+        },
         { path: "inbox.title", type: ["string", "null"], description: "Native inbox item title." },
         { path: "inbox.summary", type: ["string", "null"], description: "Native inbox item summary." },
         { path: "inbox.status", type: "string", required: true, description: "Native inbox item status." },
@@ -362,12 +370,13 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
       id: "mail-inbox-default",
       description: "Default agent-facing notification for a new local email.",
       template:
-        "[ravi mail] novo email no inbox: {{data.mail.messageId}}. Assunto: {{data.mail.subject}}. Use ravi mail messages read {{data.mail.messageId}} para ler.",
-      variables: ["data.mail.messageId", "data.mail.subject"],
+        "[ravi mail] novo email no inbox: {{data.mail.messageId}}. De: {{data.mail.fromText}}. Para: {{data.mail.toText}}. Assunto: {{data.mail.subject}}. Use ravi mail messages read {{data.mail.messageId}} para ler.",
+      variables: ["data.mail.messageId", "data.mail.fromText", "data.mail.toText", "data.mail.subject"],
     },
     examples: ['ravi triggers add "New local email" --topic "ravi.inbox.mail.received"'],
     notes: [
       "Use this for email automations. ravi.console.inbox.item is only the Console delivery mirror and should not be the durable email trigger.",
+      "Attachment entries are metadata-only. Use ravi mail commands to read/download attachment content explicitly.",
     ],
   },
   {

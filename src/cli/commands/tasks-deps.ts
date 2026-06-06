@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -9,6 +9,7 @@ import {
   getTaskDetails,
   removeTaskDependency,
 } from "../../tasks/index.js";
+import { taskDependencyListReturnSchema, taskMutationReturnSchema } from "./operational-return-schemas.js";
 
 function formatTime(ts?: number): string {
   if (!ts) return "-";
@@ -56,6 +57,7 @@ async function emitMutation(result: {
 })
 export class TaskDependencyCommands {
   @Command({ name: "add", description: "Add one gating dependency to a task" })
+  @Returns(taskMutationReturnSchema)
   async add(
     @Arg("taskId", { description: "Downstream task id" }) taskId: string,
     @Arg("dependencyTaskId", { description: "Upstream task id that must reach done" }) dependencyTaskId: string,
@@ -78,6 +80,7 @@ export class TaskDependencyCommands {
   }
 
   @Command({ name: "rm", description: "Remove one gating dependency from a task", aliases: ["remove"] })
+  @Returns(taskMutationReturnSchema)
   async rm(
     @Arg("taskId", { description: "Downstream task id" }) taskId: string,
     @Arg("dependencyTaskId", { description: "Upstream task id to remove from gating" }) dependencyTaskId: string,
@@ -100,6 +103,7 @@ export class TaskDependencyCommands {
   }
 
   @Command({ name: "ls", description: "List gating dependencies and dependents for a task", aliases: ["list"] })
+  @Returns(taskDependencyListReturnSchema)
   ls(
     @Arg("taskId", { description: "Task id to inspect" }) taskId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

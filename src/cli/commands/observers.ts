@@ -2,6 +2,23 @@ import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import {
+  declareCommandReturns,
+  observerBindingShowReturnSchema,
+  observerBindingsListReturnSchema,
+  observerProfileInitReturnSchema,
+  observerProfilePreviewReturnSchema,
+  observerProfileShowReturnSchema,
+  observerProfilesListReturnSchema,
+  observerProfilesValidateReturnSchema,
+  observerRefreshReturnSchema,
+  observerRuleExplainReturnSchema,
+  observerRuleMutationReturnSchema,
+  observerRuleRemoveReturnSchema,
+  observerRuleShowReturnSchema,
+  observerRulesListReturnSchema,
+  observerRulesValidateReturnSchema,
+} from "./operational-return-schemas.js";
 import { getSession, getSessionByName } from "../../router/index.js";
 import {
   dbDeleteObserverRule,
@@ -775,3 +792,28 @@ export class ObserverProfileCommands {
     return result;
   }
 }
+
+declareCommandReturns(ObserverCommands, {
+  list: observerBindingsListReturnSchema,
+  refresh: observerRefreshReturnSchema,
+  show: observerBindingShowReturnSchema,
+});
+
+declareCommandReturns(ObserverRuleCommands, {
+  disable: observerRuleMutationReturnSchema,
+  enable: observerRuleMutationReturnSchema,
+  explain: observerRuleExplainReturnSchema,
+  list: observerRulesListReturnSchema,
+  rm: observerRuleRemoveReturnSchema,
+  set: observerRuleMutationReturnSchema,
+  show: observerRuleShowReturnSchema,
+  validate: observerRulesValidateReturnSchema,
+});
+
+declareCommandReturns(ObserverProfileCommands, {
+  init: observerProfileInitReturnSchema,
+  list: observerProfilesListReturnSchema,
+  preview: observerProfilePreviewReturnSchema,
+  show: observerProfileShowReturnSchema,
+  validate: observerProfilesValidateReturnSchema,
+});

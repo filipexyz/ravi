@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { Arg, Group, Command, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import {
   issueRuntimeContext,
   resolveRuntimeContextOrThrow,
@@ -1002,6 +1003,28 @@ export class ContextCredentialsCommands {
     }
   }
 }
+
+declareCommandReturns(ContextCommands, {
+  authorize: commandEnvelopeReturnSchema,
+  capabilities: commandEnvelopeReturnSchema,
+  check: commandEnvelopeReturnSchema,
+  cleanupAgentRuntime: commandEnvelopeReturnSchema,
+  codexBashHook: commandEnvelopeReturnSchema,
+  info: commandEnvelopeReturnSchema,
+  issue: commandEnvelopeReturnSchema,
+  lineage: commandEnvelopeReturnSchema,
+  list: commandEnvelopeReturnSchema,
+  revoke: commandEnvelopeReturnSchema,
+  visibility: commandEnvelopeReturnSchema,
+  whoami: commandEnvelopeReturnSchema,
+});
+
+declareCommandReturns(ContextCredentialsCommands, {
+  add: commandEnvelopeReturnSchema,
+  list: commandEnvelopeReturnSchema,
+  remove: commandEnvelopeReturnSchema,
+  setDefault: commandEnvelopeReturnSchema,
+});
 
 function serializeCredentialsFile(data: CredentialsFile): SerializedCredentialEntry[] {
   const entries: SerializedCredentialEntry[] = [];

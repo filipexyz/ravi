@@ -63,6 +63,16 @@ describe("local inbox db", () => {
         { kind: "from", address: "alice@example.com" },
         { kind: "to", address: mailbox.address },
       ],
+      attachments: [
+        {
+          filename: "contrato.pdf",
+          contentType: "application/pdf",
+          sizeBytes: 12345,
+          sha256: "sha256:abc",
+          providerAttachmentId: "remote_att_1",
+          redactionStatus: "unscanned",
+        },
+      ],
     });
 
     const projection = projectMailMessageToInbox(message);
@@ -81,7 +91,17 @@ describe("local inbox db", () => {
       mail: {
         messageId: message.id,
         mailboxId: mailbox.id,
+        fromText: "alice@example.com",
+        toText: mailbox.address,
         subject: "Needs attention",
+        attachments: [
+          expect.objectContaining({
+            filename: "contrato.pdf",
+            contentType: "application/pdf",
+            providerAttachmentId: "remote_att_1",
+            hasLocalBlob: false,
+          }),
+        ],
       },
     });
     expect(JSON.stringify(publishedEvents[0]?.payload)).not.toContain("bodyText");

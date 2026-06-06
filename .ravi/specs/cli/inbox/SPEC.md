@@ -175,7 +175,9 @@ Ravi Mail is the local exception for operator-owned automations. When a delivere
 `mail.message.received` item references a message id, the local bridge MAY enrich
 the local NATS payload by performing explicit authorized Console Mail `read`
 calls for `subject`, `address_summary`, and `parsed_body` before local
-persistence and publish. That enrichment MUST remain local to the user's runtime:
+persistence and publish. The bridge MAY also fetch authorized attachment
+metadata for the same message, but MUST NOT fetch or inline attachment bytes in
+the delivery event. That enrichment MUST remain local to the user's runtime:
 Console still owns auth/audit/decryption, and the remote delivery item stays
 metadata-only. Existing Console wire contracts MAY still call it an inbox item,
 but OSS Ravi MUST NOT implement mail selection or redaction policy.
@@ -190,9 +192,11 @@ When mail enrichment succeeds, the NATS JSON MUST include the complete parsed
 email content at `payload.mail.content.text` and `payload.mail.content.html`
 without truncation. It SHOULD also expose `payload.mail.subject`,
 `payload.mail.addressSummary`, `payload.mail.bodyText`, and
-`payload.mail.bodyHtml` for trigger prompts. Because the durable mirror stores
-the exact NATS payload for replay, this intentionally stores the authorized
-plaintext mail content in local SQLite for that user.
+`payload.mail.bodyHtml` for trigger prompts. It MAY expose
+`payload.mail.attachments` as metadata-only entries. Because the durable mirror
+stores the exact NATS payload for replay, this intentionally stores the
+authorized plaintext mail content in local SQLite for that user, but not
+attachment object bytes.
 
 For GitHub/source-control watches, `category` SHOULD be `source_control`.
 `source` and `target` SHOULD preserve the safe provider provenance defined in

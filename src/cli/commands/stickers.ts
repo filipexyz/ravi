@@ -5,9 +5,11 @@
 import "reflect-metadata";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { z } from "zod";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { cliOffsetPaginationSchema, looseObjectSchema } from "../return-schemas.js";
 import { nats } from "../../nats.js";
 import { configStore } from "../../config-store.js";
 import { dbGetChat, dbGetSessionChatBinding } from "../../router/router-db.js";
@@ -25,6 +27,59 @@ import { buildStickerSendEvent, type StickerSendTarget } from "../../stickers/se
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
+
+const stickerReturnSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    description: z.string(),
+    avoid: z.string().nullable(),
+    channels: z.array(z.string()),
+    agents: z.array(z.string()),
+    media: looseObjectSchema,
+    enabled: z.boolean(),
+    createdAt: z.number().nullable(),
+    updatedAt: z.number().nullable(),
+  })
+  .passthrough();
+
+const stickerMutationReturnSchema = z.object({
+  success: z.boolean(),
+  action: z.string(),
+  sticker: stickerReturnSchema,
+});
+
+const stickersListReturnSchema = z.object({
+  total: z.number(),
+  pagination: cliOffsetPaginationSchema,
+  items: z.array(stickerReturnSchema),
+  stickers: z.array(stickerReturnSchema),
+});
+
+const stickerShowReturnSchema = z.object({
+  sticker: stickerReturnSchema,
+});
+
+const stickerRemoveReturnSchema = z.object({
+  success: z.boolean(),
+  action: z.literal("remove"),
+  stickerId: z.string(),
+});
+
+const stickerSendReturnSchema = z.object({
+  success: z.literal(true),
+  topic: z.literal("ravi.stickers.send"),
+  sticker: z.object({
+    id: z.string(),
+    label: z.string(),
+  }),
+  target: z.object({
+    channel: z.string(),
+    accountId: z.string(),
+    chatId: z.string(),
+  }),
+  event: looseObjectSchema,
+});
 
 function parseCsv(value: string | undefined): string[] | undefined {
   if (!value) return undefined;
@@ -148,6 +203,7 @@ function resolveSendTarget(options: {
 })
 export class StickerCommands {
   @Command({ name: "add", description: "Add or update a sticker catalog entry" })
+  @Returns(stickerMutationReturnSchema)
   add(
     @Arg("id", { description: "Stable sticker id (lowercase, digits, dash or underscore)" }) id: string,
     @Arg("mediaPath", { description: "Local sticker media file path" }) mediaPath: string,
@@ -198,6 +254,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "list", description: "List stickers in the typed catalog" })
+  @Returns(stickersListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -239,6 +296,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "show", description: "Show one sticker catalog entry" })
+  @Returns(stickerShowReturnSchema)
   show(
     @Arg("id", { description: "Sticker id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -267,6 +325,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "remove", description: "Remove a sticker catalog entry" })
+  @Returns(stickerRemoveReturnSchema)
   remove(
     @Arg("id", { description: "Sticker id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -288,6 +347,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "send", description: "Send a sticker to the current WhatsApp chat" })
+  @Returns(stickerSendReturnSchema)
   async send(
     @Arg("id", { description: "Sticker id" }) id: string,
     @Option({ flags: "--session <nameOrKey>", description: "Resolve target from a session route" }) session?: string,

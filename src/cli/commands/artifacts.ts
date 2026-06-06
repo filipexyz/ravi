@@ -10,6 +10,20 @@ import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
+  artifactCreateReturnSchema,
+  artifactDetailsReturnSchema,
+  artifactEventReturnSchema,
+  artifactEventsReturnSchema,
+  artifactListReturnSchema,
+  artifactMutationReturnSchema,
+  artifactPublishReturnSchema,
+  artifactReleaseActivateReturnSchema,
+  artifactRestoreReturnSchema,
+  artifactSnapshotReturnSchema,
+  artifactVersionShowReturnSchema,
+  artifactVersionsReturnSchema,
+} from "./operational-return-schemas.js";
+import {
   archiveArtifact,
   appendArtifactEvent,
   attachArtifact,
@@ -251,6 +265,7 @@ function isDirectoryPath(path: string): boolean {
 })
 export class ArtifactsCommands {
   @Command({ name: "create", description: "Create a generic Ravi artifact record" })
+  @Returns(artifactCreateReturnSchema)
   create(
     @Option({ flags: "--kind <kind>", description: "Optional semantic artifact kind, e.g. image, report, trace" })
     kind?: string,
@@ -358,6 +373,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "list", description: "List artifacts" })
+  @Returns(artifactListReturnSchema)
   list(
     @Option({ flags: "--kind <kind>", description: "Filter by artifact kind" }) kind?: string,
     @Option({ flags: "--session <nameOrKey>", description: "Filter by session key or name" }) session?: string,
@@ -460,6 +476,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "show", description: "Show artifact details, links and events" })
+  @Returns(artifactDetailsReturnSchema)
   show(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -485,6 +502,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "snapshot", description: "Create an immutable version snapshot for an artifact" })
+  @Returns(artifactSnapshotReturnSchema)
   snapshot(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--label <text>", description: "Human label for this version" }) label?: string,
@@ -515,6 +533,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "versions", description: "List immutable versions for an artifact" })
+  @Returns(artifactVersionsReturnSchema)
   versions(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -538,6 +557,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "version", description: "Show one immutable artifact version" })
+  @Returns(artifactVersionShowReturnSchema)
   version(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--version <n>", description: "Version number (default: latest)" }) versionNumber?: string,
@@ -559,6 +579,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "restore", description: "Restore current artifact content from an immutable version" })
+  @Returns(artifactRestoreReturnSchema)
   restore(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--version <n>", description: "Version number to restore" }) versionNumber?: string,
@@ -590,6 +611,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "update", description: "Edit artifact metadata and high-level fields" })
+  @Returns(artifactMutationReturnSchema)
   update(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--title <text>", description: "Replace title" }) title?: string,
@@ -658,6 +680,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "attach", description: "Attach an artifact to a task, session, message or any target" })
+  @Returns(artifactMutationReturnSchema)
   attach(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Arg("targetType", { description: "Target type, e.g. task, session, message, project" }) targetType: string,
@@ -683,6 +706,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "archive", description: "Soft-archive an artifact" })
+  @Returns(artifactMutationReturnSchema)
   archive(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -698,6 +722,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "event", description: "Append an artifact lifecycle event" })
+  @Returns(artifactEventReturnSchema)
   event(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Arg("eventType", { description: "Event type, e.g. started, completed, failed" }) eventType: string,
@@ -727,6 +752,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "events", description: "List artifact lifecycle events" })
+  @Returns(artifactEventsReturnSchema)
   events(
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -754,6 +780,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "publish", description: "Publish a local artifact package through a Console-compatible endpoint" })
+  @Returns(artifactPublishReturnSchema)
   async publish(
     @Arg("target", { description: "Local artifact id, file, or directory" }) target: string,
     @Option({ flags: "--project <project>", description: "Console project id or slug" }) project?: string,
@@ -846,6 +873,7 @@ export class ArtifactsCommands {
 })
 export class ArtifactReleaseCommands {
   @Command({ name: "activate", description: "Activate an existing Pages release for a local artifact" })
+  @Returns(artifactReleaseActivateReturnSchema)
   async activate(
     @Arg("id", { description: "Local artifact id" }) id: string,
     @Option({

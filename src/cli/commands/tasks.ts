@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
+import { Arg, CliOnly, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
   decodeListCursor,
@@ -70,6 +70,14 @@ import type {
   TaskListSort,
   TaskStatus,
 } from "../../tasks/types.js";
+import {
+  taskCommentReturnSchema,
+  taskCreateReturnSchema,
+  taskDispatchReturnSchema,
+  taskListReturnSchema,
+  taskMutationReturnSchema,
+  taskShowReturnSchema,
+} from "./operational-return-schemas.js";
 
 const VALID_PRIORITIES = new Set<TaskPriority>(["low", "normal", "high", "urgent"]);
 const VALID_STATUSES = new Set<TaskStatus>(["open", "dispatched", "in_progress", "blocked", "done", "failed"]);
@@ -952,6 +960,7 @@ export class TaskCommands {
     name: "create",
     description: "Create a tracked task; unresolved dependencies arm launch plans instead of dispatching early",
   })
+  @Returns(taskCreateReturnSchema)
   async create(
     @Arg("title", { description: "Short task title" }) title: string,
     @Option({ flags: "--instructions <text>", description: "Detailed instructions for the task" })
@@ -1115,6 +1124,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "list", description: "List tasks" })
+  @Returns(taskListReturnSchema)
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
     @Option({ flags: "--agent <id>", description: "Filter by assigned agent" }) agentId?: string,
@@ -1366,6 +1376,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "show", description: "Show task details and history" })
+  @Returns(taskShowReturnSchema)
   show(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1621,6 +1632,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "comment", description: "Add a comment to a task and steer the assignee if it is active" })
+  @Returns(taskCommentReturnSchema)
   async comment(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Arg("body", { description: "Comment body" }) body: string,
@@ -1653,6 +1665,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "archive", description: "Archive a task without changing its execution status" })
+  @Returns(taskMutationReturnSchema)
   async archive(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--reason <text>", description: "Why this task should leave the default list" }) reason?: string,
@@ -1680,6 +1693,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "unarchive", description: "Restore an archived task to the default list" })
+  @Returns(taskMutationReturnSchema)
   async unarchive(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1700,6 +1714,7 @@ export class TaskCommands {
     name: "dispatch",
     description: "Dispatch a task now, or arm a launch plan if dependencies still gate start",
   })
+  @Returns(taskDispatchReturnSchema)
   async dispatch(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--agent <id>", description: "Agent ID to receive the task" }) agentId?: string,
@@ -1794,6 +1809,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "report", description: "Report task progress from a CLI or agent session" })
+  @Returns(taskMutationReturnSchema)
   async report(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--message <text>", description: "Progress update message" }) message?: string,
@@ -1845,6 +1861,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "done", description: "Mark a task as done" })
+  @Returns(taskMutationReturnSchema)
   async done(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--summary <text>", description: "Completion summary" }) summary?: string,
@@ -1885,6 +1902,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "block", description: "Mark a task as blocked" })
+  @Returns(taskMutationReturnSchema)
   async block(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--reason <text>", description: "Concrete blocker reason" }) reason?: string,
@@ -1925,6 +1943,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "fail", description: "Mark a task as failed" })
+  @Returns(taskMutationReturnSchema)
   async failTaskCommand(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--reason <text>", description: "Failure reason" }) reason?: string,

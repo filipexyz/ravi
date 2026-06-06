@@ -2,7 +2,8 @@ import "reflect-metadata";
 import { execSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { Command, Group, Option } from "../decorators.js";
+import { z } from "zod";
+import { Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { getRegistry } from "../registry-snapshot.js";
 import { emitJson } from "../../sdk/openapi/index.js";
@@ -40,6 +41,49 @@ const GENERATED_SWIFT_FILES = [
 
 type GeneratedFileName = (typeof GENERATED_FILES)[number];
 type GeneratedSwiftFileName = (typeof GENERATED_SWIFT_FILES)[number];
+
+const sdkWrittenFileReturnSchema = z.object({
+  file: z.string(),
+  path: z.string(),
+  bytes: z.number(),
+});
+
+const sdkDriftReturnSchema = z.object({
+  file: z.string(),
+  reason: z.string(),
+  path: z.string(),
+});
+
+const openApiEmitReturnSchema = z.union([
+  z.object({
+    status: z.literal("stdout"),
+    bytes: z.number(),
+  }),
+  z.object({
+    status: z.literal("written"),
+    path: z.string(),
+    bytes: z.number(),
+  }),
+]);
+
+const openApiCheckReturnSchema = z.object({
+  path: z.string(),
+  drift: z.boolean(),
+  liveBytes: z.number(),
+  storedBytes: z.number(),
+});
+
+const sdkGenerateReturnSchema = z.object({
+  status: z.literal("written"),
+  dir: z.string(),
+  files: z.array(sdkWrittenFileReturnSchema),
+});
+
+const sdkCheckReturnSchema = z.object({
+  dir: z.string(),
+  drift: z.array(sdkDriftReturnSchema),
+  files: z.array(z.string()),
+});
 
 function generatedSources(version: string): EmittedSdk {
   const registry = getRegistry();
@@ -104,6 +148,7 @@ function detectGitSha(): string {
 })
 export class SdkOpenApiCommands {
   @Command({ name: "emit", description: "Emit OpenAPI 3.1 spec from the CLI registry" })
+  @Returns(openApiEmitReturnSchema)
   emit(
     @Option({ flags: "--out <path>", description: "Write spec JSON to this path" }) out?: string,
     @Option({ flags: "--stdout", description: "Print spec JSON to stdout" }) toStdout?: boolean,
@@ -135,6 +180,7 @@ export class SdkOpenApiCommands {
   }
 
   @Command({ name: "check", description: "Diff a stored OpenAPI spec against the live registry" })
+  @Returns(openApiCheckReturnSchema)
   check(
     @Option({ flags: "--against <path>", description: "Path to the stored spec to diff against" }) against?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -184,6 +230,7 @@ export class SdkClientCommands {
     name: "generate",
     description: "Generate the four @ravi-os/sdk source files from the live registry",
   })
+  @Returns(sdkGenerateReturnSchema)
   generate(
     @Option({
       flags: "--out <path>",
@@ -223,6 +270,7 @@ export class SdkClientCommands {
     name: "check",
     description: "Compare on-disk @ravi-os/sdk sources to a fresh emit; exit 1 on drift",
   })
+  @Returns(sdkCheckReturnSchema)
   check(
     @Option({
       flags: "--out <path>",
@@ -292,6 +340,7 @@ export class SdkSwiftCommands {
     name: "generate",
     description: "Generate the Ravi Swift SDK source files from the live registry",
   })
+  @Returns(sdkGenerateReturnSchema)
   generate(
     @Option({
       flags: "--out <path>",
@@ -331,6 +380,7 @@ export class SdkSwiftCommands {
     name: "check",
     description: "Compare on-disk Ravi Swift SDK sources to a fresh emit; exit 1 on drift",
   })
+  @Returns(sdkCheckReturnSchema)
   check(
     @Option({
       flags: "--out <path>",

@@ -3,6 +3,13 @@ import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListOffset } from "../pagination.js";
 import {
+  declareCommandReturns,
+  insightCreateReturnSchema,
+  insightShowReturnSchema,
+  insightsListReturnSchema,
+  insightsSearchReturnSchema,
+} from "./operational-return-schemas.js";
+import {
   dbAddInsightComment,
   dbCreateInsight,
   dbGetInsight,
@@ -399,3 +406,10 @@ export class InsightCommands {
     return payload;
   }
 }
+
+declareCommandReturns(InsightCommands, {
+  create: insightCreateReturnSchema,
+  list: insightsListReturnSchema,
+  search: insightsSearchReturnSchema,
+  show: insightShowReturnSchema,
+});

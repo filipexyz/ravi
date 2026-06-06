@@ -71,6 +71,7 @@ export function ingestConsoleMailReceivedEvent(natsPayload: InboxNatsPayload): C
     bodyRedactionStatus: bodyText || bodyHtml ? "full_local" : "preview_only",
     receivedAt,
     addresses: buildAddresses(mail, addressSummary, mailbox.address),
+    attachments: buildAttachments(mail),
     safePayload: {
       source: "console_inbox",
       consoleInboxItemId: natsPayload.eventId,
@@ -178,6 +179,39 @@ function buildAddresses(
     addresses.push({ kind: "to", address: mailboxAddress });
   }
   return dedupeAddresses(addresses);
+}
+
+function buildAttachments(mail: JsonRecord): NonNullable<Parameters<typeof importMailMessage>[0]["attachments"]> {
+  const rawAttachments = mail.attachments;
+  if (!Array.isArray(rawAttachments)) return [];
+  return rawAttachments.flatMap((entry) => {
+    const attachment = asRecord(entry);
+    if (!attachment) return [];
+    const providerAttachmentId = firstString(attachment.providerAttachmentId, attachment.id);
+    return [
+      {
+        filename: firstString(attachment.filename),
+        contentType: firstString(attachment.contentType),
+        sizeBytes: readNumber(attachment.sizeBytes),
+        sha256: firstString(attachment.sha256),
+        providerAttachmentId,
+        redactionStatus: firstString(attachment.status, attachment.redactionStatus),
+        metadata: {
+          source: "console_inbox",
+          consoleAttachmentId: firstString(attachment.id),
+          hasEncryptedObject: readBoolean(attachment.hasEncryptedObject),
+        },
+      },
+    ];
+  });
+}
+
+function readNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function appendAddressList(addresses: MailAddressInput[], kind: MailAddressInput["kind"], value: unknown): void {

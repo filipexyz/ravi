@@ -23,6 +23,11 @@ export interface CliAuditEventOptions {
 
 export async function emitCliAuditEvent(options: CliAuditEventOptions): Promise<void> {
   const tool = options.tool ?? `${options.group}_${options.name}`;
+  const cliInvocation = safeBuildCliInvocationMetadata({
+    group: options.group,
+    name: options.name,
+    tool,
+  });
 
   await nats
     .emit(`ravi._cli.cli.${options.group}.${options.name}`, {
@@ -36,16 +41,24 @@ export async function emitCliAuditEvent(options: CliAuditEventOptions): Promise<
       ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
       timestamp: new Date().toISOString(),
       sessionKey: "_cli",
-      cliInvocation: buildCliInvocationMetadata({
-        group: options.group,
-        name: options.name,
-        tool,
-      }),
+      cliInvocation,
     })
     .catch(() => {});
 
   if (options.closeLazyConnection && !isExplicitConnect()) {
     await nats.close().catch(() => {});
+  }
+}
+
+function safeBuildCliInvocationMetadata(input: { group: string; name: string; tool: string }) {
+  try {
+    return buildCliInvocationMetadata(input);
+  } catch {
+    return {
+      group: input.group,
+      name: input.name,
+      tool: input.tool,
+    };
   }
 }
 

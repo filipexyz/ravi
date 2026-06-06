@@ -57,6 +57,10 @@ owners:
 - Agent without `mailbox:send` cannot send from that mailbox.
 - Listing metadata can be allowed separately from reading full bodies.
 - Attachments require explicit body/attachment permission.
+- Provider/import replay replaces a message's attachment metadata and does not
+  create duplicate local attachment rows.
+- `ravi.inbox.mail.received` may include attachment metadata, but never raw
+  bytes, remote URLs, provider tokens, raw MIME, or decrypted attachment content.
 
 ## Security And Logging
 

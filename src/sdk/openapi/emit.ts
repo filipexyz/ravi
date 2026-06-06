@@ -27,6 +27,7 @@ import type {
   JsonSchema,
   OpenApiOperation,
   OpenApiPathItem,
+  OpenApiResponse,
   OpenApiRequestBody,
   OpenApiSpec,
   OpenApiTag,
@@ -108,9 +109,24 @@ function buildSecurity(scope: ScopeType): SecurityRequirement[] | undefined {
 }
 
 /** Build the response block for a command. */
-function buildResponses(
-  cmd: CommandRegistryEntry,
-): Record<string, { description: string; content?: { "application/json": { schema: JsonSchema } } }> {
+function buildResponses(cmd: CommandRegistryEntry): Record<string, OpenApiResponse> {
+  if (cmd.binary) {
+    const responses: Record<string, OpenApiResponse> = {
+      "200": {
+        description: "Success — binary response declared via `@Returns.binary()`.",
+        content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+      },
+    };
+
+    if (cmd.scope !== "open") {
+      responses["401"] = { description: "Unauthorized — bearer token missing or invalid." };
+      responses["403"] = { description: "Forbidden — caller lacks the required scope." };
+    }
+    responses["400"] = { description: "Bad request — body failed schema validation." };
+    responses["500"] = { description: "Internal error." };
+    return responses;
+  }
+
   const successSchema: JsonSchema = cmd.returns
     ? zodToJson(cmd.returns)
     : { type: "object", additionalProperties: true };
@@ -118,7 +134,7 @@ function buildResponses(
     ? "Success — body conforms to the `@Returns` schema."
     : "Success — no `@Returns` schema declared; payload shape is loose.";
 
-  const responses: Record<string, { description: string; content?: { "application/json": { schema: JsonSchema } } }> = {
+  const responses: Record<string, OpenApiResponse> = {
     "200": {
       description: successDescription,
       content: { "application/json": { schema: successSchema } },

@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { resolve, basename } from "node:path";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail, type ToolContext } from "../context.js";
 import { generateImage, normalizeImageProvider, type ImageMode } from "../../image/generator.js";
 import { getAgent } from "../../router/config.js";
@@ -21,6 +21,7 @@ import {
 } from "../../artifacts/store.js";
 import { splitImageAtlas, type AtlasSplitFit, type AtlasSplitMode } from "../../image/atlas.js";
 import { sendMediaWithOmniCli, type MediaSendTargetInput } from "../media-send.js";
+import { imageAtlasSplitReturnSchema, imageGenerateReturnSchema } from "./operational-return-schemas.js";
 
 function stringDefault(defaults: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = defaults?.[key];
@@ -192,6 +193,7 @@ export class ImageCommands {
     name: "generate",
     description: "Generate an image from a text prompt",
   })
+  @Returns(imageGenerateReturnSchema)
   async generate(
     @Arg("prompt", { description: "Text prompt describing the image to generate" })
     prompt: string,
@@ -780,6 +782,7 @@ export class ImageAtlasCommands {
     name: "split",
     description: "Split an image atlas/contact sheet into deterministic crop artifacts",
   })
+  @Returns(imageAtlasSplitReturnSchema)
   async split(
     @Arg("input", { description: "Atlas/contact sheet image path" })
     input: string,

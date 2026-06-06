@@ -1,78 +1,45 @@
-import { afterAll, describe, expect, it, beforeEach, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { runWithContext, type ToolContext } from "../cli/context.js";
+import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { buildEffectiveCapabilities, snapshotSubjectCapabilities } from "./delegation.js";
+import { can, agentCan, canWithCapabilityContext, canWithCapabilities } from "./engine.js";
+import { grantRelation } from "./relations.js";
 
-afterAll(() => mock.restore());
+let stateDir: string | null = null;
 
-const actualCliContextModule = await import("../cli/context.js");
+function makeToolContext(input: {
+  agentId?: string;
+  kind?: string;
+  capabilities: ContextCapability[];
+  metadata?: Record<string, unknown>;
+}): ToolContext {
+  const context: ContextRecord = {
+    contextId: `test-${input.agentId ?? "unknown"}`,
+    contextKey: `test-key-${input.agentId ?? "unknown"}`,
+    kind: input.kind ?? "test-runtime",
+    agentId: input.agentId,
+    capabilities: input.capabilities,
+    metadata: input.metadata,
+    createdAt: 0,
+  };
 
-// ============================================================================
-// Mock the relations module (DB-dependent)
-// ============================================================================
-
-// In-memory relation store for testing
-let relations: Array<{
-  subjectType: string;
-  subjectId: string;
-  relation: string;
-  objectType: string;
-  objectId: string;
-}> = [];
-let mockContext:
-  | {
-      agentId?: string;
-      context?: {
-        kind?: string;
-        agentId?: string;
-        capabilities: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
-      };
-    }
-  | undefined;
-
-mock.module("./relations.js", () => ({
-  hasRelation: (
-    subjectType: string,
-    subjectId: string,
-    relation: string,
-    objectType: string,
-    objectId: string,
-  ): boolean => {
-    return relations.some(
-      (r) =>
-        r.subjectType === subjectType &&
-        r.subjectId === subjectId &&
-        r.relation === relation &&
-        r.objectType === objectType &&
-        r.objectId === objectId,
-    );
-  },
-  listRelations: (filter?: {
-    subjectType?: string;
-    subjectId?: string;
-    relation?: string;
-    objectType?: string;
-    objectId?: string;
-  }) => {
-    return relations.filter((r) => {
-      if (filter?.subjectType && r.subjectType !== filter.subjectType) return false;
-      if (filter?.subjectId && r.subjectId !== filter.subjectId) return false;
-      if (filter?.relation && r.relation !== filter.relation) return false;
-      if (filter?.objectType && r.objectType !== filter.objectType) return false;
-      if (filter?.objectId && r.objectId !== filter.objectId) return false;
-      return true;
-    });
-  },
-}));
-
-mock.module("../cli/context.js", () => ({
-  ...actualCliContextModule,
-  getContext: () => mockContext,
-}));
-
-// Import AFTER mock setup
-const { can, agentCan, canWithCapabilityContext } = await import("./engine.js");
+  return {
+    agentId: input.agentId,
+    context,
+  };
+}
 
 // Helper to add a relation
-function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
-  relations.push({ subjectType, subjectId, relation, objectType, objectId });
+function grant(
+  subjectType: string,
+  subjectId: string,
+  relation: string,
+  objectType: string,
+  objectId: string,
+  source = "manual",
+) {
+  grantRelation(subjectType, subjectId, relation, objectType, objectId, source);
 }
 
 // ============================================================================
@@ -80,9 +47,13 @@ function grant(subjectType: string, subjectId: string, relation: string, objectT
 // ============================================================================
 
 describe("REBAC Engine", () => {
-  beforeEach(() => {
-    relations = [];
-    mockContext = undefined;
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-permissions-engine-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
   });
 
   // --------------------------------------------------------------------------
@@ -109,35 +80,45 @@ describe("REBAC Engine", () => {
 
     it("uses scoped context capabilities when available", () => {
       grant("agent", "dev", "use", "tool", "*");
-      mockContext = {
+      const context = makeToolContext({
         agentId: "dev",
-        context: {
-          capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
-        },
-      };
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+      });
 
-      expect(agentCan("dev", "use", "tool", "Read")).toBe(true);
-      expect(agentCan("dev", "use", "tool", "Bash")).toBe(false);
+      expect(runWithContext(context, () => agentCan("dev", "use", "tool", "Read"))).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "use", "tool", "Bash"))).toBe(false);
     });
 
     it("lets live superadmin bypass stale scoped capabilities", () => {
-      mockContext = {
+      const context = makeToolContext({
         agentId: "dev",
-        context: {
-          capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
-        },
-      };
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+      });
 
-      expect(agentCan("dev", "use", "tool", "Bash")).toBe(false);
+      expect(runWithContext(context, () => agentCan("dev", "use", "tool", "Bash"))).toBe(false);
 
       grant("agent", "dev", "admin", "system", "*");
 
-      expect(agentCan("dev", "use", "tool", "Bash")).toBe(true);
-      expect(agentCan("dev", "execute", "executable", "pwd")).toBe(true);
-      expect(agentCan("dev", "execute", "executable", "rg")).toBe(true);
-      expect(agentCan("dev", "execute", "group", "anything")).toBe(true);
-      expect(agentCan("dev", "access", "session", "any-session")).toBe(true);
-      expect(agentCan("dev", "modify", "session", "any-session")).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "use", "tool", "Bash"))).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "execute", "executable", "pwd"))).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "execute", "executable", "rg"))).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "execute", "group", "anything"))).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "access", "session", "any-session"))).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "modify", "session", "any-session"))).toBe(true);
+    });
+
+    it("does not let live superadmin bypass delegated scoped capabilities", () => {
+      grant("agent", "dev", "admin", "system", "*");
+      const context = makeToolContext({
+        agentId: "dev",
+        kind: "turn-runtime",
+        metadata: { authorityMode: "delegated" },
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+      });
+
+      expect(runWithContext(context, () => agentCan("dev", "use", "tool", "Read"))).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "use", "tool", "Bash"))).toBe(false);
+      expect(runWithContext(context, () => agentCan("dev", "execute", "executable", "pwd"))).toBe(false);
     });
 
     it("lets live superadmin bypass stale explicit capability contexts", () => {
@@ -156,48 +137,101 @@ describe("REBAC Engine", () => {
       expect(canWithCapabilityContext(context, "modify", "session", "main")).toBe(true);
     });
 
-    it("lets live grants augment stale agent runtime context capabilities", () => {
-      mockContext = {
+    it("does not let live superadmin bypass explicit delegated capability contexts", () => {
+      const context = {
+        kind: "invocation-runtime",
         agentId: "dev",
-        context: {
-          kind: "agent-runtime",
-          agentId: "dev",
-          capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
-        },
+        metadata: { authorityMode: "delegated" },
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
       };
+      grant("agent", "dev", "admin", "system", "*");
 
-      expect(agentCan("dev", "execute", "group", "agents_create")).toBe(false);
+      expect(canWithCapabilityContext(context, "use", "tool", "Read")).toBe(true);
+      expect(canWithCapabilityContext(context, "execute", "group", "daemon")).toBe(false);
+      expect(canWithCapabilityContext(context, "execute", "executable", "rg")).toBe(false);
+    });
+
+    it("lets live grants augment stale agent runtime context capabilities", () => {
+      const context = makeToolContext({
+        agentId: "dev",
+        kind: "agent-runtime",
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+      });
+
+      expect(runWithContext(context, () => agentCan("dev", "execute", "group", "agents_create"))).toBe(false);
 
       grant("agent", "dev", "execute", "group", "agents_create");
 
-      expect(agentCan("dev", "execute", "group", "agents_create")).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "execute", "group", "agents_create"))).toBe(true);
     });
 
     it("keeps derived contexts snapshot-based after live grants", () => {
-      mockContext = {
+      const context = makeToolContext({
         agentId: "dev",
-        context: {
-          kind: "cli-runtime",
-          agentId: "dev",
-          capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
-        },
-      };
+        kind: "cli-runtime",
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+      });
 
       grant("agent", "dev", "execute", "group", "agents_create");
 
-      expect(agentCan("dev", "execute", "group", "agents_create")).toBe(false);
+      expect(runWithContext(context, () => agentCan("dev", "execute", "group", "agents_create"))).toBe(false);
     });
 
     it("ignores scoped capabilities from another agent", () => {
       grant("agent", "dev", "use", "tool", "Bash");
-      mockContext = {
+      const context = makeToolContext({
         agentId: "other",
-        context: {
-          capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
-        },
-      };
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+      });
 
-      expect(agentCan("dev", "use", "tool", "Bash")).toBe(true);
+      expect(runWithContext(context, () => agentCan("dev", "use", "tool", "Bash"))).toBe(true);
+    });
+  });
+
+  describe("delegated effective capabilities", () => {
+    it("narrows agent wildcard grants by actor and surface grants", () => {
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "use", objectType: "tool", objectId: "*" }],
+        actorCapabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+        surfaceCapabilities: [{ permission: "use", objectType: "tool", objectId: "*" }],
+      });
+
+      expect(canWithCapabilities(effective, "use", "tool", "Bash")).toBe(true);
+      expect(canWithCapabilities(effective, "use", "tool", "Read")).toBe(false);
+      expect(effective).toEqual([{ permission: "use", objectType: "tool", objectId: "Bash", source: "effective" }]);
+    });
+
+    it("keeps role-expanded toolgroups inside a delegated effective context", () => {
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+        actorCapabilities: [{ permission: "use", objectType: "toolgroup", objectId: "read-only" }],
+        surfaceCapabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+      });
+
+      expect(canWithCapabilities(effective, "use", "tool", "Read")).toBe(true);
+      expect(canWithCapabilities(effective, "use", "tool", "Bash")).toBe(false);
+    });
+
+    it("expands contact role membership into actor capabilities", () => {
+      grant("contact", "luis", "member", "role", "operators");
+      grant("role", "operators", "use", "tool", "Bash");
+      grant("role", "operators", "execute", "executable", "git");
+
+      const capabilities = snapshotSubjectCapabilities("contact", "luis");
+
+      expect(capabilities).toContainEqual({
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        source: "role:operators/manual",
+      });
+      expect(capabilities).toContainEqual({
+        permission: "execute",
+        objectType: "executable",
+        objectId: "git",
+        source: "role:operators/manual",
+      });
+      expect(capabilities.some((capability) => capability.permission === "member")).toBe(false);
     });
   });
 
