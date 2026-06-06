@@ -3,22 +3,38 @@
  */
 
 import "reflect-metadata";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { Group, Command, Arg, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { requestReply } from "../../utils/request-reply.js";
-import { findContactsByTag, getContact, searchContacts } from "../../contacts.js";
-import { dbCreateRoute, dbGetInstance, dbUpsertChat, getFirstAccountName } from "../../router/router-db.js";
+import { findContactsByTag, getContact, getContactById, normalizePhone, searchContacts } from "../../contacts.js";
+import {
+  dbBindSessionToChat,
+  dbCreateRoute,
+  dbGetInstance,
+  dbUpsertChat,
+  dbUpsertChatParticipant,
+  getFirstAccountName,
+} from "../../router/router-db.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { resolveOmniGroupMetadata } from "../../omni/group-metadata-cache.js";
 import { prepareOmniMentionMessage } from "../../omni/mentions.js";
 import { OmniSender } from "../../omni/sender.js";
 import { resolveOmniConnection } from "../../omni-config.js";
 import { buildSessionKey } from "../../router/session-key.js";
-import { getOrCreateSession, updateSessionSource, updateSessionName } from "../../router/sessions.js";
+import {
+  attachChatToSession,
+  getOrCreateSession,
+  updateSessionSource,
+  updateSessionName,
+} from "../../router/sessions.js";
 import { generateSessionName, ensureUniqueName } from "../../router/session-name.js";
-import { getAgent } from "../../router/config.js";
+import { createAgent, getAgent } from "../../router/config.js";
 import { expandHome } from "../../router/resolver.js";
+import { ensureAgentInstructionFiles } from "../../runtime/agent-instructions.js";
+import { nats } from "../../nats.js";
 
 const TOPIC_PREFIX = "ravi.whatsapp.group";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,6 +44,10 @@ const SLOW_OPS = new Set(["create", "leave", "add", "remove", "join"]);
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function emitConfigChanged() {
+  nats.emit("ravi.config.changed", {}).catch(() => {});
 }
 
 function resolveGroupAccount(account?: string): string {
@@ -61,8 +81,12 @@ function resolveGroupSendInstanceId(accountId: string): string | null {
 }
 
 function parseMentionTargets(value: string | string[] | undefined): string[] {
-  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return parseCsvValues(value);
+}
+
+function parseCsvValues(...values: Array<string | string[] | undefined>): string[] {
   return values
+    .flatMap((value) => (Array.isArray(value) ? value : value ? [value] : []))
     .flatMap((item) => item.split(","))
     .map((item) => item.trim())
     .filter(Boolean);
@@ -70,6 +94,193 @@ function parseMentionTargets(value: string | string[] | undefined): string[] {
 
 function cleanCliText(value: string): string {
   return value.replace(/\\([!#$&*?])/g, "$1");
+}
+
+function uniquePhones(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of values) {
+    const normalized = normalizePhone(raw);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of values) {
+    const value = raw.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function isGroupParticipantIdentity(value: string): boolean {
+  return /^\d+$/.test(value) || value.startsWith("lid:");
+}
+
+function collectContactPhoneRefs(contact: ReturnType<typeof getContact> | ReturnType<typeof getContactById>): string[] {
+  if (!contact) return [];
+  return [
+    contact.phone,
+    ...contact.identities.filter((identity) => identity.platform === "phone").map((identity) => identity.value),
+  ].filter(Boolean);
+}
+
+function inferActorAdminPhones(): string[] {
+  const context = getContext();
+  const env = process.env;
+  const refs: string[] = [];
+  const contactIds: string[] = [];
+  const pushRef = (value: unknown) => {
+    const ref = asNonEmptyString(value);
+    if (ref) refs.push(ref);
+  };
+  const pushContactId = (value: unknown) => {
+    const contactId = asNonEmptyString(value);
+    if (contactId) contactIds.push(contactId);
+  };
+
+  const metadata = asRecord(context?.context?.metadata);
+  const records = [
+    metadata,
+    asRecord(metadata?.actor),
+    asRecord(metadata?.actorMetadata),
+    asRecord(metadata?.source),
+    asRecord(context?.source),
+  ].filter((record): record is Record<string, unknown> => Boolean(record));
+
+  for (const record of records) {
+    pushRef(record.senderPhone);
+    pushRef(record.phone);
+    pushRef(record.contactPhone);
+    pushRef(record.senderId);
+    pushRef(record.rawSenderId);
+    pushRef(record.normalizedSenderId);
+    pushRef(record.platformUserId);
+    pushRef(record.normalizedPlatformUserId);
+    pushContactId(record.contactId);
+  }
+
+  pushContactId(env.RAVI_CONTACT_ID);
+  pushRef(env.RAVI_SENDER_PHONE);
+  pushRef(env.RAVI_SENDER_ID);
+  pushRef(env.RAVI_NORMALIZED_SENDER_ID);
+  pushRef(env.RAVI_RAW_SENDER_ID);
+
+  const resolved: string[] = [];
+  for (const contactId of uniqueStrings(contactIds)) {
+    resolved.push(...collectContactPhoneRefs(getContactById(contactId)));
+  }
+
+  for (const ref of refs) {
+    const normalized = normalizePhone(ref);
+    if (!normalized || normalized.startsWith("group:")) continue;
+    const contact = getContact(normalized) ?? getContact(ref);
+    const contactRefs = collectContactPhoneRefs(contact);
+    resolved.push(...(contactRefs.length > 0 ? contactRefs : [normalized]));
+  }
+
+  return uniquePhones(resolved).filter(isGroupParticipantIdentity);
+}
+
+function defaultAgentCwd(agentId: string): string {
+  return `${homedir()}/ravi/${agentId}`;
+}
+
+function ensureGroupAgent(input: { agentId: string; createIfMissing?: boolean; cwd?: string; provider?: string }): {
+  status: "existing" | "created";
+  agentId: string;
+  cwd: string;
+  provider?: string;
+} {
+  const existing = getAgent(input.agentId);
+  if (existing) {
+    return {
+      status: "existing",
+      agentId: existing.id,
+      cwd: expandHome(existing.cwd),
+      ...(existing.provider ? { provider: existing.provider } : {}),
+    };
+  }
+
+  if (!input.createIfMissing) {
+    fail(`Agent not found: ${input.agentId}. Pass --create-agent to create it before routing the group.`);
+  }
+
+  const cwd = expandHome(input.cwd?.trim() || defaultAgentCwd(input.agentId));
+  mkdirSync(cwd, { recursive: true });
+  const created = createAgent({
+    id: input.agentId,
+    cwd,
+    ...(input.provider?.trim() ? { provider: input.provider.trim() } : {}),
+  });
+  ensureAgentInstructionFiles(cwd, {
+    createAgentsStub: `# ${input.agentId}\n\nInstruções do agente aqui.\n`,
+  });
+  return {
+    status: "created",
+    agentId: created.id,
+    cwd,
+    ...(created.provider ? { provider: created.provider } : {}),
+  };
+}
+
+function upsertGroupChatParticipants(input: {
+  chatId: string;
+  participants: string[];
+  admins: string[];
+  agent?: string;
+  source: string;
+}): { contacts: number; admins: number; agent: boolean } {
+  const adminSet = new Set(input.admins.map((phone) => normalizePhone(phone)));
+  let contacts = 0;
+  let admins = 0;
+
+  for (const phone of input.participants) {
+    const normalized = normalizePhone(phone);
+    const contact = getContact(normalized);
+    if (!contact) continue;
+    const role = adminSet.has(normalized) ? "admin" : "member";
+    dbUpsertChatParticipant({
+      chatId: input.chatId,
+      contactId: contact.id,
+      rawPlatformUserId: phone,
+      normalizedPlatformUserId: normalized,
+      role,
+      status: "active",
+      source: "manual",
+      metadata: { source: input.source },
+    });
+    contacts += 1;
+    if (role === "admin") admins += 1;
+  }
+
+  if (input.agent) {
+    dbUpsertChatParticipant({
+      chatId: input.chatId,
+      agentId: input.agent,
+      role: "agent",
+      status: "active",
+      source: "manual",
+      metadata: { source: input.source },
+    });
+  }
+
+  return { contacts, admins, agent: Boolean(input.agent) };
 }
 
 /**
@@ -329,19 +540,47 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--agent <id>", description: "Agent to route this group chat to" })
     agent?: string,
+    @Option({ flags: "--create-agent", description: "Create --agent first when it does not exist" })
+    createAgentIfMissing?: boolean,
+    @Option({ flags: "--agent-cwd <path>", description: "CWD for --create-agent (default: ~/ravi/<agent>)" })
+    agentCwd?: string,
+    @Option({ flags: "--agent-provider <provider>", description: "Runtime provider id for --create-agent" })
+    agentProvider?: string,
+    @Option({
+      flags: "--admin <phones...>",
+      description: "Phone numbers to add and promote as group admins. Can be repeated or comma-separated.",
+    })
+    adminPhonesRaw?: string[] | string,
+    @Option({ flags: "--admins <phones...>", description: "Alias for --admin" })
+    adminsAliasRaw?: string[] | string,
+    @Option({ flags: "--skip-tagged-admins", description: "Do not auto-promote contacts tagged admin" })
+    skipTaggedAdmins?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const participants = participantsStr
-      .split(",")
-      .map((p) => p.trim())
-      .filter(Boolean);
+    const requestedParticipants = uniquePhones(parseCsvValues(participantsStr));
+    const explicitAdmins = uniquePhones(parseCsvValues(adminPhonesRaw, adminsAliasRaw));
+    const actorAdmins = inferActorAdminPhones();
+    const participants = uniquePhones([...requestedParticipants, ...actorAdmins, ...explicitAdmins]);
 
     if (participants.length === 0) {
       fail("At least one participant is required");
     }
 
+    if (!agent && createAgentIfMissing) {
+      fail("--create-agent requires --agent <id>");
+    }
+
     // Validate all participants exist in contacts before creating group
     validateParticipantsAreContacts(participants);
+
+    const preparedAgent = agent
+      ? ensureGroupAgent({
+          agentId: agent,
+          createIfMissing: createAgentIfMissing,
+          cwd: agentCwd,
+          provider: agentProvider,
+        })
+      : null;
 
     const result = await groupRequest<{ id: string; subject: string; participants: number }>(
       "create",
@@ -352,21 +591,34 @@ export class GroupCommands {
       status: "created",
       accountId: resolveGroupAccount(account),
       group: result,
-      requestedParticipants: participants,
+      requestedParticipants,
+      participants,
+      requestedAdmins: explicitAdmins,
+      actorAdmins,
       changedCount: 1,
     };
+    if (preparedAgent) {
+      jsonPayload.agent = preparedAgent;
+    }
 
     if (!asJson) {
       console.log(`✓ Group created: ${result.subject}`);
       console.log(`  ID:           ${result.id}`);
       console.log(`  Participants: ${result.participants}`);
+      if (preparedAgent?.status === "created") {
+        console.log(`  Agent:        created ${preparedAgent.agentId} (${preparedAgent.cwd})`);
+      } else if (preparedAgent) {
+        console.log(`  Agent:        existing ${preparedAgent.agentId}`);
+      }
     }
 
     // Promote admin-tagged contacts to group admin
-    const adminContacts = findContactsByTag("admin");
-    const adminPhones = adminContacts
-      .flatMap((c) => c.identities.filter((i) => i.platform === "phone").map((i) => i.value))
-      .filter(Boolean);
+    const taggedAdminPhones = skipTaggedAdmins
+      ? []
+      : findContactsByTag("admin")
+          .flatMap((c) => c.identities.filter((i) => i.platform === "phone").map((i) => i.value))
+          .filter(Boolean);
+    const adminPhones = uniquePhones([...actorAdmins, ...explicitAdmins, ...taggedAdminPhones]);
 
     if (adminPhones.length > 0) {
       try {
@@ -381,6 +633,9 @@ export class GroupCommands {
         jsonPayload.adminPromotion = {
           status: "promoted",
           participants: adminPhones,
+          actorAdmins,
+          explicitAdmins,
+          taggedAdmins: uniquePhones(taggedAdminPhones),
           result: promotion,
           changedCount: adminPhones.length,
         };
@@ -390,6 +645,9 @@ export class GroupCommands {
         jsonPayload.adminPromotion = {
           status: "failed",
           participants: adminPhones,
+          actorAdmins,
+          explicitAdmins,
+          taggedAdmins: uniquePhones(taggedAdminPhones),
           error: msg,
           changedCount: 0,
         };
@@ -416,11 +674,24 @@ export class GroupCommands {
       },
     });
     jsonPayload.chat = { status: "registered", identity: groupIdentity, chat };
+    jsonPayload.chatParticipants = upsertGroupChatParticipants({
+      chatId: chat.id,
+      participants,
+      admins: adminPhones,
+      agent,
+      source: "whatsapp.group.create",
+    });
     if (!asJson) console.log(`  Chat:         registered`);
 
     if (agent) {
       try {
-        const route = dbCreateRoute({ pattern: `group:${groupId}`, agent, accountId: routeAcct, priority: 0 });
+        const route = dbCreateRoute({
+          pattern: `group:${groupId}`,
+          agent,
+          accountId: routeAcct,
+          priority: 0,
+          channel: "whatsapp",
+        });
         jsonPayload.route = { status: "created", route };
         if (!asJson) console.log(`  Route:        ${agent}`);
       } catch (err) {
@@ -463,12 +734,29 @@ export class GroupCommands {
           accountId: acctId,
           chatId: `group:${groupId}`,
         });
+        dbBindSessionToChat({
+          sessionKey,
+          chatId: chat.id,
+          agentId: agent,
+          bindingReason: "whatsapp.group.create",
+        });
+        const attachment = attachChatToSession({
+          sessionKey,
+          chatId: chat.id,
+          role: "primary",
+          attachedByType: "system",
+          attachedReason: "whatsapp.group.create",
+          setOutputTarget: true,
+          speechMode: "speak",
+        });
         jsonPayload.session = {
           status: "created",
           sessionKey,
           name: session.name ?? sessionName,
           agent,
           accountId: acctId,
+          chatBinding: { chatId: chat.id },
+          attachment,
         };
         if (!asJson) console.log(`  Session:      ${session.name ?? sessionName}`);
 
@@ -490,6 +778,8 @@ export class GroupCommands {
         jsonPayload.session = { status: "skipped", reason: `agent "${agent}" not found`, agent };
         if (!asJson) console.log(`  Session:      skipped (agent "${agent}" not found)`);
       }
+
+      emitConfigChanged();
     }
 
     if (asJson) {

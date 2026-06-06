@@ -47,13 +47,25 @@ Participantes separados por vírgula. Aceita números de telefone ou JIDs.
 ravi whatsapp group create "Vida - Health" "5511947879044" --agent health
 ```
 
+**Criar agent, criar grupo, adicionar o ator como admin e rotear em uma chamada:**
+```bash
+ravi whatsapp group create "Vida - Health" "5511888888888" \
+  --agent health \
+  --create-agent \
+  --agent-cwd ~/ravi/health
+```
+
+Quando o comando roda dentro de uma sessão Ravi, o criador é inferido pelo actor do contexto e entra como participante/admin automaticamente. `--admin` é opcional: use para promover admins extras ou quando estiver rodando fora de um contexto com actor. O número passado em `--admin` também entra na lista inicial de participantes antes da criação do grupo. Use `--admins` como alias ou repita `--admin`.
+
 Saída:
 ```
 ✓ Group created: Vida - Health
   ID:           120363405113391144@g.us
   Participants: 2
-  Contact:      approved
+  Agent:        created health (/Users/luis/ravi/health)
+  Chat:         registered
   Route:        health
+  Session:      health-vida-health
 ```
 
 ### Sair de um grupo
@@ -142,6 +154,12 @@ ravi whatsapp group create "Equipe" "5511999" --account business
 ```bash
 # Tudo num comando só:
 ravi whatsapp group create "Vida - Finanças" "5511947879044" --agent financas
+
+# Cria o agent se ainda não existir; o actor da sessão vira admin automaticamente:
+ravi whatsapp group create "Vida - Finanças" "5511888888888" --agent financas --create-agent
+
+# Fora de uma sessão Ravi, ou para admins extras, informe explicitamente:
+ravi whatsapp group create "Vida - Finanças" "5511888888888" --agent financas --admin 5511947879044
 ```
 
 Sem `--agent`, precisa rotear manualmente:
