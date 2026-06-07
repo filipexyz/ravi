@@ -26,6 +26,7 @@ import {
   type ChatMessageWithSortKey,
 } from "../../router/router-db.js";
 import { getContact } from "../../contacts.js";
+import { recomputeChatReadingList } from "../../router/reading-list-recompute.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -658,6 +659,54 @@ export class ChatReadingListCommands {
   }
 
   @Scope("admin")
+  @Command({
+    name: "recompute",
+    description: "Re-evaluate a dynamic reading list selector and sync members",
+  })
+  recompute(
+    @Arg("list", { description: "List id or name" }) listRef: string,
+    @Option({ flags: "--apply", description: "Apply changes (default: dry-run)" }) apply?: boolean,
+    @Option({ flags: "--dry-run", description: "Preview changes without writing (default)" }) dryRun?: boolean,
+    @Option({
+      flags: "--include-group-chats",
+      description: "Include non-DM chats associated with eligible contacts",
+    })
+    includeGroupChats?: boolean,
+    @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (apply === true && dryRun === true) {
+      fail("Cannot pass both --apply and --dry-run");
+    }
+    const list = resolveReadingList(listRef, owner);
+    const result = recomputeChatReadingList({
+      listRef: list.id,
+      apply: apply === true,
+      includeGroupChats: includeGroupChats === true,
+    });
+    if (asJson) {
+      printJson(result);
+      return result;
+    }
+    const mode = result.apply ? "applied" : "dry-run";
+    console.log(`\nRecompute (${mode}) — ${list.name} (${list.id}) scope=${result.scope} match=${result.match}`);
+    console.log(
+      `Contacts scanned=${result.totals.contactsScanned} eligible=${result.totals.contactsEligible} chats=${result.totals.chatsConsidered}`,
+    );
+    console.log(`Added=${result.totals.added} removed=${result.totals.removed} unchanged=${result.totals.unchanged}`);
+    if (result.added.length > 0) {
+      console.log("\n+ Added:");
+      for (const change of result.added) console.log(`  + ${change.chatId} (${change.contactId ?? "?"})`);
+    }
+    if (result.removed.length > 0) {
+      console.log("\n- Removed:");
+      for (const change of result.removed) console.log(`  - ${change.chatId}`);
+    }
+    if (!result.apply) console.log("\nUse --apply to persist these changes.");
+    return result;
+  }
+
+  @Scope("admin")
   @Command({ name: "mark-read", description: "Explicitly advance one reading-list cursor" })
   markRead(
     @Arg("list", { description: "List id or name" }) listRef: string,
@@ -712,5 +761,6 @@ declareCommandReturns(ChatReadingListCommands, {
   list: commandEnvelopeReturnSchema,
   markRead: commandEnvelopeReturnSchema,
   members: commandEnvelopeReturnSchema,
+  recompute: commandEnvelopeReturnSchema,
   remove: commandEnvelopeReturnSchema,
 });

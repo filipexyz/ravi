@@ -2003,6 +2003,18 @@ export type ChatsListsMembersInput = {
 /** Return shape for `chats.lists.members`. */
 export type ChatsListsMembersReturn = Record<string, unknown>;
 
+/** Input shape for `chats.lists.recompute`. */
+export type ChatsListsRecomputeInput = {
+  apply?: boolean;
+  dryRun?: boolean;
+  includeGroupChats?: boolean;
+  list: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.recompute`. */
+export type ChatsListsRecomputeReturn = Record<string, unknown>;
+
 /** Input shape for `chats.lists.remove`. */
 export type ChatsListsRemoveInput = {
   channel?: string;
@@ -3122,6 +3134,7 @@ export type CrmOpportunityCreateInput = {
   currency?: string;
   idempotencyKey?: string;
   owner?: string;
+  pipeline?: string;
   stage?: string;
   title: string;
   value?: string;

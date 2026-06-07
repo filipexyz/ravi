@@ -11137,6 +11137,44 @@ export const ChatsListsMembersReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `chats.lists.recompute`. */
+export const ChatsListsRecomputeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Apply changes (default: dry-run)",
+      "type": "boolean"
+    },
+    "dryRun": {
+      "description": "Preview changes without writing (default)",
+      "type": "boolean"
+    },
+    "includeGroupChats": {
+      "description": "Include non-DM chats associated with eligible contacts",
+      "type": "boolean"
+    },
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.recompute`. */
+export const ChatsListsRecomputeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.lists.remove`. */
 export const ChatsListsRemoveInputSchema = {
   "additionalProperties": false,
@@ -15235,6 +15273,10 @@ export const CrmOpportunityCreateInputSchema = {
     },
     "owner": {
       "description": "Owner, e.g. agent:main",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "Pipeline ID or name (default: default pipeline)",
       "type": "string"
     },
     "stage": {

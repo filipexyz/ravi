@@ -723,6 +723,7 @@ describe("CRM commands", () => {
         "Pilot",
         "crm_acc_1",
         "contact-1",
+        undefined,
         "qualified",
         "500000",
         "BRL",
@@ -751,6 +752,27 @@ describe("CRM commands", () => {
     expect(lastAccountCreateInput).toMatchObject({ name: "Acme", ownerType: "team", ownerId: "sales" });
     expect(lastOpportunityCreateInput).toMatchObject({ valueCents: 500000, ownerType: "agent", ownerId: "dev" });
     expect(lastTaskCreateInput).toMatchObject({ priority: "urgent", ownerType: "agent", ownerId: "dev" });
+  });
+
+  it("forwards --pipeline to the CRM opportunity service", () => {
+    silenceLogs(() => {
+      new CrmOpportunityCommands().create(
+        "Smoke",
+        "crm_acc_1",
+        "contact-1",
+        "sde-novo-contato",
+        "1-primeiro-contato",
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+
+    expect(lastOpportunityCreateInput).toMatchObject({
+      pipelineId: "sde-novo-contato",
+      stageKey: "1-primeiro-contato",
+    });
   });
 
   it("fails CRM CLI commands on invalid input or missing CRM records", () => {
