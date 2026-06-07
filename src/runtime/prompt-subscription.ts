@@ -1,11 +1,6 @@
 import { StringCodec } from "nats";
 import { getNats, nats } from "../nats.js";
-import {
-  SESSION_STREAM,
-  ensureSessionConsumer,
-  ensureSessionPromptsStream,
-  getConsumerName,
-} from "../omni/session-stream.js";
+import { SESSION_STREAM, ensureSessionPromptInfrastructure, getConsumerName } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeSessionPoolSnapshot } from "./session-pool.js";
@@ -16,6 +11,7 @@ export interface RuntimePromptSubscriptionOptions {
   isRunning(): boolean;
   getStreamingSessionCount(): number;
   getRuntimeSessionPoolSnapshot?(): RuntimeSessionPoolSnapshot;
+  ensurePromptInfrastructure?(): Promise<void>;
   markConsumerReady(): void;
   handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void>;
 }
@@ -24,6 +20,7 @@ export class RuntimePromptSubscription {
   active = false;
   promptsReceived = 0;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
+  private healthProbeInFlight = false;
 
   constructor(private readonly options: RuntimePromptSubscriptionOptions) {}
 
@@ -55,6 +52,7 @@ export class RuntimePromptSubscription {
           pendingStarts: runtimeSessionPool?.pendingStarts,
         });
         this.emitRuntimeSessionPoolGauge(runtimeSessionPool);
+        this.ensurePromptInfrastructureForHealthCheck();
       }
     }, healthCheckIntervalMs);
   }
@@ -80,17 +78,21 @@ export class RuntimePromptSubscription {
 
     try {
       const nc = getNats();
-      const jsm = await nc.jetstreamManager();
       const js = nc.jetstream();
 
       const consumerName = getConsumerName();
-      await ensureSessionPromptsStream();
-      await ensureSessionConsumer(jsm);
+      await this.ensurePromptInfrastructure();
 
       while (this.options.isRunning()) {
         try {
           const consumer = await js.consumers.get(SESSION_STREAM, consumerName);
-          const messages = await consumer.consume({ expires: 2000 });
+          const messages = await consumer.consume({
+            expires: 2000,
+            // The nats.js default keeps a consume loop alive while stream/consumer
+            // resources are missing. Ravi owns this durable, so fail fast and let
+            // the outer loop recreate the JetStream infrastructure.
+            abort_on_missing_resource: true,
+          });
 
           this.options.markConsumerReady();
 
@@ -158,8 +160,7 @@ export class RuntimePromptSubscription {
 
           if (isPromptBootstrapError(err)) {
             log.warn("Prompt pull unavailable during bootstrap, re-ensuring stream/consumer", { error: err });
-            await ensureSessionPromptsStream();
-            await ensureSessionConsumer(jsm);
+            await this.ensurePromptInfrastructure();
           } else {
             log.error("Prompt subscription error - will reconnect pull", {
               error: err,
@@ -194,11 +195,32 @@ export class RuntimePromptSubscription {
         log.warn("Failed to emit runtime session pool gauge", { error });
       });
   }
+
+  private ensurePromptInfrastructureForHealthCheck(): void {
+    if (this.healthProbeInFlight) return;
+    this.healthProbeInFlight = true;
+    this.ensurePromptInfrastructure()
+      .catch((error) => {
+        log.warn("Subscriber health check: failed to verify prompt infrastructure", { error });
+      })
+      .finally(() => {
+        this.healthProbeInFlight = false;
+      });
+  }
+
+  private ensurePromptInfrastructure(): Promise<void> {
+    return this.options.ensurePromptInfrastructure?.() ?? ensureSessionPromptInfrastructure();
+  }
 }
 
 function isPromptBootstrapError(err: unknown): boolean {
   const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
-  return message.includes("stream not found") || message.includes("consumer not found");
+  return (
+    message.includes("stream not found") ||
+    message.includes("consumer not found") ||
+    message.includes("consumer deleted") ||
+    message.includes("no responders")
+  );
 }
 
 async function delay(ms: number): Promise<void> {
