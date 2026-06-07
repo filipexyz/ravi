@@ -5619,8 +5619,14 @@ export function archiveCrmPipelineStageTopic(
   return updateCrmPipelineStageTopic({ ...input, status: "archived" });
 }
 
-function resolveCrmStage(database: Database, stageRef?: string | null, pipelineId?: string | null): CrmPipelineStage {
-  const resolvedPipelineId = pipelineId?.trim() || "crm_pipeline_default";
+function resolveCrmStage(database: Database, stageRef?: string | null, pipelineRef?: string | null): CrmPipelineStage {
+  const trimmedPipelineRef = pipelineRef?.trim();
+  let resolvedPipelineId = "crm_pipeline_default";
+  if (trimmedPipelineRef) {
+    const pipelineRow = getCrmPipelineRow(database, trimmedPipelineRef);
+    if (!pipelineRow) throw new Error(`CRM pipeline not found: ${trimmedPipelineRef}`);
+    resolvedPipelineId = pipelineRow.id;
+  }
   const ref = stageRef?.trim();
   const row = ref
     ? (database
