@@ -51,6 +51,8 @@ export interface MessageReadOptions extends MailClientOptions {
   payloadKind?: MailMessagePayloadKind;
 }
 
+export interface MessageAttachmentListOptions extends MailClientOptions {}
+
 export interface MailSendOptions extends MailClientOptions {
   from?: string;
   to: string[];
@@ -186,6 +188,21 @@ export class RaviMailClient {
     );
   }
 
+  async listMessageAttachments(
+    accessToken: string,
+    message: string,
+    _options: MessageAttachmentListOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return sanitizeMetadataResponse(
+      await this.request<Record<string, unknown>>(
+        "GET",
+        `/api/cli/mail/messages/${encodeURIComponent(message)}/attachments`,
+        undefined,
+        accessToken,
+      ),
+    );
+  }
+
   async send(accessToken: string, options: MailSendOptions): Promise<Record<string, unknown>> {
     return sanitizeMetadataResponse(
       await this.request<Record<string, unknown>>(
@@ -304,6 +321,15 @@ export async function readMessage(
 ): Promise<Record<string, unknown>> {
   const auth = await createAuthenticatedMailContext(options, deps);
   return new RaviMailClient(auth.client).readMessage(auth.accessToken, message, options);
+}
+
+export async function listMessageAttachments(
+  message: string,
+  options: MessageAttachmentListOptions = {},
+  deps: MailClientDeps = {},
+): Promise<Record<string, unknown>> {
+  const auth = await createAuthenticatedMailContext(options, deps);
+  return new RaviMailClient(auth.client).listMessageAttachments(auth.accessToken, message, options);
 }
 
 export async function sendMail(options: MailSendOptions, deps: MailClientDeps = {}): Promise<Record<string, unknown>> {

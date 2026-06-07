@@ -8,6 +8,20 @@ import { homedir } from "node:os";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import {
+  agentCreateReturnSchema,
+  agentDebounceReturnSchema,
+  agentDebugReturnSchema,
+  agentDeleteReturnSchema,
+  agentInstructionSyncReturnSchema,
+  agentResetReturnSchema,
+  agentSessionReturnSchema,
+  agentSetReturnSchema,
+  agentShowReturnSchema,
+  agentSpecModeReturnSchema,
+  agentsListReturnSchema,
+  declareCommandReturns,
+} from "./operational-return-schemas.js";
 import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
 import { nats } from "../../nats.js";
 import {
@@ -1126,3 +1140,17 @@ export class AgentsCommands {
     return transcriptPayload;
   }
 }
+
+declareCommandReturns(AgentsCommands, {
+  create: agentCreateReturnSchema,
+  debounce: agentDebounceReturnSchema,
+  debug: agentDebugReturnSchema,
+  delete: agentDeleteReturnSchema,
+  list: agentsListReturnSchema,
+  reset: agentResetReturnSchema,
+  session: agentSessionReturnSchema,
+  set: agentSetReturnSchema,
+  show: agentShowReturnSchema,
+  specMode: agentSpecModeReturnSchema,
+  syncInstructions: agentInstructionSyncReturnSchema,
+});

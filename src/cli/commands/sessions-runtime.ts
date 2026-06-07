@@ -8,6 +8,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { declareCommandReturns, runtimeControlReturnSchema } from "./operational-return-schemas.js";
 import { requestReply } from "../../utils/request-reply.js";
 import { resolveSession } from "../../router/sessions.js";
 import type { SessionEntry } from "../../router/types.js";
@@ -244,3 +245,13 @@ export class SessionRuntimeCommands {
     return printRuntimeControlResult(result, asJson);
   }
 }
+
+declareCommandReturns(SessionRuntimeCommands, {
+  followUp: runtimeControlReturnSchema,
+  fork: runtimeControlReturnSchema,
+  interrupt: runtimeControlReturnSchema,
+  list: runtimeControlReturnSchema,
+  read: runtimeControlReturnSchema,
+  rollback: runtimeControlReturnSchema,
+  steer: runtimeControlReturnSchema,
+});

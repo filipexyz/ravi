@@ -7,6 +7,7 @@
  */
 
 import { nats } from "../nats.js";
+import { createHash } from "node:crypto";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
@@ -23,11 +24,13 @@ import {
 import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbUpdateTriggerState } from "./triggers-db.js";
 import { evaluateFilter } from "./filter.js";
-import { resolveTemplate } from "./template.js";
 import type { Trigger } from "./types.js";
 import { isBlockedTriggerTopic } from "./topic-policy.js";
+import { buildTriggerPrompt } from "./prompt.js";
 
 const log = logger.child("triggers:runner");
+const EVENT_DEDUPE_TTL_MS = 60_000;
+const EVENT_DEDUPE_MAX = 2_000;
 
 /** Tracks a topic subscription stream for teardown */
 type TopicSub = ReturnType<typeof nats.subscribe>;
@@ -39,6 +42,8 @@ export class TriggerRunner {
   /** Topic streams (NOT including refresh/test — those are long-lived) */
   private topicSubs: TopicSub[] = [];
   private running = false;
+  private recentEventFires = new Map<string, number>();
+  private recentEventFireOps = 0;
 
   /**
    * Start the trigger runner.
@@ -177,6 +182,16 @@ export class TriggerRunner {
               continue;
             }
 
+            const dedupeKey = getTriggerEventDedupeKey(trigger, event);
+            if (this.wasRecentlyFired(dedupeKey)) {
+              log.debug("Trigger event already handled recently, skipping duplicate", {
+                triggerId: trigger.id,
+                triggerName: trigger.name,
+                topic: event.topic,
+              });
+              continue;
+            }
+
             // Set cooldown immediately to prevent race condition:
             // Without this, multiple events arriving in rapid succession
             // all pass the cooldown check before the first fireTrigger
@@ -206,6 +221,23 @@ export class TriggerRunner {
     })();
 
     log.debug("Subscribed to topic", { topic, triggerCount: triggers.length });
+  }
+
+  private wasRecentlyFired(key: string): boolean {
+    const now = Date.now();
+    const previous = this.recentEventFires.get(key);
+    if (previous !== undefined && now - previous < EVENT_DEDUPE_TTL_MS) return true;
+
+    this.recentEventFires.set(key, now);
+    if (++this.recentEventFireOps >= 200 || this.recentEventFires.size > EVENT_DEDUPE_MAX) {
+      this.recentEventFireOps = 0;
+      for (const [candidate, timestamp] of this.recentEventFires) {
+        if (now - timestamp > EVENT_DEDUPE_TTL_MS || this.recentEventFires.size > EVENT_DEDUPE_MAX) {
+          this.recentEventFires.delete(candidate);
+        }
+      }
+    }
+    return false;
   }
 
   /**
@@ -282,21 +314,7 @@ export class TriggerRunner {
       source.accountId = trigger.accountId;
     }
 
-    // Resolve template variables — inner payload (event.data.data) takes priority
-    const eventData = event.data as Record<string, unknown> | undefined;
-    const templateData = (eventData?.data as Record<string, unknown> | undefined) ?? eventData ?? {};
-    const resolvedMessage = resolveTemplate(trigger.message, {
-      topic: event.topic,
-      data: templateData,
-    });
-
-    const prompt = [
-      `[Trigger: ${trigger.name}]`,
-      `Topic: ${event.topic}`,
-      `Data: ${JSON.stringify(event.data, null, 2)}`,
-      ``,
-      resolvedMessage,
-    ].join("\n");
+    const prompt = buildTriggerPrompt(trigger, event);
 
     log.info("Firing trigger", {
       triggerId: trigger.id,
@@ -425,4 +443,51 @@ export async function stopTriggerRunner(): Promise<void> {
     await runner.stop();
     runner = null;
   }
+}
+
+export function getTriggerEventDedupeKey(
+  trigger: Pick<Trigger, "id">,
+  event: { topic: string; data: unknown },
+): string {
+  const identity =
+    readStringPath(event.data, "dedupeKey") ??
+    readStringPath(event.data, "eventId") ??
+    readStringPath(event.data, "inboxItemId") ??
+    readStringPath(event.data, "sourceId") ??
+    readStringPath(event.data, "messageId") ??
+    readStringPath(event.data, "mail.messageId") ??
+    readStringPath(event.data, "mail.providerMessageId") ??
+    readStringPath(event.data, "payload.messageId") ??
+    readStringPath(event.data, "payload.mail.messageId") ??
+    readStringPath(event.data, "payload.mail.localIngest.messageId") ??
+    readStringPath(event.data, "source.id");
+
+  if (identity) return `${trigger.id}\0${event.topic}\0${identity}`;
+
+  const payloadHash = createHash("sha256").update(stableStringify(event.data)).digest("hex");
+  return `${trigger.id}\0${event.topic}\0payload:${payloadHash}`;
+}
+
+function readStringPath(value: unknown, path: string): string | null {
+  let current: unknown = value;
+  for (const segment of path.split(".")) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return null;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return typeof current === "string" && current.trim() ? current.trim() : null;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortForStableStringify(value));
+}
+
+function sortForStableStringify(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortForStableStringify);
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    sorted[key] = sortForStableStringify(record[key]);
+  }
+  return sorted;
 }

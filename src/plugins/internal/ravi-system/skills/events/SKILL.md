@@ -122,7 +122,7 @@ Para timeline completa de sessão, use `RAVI_EVENTS` junto de `MESSAGE`/`REACTIO
 | `ravi.instances.unregistered` | `{ instanceId, channelType, subject, from, chatId, isGroup, contentType, timestamp }` — cooldown 5min por instanceId |
 | `ravi.whatsapp.qr.{instanceId}` | `{ type: "qr", instanceId, qr, channelType }` |
 | `ravi.whatsapp.connected.{instanceId}` | `{ type: "connected", instanceId, channelType, profileName, ownerIdentifier }` |
-| `ravi.whatsapp.group.{op}` | `{ accountId, replyTopic, ... }` — ops: list, info, create, leave, add, remove, join (request-reply) |
+| `ravi.whatsapp.group.{op}` | `{ accountId, replyTopic, ... }` — bridge legado para ops: list, info, leave, add, remove, join, invite e similares (request-reply). `create` não usa mais este tópico; `ravi whatsapp group create` chama a API HTTP do Omni e registra chat/route/session localmente. |
 
 ### Auditoria
 

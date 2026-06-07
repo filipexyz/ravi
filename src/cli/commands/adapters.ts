@@ -1,6 +1,8 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { z } from "zod";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { cliOffsetPaginationSchema, looseObjectSchema } from "../return-schemas.js";
 import {
   getSessionAdapterDebugSnapshot,
   listSessionAdapters,
@@ -40,6 +42,42 @@ interface SerializedAdapterRecord {
   updatedAt: number;
 }
 
+const adapterRecordReturnSchema = z
+  .object({
+    adapterId: z.string(),
+    adapterName: z.string(),
+    transport: z.string(),
+    sessionKey: z.string(),
+    sessionName: z.string().nullable(),
+    status: z.string(),
+    diagnosticState: z.enum(["live", "dead", "unbound", "protocol-invalid", "stopped", "configured"]),
+    bind: z
+      .object({
+        bound: z.boolean(),
+        sessionKey: z.string(),
+        sessionName: z.string().nullable(),
+        agentId: z.string().nullable(),
+        contextId: z.string().nullable(),
+        cliName: z.string().nullable(),
+        contextKey: z.undefined().optional(),
+      })
+      .passthrough(),
+    health: looseObjectSchema,
+    lastEvent: looseObjectSchema.nullable(),
+    lastCommand: looseObjectSchema.nullable(),
+    lastProtocolError: looseObjectSchema.nullable(),
+    updatedAt: z.number(),
+  })
+  .passthrough();
+
+const adaptersListReturnSchema = z.object({
+  count: z.number(),
+  total: z.number(),
+  pagination: cliOffsetPaginationSchema,
+  items: z.array(adapterRecordReturnSchema),
+  adapters: z.array(adapterRecordReturnSchema),
+});
+
 @Group({
   name: "adapters",
   description: "Inspect session adapters and their debug snapshots",
@@ -47,6 +85,7 @@ interface SerializedAdapterRecord {
 })
 export class AdapterCommands {
   @Command({ name: "list", description: "List session adapters with health and bind state" })
+  @Returns(adaptersListReturnSchema)
   list(
     @Option({ flags: "--session <sessionKey>", description: "Filter by session key" }) sessionKey?: string,
     @Option({ flags: "--status <status>", description: "Filter by adapter status" }) status?: SessionAdapterStatus,
@@ -82,6 +121,7 @@ export class AdapterCommands {
   }
 
   @Command({ name: "show", description: "Show a session adapter debug snapshot" })
+  @Returns(adapterRecordReturnSchema)
   show(
     @Arg("adapterId", { description: "Adapter ID to inspect" }) adapterId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,

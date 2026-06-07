@@ -137,10 +137,21 @@ NOT expose provider tokens, raw MIME, full message bodies, or attachments unless
 the consumer is explicitly authorized for that mailbox and the payload is a
 local-only delivery path.
 
+Attachment metadata MAY be present on local-only mail events when it was
+persisted in the local mailbox first. That metadata MUST be bounded to id,
+filename, content type, size, SHA-256, redaction/scan status, local blob ref
+presence, and provider provenance. Event payloads MUST NOT inline attachment
+bytes or remote signed URLs.
+
 `ravi.inbox.mail.received` is the native inbox trigger subject for new actionable
 email. It MUST be emitted only after a new local inbox item has been created for
 a local mailbox message. Automations SHOULD listen to this subject for email
 workflows instead of `ravi.console.inbox.item`.
+
+The native inbox mail payload MUST include local ids first and safe addressing
+metadata: structured `mail.from`/`mail.to` arrays plus exact display strings
+`mail.fromText`/`mail.toText` for agent-facing templates. The default trigger
+template MUST include both `De` and `Para`.
 
 ## Relationship To Inbox And Sync
 
@@ -162,7 +173,10 @@ the local runner MUST create or reuse the Ravi Mail account/mailbox, import the
 message idempotently, and project the local message into inbox before marking the
 Console item delivered. If Console enrichment returns safe message body content,
 the local message MAY be stored as `full_local`; otherwise it MUST be
-`preview_only` and still remain searchable by available metadata.
+`preview_only` and still remain searchable by available metadata. If Console
+enrichment returns attachment metadata, Ravi MUST persist that metadata in
+`mail_attachments` for the local message idempotently before projecting the
+message into inbox.
 
 After that local projection creates a new inbox item, the native inbox event
 `ravi.inbox.mail.received` MUST be the event consumers use for email automation.

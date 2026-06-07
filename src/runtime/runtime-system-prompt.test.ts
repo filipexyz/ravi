@@ -28,6 +28,11 @@ describe("buildRuntimeSystemPrompt", () => {
 
       expect(prompt.sections.map((section) => section.id)).toContain("workspace.instructions");
       expect(prompt.sections.map((section) => section.id)).toContain("agent.system_prompt_append");
+      expect(prompt.sections.map((section) => section.id)).toContain("runtime.operational_context");
+      expect(prompt.text).toContain("## Ravi Operational Context");
+      expect(prompt.text).toContain("- agent: `main`");
+      expect(prompt.text).toContain("- session: `dev`");
+      expect(prompt.text).toContain("`ravi self permissions --json`");
       expect(prompt.text).toContain("## Workspace Instructions");
       expect(prompt.text).toContain(`Workspace instructions loaded from ${join(cwd, "AGENTS.md")}`);
       expect(prompt.text).toContain("Use the local project rules.");
@@ -36,6 +41,38 @@ describe("buildRuntimeSystemPrompt", () => {
       expect(prompt.text).toContain("## Session Boundary");
       expect(prompt.text).not.toContain('"workspace.instructions"');
       expect(prompt.text).not.toContain('"agent.system_prompt_append"');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("renders bounded runtime capabilities without exposing context keys", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-runtime-system-prompt-"));
+    try {
+      const prompt = await buildRuntimeSystemPrompt({
+        cwd,
+        sessionName: "ops",
+        agent: { id: "main", cwd },
+        runtimeContext: {
+          contextId: "ctx_visible",
+          kind: "agent-runtime",
+          agentId: "main",
+          sessionKey: "agent:main:main",
+          sessionName: "ops",
+          source: { channel: "whatsapp", accountId: "main", chatId: "chat_123" },
+          capabilities: [
+            { permission: "use", objectType: "tool", objectId: "Bash", source: "test" },
+            { permission: "execute", objectType: "group", objectId: "sessions", source: "test" },
+          ],
+        },
+      });
+
+      expect(prompt.text).toContain("`ctx_visible` (agent-runtime)");
+      expect(prompt.text).toContain("- capabilities: 2");
+      expect(prompt.text).toContain("`use:tool:Bash source=test`");
+      expect(prompt.text).toContain("`execute:group:sessions source=test`");
+      expect(prompt.text).not.toContain("rctx_");
+      expect(prompt.text).not.toContain("contextKey");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -62,7 +62,18 @@ ravi triggers rm <id>
 
 Use `ravi triggers topics` para ver templates built-in com schema de payload, template padrão de mensagem, exemplos, filtros comuns e notas operacionais. O catálogo é fonte de hints, não whitelist: topics externos/custom publicados no NATS são aceitos.
 
-Use `ravi triggers topics --json` quando precisar configurar watchers por programa. Cada tópico catalogado expõe `schema.fields[]` com `path`, `type`, `required` e `description`. Quando existir `messageTemplate`, `ravi triggers add` pode omitir `--message` e salvar esse template como mensagem do trigger.
+Use `ravi triggers topics --json` quando precisar configurar watchers por programa. Cada tópico catalogado expõe `schema.fields[]` com `path`, `type`, `required` e `description`. Quando existir `messageTemplate`, `ravi triggers add` pode omitir `--message` e salvar esse template como mensagem do trigger, preservando a origem como template de catálogo.
+
+Quando um trigger usa `messageTemplate` padrão do catálogo, o prompt entregue ao agent é enxuto e padronizado:
+
+```
+[Trigger: <nome do trigger>]
+Event: <topic que disparou>
+
+<mensagem resolvida>
+```
+
+Esse modo não inclui o bloco bruto `Data: {...}`. Triggers manuais/custom continuam recebendo `Data` no prompt para debug e automações legadas.
 
 ### Inbound e Canais
 
@@ -161,7 +172,15 @@ ravi triggers add "Novo email local" --topic "ravi.inbox.mail.received"
 
 Mensagem salva pelo catálogo:
 ```
-[ravi mail] novo email no inbox: {{data.mail.messageId}}. Assunto: {{data.mail.subject}}. Use ravi mail messages read {{data.mail.messageId}} para ler.
+[ravi mail] novo email no inbox: {{data.mail.messageId}}. De: {{data.mail.fromText}}. Para: {{data.mail.toText}}. Assunto: {{data.mail.subject}}. Use ravi mail messages read {{data.mail.messageId}} para ler.
+```
+
+Quando disparar, chega como:
+```
+[Trigger: Novo email local]
+Event: ravi.inbox.mail.received
+
+[ravi mail] novo email no inbox: mail_msg_123. De: Alice <alice@example.com>. Para: nx-luis@ravi.bot. Assunto: Contrato assinado. Use ravi mail messages read mail_msg_123 para ler.
 ```
 
 ## Exemplos

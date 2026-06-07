@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
@@ -19,6 +19,15 @@ import {
   type ThreadEntryKind,
   type ThreadRecord,
 } from "../../threads/index.js";
+import {
+  threadActionReturnSchema,
+  threadBriefReturnSchema,
+  threadEntriesReturnSchema,
+  threadEntryReturnSchema,
+  threadLinkReturnSchema,
+  threadListReturnSchema,
+  threadShowReturnSchema,
+} from "./operational-return-schemas.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -112,6 +121,7 @@ function formatDate(value: number): string {
 })
 export class ThreadCommands {
   @Command({ name: "create", description: "Create a Ravi-owned thread" })
+  @Returns(threadActionReturnSchema)
   create(
     @Arg("slug", { description: "Thread slug" }) slug: string,
     @Option({ flags: "--title <title>", description: "Thread title" }) title?: string,
@@ -141,9 +151,11 @@ export class ThreadCommands {
       return payload;
     }
     console.log(`✅ Thread created: ${thread.slug ?? thread.id}`);
+    return payload;
   }
 
   @Command({ name: "list", description: "List Ravi threads" })
+  @Returns(threadListReturnSchema)
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
     @Option({ flags: "--scope <type:id>", description: "Filter by scope" }) scope?: string,
@@ -181,9 +193,11 @@ export class ThreadCommands {
       return payload;
     }
     printThreadList(result.items, result.total);
+    return payload;
   }
 
   @Command({ name: "show", description: "Show one thread with links and recent entries" })
+  @Returns(threadShowReturnSchema)
   show(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
     @Option({ flags: "--scope <type:id>", description: "Scope when resolving a slug" }) scope?: string,
@@ -218,9 +232,11 @@ export class ThreadCommands {
     for (const entry of entries) {
       console.log(`- [${entry.kind}] ${entry.actorName ?? entry.actorSessionName ?? entry.actorType}: ${entry.body}`);
     }
+    return payload;
   }
 
   @Command({ name: "comment", description: "Append a comment to a thread" })
+  @Returns(threadEntryReturnSchema)
   comment(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
     @Arg("body", { description: "Comment body" }) body: string,
@@ -233,6 +249,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "note", description: "Append a note to a thread" })
+  @Returns(threadEntryReturnSchema)
   note(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
     @Arg("body", { description: "Note body" }) body: string,
@@ -245,6 +262,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "link", description: "Link a thread to another Ravi object" })
+  @Returns(threadLinkReturnSchema)
   link(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
     @Arg("target", { description: "Target pointer, e.g. chat:<id>" }) target: string,
@@ -272,9 +290,11 @@ export class ThreadCommands {
     console.log(
       `✅ Linked ${thread.slug ?? thread.id} -> ${formatThreadPointer({ type: link.targetType, id: link.targetId })}`,
     );
+    return payload;
   }
 
   @Command({ name: "entries", description: "List thread entries" })
+  @Returns(threadEntriesReturnSchema)
   entries(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
     @Option({ flags: "--scope <type:id>", description: "Scope when resolving a slug" }) scope?: string,
@@ -297,9 +317,11 @@ export class ThreadCommands {
     for (const entry of entries) {
       console.log(`${formatDate(entry.createdAt)} [${entry.kind}] ${entry.body}`);
     }
+    return payload;
   }
 
   @Command({ name: "brief", description: "Render the bounded thread brief used for handoff" })
+  @Returns(threadBriefReturnSchema)
   brief(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
     @Option({ flags: "--scope <type:id>", description: "Scope when resolving a slug" }) scope?: string,
@@ -313,9 +335,11 @@ export class ThreadCommands {
       return payload;
     }
     console.log(brief.text);
+    return payload;
   }
 
   @Command({ name: "close", description: "Close a thread" })
+  @Returns(threadActionReturnSchema)
   close(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
     @Option({ flags: "--scope <type:id>", description: "Scope when resolving a slug" }) scope?: string,
@@ -330,6 +354,7 @@ export class ThreadCommands {
       return payload;
     }
     console.log(`✅ Thread closed: ${updated.slug ?? updated.id}`);
+    return payload;
   }
 
   private addEntry(
@@ -356,5 +381,6 @@ export class ThreadCommands {
       return payload;
     }
     console.log(`✅ Added ${kind}: ${entry.id}`);
+    return payload;
   }
 }

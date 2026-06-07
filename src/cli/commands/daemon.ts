@@ -8,8 +8,15 @@ import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { Group, Command, CliOnly, Option } from "../decorators.js";
+import { Group, Command, CliOnly, Option, Returns } from "../decorators.js";
 import { getContext, hasContext, fail } from "../context.js";
+import {
+  daemonEnvReturnSchema,
+  daemonInitAdminKeyReturnSchema,
+  daemonLogsReturnSchema,
+  daemonMutationReturnSchema,
+  daemonStatusReturnSchema,
+} from "./operational-return-schemas.js";
 import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
@@ -304,6 +311,7 @@ function requirePm2() {
 })
 export class DaemonCommands {
   @Command({ name: "start", description: "Start the daemon via PM2" })
+  @Returns(daemonMutationReturnSchema)
   start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
 
@@ -364,6 +372,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "stop", description: "Stop the daemon" })
+  @Returns(daemonMutationReturnSchema)
   stop(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
 
@@ -404,6 +413,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "restart", description: "Restart the daemon" })
+  @Returns(daemonMutationReturnSchema)
   restart(
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
@@ -577,6 +587,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "status", description: "Show daemon and infrastructure status" })
+  @Returns(daemonStatusReturnSchema)
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const payload = buildDaemonStatusJson();
     if (asJson) {
@@ -624,6 +635,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "logs", description: "Show daemon logs (PM2)" })
+  @Returns(daemonLogsReturnSchema)
   logs(
     @Option({ flags: "-f, --follow", description: "Follow log output" }) follow?: boolean,
     @Option({ flags: "-t, --tail <lines>", description: "Number of lines to show", defaultValue: "50" }) tail?: string,
@@ -759,6 +771,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "install", description: "Save PM2 process list and suggest startup" })
+  @Returns(daemonMutationReturnSchema)
   install(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
     const result = asJson ? runPm2Quiet(["save"]) : runPm2(["save"]);
@@ -778,6 +791,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "uninstall", description: "Remove ravi from PM2 and clean up" })
+  @Returns(daemonMutationReturnSchema)
   uninstall(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
 
@@ -885,6 +899,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "env", description: "Edit environment file (~/.ravi/.env)" })
+  @Returns(daemonEnvReturnSchema)
   env(@Option({ flags: "--json", description: "Print raw JSON result without opening an editor" }) asJson?: boolean) {
     mkdirSync(RAVI_DIR, { recursive: true });
 
@@ -954,6 +969,7 @@ ANTHROPIC_API_KEY=
     name: "init-admin-key",
     description: "Bootstrap the admin runtime context-key. Refuses to run if any live admin context already exists.",
   })
+  @Returns(daemonInitAdminKeyReturnSchema)
   initAdminKey(
     @Option({ flags: "--label <name>", description: "Label for the bootstrap context (default: hostname)" })
     label?: string,

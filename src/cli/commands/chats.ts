@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { Arg, Command, Group, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
+import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import {
   dbAddChatToReadingList,
   dbBackfillChatMessageProviderTimestamps,
@@ -697,3 +698,19 @@ export class ChatReadingListCommands {
     return payload;
   }
 }
+
+declareCommandReturns(ChatsCommands, {
+  backfillProviderTimestamps: commandEnvelopeReturnSchema,
+  list: commandEnvelopeReturnSchema,
+  read: commandEnvelopeReturnSchema,
+});
+
+declareCommandReturns(ChatReadingListCommands, {
+  add: commandEnvelopeReturnSchema,
+  create: commandEnvelopeReturnSchema,
+  delta: commandEnvelopeReturnSchema,
+  list: commandEnvelopeReturnSchema,
+  markRead: commandEnvelopeReturnSchema,
+  members: commandEnvelopeReturnSchema,
+  remove: commandEnvelopeReturnSchema,
+});

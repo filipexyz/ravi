@@ -32,10 +32,7 @@
           "query": {
             "operation": "apps.list"
           },
-          "refreshOn": [
-            "ravi.apps.changed",
-            "ravi.apps.checked"
-          ],
+          "refreshOn": ["ravi.apps.changed", "ravi.apps.checked"],
           "actions": [
             {
               "id": "check",
@@ -43,6 +40,21 @@
               "icon": "shield-check",
               "operation": "apps.check",
               "placement": "toolbar"
+            },
+            {
+              "id": "guide",
+              "label": "Guide",
+              "icon": "book-open",
+              "operation": "apps.guide",
+              "placement": "toolbar"
+            },
+            {
+              "id": "scaffold",
+              "label": "Scaffold",
+              "icon": "plus",
+              "operation": "apps.scaffold",
+              "placement": "toolbar",
+              "permission": "apps:write"
             }
           ]
         }
@@ -61,12 +73,31 @@
       "command": "ravi apps check {id} --json",
       "mutating": false,
       "outputSchema": "schemas/apps-check.v1.json"
+    },
+    "apps.guide": {
+      "interface": "cli",
+      "command": "ravi apps guide {id} --json",
+      "mutating": false,
+      "outputSchema": "schemas/apps-guide.v1.json"
+    },
+    "apps.prompts": {
+      "interface": "cli",
+      "command": "ravi apps prompts {id} --json",
+      "mutating": false,
+      "outputSchema": "schemas/apps-guide.v1.json"
+    },
+    "apps.scaffold": {
+      "interface": "cli",
+      "command": "ravi apps scaffold {id} --json",
+      "mutating": true,
+      "permission": "apps:write",
+      "outputSchema": "schemas/apps-scaffold.v1.json"
     }
   },
   "permissions": {
     "required": [],
     "optional": [],
-    "mutating": []
+    "mutating": ["apps:write"]
   },
   "storage": {
     "sqlite": [],
@@ -77,10 +108,7 @@
     "emits": [],
     "consumes": []
   },
-  "skills": [
-    "ravi-dev-cli-creator",
-    "ravi-system-specs"
-  ],
+  "skills": ["ravi-system-apps", "ravi-dev-cli-creator", "ravi-system-specs"],
   "health": {
     "checks": [
       {

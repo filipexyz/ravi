@@ -4,10 +4,14 @@ import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
+  buildAppsGuide,
   checkAppManifests,
   discoverAppManifests,
   getAppManifest,
   normalizeAppSource,
+  scaffoldApp,
+  printAppRunResult,
+  runAppOperation,
   type RaviAppManifestRecord,
 } from "../../apps/index.js";
 
@@ -76,6 +80,66 @@ const appsCheckReturnSchema = z.object({
   ok: z.boolean(),
   checked: z.number(),
   results: z.array(appCheckResultSchema),
+});
+
+const appScaffoldFileSchema = z.object({
+  kind: z.enum(["manifest", "spec", "skill"]),
+  path: z.string(),
+  action: z.enum(["planned", "created", "overwritten"]),
+});
+
+const appsScaffoldReturnSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  command: z.string(),
+  dryRun: z.boolean(),
+  force: z.boolean(),
+  manifestPath: z.string(),
+  specPath: z.string().nullable(),
+  skillPath: z.string().nullable(),
+  skill: z.string().nullable(),
+  files: z.array(appScaffoldFileSchema),
+  manifest: z.unknown(),
+  nextCommands: z.array(z.string()),
+});
+
+const appGuidePromptSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  prompt: z.string(),
+  commands: z.array(z.string()),
+});
+
+const appsGuideReturnSchema = z.object({
+  appId: z.string().nullable(),
+  app: appDetailSchema.nullable(),
+  skill: z.string(),
+  skillGate: z.object({
+    group: z.string(),
+    skill: z.string(),
+  }),
+  prompts: z.array(appGuidePromptSchema),
+  nextCommands: z.array(z.string()),
+});
+
+const appsRunReturnSchema = z.object({
+  ok: z.boolean(),
+  appId: z.string().nullable(),
+  operation: z.string().nullable(),
+  operationId: z.string().nullable(),
+  interface: z.enum(["builtin", "cli", "sdk", "tool", "stream"]).nullable(),
+  mutating: z.boolean(),
+  status: z.enum(["completed", "failed"]),
+  durationMs: z.number(),
+  result: z.unknown().optional(),
+  error: z.string().optional(),
+  command: z.string().optional(),
+  handler: z.string().optional(),
+  channel: z.string().optional(),
+  exitCode: z.number().nullable().optional(),
+  stdout: z.string().optional(),
+  stderr: z.string().optional(),
 });
 
 function toSummary(record: RaviAppManifestRecord): z.infer<typeof appSummarySchema> {
@@ -235,6 +299,120 @@ export class AppsCommands {
         for (const warning of result.warnings) console.log(`  - ${warning}`);
       }
       if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+      return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({ name: "run", description: "Run a Ravi app operation through the runtime app router" })
+  @Returns(appsRunReturnSchema)
+  async run(
+    @Arg("id", { description: "App id" }) id: string,
+    @Arg("operation", { required: false, description: "Operation name. Defaults to app help." }) operation?: string,
+    @Arg("args", { required: false, variadic: true, description: "Operation arguments" }) rest?: string[],
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const wantsJson = asJson === true || getContext()?.suppressCliOutput === true;
+    const result = await runAppOperation({
+      appId: id,
+      operation,
+      args: rest ?? [],
+      json: wantsJson,
+    });
+
+    printAppRunResult(result, { json: wantsJson });
+    if (!result.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+    return result;
+  }
+
+  @Command({ name: "scaffold", description: "Create a Ravi app scaffold from the app contract" })
+  @Returns(appsScaffoldReturnSchema)
+  scaffold(
+    @Arg("id", { description: "Stable app id, e.g. music or music/player" }) id: string,
+    @Option({ flags: "--name <name>", description: "Human display name" }) name?: string,
+    @Option({ flags: "--description <text>", description: "Short app description" }) description?: string,
+    @Option({ flags: "--command <command>", description: "Canonical CLI command (default: ravi <id>)" })
+    command?: string,
+    @Option({ flags: "--dry-run", description: "Print planned files without writing" }) dryRun?: boolean,
+    @Option({ flags: "--force", description: "Overwrite existing scaffold files" }) force?: boolean,
+    @Option({ flags: "--skip-ui", description: "Do not include interfaces.ui in the manifest" }) skipUi?: boolean,
+    @Option({ flags: "--skip-skill", description: "Do not create a skill skeleton" }) skipSkill?: boolean,
+    @Option({ flags: "--skip-spec", description: "Do not create an app spec skeleton" }) skipSpec?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const payload = scaffoldApp({
+        id,
+        name,
+        description,
+        command,
+        dryRun,
+        force,
+        includeUi: skipUi !== true,
+        includeSkill: skipSkill !== true,
+        includeSpec: skipSpec !== true,
+      });
+
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      console.log(`${payload.dryRun ? "Planned" : "Created"} Ravi app scaffold: ${payload.id}`);
+      for (const file of payload.files) {
+        console.log(`- ${file.action} ${file.kind}: ${file.path}`);
+      }
+      console.log("\nNext commands:");
+      for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
+      return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({ name: "guide", description: "Print agent guidance for discovering, scaffolding, and operating Ravi apps" })
+  @Returns(appsGuideReturnSchema)
+  guide(
+    @Arg("id", { required: false, description: "Optional app id for app-specific prompts" }) id?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return this.printGuide(id, asJson);
+  }
+
+  @Command({ name: "prompts", description: "Print all built-in Ravi apps agent prompts" })
+  @Returns(appsGuideReturnSchema)
+  prompts(
+    @Arg("id", { required: false, description: "Optional app id for app-specific prompts" }) id?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return this.printGuide(id, asJson);
+  }
+
+  private printGuide(id?: string, asJson?: boolean): z.infer<typeof appsGuideReturnSchema> | undefined {
+    try {
+      const guide = buildAppsGuide(id);
+      const payload = {
+        ...guide,
+        app: guide.app ? toDetail(guide.app) : null,
+      };
+
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      console.log("Ravi Apps guide");
+      console.log(`skill: ${payload.skill}`);
+      console.log(`skill gate: ${payload.skillGate.group} -> ${payload.skillGate.skill}`);
+      if (payload.app) {
+        console.log(`app: ${payload.app.id} (${payload.app.interfaceNames.join(", ") || "no interfaces"})`);
+      }
+      for (const prompt of payload.prompts) {
+        console.log(`\n${prompt.id}: ${prompt.title}`);
+        console.log(prompt.prompt);
+        for (const command of prompt.commands) console.log(`  ${command}`);
+      }
       return payload;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));

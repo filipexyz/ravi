@@ -186,11 +186,15 @@ The native inbox email event payload MUST carry local ids first:
 - `mail.threadId`
 - `mail.mailboxId`
 - `sourceDomain: "mail"`
-- safe list/triage fields such as subject, snippet, sender summary, status,
-  priority, and timestamps
+- safe list/triage fields such as subject, snippet, structured sender/recipient
+  addresses (`mail.from`, `mail.to`), exact display text (`mail.fromText`,
+  `mail.toText`), status, priority, and timestamps
 
 The native inbox email event MUST NOT expose provider tokens, raw MIME,
-attachments, `bodyText`, `bodyHtml`, or Console delivery-only leasing fields.
+attachment bytes, remote URLs, decrypted attachment content, `bodyText`,
+`bodyHtml`, or Console delivery-only leasing fields. It MAY include bounded
+attachment metadata already persisted in `mail/local-mailbox`, such as id,
+filename, content type, size, SHA-256, status, and provider attachment id.
 Repeated provider delivery or local replay of the same mail message MUST NOT
 emit another new-email inbox event.
 

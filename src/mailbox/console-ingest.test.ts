@@ -43,6 +43,17 @@ describe("console mail event ingest", () => {
             },
             bodyText: "conteudo completo",
             bodyHtml: "<p>conteudo completo</p>",
+            attachments: [
+              {
+                id: "remote_att_1",
+                filename: "contrato.pdf",
+                contentType: "application/pdf",
+                sizeBytes: 12345,
+                sha256: "sha256:abc",
+                status: "unscanned",
+                hasEncryptedObject: true,
+              },
+            ],
             enrichment: { status: "enriched" },
           },
         },
@@ -65,6 +76,16 @@ describe("console mail event ingest", () => {
       bodyText: "conteudo completo",
       bodyRedactionStatus: "full_local",
     });
+    expect(message.attachments).toEqual([
+      expect.objectContaining({
+        filename: "contrato.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 12345,
+        sha256: "sha256:abc",
+        providerAttachmentId: "remote_att_1",
+        redactionStatus: "unscanned",
+      }),
+    ]);
     expect(message.addresses.map((address) => `${address.kind}:${address.address}`)).toContain(
       "from:sender@example.com",
     );
@@ -84,6 +105,7 @@ describe("console mail event ingest", () => {
           mailboxAddress: "nx-luis@ravi.bot",
           subject: "Primeira versao",
           bodyText: "body 1",
+          attachments: [{ id: "remote_att_1", filename: "one.pdf" }],
         },
       },
     });
@@ -101,6 +123,7 @@ describe("console mail event ingest", () => {
           mailboxAddress: "nx-luis@ravi.bot",
           subject: "Segunda versao",
           bodyText: "body 2",
+          attachments: [{ id: "remote_att_2", filename: "two.pdf" }],
         },
       },
     });
@@ -109,7 +132,14 @@ describe("console mail event ingest", () => {
     expect(second.status).toBe("ingested");
     expect(first.message?.id).toBe(second.message?.id);
     expect(listMailMessages()).toHaveLength(1);
-    expect(readMailMessage(first.message!.id).bodyText).toBe("body 2");
+    const message = readMailMessage(first.message!.id);
+    expect(message.bodyText).toBe("body 2");
+    expect(message.attachments).toEqual([
+      expect.objectContaining({
+        filename: "two.pdf",
+        providerAttachmentId: "remote_att_2",
+      }),
+    ]);
     expect(listLocalInboxItems({ sourceDomain: "mail" })).toHaveLength(1);
   });
 

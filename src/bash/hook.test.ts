@@ -1,86 +1,54 @@
-import { afterAll, describe, expect, it, beforeEach, mock } from "bun:test";
-
-afterAll(() => mock.restore());
-
-const actualCliContextModule = await import("../cli/context.js");
-
-// ============================================================================
-// Mock dependencies
-// ============================================================================
-
-let relations: Array<{
-  subjectType: string;
-  subjectId: string;
-  relation: string;
-  objectType: string;
-  objectId: string;
-}> = [];
-
-mock.module("../permissions/relations.js", () => ({
-  hasRelation: (
-    subjectType: string,
-    subjectId: string,
-    relation: string,
-    objectType: string,
-    objectId: string,
-  ): boolean => {
-    return relations.some(
-      (r) =>
-        r.subjectType === subjectType &&
-        r.subjectId === subjectId &&
-        r.relation === relation &&
-        r.objectType === objectType &&
-        r.objectId === objectId,
-    );
-  },
-  listRelations: (filter?: { subjectType?: string; subjectId?: string; relation?: string; objectType?: string }) => {
-    return relations.filter((r) => {
-      if (filter?.subjectType && r.subjectType !== filter.subjectType) return false;
-      if (filter?.subjectId && r.subjectId !== filter.subjectId) return false;
-      if (filter?.relation && r.relation !== filter.relation) return false;
-      if (filter?.objectType && r.objectType !== filter.objectType) return false;
-      return true;
-    });
-  },
-}));
-
-// Mock CLI context
-let mockContext:
-  | {
-      agentId?: string;
-      sessionKey?: string;
-      sessionName?: string;
-      context?: {
-        capabilities: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
-      };
-    }
-  | undefined;
-
-mock.module("../cli/context.js", () => ({
-  ...actualCliContextModule,
-  getContext: () => mockContext,
-}));
-
-// Import AFTER mocks
-const { createBashPermissionHook, createToolPermissionHook, evaluateBashPermission } = await import("./hook.js");
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { runWithContext, type ToolContext } from "../cli/context.js";
+import { listPermissionDenials } from "../permissions/denials.js";
+import { grantRelation } from "../permissions/relations.js";
+import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { createBashPermissionHook, createToolPermissionHook, evaluateBashPermission } from "./hook.js";
 
 // Helpers
 function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
-  relations.push({ subjectType, subjectId, relation, objectType, objectId });
+  grantRelation(subjectType, subjectId, relation, objectType, objectId, "test");
+}
+
+function makeToolContext(agentId: string, capabilities: ContextCapability[], kind = "test-runtime"): ToolContext {
+  const context: ContextRecord = {
+    contextId: `test-${agentId}`,
+    contextKey: `test-key-${agentId}`,
+    kind,
+    agentId,
+    capabilities,
+    createdAt: 0,
+  };
+
+  return { agentId, context };
 }
 
 const dummyContext = { signal: new AbortController().signal };
+let stateDir: string | null = null;
 
-async function callBashHook(command: string, agentId?: string) {
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-bash-hook-test-");
+});
+
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
+});
+
+async function callBashHook(command: string, agentId?: string, context?: ToolContext) {
   const hook = createBashPermissionHook({ getAgentId: () => agentId });
   const hookFn = hook.hooks[0];
-  return hookFn({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } }, null, dummyContext);
+  const run = () =>
+    hookFn({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } }, null, dummyContext);
+  return context ? runWithContext(context, run) : run();
 }
 
-async function callToolHook(toolName: string, agentId?: string) {
+async function callToolHook(toolName: string, agentId?: string, context?: ToolContext) {
   const hook = createToolPermissionHook({ getAgentId: () => agentId });
   const hookFn = hook.hooks[0];
-  return hookFn({ hook_event_name: "PreToolUse", tool_name: toolName, tool_input: {} }, null, dummyContext);
+  const run = () => hookFn({ hook_event_name: "PreToolUse", tool_name: toolName, tool_input: {} }, null, dummyContext);
+  return context ? runWithContext(context, run) : run();
 }
 
 function isDenied(result: Record<string, unknown>): boolean {
@@ -98,11 +66,6 @@ function getDenyReason(result: Record<string, unknown>): string {
 // ============================================================================
 
 describe("createBashPermissionHook", () => {
-  beforeEach(() => {
-    relations = [];
-    mockContext = undefined;
-  });
-
   it("has matcher set to 'Bash'", () => {
     const hook = createBashPermissionHook({ getAgentId: () => undefined });
     expect(hook.matcher).toBe("Bash");
@@ -244,8 +207,10 @@ describe("createBashPermissionHook", () => {
   describe("session scope", () => {
     it("blocks access to unauthorized session via ravi sessions send", async () => {
       grant("agent", "test", "execute", "executable", "ravi");
-      mockContext = { agentId: "test", sessionName: "test-own" };
-      const result = await callBashHook("ravi sessions send main 'hello'", "test");
+      const result = await callBashHook("ravi sessions send main 'hello'", "test", {
+        agentId: "test",
+        sessionName: "test-own",
+      });
       expect(isDenied(result)).toBe(true);
       expect(getDenyReason(result)).toContain("session:main");
     });
@@ -253,22 +218,25 @@ describe("createBashPermissionHook", () => {
     it("allows access to authorized session", async () => {
       grant("agent", "test", "execute", "executable", "ravi");
       grant("agent", "test", "access", "session", "main");
-      mockContext = { agentId: "test", sessionName: "test-own" };
-      const result = await callBashHook("ravi sessions send main 'hello'", "test");
+      const result = await callBashHook("ravi sessions send main 'hello'", "test", {
+        agentId: "test",
+        sessionName: "test-own",
+      });
       expect(isDenied(result)).toBe(false);
     });
 
     it("allows access to own session", async () => {
       grant("agent", "test", "execute", "executable", "ravi");
-      mockContext = { agentId: "test", sessionName: "test-own" };
-      const result = await callBashHook("ravi sessions send test-own 'hello'", "test");
+      const result = await callBashHook("ravi sessions send test-own 'hello'", "test", {
+        agentId: "test",
+        sessionName: "test-own",
+      });
       expect(isDenied(result)).toBe(false);
     });
 
     it("allows non-session commands without session grants", async () => {
       grant("agent", "test", "execute", "executable", "ravi");
-      mockContext = { agentId: "test" };
-      const result = await callBashHook("ravi contacts list", "test");
+      const result = await callBashHook("ravi contacts list", "test", { agentId: "test" });
       expect(isDenied(result)).toBe(false);
     });
 
@@ -301,11 +269,6 @@ describe("createBashPermissionHook", () => {
 // ============================================================================
 
 describe("createToolPermissionHook", () => {
-  beforeEach(() => {
-    relations = [];
-    mockContext = undefined;
-  });
-
   it("has no matcher (fires for all tools)", () => {
     const hook = createToolPermissionHook({ getAgentId: () => undefined });
     expect(hook.matcher).toBeUndefined();
@@ -323,9 +286,23 @@ describe("createToolPermissionHook", () => {
   });
 
   it("blocks SDK tool without grant", async () => {
-    const result = await callToolHook("Bash", "dev");
+    const result = await callToolHook("Bash", "dev", {
+      agentId: "dev",
+      sessionKey: "agent:dev:main",
+      sessionName: "dev-main",
+    });
     expect(isDenied(result)).toBe(true);
     expect(getDenyReason(result)).toContain("tool:Bash");
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+      expect.objectContaining({
+        agentId: "dev",
+        sessionKey: "agent:dev:main",
+        sessionName: "dev-main",
+        relation: "use",
+        objectType: "tool",
+        objectId: "Bash",
+      }),
+    );
   });
 
   it("allows with wildcard tool grant", async () => {
@@ -356,19 +333,14 @@ describe("createToolPermissionHook", () => {
   });
 
   it("allows all SDK tools for live superadmin even with stale scoped capabilities", async () => {
-    mockContext = {
-      agentId: "dev",
-      context: {
-        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
-      },
-    };
+    const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Read" }]);
 
-    expect(isDenied(await callToolHook("Bash", "dev"))).toBe(true);
+    expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
 
     grant("agent", "dev", "admin", "system", "*");
 
-    expect(isDenied(await callToolHook("Bash", "dev"))).toBe(false);
-    expect(isDenied(await callToolHook("Read", "dev"))).toBe(false);
-    expect(isDenied(await callToolHook("Write", "dev"))).toBe(false);
+    expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(false);
+    expect(isDenied(await callToolHook("Read", "dev", context))).toBe(false);
+    expect(isDenied(await callToolHook("Write", "dev", context))).toBe(false);
   });
 });

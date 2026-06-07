@@ -1,19 +1,25 @@
 import "reflect-metadata";
-import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
+import { z } from "zod";
+import { Arg, Command, Group, Option } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import {
+  bindPageDomains,
   createPageSite,
   listPageSites,
   normalizePageVisibility,
   updatePageSite,
+  type PageDomainBindResult,
   type PagesClientDeps,
   type PageSiteCreateResult,
   type PageSiteListResult,
   type PageSitePayload,
   type PageSiteUpdateResult,
 } from "../../pages/client.js";
+import { hasContext } from "../context.js";
+import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { declareCommandReturns } from "./operational-return-schemas.js";
 
 export interface PagesCommandDeps extends PagesClientDeps {
   client?: ConsoleApiClient;
@@ -28,7 +34,6 @@ export class PagesCommands {
   constructor(private readonly deps: PagesCommandDeps = defaultPagesDeps()) {}
 
   @Command({ name: "list", description: "List Ravi Pages sites in a Console project" })
-  @CliOnly()
   async list(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -60,7 +65,6 @@ export class PagesCommands {
   }
 
   @Command({ name: "create", description: "Create a Ravi Pages site in a Console project" })
-  @CliOnly()
   async create(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Arg("slug", { description: "Hosted subdomain slug, e.g. demo for demo.ravi.page" }) slug: string,
@@ -88,7 +92,6 @@ export class PagesCommands {
   }
 
   @Command({ name: "update", description: "Update a Ravi Pages site in a Console project" })
-  @CliOnly()
   async update(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Arg("site", { description: "Pages site id or slug" }) site: string,
@@ -113,7 +116,6 @@ export class PagesCommands {
   }
 
   @Command({ name: "visibility", description: "Set a Ravi Pages site default visibility" })
-  @CliOnly()
   async visibility(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Arg("site", { description: "Pages site id or slug" }) site: string,
@@ -135,11 +137,86 @@ export class PagesCommands {
       return result;
     });
   }
+
+  @Command({ name: "domains", description: "Bind custom hostnames to a Ravi Pages site" })
+  async domains(
+    @Arg("project", { description: "Console project id or slug" }) project: string,
+    @Arg("site", { description: "Pages site id or slug" }) site: string,
+    @Arg("hostnames", { variadic: true, description: "Custom hostname(s), e.g. www.example.com" })
+    hostnames: string[],
+    @Option({ flags: "--check", description: "Run provider readiness check after binding" }) check?: boolean,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand(asJson, async () => {
+      const result = await bindPageDomains(
+        {
+          project,
+          site,
+          hostnames,
+          check,
+          console: consoleUrl,
+        },
+        this.deps,
+      );
+      printPayload(result, asJson, () => printDomainBindings(result));
+      return result;
+    });
+  }
 }
 
 function defaultPagesDeps(): PagesCommandDeps {
   return {};
 }
+
+const pageSiteSchema = jsonObjectSchema;
+
+const pagesListReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  projectRef: z.string(),
+  total: z.number(),
+  pagination: strictCliOffsetPaginationSchema,
+  sites: z.array(pageSiteSchema),
+  items: z.array(pageSiteSchema),
+});
+
+const pageSiteCreateReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  projectRef: z.string(),
+  site: pageSiteSchema,
+  url: z.string().nullable(),
+});
+
+const pageSiteUpdateReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  projectRef: z.string(),
+  siteRef: z.string(),
+  site: pageSiteSchema,
+  edgeManifestRepair: jsonValueSchema,
+  url: z.string().nullable(),
+});
+
+const pageDomainBindReturnSchema = z.object({
+  success: z.literal(true),
+  bindings: z.array(pageSiteSchema),
+  consoleUrl: z.string(),
+  hostnames: z.array(z.string()),
+  projectRef: z.string(),
+  site: pageSiteSchema,
+  siteRef: z.string(),
+  total: z.number(),
+});
+
+declareCommandReturns(PagesCommands, {
+  list: pagesListReturnSchema,
+  create: pageSiteCreateReturnSchema,
+  update: pageSiteUpdateReturnSchema,
+  visibility: pageSiteUpdateReturnSchema,
+  domains: pageDomainBindReturnSchema,
+});
 
 async function runPagesCommand<T>(asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
   try {
@@ -154,6 +231,7 @@ async function runPagesCommand<T>(asJson: boolean | undefined, run: () => Promis
         console.error("Next: run `ravi login`.");
       }
     }
+    if (hasContext()) throw cloudError;
     process.exit(cloudError.exitCode);
   }
 }
@@ -205,6 +283,17 @@ function printUpdatedSite(result: PageSiteUpdateResult): void {
   const repair = objectValue(result.edgeManifestRepair);
   if (repair?.status) console.log(`  Edge:       ${repair.status}`);
   if (result.url) console.log(`  URL:        ${result.url}`);
+}
+
+function printDomainBindings(result: PageDomainBindResult): void {
+  console.log(`✓ Bound ${result.total} Pages domain${result.total === 1 ? "" : "s"}`);
+  printSiteFields(result.site);
+  for (const binding of result.bindings) {
+    const hostname = stringValue(binding.hostname) ?? "hostname";
+    const status = stringValue(binding.status);
+    const mode = stringValue(objectValue(binding.readiness)?.mode);
+    console.log(`  - ${hostname}${status ? `  status=${status}` : ""}${mode ? `  mode=${mode}` : ""}`);
+  }
 }
 
 function siteLabel(site: PageSitePayload): string {

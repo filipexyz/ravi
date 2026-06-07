@@ -6,6 +6,11 @@ import "reflect-metadata";
 import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import {
+  commandEnvelopeReturnSchema,
+  declareCommandReturns,
+  pagedItemsReturnSchema,
+} from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
@@ -4529,6 +4534,38 @@ export class SessionCommands {
     }
   }
 }
+
+declareCommandReturns(SessionCommands, {
+  actions: commandEnvelopeReturnSchema,
+  answer: commandEnvelopeReturnSchema,
+  ask: commandEnvelopeReturnSchema,
+  attach: commandEnvelopeReturnSchema,
+  delete: commandEnvelopeReturnSchema,
+  deleteMessage: commandEnvelopeReturnSchema,
+  detach: commandEnvelopeReturnSchema,
+  editMessage: commandEnvelopeReturnSchema,
+  execute: commandEnvelopeReturnSchema,
+  extend: commandEnvelopeReturnSchema,
+  goal: commandEnvelopeReturnSchema,
+  info: commandEnvelopeReturnSchema,
+  inform: commandEnvelopeReturnSchema,
+  keep: commandEnvelopeReturnSchema,
+  list: pagedItemsReturnSchema,
+  mute: commandEnvelopeReturnSchema,
+  prune: commandEnvelopeReturnSchema,
+  read: commandEnvelopeReturnSchema,
+  rename: commandEnvelopeReturnSchema,
+  reset: commandEnvelopeReturnSchema,
+  send: commandEnvelopeReturnSchema,
+  setDisplay: commandEnvelopeReturnSchema,
+  setModel: commandEnvelopeReturnSchema,
+  setThinking: commandEnvelopeReturnSchema,
+  setTtl: commandEnvelopeReturnSchema,
+  subscriptions: commandEnvelopeReturnSchema,
+  trace: commandEnvelopeReturnSchema,
+  unmute: commandEnvelopeReturnSchema,
+  visibility: commandEnvelopeReturnSchema,
+});
 
 function resolveAttachChat(ref: string): ReturnType<typeof dbGetChat> {
   const direct = dbGetChat(ref);

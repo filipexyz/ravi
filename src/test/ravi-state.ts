@@ -14,6 +14,7 @@ const RAVI_STATE_LOCK_STALE_MS = 60_000;
 const RAVI_STATE_LOCK_TIMEOUT_MS = 120_000;
 const pendingStateDirs = new Set<string>();
 let pendingStateCleanupRegistered = false;
+let previousAuditSuppression: string | undefined;
 
 async function acquireRaviStateLock(): Promise<void> {
   const deadline = Date.now() + RAVI_STATE_LOCK_TIMEOUT_MS;
@@ -79,6 +80,8 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
   pendingStateDirs.add(stateDir);
   ensurePendingStateCleanup();
   process.env.RAVI_STATE_DIR = stateDir;
+  previousAuditSuppression = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+  process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
   return stateDir;
 }
 
@@ -90,6 +93,12 @@ export async function cleanupIsolatedRaviState(stateDir?: string | null): Promis
   closeSessionStore();
   closeRouterDb();
   delete process.env.RAVI_STATE_DIR;
+  if (previousAuditSuppression === undefined) {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+  } else {
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousAuditSuppression;
+  }
+  previousAuditSuppression = undefined;
   if (stateDir) pendingStateDirs.add(stateDir);
   releaseRaviStateLock();
 }

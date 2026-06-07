@@ -44,6 +44,19 @@ describe("mail inbox payload enrichment", () => {
           }),
         };
       },
+      async () => ({
+        attachments: [
+          {
+            id: "remote_att_1",
+            filename: "contrato.pdf",
+            contentType: "application/pdf",
+            sizeBytes: 12345,
+            sha256: "sha256:abc",
+            status: "unscanned",
+            hasEncryptedObject: true,
+          },
+        ],
+      }),
       { now: () => "2026-06-01T12:00:00.000Z" },
     );
 
@@ -60,6 +73,18 @@ describe("mail inbox payload enrichment", () => {
       subject: "Re: foi",
       bodyText: "boaaaa\n\n> foi",
       bodyHtml: "<p>boaaaa</p><blockquote>foi</blockquote>",
+      attachments: [
+        {
+          id: "remote_att_1",
+          providerAttachmentId: "remote_att_1",
+          filename: "contrato.pdf",
+          contentType: "application/pdf",
+          sizeBytes: 12345,
+          sha256: "sha256:abc",
+          status: "unscanned",
+          hasEncryptedObject: true,
+        },
+      ],
       enrichment: {
         status: "enriched",
         source: "console_mail_read",

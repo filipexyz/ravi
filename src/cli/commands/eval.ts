@@ -3,10 +3,22 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { z } from "zod";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
+import { looseObjectSchema } from "../return-schemas.js";
 import { loadEvalTaskSpec } from "../../eval/spec.js";
 import { runEvalTask } from "../../eval/runner.js";
+
+const evalRunReturnSchema = z
+  .object({
+    runId: z.string(),
+    outputDir: z.string(),
+    session: looseObjectSchema,
+    execution: looseObjectSchema,
+    grade: looseObjectSchema,
+  })
+  .passthrough();
 
 @Group({
   name: "eval",
@@ -15,6 +27,7 @@ import { runEvalTask } from "../../eval/runner.js";
 })
 export class EvalCommands {
   @Command({ name: "run", description: "Run an eval task spec and persist artifacts" })
+  @Returns(evalRunReturnSchema)
   async run(
     @Arg("specPath", { description: "Path to the eval task spec JSON" }) specPath: string,
     @Option({ flags: "--output <dir>", description: "Optional output directory for run artifacts" }) output?: string,

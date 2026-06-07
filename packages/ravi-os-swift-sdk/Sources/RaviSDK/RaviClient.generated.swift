@@ -31,12 +31,28 @@ public final class RaviClient {
     AudioNamespace(transport: transport)
   }
 
+  public var bridges: BridgesNamespace {
+    BridgesNamespace(transport: transport)
+  }
+
+  public var calendar: CalendarNamespace {
+    CalendarNamespace(transport: transport)
+  }
+
   public var chats: ChatsNamespace {
     ChatsNamespace(transport: transport)
   }
 
+  public var cloud: CloudNamespace {
+    CloudNamespace(transport: transport)
+  }
+
   public var commands: CommandsNamespace {
     CommandsNamespace(transport: transport)
+  }
+
+  public var connectors: ConnectorsNamespace {
+    ConnectorsNamespace(transport: transport)
   }
 
   public var contacts: ContactsNamespace {
@@ -71,6 +87,10 @@ public final class RaviClient {
     EvalNamespace(transport: transport)
   }
 
+  public var gmail: GmailNamespace {
+    GmailNamespace(transport: transport)
+  }
+
   public var heartbeat: HeartbeatNamespace {
     HeartbeatNamespace(transport: transport)
   }
@@ -95,12 +115,24 @@ public final class RaviClient {
     InstancesNamespace(transport: transport)
   }
 
+  public var mail: MailNamespace {
+    MailNamespace(transport: transport)
+  }
+
   public var media: MediaNamespace {
     MediaNamespace(transport: transport)
   }
 
+  public var metrics: MetricsNamespace {
+    MetricsNamespace(transport: transport)
+  }
+
   public var observers: ObserversNamespace {
     ObserversNamespace(transport: transport)
+  }
+
+  public var pages: PagesNamespace {
+    PagesNamespace(transport: transport)
   }
 
   public var permissions: PermissionsNamespace {
@@ -139,10 +171,6 @@ public final class RaviClient {
     SelfNamespace(transport: transport)
   }
 
-  public var service: ServiceNamespace {
-    ServiceNamespace(transport: transport)
-  }
-
   public var sessions: SessionsNamespace {
     SessionsNamespace(transport: transport)
   }
@@ -165,6 +193,10 @@ public final class RaviClient {
 
   public var stickers: StickersNamespace {
     StickersNamespace(transport: transport)
+  }
+
+  public var sync: SyncNamespace {
+    SyncNamespace(transport: transport)
   }
 
   public var tagRules: TagRulesNamespace {
@@ -339,10 +371,45 @@ public struct AppsNamespace: Sendable {
     return try await transport.call(groupSegments: ["apps"], command: "check", body: requestBody, as: AppsCheckReturn.self)
   }
 
+  public func guide(_ id: String? = nil) async throws -> AppsGuideReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    return try await transport.call(groupSegments: ["apps"], command: "guide", body: requestBody, as: AppsGuideReturn.self)
+  }
+
   public func list(_ options: AppsListOptions = .init()) async throws -> AppsListReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["apps"], command: "list", body: requestBody, as: AppsListReturn.self)
+  }
+
+  public func prompts(_ id: String? = nil) async throws -> AppsPromptsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    return try await transport.call(groupSegments: ["apps"], command: "prompts", body: requestBody, as: AppsPromptsReturn.self)
+  }
+
+  public func run(_ id: String, _ operation: String? = nil, _ args: [String]? = nil) async throws -> AppsRunReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    if let operation {
+      requestBody["operation"] = try RaviJSON.fromEncodable(operation)
+    }
+    if let args {
+      requestBody["args"] = try RaviJSON.fromEncodable(args)
+    }
+    return try await transport.call(groupSegments: ["apps"], command: "run", body: requestBody, as: AppsRunReturn.self)
+  }
+
+  public func scaffold(_ id: String, _ options: AppsScaffoldOptions = .init()) async throws -> AppsScaffoldReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["apps"], command: "scaffold", body: requestBody, as: AppsScaffoldReturn.self)
   }
 
   public func show(_ id: String) async throws -> AppsShowReturn {
@@ -488,6 +555,208 @@ public struct AudioNamespace: Sendable {
   }
 }
 
+public struct BridgesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ options: BridgesCreateOptions = .init()) async throws -> BridgesCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bridges"], command: "create", body: requestBody, as: BridgesCreateReturn.self)
+  }
+
+  public func list(_ options: BridgesListOptions = .init()) async throws -> BridgesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bridges"], command: "list", body: requestBody, as: BridgesListReturn.self)
+  }
+
+  public func revoke(_ id: String, _ options: BridgesRevokeOptions = .init()) async throws -> BridgesRevokeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bridges"], command: "revoke", body: requestBody, as: BridgesRevokeReturn.self)
+  }
+}
+
+public struct CalendarNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var accounts: CalendarAccountsNamespace {
+    CalendarAccountsNamespace(transport: transport)
+  }
+
+  public var calendars: CalendarCalendarsNamespace {
+    CalendarCalendarsNamespace(transport: transport)
+  }
+
+  public var events: CalendarEventsNamespace {
+    CalendarEventsNamespace(transport: transport)
+  }
+
+  public var outbox: CalendarOutboxNamespace {
+    CalendarOutboxNamespace(transport: transport)
+  }
+
+  public func availability(_ options: CalendarAvailabilityOptions = .init()) async throws -> CalendarAvailabilityReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar"], command: "availability", body: requestBody, as: CalendarAvailabilityReturn.self)
+  }
+}
+
+public struct CalendarAccountsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ options: CalendarAccountsCreateOptions = .init()) async throws -> CalendarAccountsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","accounts"], command: "create", body: requestBody, as: CalendarAccountsCreateReturn.self)
+  }
+
+  public func list(_ options: CalendarAccountsListOptions = .init()) async throws -> CalendarAccountsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","accounts"], command: "list", body: requestBody, as: CalendarAccountsListReturn.self)
+  }
+
+  public func sync(_ account: String, _ options: CalendarAccountsSyncOptions = .init()) async throws -> CalendarAccountsSyncReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["account"] = try RaviJSON.fromEncodable(account)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","accounts"], command: "sync", body: requestBody, as: CalendarAccountsSyncReturn.self)
+  }
+}
+
+public struct CalendarCalendarsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ options: CalendarCalendarsCreateOptions = .init()) async throws -> CalendarCalendarsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","calendars"], command: "create", body: requestBody, as: CalendarCalendarsCreateReturn.self)
+  }
+
+  public func disable(_ calendar: String) async throws -> CalendarCalendarsDisableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["calendar"] = try RaviJSON.fromEncodable(calendar)
+    return try await transport.call(groupSegments: ["calendar","calendars"], command: "disable", body: requestBody, as: CalendarCalendarsDisableReturn.self)
+  }
+
+  public func list(_ options: CalendarCalendarsListOptions = .init()) async throws -> CalendarCalendarsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","calendars"], command: "list", body: requestBody, as: CalendarCalendarsListReturn.self)
+  }
+
+  public func share(_ calendar: String, _ options: CalendarCalendarsShareOptions = .init()) async throws -> CalendarCalendarsShareReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["calendar"] = try RaviJSON.fromEncodable(calendar)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","calendars"], command: "share", body: requestBody, as: CalendarCalendarsShareReturn.self)
+  }
+
+  public func show(_ calendar: String, _ options: CalendarCalendarsShowOptions = .init()) async throws -> CalendarCalendarsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["calendar"] = try RaviJSON.fromEncodable(calendar)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","calendars"], command: "show", body: requestBody, as: CalendarCalendarsShowReturn.self)
+  }
+}
+
+public struct CalendarEventsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func cancel(_ event: String, _ options: CalendarEventsCancelOptions = .init()) async throws -> CalendarEventsCancelReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["event"] = try RaviJSON.fromEncodable(event)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","events"], command: "cancel", body: requestBody, as: CalendarEventsCancelReturn.self)
+  }
+
+  public func create(_ options: CalendarEventsCreateOptions = .init()) async throws -> CalendarEventsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","events"], command: "create", body: requestBody, as: CalendarEventsCreateReturn.self)
+  }
+
+  public func list(_ options: CalendarEventsListOptions = .init()) async throws -> CalendarEventsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","events"], command: "list", body: requestBody, as: CalendarEventsListReturn.self)
+  }
+
+  public func read(_ event: String) async throws -> CalendarEventsReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["event"] = try RaviJSON.fromEncodable(event)
+    return try await transport.call(groupSegments: ["calendar","events"], command: "read", body: requestBody, as: CalendarEventsReadReturn.self)
+  }
+
+  public func respond(_ event: String, _ options: CalendarEventsRespondOptions = .init()) async throws -> CalendarEventsRespondReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["event"] = try RaviJSON.fromEncodable(event)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","events"], command: "respond", body: requestBody, as: CalendarEventsRespondReturn.self)
+  }
+
+  public func update(_ event: String, _ options: CalendarEventsUpdateOptions = .init()) async throws -> CalendarEventsUpdateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["event"] = try RaviJSON.fromEncodable(event)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","events"], command: "update", body: requestBody, as: CalendarEventsUpdateReturn.self)
+  }
+}
+
+public struct CalendarOutboxNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func inspect(_ outbox: String) async throws -> CalendarOutboxInspectReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["outbox"] = try RaviJSON.fromEncodable(outbox)
+    return try await transport.call(groupSegments: ["calendar","outbox"], command: "inspect", body: requestBody, as: CalendarOutboxInspectReturn.self)
+  }
+
+  public func list(_ options: CalendarOutboxListOptions = .init()) async throws -> CalendarOutboxListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["calendar","outbox"], command: "list", body: requestBody, as: CalendarOutboxListReturn.self)
+  }
+
+  public func retry(_ outbox: String) async throws -> CalendarOutboxRetryReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["outbox"] = try RaviJSON.fromEncodable(outbox)
+    return try await transport.call(groupSegments: ["calendar","outbox"], command: "retry", body: requestBody, as: CalendarOutboxRetryReturn.self)
+  }
+
+  public func status() async throws -> CalendarOutboxStatusReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["calendar","outbox"], command: "status", body: requestBody, as: CalendarOutboxStatusReturn.self)
+  }
+}
+
 public struct ChatsNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -579,6 +848,39 @@ public struct ChatsListsNamespace: Sendable {
   }
 }
 
+public struct CloudNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var projects: CloudProjectsNamespace {
+    CloudProjectsNamespace(transport: transport)
+  }
+}
+
+public struct CloudProjectsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ slug: String, _ options: CloudProjectsCreateOptions = .init()) async throws -> CloudProjectsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["slug"] = try RaviJSON.fromEncodable(slug)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["cloud","projects"], command: "create", body: requestBody, as: CloudProjectsCreateReturn.self)
+  }
+
+  public func list(_ options: CloudProjectsListOptions = .init()) async throws -> CloudProjectsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["cloud","projects"], command: "list", body: requestBody, as: CloudProjectsListReturn.self)
+  }
+}
+
 public struct CommandsNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -613,6 +915,33 @@ public struct CommandsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["commands"], command: "validate", body: requestBody, as: CommandsValidateReturn.self)
+  }
+}
+
+public struct ConnectorsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ options: ConnectorsListOptions = .init()) async throws -> ConnectorsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["connectors"], command: "list", body: requestBody, as: ConnectorsListReturn.self)
+  }
+
+  public func revoke(_ id: String, _ options: ConnectorsRevokeOptions = .init()) async throws -> ConnectorsRevokeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["connectors"], command: "revoke", body: requestBody, as: ConnectorsRevokeReturn.self)
+  }
+
+  public func show(_ id: String) async throws -> ConnectorsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["connectors"], command: "show", body: requestBody, as: ConnectorsShowReturn.self)
   }
 }
 
@@ -1603,6 +1932,27 @@ public struct EvalNamespace: Sendable {
   }
 }
 
+public struct GmailNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ options: GmailListOptions = .init()) async throws -> GmailListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["gmail"], command: "list", body: requestBody, as: GmailListReturn.self)
+  }
+
+  public func read(_ id: String, _ options: GmailReadOptions = .init()) async throws -> GmailReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["gmail"], command: "read", body: requestBody, as: GmailReadReturn.self)
+  }
+}
+
 public struct HeartbeatNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -2040,6 +2390,319 @@ public struct InstancesRoutesNamespace: Sendable {
   }
 }
 
+public struct MailNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var accounts: MailAccountsNamespace {
+    MailAccountsNamespace(transport: transport)
+  }
+
+  public var domains: MailDomainsNamespace {
+    MailDomainsNamespace(transport: transport)
+  }
+
+  public var mailboxes: MailMailboxesNamespace {
+    MailMailboxesNamespace(transport: transport)
+  }
+
+  public var messages: MailMessagesNamespace {
+    MailMessagesNamespace(transport: transport)
+  }
+
+  public var outbox: MailOutboxNamespace {
+    MailOutboxNamespace(transport: transport)
+  }
+
+  public var providers: MailProvidersNamespace {
+    MailProvidersNamespace(transport: transport)
+  }
+
+  public var threads: MailThreadsNamespace {
+    MailThreadsNamespace(transport: transport)
+  }
+
+  public func reply(_ message: String, _ options: MailReplyOptions = .init()) async throws -> MailReplyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["message"] = try RaviJSON.fromEncodable(message)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail"], command: "reply", body: requestBody, as: MailReplyReturn.self)
+  }
+
+  public func send(_ options: MailSendOptions = .init()) async throws -> MailSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail"], command: "send", body: requestBody, as: MailSendReturn.self)
+  }
+}
+
+public struct MailAccountsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ options: MailAccountsCreateOptions = .init()) async throws -> MailAccountsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","accounts"], command: "create", body: requestBody, as: MailAccountsCreateReturn.self)
+  }
+
+  public func list(_ options: MailAccountsListOptions = .init()) async throws -> MailAccountsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","accounts"], command: "list", body: requestBody, as: MailAccountsListReturn.self)
+  }
+
+  public func sync(_ account: String, _ options: MailAccountsSyncOptions = .init()) async throws -> MailAccountsSyncReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["account"] = try RaviJSON.fromEncodable(account)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","accounts"], command: "sync", body: requestBody, as: MailAccountsSyncReturn.self)
+  }
+}
+
+public struct MailDomainsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ domain: String, _ options: MailDomainsCreateOptions = .init()) async throws -> MailDomainsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["domain"] = try RaviJSON.fromEncodable(domain)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","domains"], command: "create", body: requestBody, as: MailDomainsCreateReturn.self)
+  }
+
+  public func list(_ options: MailDomainsListOptions = .init()) async throws -> MailDomainsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","domains"], command: "list", body: requestBody, as: MailDomainsListReturn.self)
+  }
+}
+
+public struct MailMailboxesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ address: String, _ options: MailMailboxesCreateOptions = .init()) async throws -> MailMailboxesCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["address"] = try RaviJSON.fromEncodable(address)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","mailboxes"], command: "create", body: requestBody, as: MailMailboxesCreateReturn.self)
+  }
+
+  public func disable(_ mailbox: String) async throws -> MailMailboxesDisableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["mailbox"] = try RaviJSON.fromEncodable(mailbox)
+    return try await transport.call(groupSegments: ["mail","mailboxes"], command: "disable", body: requestBody, as: MailMailboxesDisableReturn.self)
+  }
+
+  public func list(_ options: MailMailboxesListOptions = .init()) async throws -> MailMailboxesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","mailboxes"], command: "list", body: requestBody, as: MailMailboxesListReturn.self)
+  }
+
+  public func show(_ mailbox: String) async throws -> MailMailboxesShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["mailbox"] = try RaviJSON.fromEncodable(mailbox)
+    return try await transport.call(groupSegments: ["mail","mailboxes"], command: "show", body: requestBody, as: MailMailboxesShowReturn.self)
+  }
+}
+
+public struct MailMessagesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func import_(_ options: MailMessagesImportOptions = .init()) async throws -> MailMessagesImportReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","messages"], command: "import", body: requestBody, as: MailMessagesImportReturn.self)
+  }
+
+  public func list(_ options: MailMessagesListOptions = .init()) async throws -> MailMessagesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","messages"], command: "list", body: requestBody, as: MailMessagesListReturn.self)
+  }
+
+  public func read(_ message: String, _ options: MailMessagesReadOptions = .init()) async throws -> MailMessagesReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["message"] = try RaviJSON.fromEncodable(message)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","messages"], command: "read", body: requestBody, as: MailMessagesReadReturn.self)
+  }
+
+  public func search(_ query: String, _ options: MailMessagesSearchOptions = .init()) async throws -> MailMessagesSearchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["query"] = try RaviJSON.fromEncodable(query)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","messages"], command: "search", body: requestBody, as: MailMessagesSearchReturn.self)
+  }
+}
+
+public struct MailOutboxNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func inspect(_ outbox: String) async throws -> MailOutboxInspectReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["outbox"] = try RaviJSON.fromEncodable(outbox)
+    return try await transport.call(groupSegments: ["mail","outbox"], command: "inspect", body: requestBody, as: MailOutboxInspectReturn.self)
+  }
+
+  public func list(_ options: MailOutboxListOptions = .init()) async throws -> MailOutboxListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","outbox"], command: "list", body: requestBody, as: MailOutboxListReturn.self)
+  }
+
+  public func retry(_ outbox: String) async throws -> MailOutboxRetryReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["outbox"] = try RaviJSON.fromEncodable(outbox)
+    return try await transport.call(groupSegments: ["mail","outbox"], command: "retry", body: requestBody, as: MailOutboxRetryReturn.self)
+  }
+
+  public func status() async throws -> MailOutboxStatusReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["mail","outbox"], command: "status", body: requestBody, as: MailOutboxStatusReturn.self)
+  }
+}
+
+public struct MailProvidersNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var raviMail: MailProvidersRaviMailNamespace {
+    MailProvidersRaviMailNamespace(transport: transport)
+  }
+
+  public func list(_ options: MailProvidersListOptions = .init()) async throws -> MailProvidersListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","providers"], command: "list", body: requestBody, as: MailProvidersListReturn.self)
+  }
+}
+
+public struct MailProvidersRaviMailNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var mailboxes: MailProvidersRaviMailMailboxesNamespace {
+    MailProvidersRaviMailMailboxesNamespace(transport: transport)
+  }
+
+  public var messages: MailProvidersRaviMailMessagesNamespace {
+    MailProvidersRaviMailMessagesNamespace(transport: transport)
+  }
+
+  public func send(_ options: MailProvidersRaviMailSendOptions = .init()) async throws -> MailProvidersRaviMailSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","providers","ravi-mail"], command: "send", body: requestBody, as: MailProvidersRaviMailSendReturn.self)
+  }
+}
+
+public struct MailProvidersRaviMailMailboxesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ addressOrLocalPart: String, _ options: MailProvidersRaviMailMailboxesCreateOptions = .init()) async throws -> MailProvidersRaviMailMailboxesCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["addressOrLocalPart"] = try RaviJSON.fromEncodable(addressOrLocalPart)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","providers","ravi-mail","mailboxes"], command: "create", body: requestBody, as: MailProvidersRaviMailMailboxesCreateReturn.self)
+  }
+
+  public func disable(_ mailbox: String, _ options: MailProvidersRaviMailMailboxesDisableOptions = .init()) async throws -> MailProvidersRaviMailMailboxesDisableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["mailbox"] = try RaviJSON.fromEncodable(mailbox)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","providers","ravi-mail","mailboxes"], command: "disable", body: requestBody, as: MailProvidersRaviMailMailboxesDisableReturn.self)
+  }
+
+  public func list(_ options: MailProvidersRaviMailMailboxesListOptions = .init()) async throws -> MailProvidersRaviMailMailboxesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","providers","ravi-mail","mailboxes"], command: "list", body: requestBody, as: MailProvidersRaviMailMailboxesListReturn.self)
+  }
+
+  public func show(_ mailbox: String, _ options: MailProvidersRaviMailMailboxesShowOptions = .init()) async throws -> MailProvidersRaviMailMailboxesShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["mailbox"] = try RaviJSON.fromEncodable(mailbox)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","providers","ravi-mail","mailboxes"], command: "show", body: requestBody, as: MailProvidersRaviMailMailboxesShowReturn.self)
+  }
+}
+
+public struct MailProvidersRaviMailMessagesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ options: MailProvidersRaviMailMessagesListOptions = .init()) async throws -> MailProvidersRaviMailMessagesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","providers","ravi-mail","messages"], command: "list", body: requestBody, as: MailProvidersRaviMailMessagesListReturn.self)
+  }
+
+  public func read(_ message: String, _ options: MailProvidersRaviMailMessagesReadOptions = .init()) async throws -> MailProvidersRaviMailMessagesReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["message"] = try RaviJSON.fromEncodable(message)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","providers","ravi-mail","messages"], command: "read", body: requestBody, as: MailProvidersRaviMailMessagesReadReturn.self)
+  }
+
+  public func show(_ message: String, _ options: MailProvidersRaviMailMessagesShowOptions = .init()) async throws -> MailProvidersRaviMailMessagesShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["message"] = try RaviJSON.fromEncodable(message)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","providers","ravi-mail","messages"], command: "show", body: requestBody, as: MailProvidersRaviMailMessagesShowReturn.self)
+  }
+}
+
+public struct MailThreadsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func read(_ thread: String, _ options: MailThreadsReadOptions = .init()) async throws -> MailThreadsReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["thread"] = try RaviJSON.fromEncodable(thread)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mail","threads"], command: "read", body: requestBody, as: MailThreadsReadReturn.self)
+  }
+}
+
 public struct MediaNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -2052,6 +2715,31 @@ public struct MediaNamespace: Sendable {
     requestBody["filePath"] = try RaviJSON.fromEncodable(filePath)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["media"], command: "send", body: requestBody, as: MediaSendReturn.self)
+  }
+}
+
+public struct MetricsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func dates() async throws -> MetricsDatesReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["metrics"], command: "dates", body: requestBody, as: MetricsDatesReturn.self)
+  }
+
+  public func rollup(_ options: MetricsRollupOptions = .init()) async throws -> MetricsRollupReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["metrics"], command: "rollup", body: requestBody, as: MetricsRollupReturn.self)
+  }
+
+  public func show(_ options: MetricsShowOptions = .init()) async throws -> MetricsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["metrics"], command: "show", body: requestBody, as: MetricsShowReturn.self)
   }
 }
 
@@ -2185,6 +2873,55 @@ public struct ObserversRulesNamespace: Sendable {
   public func validate() async throws -> ObserversRulesValidateReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["observers","rules"], command: "validate", body: requestBody, as: ObserversRulesValidateReturn.self)
+  }
+}
+
+public struct PagesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ project: String, _ slug: String, _ options: PagesCreateOptions = .init()) async throws -> PagesCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["project"] = try RaviJSON.fromEncodable(project)
+    requestBody["slug"] = try RaviJSON.fromEncodable(slug)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages"], command: "create", body: requestBody, as: PagesCreateReturn.self)
+  }
+
+  public func domains(_ project: String, _ site: String, _ hostnames: [String], _ options: PagesDomainsOptions = .init()) async throws -> PagesDomainsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["project"] = try RaviJSON.fromEncodable(project)
+    requestBody["site"] = try RaviJSON.fromEncodable(site)
+    requestBody["hostnames"] = try RaviJSON.fromEncodable(hostnames)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages"], command: "domains", body: requestBody, as: PagesDomainsReturn.self)
+  }
+
+  public func list(_ project: String, _ options: PagesListOptions = .init()) async throws -> PagesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["project"] = try RaviJSON.fromEncodable(project)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages"], command: "list", body: requestBody, as: PagesListReturn.self)
+  }
+
+  public func update(_ project: String, _ site: String, _ options: PagesUpdateOptions = .init()) async throws -> PagesUpdateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["project"] = try RaviJSON.fromEncodable(project)
+    requestBody["site"] = try RaviJSON.fromEncodable(site)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages"], command: "update", body: requestBody, as: PagesUpdateReturn.self)
+  }
+
+  public func visibility(_ project: String, _ site: String, _ visibility: String, _ options: PagesVisibilityOptions = .init()) async throws -> PagesVisibilityReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["project"] = try RaviJSON.fromEncodable(project)
+    requestBody["site"] = try RaviJSON.fromEncodable(site)
+    requestBody["visibility"] = try RaviJSON.fromEncodable(visibility)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages"], command: "visibility", body: requestBody, as: PagesVisibilityReturn.self)
   }
 }
 
@@ -2935,37 +3672,15 @@ public struct SelfNamespace: Sendable {
   }
 }
 
-public struct ServiceNamespace: Sendable {
-  private let transport: any RaviTransport
-
-  init(transport: any RaviTransport) {
-    self.transport = transport
-  }
-
-  public func start() async throws -> ServiceStartReturn {
-    let requestBody: [String: RaviJSON] = [:]
-    return try await transport.call(groupSegments: ["service"], command: "start", body: requestBody, as: ServiceStartReturn.self)
-  }
-
-  public func tui(_ session: String? = nil) async throws -> ServiceTuiReturn {
-    var requestBody: [String: RaviJSON] = [:]
-    if let session {
-      requestBody["session"] = try RaviJSON.fromEncodable(session)
-    }
-    return try await transport.call(groupSegments: ["service"], command: "tui", body: requestBody, as: ServiceTuiReturn.self)
-  }
-
-  public func wa() async throws -> ServiceWaReturn {
-    let requestBody: [String: RaviJSON] = [:]
-    return try await transport.call(groupSegments: ["service"], command: "wa", body: requestBody, as: ServiceWaReturn.self)
-  }
-}
-
 public struct SessionsNamespace: Sendable {
   private let transport: any RaviTransport
 
   init(transport: any RaviTransport) {
     self.transport = transport
+  }
+
+  public var followups: SessionsFollowupsNamespace {
+    SessionsFollowupsNamespace(transport: transport)
   }
 
   public var runtime: SessionsRuntimeNamespace {
@@ -3196,6 +3911,74 @@ public struct SessionsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     return try await transport.call(groupSegments: ["sessions"], command: "visibility", body: requestBody, as: SessionsVisibilityReturn.self)
+  }
+}
+
+public struct SessionsFollowupsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func add(_ name: String, _ options: SessionsFollowupsAddOptions = .init()) async throws -> SessionsFollowupsAddReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions","followups"], command: "add", body: requestBody, as: SessionsFollowupsAddReturn.self)
+  }
+
+  public func inspect(_ id: String, _ options: SessionsFollowupsInspectOptions = .init()) async throws -> SessionsFollowupsInspectReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions","followups"], command: "inspect", body: requestBody, as: SessionsFollowupsInspectReturn.self)
+  }
+
+  public func list(_ options: SessionsFollowupsListOptions = .init()) async throws -> SessionsFollowupsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions","followups"], command: "list", body: requestBody, as: SessionsFollowupsListReturn.self)
+  }
+
+  public func pause(_ id: String) async throws -> SessionsFollowupsPauseReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["sessions","followups"], command: "pause", body: requestBody, as: SessionsFollowupsPauseReturn.self)
+  }
+
+  public func resume(_ id: String) async throws -> SessionsFollowupsResumeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["sessions","followups"], command: "resume", body: requestBody, as: SessionsFollowupsResumeReturn.self)
+  }
+
+  public func retry(_ run: String? = nil, _ options: SessionsFollowupsRetryOptions = .init()) async throws -> SessionsFollowupsRetryReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let run {
+      requestBody["run"] = try RaviJSON.fromEncodable(run)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions","followups"], command: "retry", body: requestBody, as: SessionsFollowupsRetryReturn.self)
+  }
+
+  public func run(_ id: String) async throws -> SessionsFollowupsRunReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["sessions","followups"], command: "run", body: requestBody, as: SessionsFollowupsRunReturn.self)
+  }
+
+  public func runs(_ options: SessionsFollowupsRunsOptions = .init()) async throws -> SessionsFollowupsRunsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions","followups"], command: "runs", body: requestBody, as: SessionsFollowupsRunsReturn.self)
+  }
+
+  public func snooze(_ id: String, _ options: SessionsFollowupsSnoozeOptions = .init()) async throws -> SessionsFollowupsSnoozeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions","followups"], command: "snooze", body: requestBody, as: SessionsFollowupsSnoozeReturn.self)
   }
 }
 
@@ -3458,6 +4241,43 @@ public struct StickersNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     return try await transport.call(groupSegments: ["stickers"], command: "show", body: requestBody, as: StickersShowReturn.self)
+  }
+}
+
+public struct SyncNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func inspect(_ id: String) async throws -> SyncInspectReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["sync"], command: "inspect", body: requestBody, as: SyncInspectReturn.self)
+  }
+
+  public func pull(_ options: SyncPullOptions = .init()) async throws -> SyncPullReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sync"], command: "pull", body: requestBody, as: SyncPullReturn.self)
+  }
+
+  public func push(_ options: SyncPushOptions = .init()) async throws -> SyncPushReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sync"], command: "push", body: requestBody, as: SyncPushReturn.self)
+  }
+
+  public func retry(_ options: SyncRetryOptions = .init()) async throws -> SyncRetryReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sync"], command: "retry", body: requestBody, as: SyncRetryReturn.self)
+  }
+
+  public func status() async throws -> SyncStatusReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["sync"], command: "status", body: requestBody, as: SyncStatusReturn.self)
   }
 }
 

@@ -1334,6 +1334,33 @@ export function dbHasActiveTaskForSession(sessionName: string, excludeTaskId?: s
   return Boolean(row);
 }
 
+export function dbHasActiveAssignedTaskForSession(sessionName: string, taskId?: string | null): boolean {
+  ensureTaskSchema();
+  const db = getDb();
+  const normalizedTaskId = typeof taskId === "string" && taskId.trim().length > 0 ? taskId.trim() : null;
+  const row = normalizedTaskId
+    ? (db
+        .prepare(`
+          SELECT 1
+          FROM tasks
+          WHERE id = ?
+            AND assignee_session_name = ?
+            AND status IN ('dispatched', 'in_progress', 'blocked')
+          LIMIT 1
+        `)
+        .get(normalizedTaskId, sessionName) as { 1: number } | undefined)
+    : (db
+        .prepare(`
+          SELECT 1
+          FROM tasks
+          WHERE assignee_session_name = ?
+            AND status IN ('dispatched', 'in_progress', 'blocked')
+          LIMIT 1
+        `)
+        .get(sessionName) as { 1: number } | undefined);
+  return Boolean(row);
+}
+
 export function dbResolveActiveTaskBindingForSession(
   sessionName: string,
   taskId?: string,

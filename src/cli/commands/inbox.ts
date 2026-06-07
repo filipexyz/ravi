@@ -3,9 +3,19 @@
  */
 
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { publish } from "../../nats.js";
+import {
+  inboxItemEnvelopeReturnSchema,
+  inboxItemsReturnSchema,
+  inboxPollReturnSchema,
+  inboxReadReturnSchema,
+  inboxReplayReturnSchema,
+  inboxSourcesReturnSchema,
+  inboxStatusReturnSchema,
+  inboxToggleReturnSchema,
+} from "./operational-return-schemas.js";
 import {
   INBOX_NATS_SUBJECT,
   getItemById,
@@ -81,6 +91,7 @@ function parseTimestamp(value: string | undefined, label: string): number {
 })
 export class InboxCommands {
   @Command({ name: "list", description: "List local inbox items" })
+  @Returns(inboxItemsReturnSchema)
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
     @Option({ flags: "--source <domain>", description: "Filter by source domain" }) sourceDomain?: string,
@@ -122,6 +133,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "read", description: "Read one local inbox item and mark it seen" })
+  @Returns(inboxReadReturnSchema)
   read(
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -144,6 +156,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "done", description: "Mark a local inbox item done" })
+  @Returns(inboxItemEnvelopeReturnSchema)
   done(
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -156,6 +169,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "snooze", description: "Snooze a local inbox item until a timestamp" })
+  @Returns(inboxItemEnvelopeReturnSchema)
   snooze(
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
     @Option({ flags: "--until <time>", description: "Unix ms or ISO timestamp" }) until?: string,
@@ -173,6 +187,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "archive", description: "Archive a local inbox item" })
+  @Returns(inboxItemEnvelopeReturnSchema)
   archive(
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -185,6 +200,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "sources", description: "List local inbox source domains" })
+  @Returns(inboxSourcesReturnSchema)
   sources(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const sources = listLocalInboxSources();
     const payload = { sources };
@@ -205,6 +221,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "status", description: "Show inbox poller status and subscriptions" })
+  @Returns(inboxStatusReturnSchema)
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const snapshot = getStatusSnapshot();
 
@@ -248,6 +265,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "enable", description: "Enable inbox polling for the current Console+org" })
+  @Returns(inboxToggleReturnSchema)
   enable(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const result = setEnabledForCurrentOrg(true);
     const payload = { enabled: true, changed: result.changed };
@@ -257,6 +275,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "disable", description: "Disable inbox polling for the current Console+org" })
+  @Returns(inboxToggleReturnSchema)
   disable(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const result = setEnabledForCurrentOrg(false);
     const payload = { enabled: false, changed: result.changed };
@@ -266,6 +285,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "poll", description: "Run a single inbox poll cycle (foreground)" })
+  @Returns(inboxPollReturnSchema)
   async poll(
     @Option({ flags: "--once", description: "Run one cycle and exit (default)" }) _once?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -284,6 +304,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "items", description: "List recently delivered inbox items in the local mirror" })
+  @Returns(inboxItemsReturnSchema)
   items(
     @Option({ flags: "--limit <n>", description: "Maximum items to return (default: 25, max: 500)" })
     limit?: string,
@@ -317,6 +338,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "replay", description: "Republish a locally stored inbox item to NATS" })
+  @Returns(inboxReplayReturnSchema)
   async replay(
     @Arg("ref", { description: "Local row id (number) or remote item id (uuid)" }) ref: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

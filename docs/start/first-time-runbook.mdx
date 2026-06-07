@@ -28,6 +28,25 @@ Do not create wrapper variables for first-time setup.
 - Secrets stay in local environment files or a secret manager. Never paste them
   into chats, docs, or committed files.
 
+### Bootstrap from the operator terminal
+
+Run this first-time setup from the operator's terminal, not from an agent that is
+still being configured.
+
+During bootstrap, several steps mutate host state: global packages, `~/.ravi`,
+`~/.omni`, PM2 processes, permissions, agents, and channel instances. A coding
+assistant or agent running under restricted auto mode may be blocked from
+editing config, starting daemons, or changing its own permissions. That block is
+expected and should not be bypassed by granting the assistant broad shell access.
+
+Use this rule:
+
+- The operator runs copy-paste commands in a normal terminal.
+- The agent may explain errors and suggest the next command.
+- The agent must not grant itself permissions to complete bootstrap.
+- If a command is denied by a coding harness, run that command manually and paste
+  the output back.
+
 Useful state locations:
 
 ```text
@@ -131,7 +150,9 @@ ravi --version
 Configure local environment:
 
 ```bash
-ravi daemon env
+mkdir -p ~/.ravi
+touch ~/.ravi/.env
+${EDITOR:-nano} ~/.ravi/.env
 ```
 
 At minimum, configure:
@@ -140,6 +161,9 @@ At minimum, configure:
 - `OMNI_API_URL`;
 - `OMNI_API_KEY`;
 - `NATS_URL`, if not using the default local NATS endpoint.
+
+Use `ravi daemon env --json` only to inspect the env file location without
+opening an editor.
 
 Start the daemon:
 
@@ -536,7 +560,7 @@ Verify Ravi can read Omni config or environment:
 
 ```bash
 omni status
-ravi daemon env
+ravi daemon env --json
 ravi daemon logs -f
 ```
 

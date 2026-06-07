@@ -6,6 +6,8 @@ domain: apps
 capabilities:
   - cli
   - manifest
+  - router
+  - scaffold
   - context
   - packaging
   - agent-operation
@@ -55,6 +57,8 @@ This domain protects the distinction between:
   command surface.
 - A Ravi App MUST expose at least one machine-operable interface: CLI JSON,
   SDK/gateway route, stream channel, or explicit runtime tool.
+- Ravi App CLI routing SHOULD be runtime-resolved through the app router instead
+  of requiring build-time command registration for each app.
 - A Ravi App MUST declare the Ravi permissions or context capabilities needed
   to perform mutating or sensitive operations.
 - A Ravi App running inside Ravi runtime MUST use `RAVI_CONTEXT_KEY` as its
@@ -63,6 +67,9 @@ This domain protects the distinction between:
 - A Ravi App SHOULD have a skill when agents are expected to use it. The skill
   MUST teach when to use the app, which commands to call, what outputs mean,
   and what failures require user input.
+- New first-party Ravi Apps SHOULD be created with `ravi apps scaffold` so the
+  manifest, spec, skill, operations, storage/events contract, and follow-up
+  commands start from the same app contract.
 - A Ravi App MAY be packaged inside a plugin, but the plugin is only the
   container. Packaging a skill or CLI in a plugin does not grant permissions and
   does not make the plugin itself the app.
@@ -114,3 +121,5 @@ SHOULD document:
 - One generic database for unrelated apps creates unclear data ownership.
 - Plugins treated as permission grants cause unsafe capability assumptions.
 - Apps with no health/check surface fail silently inside automations.
+- Apps that depend on generated root CLI commands for discovery cannot behave
+  like runtime-installed ecosystem apps.

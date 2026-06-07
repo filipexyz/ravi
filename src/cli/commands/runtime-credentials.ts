@@ -1,7 +1,15 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
+import {
+  runtimeCredentialClassifyReturnSchema,
+  runtimeCredentialEnvelopeReturnSchema,
+  runtimeCredentialRefreshReturnSchema,
+  runtimeCredentialSelectReturnSchema,
+  runtimeCredentialsListReturnSchema,
+  runtimeCredentialStatusReturnSchema,
+} from "./operational-return-schemas.js";
 import {
   createRuntimeCredential,
   getRuntimeCredential,
@@ -150,6 +158,7 @@ function buildCredentialInput(options: {
 })
 export class RuntimeCredentialsCommands {
   @Command({ name: "list", description: "List runtime provider credentials" })
+  @Returns(runtimeCredentialsListReturnSchema)
   list(
     @Option({ flags: "--provider <id>", description: "Filter by runtime provider" }) provider?: string,
     @Option({ flags: "--upstream <id>", description: "Filter by upstream provider" }) upstream?: string,
@@ -201,6 +210,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "add", description: "Add a managed runtime provider credential" })
+  @Returns(runtimeCredentialEnvelopeReturnSchema)
   add(
     @Option({ flags: "--provider <id>", description: "Runtime provider id, e.g. claude, codex, pi" }) provider?: string,
     @Option({ flags: "--label <label>", description: "Human label that does not contain secrets" }) label?: string,
@@ -253,6 +263,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "import", description: "Import/reference an existing provider-native credential source" })
+  @Returns(runtimeCredentialEnvelopeReturnSchema)
   importCredential(
     @Option({ flags: "--provider <id>", description: "Runtime provider id" }) provider?: string,
     @Option({ flags: "--label <label>", description: "Human label that does not contain secrets" }) label?: string,
@@ -297,6 +308,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "status", description: "Show credential health and provider health" })
+  @Returns(runtimeCredentialStatusReturnSchema)
   status(
     @Arg("id", { required: false, description: "Credential id" }) id?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -319,6 +331,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "disable", description: "Disable a runtime credential immediately" })
+  @Returns(runtimeCredentialEnvelopeReturnSchema)
   disable(
     @Arg("id", { description: "Credential id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -330,6 +343,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "enable", description: "Enable a runtime credential" })
+  @Returns(runtimeCredentialEnvelopeReturnSchema)
   enable(
     @Arg("id", { description: "Credential id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -341,6 +355,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "reset-health", description: "Clear cooldown/error state for a credential" })
+  @Returns(runtimeCredentialStatusReturnSchema)
   resetHealth(
     @Arg("id", { description: "Credential id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -355,6 +370,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "refresh", description: "Refresh or recover credential health before pool selection" })
+  @Returns(runtimeCredentialRefreshReturnSchema)
   async refresh(
     @Arg("id", { required: false, description: "Credential id" }) id?: string,
     @Option({ flags: "--provider <id>", description: "Runtime provider id for pool refresh" }) provider?: string,
@@ -398,6 +414,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "select", description: "Preview which credential the pool would select" })
+  @Returns(runtimeCredentialSelectReturnSchema)
   select(
     @Option({ flags: "--provider <id>", description: "Runtime provider id" }) provider?: string,
     @Option({ flags: "--upstream <id>", description: "Upstream provider id" }) upstream?: string,
@@ -427,6 +444,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "classify", description: "Classify a provider failure for credential fallback" })
+  @Returns(runtimeCredentialClassifyReturnSchema)
   classify(
     @Option({ flags: "--provider <id>", description: "Runtime provider id" }) provider?: string,
     @Option({ flags: "--status <code>", description: "HTTP status code" }) status?: string,

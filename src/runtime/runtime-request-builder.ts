@@ -29,7 +29,11 @@ import {
 } from "./credential-store.js";
 import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
 import { prepareRuntimeProviderBootstrap } from "./runtime-provider-bootstrap.js";
-import { buildRuntimeRequestContext, buildRuntimeRequestEnv } from "./runtime-request-context.js";
+import {
+  buildRuntimeRequestContext,
+  buildRuntimeRequestEnv,
+  refreshRuntimeRequestContextForTurn,
+} from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
@@ -226,11 +230,12 @@ export async function buildRuntimeStartRequest(
     sessionName,
     cwd: sessionCwd,
     sessionRuntimeParams: session.runtimeSessionParams,
+    runtimeContext,
   });
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
   const mcpServerNames = specServer ? ["spec"] : [];
-  const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id);
+  const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
   const traceTurnStart = (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     const firstMessage = input.deliverableMessages[0];
     const turnId = createSessionTraceTurnId();
@@ -293,6 +298,25 @@ export async function buildRuntimeStartRequest(
     sessionName,
     session: streamingSession,
     stashedMessages,
+    beforeTurnStart: (input) => {
+      const turnPrompt = resolveRuntimeTurnPrompt(input.deliverableMessages, prompt);
+      const turnSource = turnPrompt.source ?? resolvedSource;
+      refreshRuntimeRequestContextForTurn({
+        runtimeContext,
+        toolContext,
+        runtimeEnv,
+        dbSessionKey,
+        sessionName,
+        sessionCwd,
+        agent,
+        prompt: turnPrompt,
+        runtimeProviderId,
+        model,
+        runtimeResolution,
+        resolvedSource: turnSource,
+        approvalSource,
+      });
+    },
     traceTurnStart,
   });
 
@@ -330,6 +354,17 @@ export async function buildRuntimeStartRequest(
     toolContext,
     ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
+}
+
+function resolveRuntimeTurnPrompt(
+  deliverableMessages: RuntimeUserMessage[],
+  fallback: RuntimeLaunchPrompt,
+): RuntimeLaunchPrompt {
+  for (let index = deliverableMessages.length - 1; index >= 0; index--) {
+    const launchPrompt = deliverableMessages[index]?.launchPrompt;
+    if (launchPrompt) return launchPrompt;
+  }
+  return fallback;
 }
 
 function mergeProviderCredentialEnv(

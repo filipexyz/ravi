@@ -5,8 +5,9 @@
 import "reflect-metadata";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { analyzeVideo } from "../../video/gemini.js";
+import { videoAnalyzeReturnSchema } from "./operational-return-schemas.js";
 
 function slugify(text: string): string {
   return text
@@ -23,6 +24,7 @@ function slugify(text: string): string {
 })
 export class VideoCommands {
   @Command({ name: "analyze", description: "Analyze a video (YouTube URL or local file) and save to markdown" })
+  @Returns(videoAnalyzeReturnSchema)
   async analyze(
     @Arg("url", { description: "YouTube URL or local file path" }) url: string,
     @Option({ flags: "-o, --output <path>", description: "Output file path (default: auto-generated in cwd)" })

@@ -6,12 +6,14 @@ import { checkAppManifests, discoverAppManifests, getAppManifest } from "./servi
 
 const tempRoots: string[] = [];
 const originalCwd = process.cwd();
+const originalStateDir = process.env.RAVI_STATE_DIR;
 
 function makeRepo(): string {
   const root = mkdtempSync(join(tmpdir(), "ravi-apps-"));
   tempRoots.push(root);
   mkdirSync(join(root, "src", "apps"), { recursive: true });
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "test-repo" }));
+  process.env.RAVI_STATE_DIR = join(root, ".state");
   process.chdir(root);
   return root;
 }
@@ -51,6 +53,11 @@ function validManifest(overrides: Record<string, unknown> = {}): Record<string, 
 
 afterEach(() => {
   process.chdir(originalCwd);
+  if (originalStateDir === undefined) {
+    delete process.env.RAVI_STATE_DIR;
+  } else {
+    process.env.RAVI_STATE_DIR = originalStateDir;
+  }
   while (tempRoots.length > 0) {
     const root = tempRoots.pop();
     if (root) rmSync(root, { recursive: true, force: true });
@@ -367,5 +374,74 @@ describe("Ravi app manifest service", () => {
     expect(errors).toContain("operations.bad operation.mutating");
     expect(errors).toContain("operations.apps.check.interface");
     expect(errors).toContain("operations.apps.check.command");
+  });
+
+  it("accepts builtin operations and rejects recursive dynamic app commands", () => {
+    const root = makeRepo();
+    writeManifest(
+      root,
+      "khal-tasks",
+      validManifest({
+        id: "khal-tasks",
+        name: "Khal Tasks",
+        interfaces: {
+          cli: {
+            command: "ravi khal-tasks",
+            json: true,
+            health: "ravi apps run khal-tasks check --json",
+          },
+        },
+        operations: {
+          "khal-tasks.list": {
+            interface: "builtin",
+            handler: "apps.stub.list",
+            mutating: false,
+          },
+          "khal-tasks.check": {
+            interface: "builtin",
+            handler: "apps.manifest.check",
+            mutating: false,
+          },
+        },
+        health: {
+          checks: [{ type: "builtin", handler: "apps.manifest.check" }],
+        },
+      }),
+    );
+
+    expect(getAppManifest("khal-tasks").valid).toBe(true);
+
+    writeManifest(
+      root,
+      "recursive-app",
+      validManifest({
+        id: "recursive-app",
+        name: "Recursive App",
+        interfaces: {
+          cli: {
+            command: "ravi recursive-app",
+            json: true,
+            health: "ravi recursive-app check --json",
+          },
+        },
+        operations: {
+          "recursive-app.check": {
+            interface: "cli",
+            command: "ravi recursive-app check --json",
+            mutating: false,
+          },
+        },
+        health: {
+          checks: [{ type: "cli", command: "ravi recursive-app check --json" }],
+        },
+      }),
+    );
+
+    const recursive = getAppManifest("recursive-app");
+    const errors = recursive.errors.join("\n");
+    expect(recursive.valid).toBe(false);
+    expect(errors).toContain("interfaces.cli.health");
+    expect(errors).toContain("operations.recursive-app.check.command");
+    expect(errors).toContain("health.checks[0].command");
   });
 });

@@ -9,6 +9,8 @@ import type { ChannelContext } from "./message-types.js";
 import { loadAgentWorkspaceInstructions } from "./agent-instructions.js";
 import { buildStickerPromptSection } from "../stickers/prompt.js";
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
+import { buildRuntimeOperationalContextContent } from "./runtime-operational-context.js";
+import type { ContextRecord } from "../router/router-db.js";
 
 export interface RuntimeSystemPromptInput {
   agent: AgentConfig;
@@ -17,6 +19,10 @@ export interface RuntimeSystemPromptInput {
   cwd: string;
   extraSections?: PromptSection[];
   sessionRuntimeParams?: Record<string, unknown>;
+  runtimeContext?: Pick<
+    ContextRecord,
+    "contextId" | "kind" | "agentId" | "sessionKey" | "sessionName" | "source" | "capabilities"
+  >;
 }
 
 export interface RuntimeSystemPrompt {
@@ -29,6 +35,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
     ...buildSystemPromptSections(input.agent.id, input.ctx, undefined, input.sessionName, {
       agentMode: input.agent.mode,
     }),
+    buildRuntimeOperationalContextSection(input),
     ...buildStickerPromptSectionsForRuntime(input.agent, input.ctx, input.sessionRuntimeParams),
     ...(await buildWorkspacePromptSections(input.cwd)),
     ...(await buildRaviRulesPromptSections(input.cwd)),
@@ -39,6 +46,22 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
   return {
     text: renderPromptSections(sections),
     sections,
+  };
+}
+
+function buildRuntimeOperationalContextSection(input: RuntimeSystemPromptInput): PromptContextSection {
+  return {
+    id: "runtime.operational_context",
+    title: "Ravi Operational Context",
+    priority: 24,
+    source: "runtime",
+    content: buildRuntimeOperationalContextContent({
+      agentId: input.agent.id,
+      sessionName: input.sessionName,
+      cwd: input.cwd,
+      ctx: input.ctx,
+      runtimeContext: input.runtimeContext,
+    }),
   };
 }
 

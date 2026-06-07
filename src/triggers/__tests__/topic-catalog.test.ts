@@ -45,14 +45,20 @@ describe("trigger topic catalog", () => {
         fields: expect.arrayContaining([
           expect.objectContaining({ path: "inboxItemId", required: true }),
           expect.objectContaining({ path: "mail.messageId", required: true }),
+          expect.objectContaining({ path: "mail.from", required: true }),
+          expect.objectContaining({ path: "mail.fromText", required: true }),
+          expect.objectContaining({ path: "mail.to", required: true }),
+          expect.objectContaining({ path: "mail.toText", required: true }),
           expect.objectContaining({ path: "mail.subject" }),
+          expect.objectContaining({ path: "mail.attachments" }),
         ]),
       },
       messageTemplate: {
         id: "mail-inbox-default",
-        template: expect.stringContaining("ravi mail messages read {{data.mail.messageId}}"),
       },
     });
+    expect(entry?.messageTemplate?.template).toContain("De: {{data.mail.fromText}}. Para: {{data.mail.toText}}.");
+    expect(entry?.messageTemplate?.template).toContain("ravi mail messages read {{data.mail.messageId}}");
   });
 
   it("exposes schemas for built-in trigger-ready topics", () => {

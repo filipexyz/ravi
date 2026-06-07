@@ -1,6 +1,6 @@
 {
   "name": "ravi.bot",
-  "version": "3.260604.3",
+  "version": "3.260607.1",
   "description": "Personal multi-agent runtime for Ravi",
   "type": "module",
   "main": "dist/bundle/index.js",
@@ -78,6 +78,7 @@
     "@hapi/boom": "^10.0.1",
     "@opentui/core": "^0.1.81",
     "@opentui/react": "^0.1.81",
+    "@strudel/web": "1.3.0",
     "agora-agent-server-sdk": "^1.3.2",
     "commander": "^14.0.2",
     "croner": "^10.0.1",

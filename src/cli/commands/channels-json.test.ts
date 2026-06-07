@@ -1,6 +1,25 @@
-import { afterAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
-afterAll(() => mock.restore());
+const actorEnvKeys = [
+  "RAVI_CONTACT_ID",
+  "RAVI_SENDER_PHONE",
+  "RAVI_SENDER_ID",
+  "RAVI_NORMALIZED_SENDER_ID",
+  "RAVI_RAW_SENDER_ID",
+];
+const originalActorEnv = new Map(actorEnvKeys.map((key) => [key, process.env[key]]));
+
+afterAll(() => {
+  for (const key of actorEnvKeys) {
+    const value = originalActorEnv.get(key);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  mock.restore();
+});
 
 type RequestCall = {
   topic: string;
@@ -9,9 +28,16 @@ type RequestCall = {
 
 let requestCalls: RequestCall[] = [];
 let emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+let knownAgents = new Map<string, { id: string; cwd: string; provider?: string }>();
+let createdAgents: Array<{ id: string; cwd: string; provider?: string }> = [];
+let routeCreates: Array<Record<string, unknown>> = [];
+let chatParticipants: Array<Record<string, unknown>> = [];
+let sessionAttachments: Array<Record<string, unknown>> = [];
+let omniGroupCreates: Array<{ instanceId: string; body: { subject: string; participants: string[] } }> = [];
+let toolContext: Record<string, unknown> | undefined;
 
 mock.module("../context.js", () => ({
-  getContext: () => undefined,
+  getContext: () => toolContext,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -26,22 +52,70 @@ mock.module("../../utils/request-reply.js", () => ({
         groups: [{ id: "120363@g.us", subject: "Launch", size: 3, isCommunity: false }],
       };
     }
+    if (topic.endsWith(".create")) {
+      return { id: "120363@g.us", subject: data.subject, participants: (data.participants as unknown[]).length };
+    }
     if (topic.endsWith(".add")) {
+      return { ok: true, participants: data.participants };
+    }
+    if (topic.endsWith(".promote")) {
       return { ok: true, participants: data.participants };
     }
     return { ok: true };
   }),
 }));
 
+mock.module("../../omni-config.js", () => ({
+  resolveOmniConnection: () => ({
+    apiUrl: "http://omni.local",
+    apiKey: "test-key",
+    source: "test",
+  }),
+}));
+
+mock.module("../../omni/client.js", () => ({
+  createOmniClient: () => ({
+    instances: {
+      createGroup: mock(async (instanceId: string, body: { subject: string; participants: string[] }) => {
+        omniGroupCreates.push({ instanceId, body });
+        return {
+          id: "120363@g.us",
+          subject: body.subject,
+          participants: [
+            { id: "owner@s.whatsapp.net", admin: "superadmin" },
+            ...body.participants.map((participant) => ({
+              id: `${participant}@s.whatsapp.net`,
+              admin: null,
+            })),
+          ],
+        };
+      }),
+    },
+    messages: {
+      send: mock(async () => ({ messageId: "omni-msg-1" })),
+      sendPresence: mock(async () => undefined),
+      sendReaction: mock(async () => ({ messageId: "omni-reaction-1" })),
+      deleteChannel: mock(async () => undefined),
+      editChannel: mock(async () => undefined),
+    },
+  }),
+}));
+
 mock.module("../../contacts.js", () => ({
   getContact: (ref: string) => ({
-    id: "contact-1",
+    id: `contact-${ref}`,
     phone: ref,
     name: "Alice",
-    identities: [{ platform: "phone", value: "5511999999999", isPrimary: true }],
+    identities: [{ platform: "phone", value: ref, isPrimary: true }],
+  }),
+  getContactById: (id: string) => ({
+    id,
+    phone: "5511888888888",
+    name: "Luis",
+    identities: [{ platform: "phone", value: "5511888888888", isPrimary: true }],
   }),
   getContactIdentities: () => [{ platform: "phone", value: "5511999999999", isPrimary: true }],
-  normalizePhone: (value: string) => value,
+  normalizePhone: (value: string) => value.replace(/\D/g, ""),
   formatPhone: (value: string) => value,
   upsertContact: () => {},
   findContactsByTag: () => [],
@@ -67,14 +141,22 @@ mock.module("../../router/router-db.js", () => ({
     chatType: "group",
     title: "Launch",
   }),
-  dbUpsertChatParticipant: () => undefined,
-  dbCreateRoute: () => ({
-    id: 1,
-    accountId: "main",
-    pattern: "group:120363",
-    agent: "main",
-    priority: 0,
-  }),
+  dbUpsertChatParticipant: (input: Record<string, unknown>) => {
+    chatParticipants.push(input);
+    return input;
+  },
+  dbBindSessionToChat: (input: Record<string, unknown>) => input,
+  dbCreateRoute: (input: Record<string, unknown>) => {
+    routeCreates.push(input);
+    return {
+      id: 1,
+      accountId: input.accountId,
+      pattern: input.pattern,
+      agent: input.agent,
+      priority: input.priority ?? 0,
+      channel: input.channel,
+    };
+  },
 }));
 
 mock.module("../../omni/session-stream.js", () => ({
@@ -89,6 +171,14 @@ mock.module("../../router/sessions.js", () => ({
   getOrCreateSession: () => ({ name: "main-launch" }),
   updateSessionSource: () => {},
   updateSessionName: () => {},
+  attachChatToSession: (input: Record<string, unknown>) => {
+    sessionAttachments.push(input);
+    return {
+      subscription: { sessionKey: input.sessionKey, chatId: input.chatId, outputAttachedAt: 1 },
+      created: true,
+      outputAttached: true,
+    };
+  },
 }));
 
 mock.module("../../router/session-name.js", () => ({
@@ -97,11 +187,20 @@ mock.module("../../router/session-name.js", () => ({
 }));
 
 mock.module("../../router/config.js", () => ({
-  getAgent: () => ({ id: "main", cwd: "/tmp/main" }),
+  getAgent: (id: string) => knownAgents.get(id) ?? null,
+  createAgent: (input: { id: string; cwd: string; provider?: string }) => {
+    knownAgents.set(input.id, input);
+    createdAgents.push(input);
+    return input;
+  },
 }));
 
 mock.module("../../router/resolver.js", () => ({
   expandHome: (value: string) => value,
+}));
+
+mock.module("../../runtime/agent-instructions.js", () => ({
+  ensureAgentInstructionFiles: () => ({ createdAgents: true }),
 }));
 
 mock.module("../../nats.js", () => ({
@@ -160,9 +259,22 @@ async function captureJson(run: () => Promise<unknown>): Promise<Record<string, 
 }
 
 describe("channel command --json output", () => {
-  it("prints WhatsApp group lists as typed JSON", async () => {
+  beforeEach(() => {
     requestCalls = [];
+    emitted = [];
+    knownAgents = new Map([["main", { id: "main", cwd: "/tmp/main" }]]);
+    createdAgents = [];
+    routeCreates = [];
+    chatParticipants = [];
+    sessionAttachments = [];
+    omniGroupCreates = [];
+    toolContext = undefined;
+    for (const key of actorEnvKeys) {
+      delete process.env[key];
+    }
+  });
 
+  it("prints WhatsApp group lists as typed JSON", async () => {
     const payload = await captureJson(() => new GroupCommands().list("main", true));
 
     expect(payload.accountId).toBe("main");
@@ -173,8 +285,6 @@ describe("channel command --json output", () => {
   });
 
   it("prints WhatsApp group member mutations as typed JSON", async () => {
-    requestCalls = [];
-
     const payload = await captureJson(() => new GroupCommands().add("120363@g.us", "5511999999999", "main", true));
 
     expect(payload.status).toBe("added");
@@ -183,9 +293,62 @@ describe("channel command --json output", () => {
     expect((payload.result as Record<string, unknown>).ok).toBe(true);
   });
 
-  it("prints WhatsApp DM send results as typed JSON", async () => {
-    emitted = [];
+  it("creates an agent, WhatsApp group route, and chat/session binding in one command", async () => {
+    toolContext = { context: { metadata: { senderPhone: "5511888888888" } } };
 
+    const payload = await captureJson(() =>
+      new GroupCommands().create(
+        "Launch",
+        "5511999999999",
+        "main",
+        "launch-agent",
+        true,
+        "/tmp/launch-agent",
+        "codex",
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+
+    expect(createdAgents).toEqual([{ id: "launch-agent", cwd: "/tmp/launch-agent", provider: "codex" }]);
+    expect(omniGroupCreates).toEqual([
+      {
+        instanceId: "instance-main",
+        body: {
+          subject: "Launch",
+          participants: ["5511999999999", "5511888888888"],
+        },
+      },
+    ]);
+    expect(requestCalls.find((call) => call.topic.endsWith(".create"))).toBeUndefined();
+    expect(requestCalls.find((call) => call.topic.endsWith(".promote"))).toBeUndefined();
+    expect(routeCreates[0]).toMatchObject({
+      pattern: "group:120363",
+      accountId: "main",
+      agent: "launch-agent",
+      channel: "whatsapp",
+    });
+    expect(chatParticipants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ contactId: "contact-5511999999999", role: "member" }),
+        expect.objectContaining({ contactId: "contact-5511888888888", role: "member" }),
+        expect.objectContaining({ agentId: "launch-agent", role: "agent" }),
+      ]),
+    );
+    expect(sessionAttachments[0]).toMatchObject({ role: "primary", setOutputTarget: true, speechMode: "speak" });
+    expect(payload.agent).toMatchObject({ status: "created", agentId: "launch-agent" });
+    expect(payload.adminPromotion).toMatchObject({
+      status: "skipped",
+      reason: "omni_group_admin_promotion_not_supported",
+      actorAdmins: ["5511888888888"],
+      explicitAdmins: [],
+    });
+    expect(payload.session).toMatchObject({ status: "created", agent: "launch-agent" });
+  });
+
+  it("prints WhatsApp DM send results as typed JSON", async () => {
     const payload = await captureJson(() => new WhatsAppDmCommands().send("5511999999999", "hello\\!", "main", true));
 
     expect(payload.status).toBe("sent");
@@ -195,8 +358,6 @@ describe("channel command --json output", () => {
   });
 
   it("prints WhatsApp DM reads and auto-ack metadata as typed JSON", async () => {
-    emitted = [];
-
     const payload = await captureJson(() => new WhatsAppDmCommands().read("5511999999999", "5", false, "main", true));
 
     expect(payload.total).toBe(2);

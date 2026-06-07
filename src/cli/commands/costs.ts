@@ -3,7 +3,8 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { z } from "zod";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import {
   dbGetCostSummary,
   dbGetCostByAgent,
@@ -31,6 +32,68 @@ type AgentCostRow = CostSummary & {
 type SessionCostRow = CostSummary & {
   session_key: string;
 };
+
+const costWindowReturnSchema = z.object({
+  requestedHours: z.string().nullable(),
+  effectiveHours: z.number(),
+  sinceMs: z.number(),
+  untilMs: z.number(),
+});
+
+const costSummaryReturnSchema = z.object({
+  total_cost: z.number(),
+  total_input: z.number(),
+  total_output: z.number(),
+  total_cache_read: z.number(),
+  total_cache_creation: z.number(),
+  turns: z.number(),
+  total_tokens: z.number(),
+});
+
+const costsSummaryReturnSchema = z.object({
+  window: costWindowReturnSchema,
+  summary: costSummaryReturnSchema,
+});
+
+const costsAgentsReturnSchema = z.object({
+  window: costWindowReturnSchema,
+  limit: z.number(),
+  totalAgents: z.number(),
+  agents: z.array(
+    costSummaryReturnSchema
+      .extend({
+        agentId: z.string(),
+        models: z.array(z.string()),
+      })
+      .passthrough(),
+  ),
+});
+
+const costsTopSessionsReturnSchema = z.object({
+  window: costWindowReturnSchema,
+  limit: z.number(),
+  sessions: z.array(
+    costSummaryReturnSchema
+      .extend({
+        sessionKey: z.string(),
+        sessionName: z.string().nullable(),
+        name: z.string(),
+        agentId: z.string(),
+      })
+      .passthrough(),
+  ),
+});
+
+const costsAgentReturnSchema = costsSummaryReturnSchema.extend({
+  agentId: z.string(),
+});
+
+const costsSessionReturnSchema = z.object({
+  sessionKey: z.string(),
+  sessionName: z.string().nullable(),
+  agentId: z.string().nullable(),
+  summary: costSummaryReturnSchema,
+});
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -103,25 +166,27 @@ function printSummary(label: string, summary: CostSummary): void {
 })
 export class CostCommands {
   @Command({ name: "summary", description: "Show total cost summary for a recent window" })
+  @Returns(costsSummaryReturnSchema)
   summary(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const sinceMs = hoursToSinceMs(hours);
     const summary = dbGetCostSummary(sinceMs) as CostSummary;
+    const payload = {
+      window: buildWindowJson(hours),
+      summary: buildSummaryJson(summary),
+    };
     if (asJson) {
-      const payload = {
-        window: buildWindowJson(hours),
-        summary: buildSummaryJson(summary),
-      };
       printJson(payload);
       return payload;
     }
     printSummary(`Cost Summary (${hours ?? "24"}h)`, summary);
-    return summary;
+    return payload;
   }
 
   @Command({ name: "agents", description: "Show cost breakdown by agent" })
+  @Returns(costsAgentsReturnSchema)
   agents(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
     @Option({ flags: "--limit <n>", description: "Max agents to show (default: 20)" }) limit?: string,
@@ -167,18 +232,18 @@ export class CostCommands {
       .map(([agentId, data]) => ({ agentId, ...data, models: [...data.models].sort() }))
       .sort((a, b) => b.total_cost - a.total_cost)
       .slice(0, max);
+    const payload = {
+      window: buildWindowJson(hours),
+      limit: max,
+      totalAgents: byAgent.size,
+      agents: items.map((item) => ({
+        agentId: item.agentId,
+        ...buildSummaryJson(item),
+        models: item.models,
+      })),
+    };
 
     if (asJson) {
-      const payload = {
-        window: buildWindowJson(hours),
-        limit: max,
-        totalAgents: byAgent.size,
-        agents: items.map((item) => ({
-          agentId: item.agentId,
-          ...buildSummaryJson(item),
-          models: item.models,
-        })),
-      };
       printJson(payload);
       return payload;
     }
@@ -194,10 +259,11 @@ export class CostCommands {
       );
     }
     console.log();
-    return items;
+    return payload;
   }
 
   @Command({ name: "top-sessions", description: "Show most expensive sessions" })
+  @Returns(costsTopSessionsReturnSchema)
   topSessions(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
     @Option({ flags: "--limit <n>", description: "Max sessions to show (default: 10)" }) limit?: string,
@@ -219,13 +285,13 @@ export class CostCommands {
         ...buildSummaryJson(row),
       };
     });
+    const payload = {
+      window: buildWindowJson(hours),
+      limit: max,
+      sessions: items,
+    };
 
     if (asJson) {
-      const payload = {
-        window: buildWindowJson(hours),
-        limit: max,
-        sessions: items,
-      };
       printJson(payload);
       return payload;
     }
@@ -243,10 +309,11 @@ export class CostCommands {
     }
 
     console.log();
-    return items;
+    return payload;
   }
 
   @Command({ name: "agent", description: "Show detailed cost summary for one agent" })
+  @Returns(costsAgentReturnSchema)
   agent(
     @Arg("agentId", { description: "Agent ID" }) agentId: string,
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
@@ -254,20 +321,21 @@ export class CostCommands {
   ) {
     const sinceMs = hoursToSinceMs(hours);
     const summary = dbGetCostForAgent(agentId, sinceMs) as CostSummary;
+    const payload = {
+      agentId,
+      window: buildWindowJson(hours),
+      summary: buildSummaryJson(summary),
+    };
     if (asJson) {
-      const payload = {
-        agentId,
-        window: buildWindowJson(hours),
-        summary: buildSummaryJson(summary),
-      };
       printJson(payload);
       return payload;
     }
     printSummary(`Agent Cost (${agentId}, ${hours ?? "24"}h)`, summary);
-    return summary;
+    return payload;
   }
 
   @Command({ name: "session", description: "Show detailed cost summary for one session" })
+  @Returns(costsSessionReturnSchema)
   session(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

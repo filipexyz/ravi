@@ -6,6 +6,14 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import {
+  declareCommandReturns,
+  toolShowReturnSchema,
+  toolTestReturnSchema,
+  toolsListReturnSchema,
+  toolsManifestReturnSchema,
+  toolsSchemaReturnSchema,
+} from "./operational-return-schemas.js";
 import { extractTools, generateManifest, manifestToJSON } from "../tools-export.js";
 import {
   getAllCommandClasses,
@@ -236,3 +244,11 @@ export class ToolsCommands {
     return payload;
   }
 }
+
+declareCommandReturns(ToolsCommands, {
+  list: toolsListReturnSchema,
+  manifest: toolsManifestReturnSchema,
+  schema: toolsSchemaReturnSchema,
+  show: toolShowReturnSchema,
+  test: toolTestReturnSchema,
+});

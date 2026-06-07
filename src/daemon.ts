@@ -28,6 +28,7 @@ import { getMainSession, getSession, getSessionByName } from "./router/sessions.
 import { closeAllRaviDbs } from "./db/close-all.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
+import { startSessionFollowupRunner, stopSessionFollowupRunner } from "./session-followups/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
@@ -41,6 +42,7 @@ import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session
 import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
 import { hasLiveAdminContext } from "./runtime/context-registry.js";
+import { dbHasActiveAssignedTaskForSession } from "./tasks/task-db.js";
 import {
   tryAcquireLeadership,
   startLeadershipRenewal,
@@ -231,6 +233,7 @@ async function shutdown(signal: string) {
     await stopTriggerRunner();
     await stopHeartbeatRunner();
     await stopCronRunner();
+    await stopSessionFollowupRunner();
     await stopTaskCheckpointRunner();
     await releaseLeadership("runners");
 
@@ -361,6 +364,8 @@ export async function startDaemon() {
     log.info("Heartbeat runner started (leader)");
     await startCronRunner();
     log.info("Cron runner started (leader)");
+    await startSessionFollowupRunner();
+    log.info("Session followup runner started (leader)");
     await startTaskCheckpointRunner({
       canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
     });
@@ -371,10 +376,11 @@ export async function startDaemon() {
       log.info("Leadership vacancy detected — starting heartbeat, cron, and task checkpoint runners");
       await startHeartbeatRunner();
       await startCronRunner();
+      await startSessionFollowupRunner();
       await startTaskCheckpointRunner({
         canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
       });
-      log.info("Heartbeat, cron, and task checkpoint runners started (new leader)");
+      log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");
     }).catch((err) => log.error("Leadership watcher failed", err));
   }
 
@@ -522,6 +528,22 @@ async function publishRestartResumeEvent(
     return false;
   }
 
+  if (shouldSkipRestartResumeForTerminalTaskSession(sessionName, options.snapshot)) {
+    log.info("Skipping restart resume event for terminal task session", {
+      restartEpoch: restartInfo.restartEpoch,
+      sessionName,
+      sessionKey,
+      kind: options.kind,
+      taskBarrierTaskId: getRestartSnapshotTaskBarrierTaskId(options.snapshot) ?? null,
+    });
+    dbMarkDaemonRestartResumeDelivered({
+      restartEpoch: restartInfo.restartEpoch,
+      sessionKey,
+      sessionName,
+    });
+    return false;
+  }
+
   const payload: Record<string, unknown> = {
     prompt: `[System] Daemon reiniciou (${restartInfo.reason}). Continue de onde parou.`,
     deliveryBarrier: "after_response",
@@ -552,6 +574,34 @@ async function publishRestartResumeEvent(
     log.error("Failed to publish restart resume event", { sessionName, sessionKey, error: err });
     return false;
   }
+}
+
+function shouldSkipRestartResumeForTerminalTaskSession(
+  sessionName: string,
+  snapshot?: DaemonRestartSessionSnapshotRecord,
+): boolean {
+  const taskId = getRestartSnapshotTaskBarrierTaskId(snapshot) ?? inferTaskIdFromDedicatedTaskSessionName(sessionName);
+  if (!taskId && !isDedicatedTaskSessionName(sessionName)) {
+    return false;
+  }
+  return !dbHasActiveAssignedTaskForSession(sessionName, taskId);
+}
+
+function getRestartSnapshotTaskBarrierTaskId(snapshot?: DaemonRestartSessionSnapshotRecord): string | null {
+  const value = snapshot?.metadata?.currentTaskBarrierTaskId;
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function isDedicatedTaskSessionName(sessionName: string): boolean {
+  return /^task-[A-Za-z0-9_-]+-work(?:$|[:/])/.test(sessionName);
+}
+
+function inferTaskIdFromDedicatedTaskSessionName(sessionName: string): string | null {
+  if (!isDedicatedTaskSessionName(sessionName)) return null;
+  const workIndex = sessionName.indexOf("-work");
+  if (workIndex <= 0) return null;
+  const taskId = sessionName.slice(0, workIndex);
+  return taskId.startsWith("task-") ? taskId : null;
 }
 
 // Note: startDaemon() is called by CLI's "daemon run" command

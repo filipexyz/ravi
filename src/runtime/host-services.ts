@@ -14,6 +14,7 @@ import {
 import { nats } from "../nats.js";
 import { authorizeRuntimeContext, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
 import { agentCan, canWithCapabilityContext } from "../permissions/engine.js";
+import { isDelegatedAuthorityContext } from "../permissions/capability-context.js";
 import type { ContextRecord } from "../router/index.js";
 import type {
   RuntimeApprovalResult,
@@ -58,7 +59,15 @@ function hasUnrestrictedToolSurface(agentId: string): boolean {
   return agentCan(agentId, "admin", "system", "*") || agentCan(agentId, "use", "tool", "*");
 }
 
-export function getRuntimeToolAccessMode(capabilities: RuntimeCapabilities, agentId: string): RuntimeToolAccessMode {
+export function getRuntimeToolAccessMode(
+  capabilities: RuntimeCapabilities,
+  agentId: string,
+  context?: Pick<ContextRecord, "kind" | "metadata">,
+): RuntimeToolAccessMode {
+  if (context && isDelegatedAuthorityContext(context)) {
+    return "restricted";
+  }
+
   const accessRequirement = capabilities.tools?.accessRequirement ?? capabilities.toolAccessRequirement;
   if (accessRequirement === "tool_surface") {
     return hasUnrestrictedToolSurface(agentId) ? "unrestricted" : "restricted";

@@ -3,8 +3,10 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { z } from "zod";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
+import { commandTargetSchema } from "../return-schemas.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -25,6 +27,57 @@ const DEFAULT_HEARTBEAT_CONFIG: HeartbeatConfig = {
   enabled: false,
   intervalMs: 1800000,
 };
+
+const heartbeatAgentReturnSchema = z.object({
+  agent: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      cwd: z.string(),
+      model: z.string().nullable(),
+      provider: z.string().nullable(),
+    })
+    .passthrough(),
+  heartbeat: z
+    .object({
+      enabled: z.boolean(),
+      intervalMs: z.number(),
+      intervalDescription: z.string(),
+      model: z.string().nullable(),
+      accountId: z.string().nullable(),
+      activeStart: z.string().nullable(),
+      activeEnd: z.string().nullable(),
+      activeHours: z.string(),
+      lastRunAt: z.number().nullable(),
+    })
+    .passthrough(),
+  heartbeatFile: z.string(),
+  heartbeatFileExists: z.boolean(),
+});
+
+const heartbeatStatusReturnSchema = z.object({
+  total: z.number(),
+  agents: z.array(heartbeatAgentReturnSchema),
+});
+
+const heartbeatMutationReturnSchema = heartbeatAgentReturnSchema.extend({
+  status: z.string(),
+  target: commandTargetSchema,
+  changedCount: z.number(),
+  property: z.string().optional(),
+  value: z.unknown().optional(),
+});
+
+const heartbeatTriggerReturnSchema = z
+  .object({
+    status: z.string(),
+    target: commandTargetSchema,
+    changedCount: z.number(),
+    heartbeatFile: z.string(),
+    reason: z.string().optional(),
+    sessionName: z.string().optional(),
+  })
+  .passthrough();
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -79,6 +132,7 @@ function serializeHeartbeatAgent(agent: AgentConfig) {
 })
 export class HeartbeatCommands {
   @Command({ name: "status", description: "Show heartbeat status for all agents" })
+  @Returns(heartbeatStatusReturnSchema)
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const agents = getAllAgents();
     const payload = { total: agents.length, agents: agents.map(serializeHeartbeatAgent) };
@@ -116,6 +170,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "show", description: "Show heartbeat config for an agent" })
+  @Returns(heartbeatAgentReturnSchema)
   show(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -148,6 +203,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "enable", description: "Enable heartbeat for an agent" })
+  @Returns(heartbeatMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("interval", { required: false, description: "Interval (e.g., 30m, 1h)" }) interval?: string,
@@ -190,6 +246,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "disable", description: "Disable heartbeat for an agent" })
+  @Returns(heartbeatMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -223,6 +280,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "set", description: "Set heartbeat property" })
+  @Returns(heartbeatMutationReturnSchema)
   async set(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("key", { description: "Property: interval, model, account, active-hours" }) key: string,
@@ -304,6 +362,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "trigger", description: "Manually trigger a heartbeat" })
+  @Returns(heartbeatTriggerReturnSchema)
   async trigger(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

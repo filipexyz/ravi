@@ -2,6 +2,13 @@ import { resolveToolGroup } from "../cli/tool-registry.js";
 import type { ContextCapability } from "../router/router-db.js";
 import { hasRelation, listRelations } from "./relations.js";
 
+export interface CapabilityContextLike {
+  agentId?: string | null;
+  kind?: string | null;
+  capabilities: ContextCapability[];
+  metadata?: Record<string, unknown> | null;
+}
+
 /**
  * Check if a runtime context capability snapshot allows an action.
  * This makes context leases the source of truth once a session is running.
@@ -61,20 +68,28 @@ function capabilitiesAllow(
 }
 
 /**
- * Check a runtime capability snapshot, but let a live superadmin grant win.
+ * Check a runtime capability snapshot, but let a live superadmin grant win
+ * only for agent-owned contexts.
  *
  * Runtime contexts are intentionally snapshot-based for least privilege, but
  * `admin system:*` is the break-glass grant. If it is added after a context was
  * issued, stale snapshots must not keep denying tools, executables, sessions or
  * CLI groups.
+ *
+ * Delegated/turn-scoped contexts are different: the live agent is only the
+ * executor. The context already represents the effective authority for the
+ * actor who initiated the turn, so a live agent superadmin grant must not widen
+ * it.
  */
 export function canWithCapabilityContext(
-  context: { agentId?: string | null; kind?: string | null; capabilities: ContextCapability[] },
+  context: CapabilityContextLike,
   permission: string,
   objectType: string,
   objectId: string,
 ): boolean {
-  if (context.agentId && isAgentSuperadmin(context.agentId)) {
+  const delegated = isDelegatedAuthorityContext(context);
+
+  if (!delegated && context.agentId && isAgentSuperadmin(context.agentId)) {
     return true;
   }
 
@@ -85,11 +100,18 @@ export function canWithCapabilityContext(
   // Agent runtime contexts are long-lived roots for an agent session. Operator
   // grants must take effect there without requiring a daemon/runtime restart.
   // Derived contexts remain snapshot-based for least privilege.
-  if (context.kind === "agent-runtime" && context.agentId) {
+  if (!delegated && context.kind === "agent-runtime" && context.agentId) {
     return liveAgentCan(context.agentId, permission, objectType, objectId);
   }
 
   return false;
+}
+
+export function isDelegatedAuthorityContext(context: Pick<CapabilityContextLike, "kind" | "metadata">): boolean {
+  if (context.kind === "turn-runtime" || context.kind === "invocation-runtime") {
+    return true;
+  }
+  return context.metadata?.authorityMode === "delegated";
 }
 
 export function isSuperadmin(subjectType: string, subjectId: string): boolean {

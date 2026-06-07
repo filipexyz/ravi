@@ -3,9 +3,11 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { z } from "zod";
+import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { cliOffsetPaginationSchema, commandTargetSchema } from "../return-schemas.js";
 import { nats } from "../../nats.js";
 import { parseDurationMs } from "../../cron/schedule.js";
 
@@ -26,6 +28,42 @@ import {
 const GROUP_POLICIES = ["open", "allowlist", "closed"] as const;
 const DM_POLICIES = ["open", "pairing", "closed"] as const;
 const INSTANCE_SETTING_FIELDS = new Set(["agent", "instanceId", "dmPolicy", "groupPolicy", "dmScope", "channel"]);
+
+const settingReturnSchema = z.object({
+  key: z.string(),
+  value: z.string().nullable(),
+  isSet: z.boolean(),
+  known: z.boolean(),
+  legacy: z.boolean(),
+  description: z.string().nullable(),
+  defaultValue: z.string().nullable(),
+  hint: z.string().nullable(),
+});
+
+const settingsListReturnSchema = z.object({
+  total: z.number(),
+  showLegacy: z.boolean(),
+  knownSettings: z.array(settingReturnSchema),
+  customSettings: z.array(settingReturnSchema),
+  legacySettings: z.object({
+    total: z.number(),
+    hidden: z.boolean(),
+    settings: z.array(settingReturnSchema),
+  }),
+  pagination: cliOffsetPaginationSchema,
+  items: z.array(settingReturnSchema.extend({ section: z.string() })),
+});
+
+const settingsGetReturnSchema = z.object({
+  setting: settingReturnSchema,
+});
+
+const settingsMutationReturnSchema = z.object({
+  status: z.string(),
+  target: commandTargetSchema,
+  changedCount: z.number(),
+  setting: settingReturnSchema,
+});
 
 // Validate timezone by trying to use it with Intl
 function isValidTimezone(tz: string): boolean {
@@ -205,6 +243,7 @@ function buildSettingsListPayload(showLegacy: boolean) {
 })
 export class SettingsCommands {
   @Command({ name: "list", description: "List live settings (legacy account.* hidden by default)" })
+  @Returns(settingsListReturnSchema)
   list(
     @Option({ flags: "--legacy", description: "Show legacy account.* settings shadowed by instances" })
     showLegacy = false,
@@ -260,6 +299,7 @@ export class SettingsCommands {
   }
 
   @Command({ name: "get", description: "Get a setting value" })
+  @Returns(settingsGetReturnSchema)
   get(
     @Arg("key", { description: "Setting key" }) key: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -292,6 +332,7 @@ export class SettingsCommands {
   }
 
   @Command({ name: "set", description: "Set a setting value" })
+  @Returns(settingsMutationReturnSchema)
   set(
     @Arg("key", { description: "Setting key" }) key: string,
     @Arg("value", { description: "Setting value" }) value: string,
@@ -341,6 +382,7 @@ export class SettingsCommands {
   }
 
   @Command({ name: "delete", description: "Delete a setting" })
+  @Returns(settingsMutationReturnSchema)
   delete(
     @Arg("key", { description: "Setting key" }) key: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,

@@ -468,10 +468,16 @@ class InboxRunner {
     let enrichedPayload: InboxNatsPayload | null = null;
     for (let attempt = 1; attempt <= MAIL_ENRICHMENT_ATTEMPTS; attempt += 1) {
       try {
-        enrichedPayload = await enrichMailMessageReceivedPayload(natsPayload, (messageId, payloadKind) =>
-          this.withAutoRefresh(input.client, input.credentials, (token) =>
-            mailClient.readMessage(token, messageId, { payloadKind }),
-          ),
+        enrichedPayload = await enrichMailMessageReceivedPayload(
+          natsPayload,
+          (messageId, payloadKind) =>
+            this.withAutoRefresh(input.client, input.credentials, (token) =>
+              mailClient.readMessage(token, messageId, { payloadKind }),
+            ),
+          (messageId) =>
+            this.withAutoRefresh(input.client, input.credentials, (token) =>
+              mailClient.listMessageAttachments(token, messageId),
+            ),
         );
         break;
       } catch (error) {

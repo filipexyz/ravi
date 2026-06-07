@@ -154,6 +154,67 @@ describe("pages CLI commands", () => {
       },
     ]);
   });
+
+  it("binds custom hostnames to a project Pages site through the Console CLI API", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const client = makeClient(async (method, path, body, accessToken) => {
+      calls.push({ method, path, body, accessToken });
+      return {
+        bindings: [
+          {
+            id: "binding_1",
+            hostname: "www.filipe.ai",
+            product: "pages",
+            status: "active",
+            readiness: {
+              mode: "serve",
+            },
+          },
+          {
+            id: "binding_2",
+            hostname: "filipe.ai",
+            product: "pages",
+            status: "pending",
+            readiness: {
+              mode: "redirect",
+            },
+          },
+        ],
+        hostnames: ["www.filipe.ai", "filipe.ai"],
+        site: {
+          id: "site_1",
+          slug: "filipe-ai",
+          defaultHostname: "filipe-ai.ravi.page",
+        },
+        total: 2,
+      };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.domains("filipe-ai", "filipe-ai", ["www.filipe.ai", "filipe.ai"], true, undefined, true),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([
+      {
+        method: "POST",
+        path: "/api/cli/projects/filipe-ai/pages/filipe-ai/domains",
+        body: {
+          check: true,
+          hostnames: ["www.filipe.ai", "filipe.ai"],
+        },
+        accessToken: "access-secret",
+      },
+    ]);
+    expect(payload).toMatchObject({
+      success: true,
+      projectRef: "filipe-ai",
+      siteRef: "filipe-ai",
+      total: 2,
+      bindings: [{ hostname: "www.filipe.ai" }, { hostname: "filipe.ai" }],
+    });
+  });
 });
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {

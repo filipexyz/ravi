@@ -25,6 +25,8 @@ import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./comma
 import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
+import { maybeRunAppAliasRoute } from "../apps/router.js";
+import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -46,7 +48,9 @@ if (isRootVersionRequest(process.argv.slice(2))) {
 program
   .name("ravi")
   .description("Ravi Bot CLI - Claude-powered bot management")
-  .addHelpText("after", "\nRoot options:\n  ravi --version    Print Ravi CLI version");
+  .addHelpText("after", `\nRoot options:\n  ravi --version    Print Ravi CLI version\n${buildRootOperationalHelp()}`);
+
+program.showSuggestionAfterError();
 
 // Register all command groups (auto-discovered from barrel)
 registerCommands(program, Object.values(allCommands) as Array<new () => object>);
@@ -224,4 +228,48 @@ program
   });
 
 // Parse and execute
+maybeSuggestKnownRootCommand(process.argv.slice(2), program);
+
+const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
+  staticRootCommands: rootCommandNames(program),
+});
+if (handledByAppAlias) process.exit(process.exitCode ?? 0);
+
 program.parse();
+
+function maybeSuggestKnownRootCommand(args: string[], command: Command): void {
+  const requested = args[0];
+  if (!requested || requested.startsWith("-")) return;
+
+  const known = rootCommandNames(command);
+  if (known.has(requested)) return;
+
+  const suggestion = resolveKnownRootCommandSuggestion(requested, known);
+  if (!suggestion) return;
+
+  const suggestedArgs = [suggestion, ...args.slice(1)];
+  console.error(`Unknown command: ravi ${requested}`);
+  console.error(`Did you mean: ravi ${suggestedArgs.join(" ")}?`);
+  process.exit(1);
+}
+
+function resolveKnownRootCommandSuggestion(requested: string, known: Set<string>): string | undefined {
+  const explicit: Record<string, string> = {
+    task: "tasks",
+  };
+  const explicitSuggestion = explicit[requested];
+  if (explicitSuggestion && known.has(explicitSuggestion)) return explicitSuggestion;
+
+  const plural = `${requested}s`;
+  if (known.has(plural)) return plural;
+  return undefined;
+}
+
+function rootCommandNames(command: Command): Set<string> {
+  const names = new Set<string>();
+  for (const subcommand of command.commands) {
+    names.add(subcommand.name());
+    for (const alias of subcommand.aliases()) names.add(alias);
+  }
+  return names;
+}

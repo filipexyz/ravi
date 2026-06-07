@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { statSync } from "node:fs";
 import { basename, resolve as resolvePath } from "node:path";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -41,6 +41,18 @@ import { getAgent } from "../../router/config.js";
 import { expandHome, getOrCreateSession, resolveSession } from "../../router/index.js";
 import { getSpec } from "../../specs/index.js";
 import { getWorkflowRunDetails } from "../../workflows/index.js";
+import {
+  projectDetailsReturnSchema,
+  projectFixturesSeedReturnSchema,
+  projectInitReturnSchema,
+  projectResourceReturnSchema,
+  projectResourcesImportReturnSchema,
+  projectResourcesListReturnSchema,
+  projectTaskOperationReturnSchema,
+  projectWorkflowOperationReturnSchema,
+  projectsListReturnSchema,
+  projectsNextReturnSchema,
+} from "./operational-return-schemas.js";
 
 const VALID_LINK_ASSET_TYPES = new Set<ProjectLinkAssetType>(["workflow", "session", "agent", "resource", "spec"]);
 const VALID_RESOURCE_TYPES = new Set<ProjectResourceType>([
@@ -790,6 +802,7 @@ function resolveLinkTarget(
 })
 export class ProjectCommands {
   @Command({ name: "init", description: "Materialize a project with cheap links and optional canonical workflows" })
+  @Returns(projectInitReturnSchema)
   init(
     @Arg("title", { description: "Project title" }) title: string,
     @Option({ flags: "--slug <slug>", description: "Stable project slug" }) slug?: string,
@@ -865,6 +878,7 @@ export class ProjectCommands {
   }
 
   @Command({ name: "create", description: "Create one project" })
+  @Returns(projectDetailsReturnSchema)
   create(
     @Arg("title", { description: "Project title" }) title: string,
     @Option({ flags: "--slug <slug>", description: "Stable project slug" }) slug?: string,
@@ -908,6 +922,7 @@ export class ProjectCommands {
   }
 
   @Command({ name: "list", description: "List projects" })
+  @Returns(projectsListReturnSchema)
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical project tag" }) tagSlug?: string,
@@ -972,6 +987,7 @@ export class ProjectCommands {
   }
 
   @Command({ name: "show", description: "Show one project with linked context" })
+  @Returns(projectDetailsReturnSchema)
   show(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -990,6 +1006,7 @@ export class ProjectCommands {
   }
 
   @Command({ name: "status", description: "Show one project with workflow runtime rollup" })
+  @Returns(projectDetailsReturnSchema)
   status(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1008,6 +1025,7 @@ export class ProjectCommands {
   }
 
   @Command({ name: "next", description: "List projects as an operational next-work surface" })
+  @Returns(projectsNextReturnSchema)
   next(
     @Option({ flags: "--status <status>", description: "Filter by project status" }) status?: string,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical project tag" }) tagSlug?: string,
@@ -1040,6 +1058,7 @@ export class ProjectCommands {
   }
 
   @Command({ name: "update", description: "Update one project" })
+  @Returns(projectDetailsReturnSchema)
   update(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Option({ flags: "--title <text>", description: "New title" }) title?: string,
@@ -1082,6 +1101,7 @@ export class ProjectCommands {
   }
 
   @Command({ name: "link", description: "Link workflow/session/agent/resource/spec context to a project" })
+  @Returns(projectDetailsReturnSchema)
   link(
     @Arg("assetType", { description: "workflow|session|agent|resource|spec" }) assetTypeValue: string,
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
@@ -1130,6 +1150,7 @@ export class ProjectCommands {
 })
 export class ProjectWorkflowCommands {
   @Command({ name: "start", description: "Start one workflow run from a project and link it in one step" })
+  @Returns(projectWorkflowOperationReturnSchema)
   start(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Arg("specId", { description: "Workflow spec id" }) workflowSpecId: string,
@@ -1166,6 +1187,7 @@ export class ProjectWorkflowCommands {
   }
 
   @Command({ name: "attach", description: "Attach one existing workflow run to a project in one step" })
+  @Returns(projectWorkflowOperationReturnSchema)
   attach(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Arg("runId", { description: "Workflow run id" }) workflowRunId: string,
@@ -1206,6 +1228,7 @@ export class ProjectWorkflowCommands {
 })
 export class ProjectTaskCommands {
   @Command({ name: "create", description: "Create a task attempt from a project workflow node" })
+  @Returns(projectTaskOperationReturnSchema)
   async create(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Arg("nodeKey", { description: "Workflow node key" }) nodeKey: string,
@@ -1260,6 +1283,7 @@ export class ProjectTaskCommands {
   }
 
   @Command({ name: "attach", description: "Attach an existing task to a project workflow node" })
+  @Returns(projectTaskOperationReturnSchema)
   async attach(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Arg("nodeKey", { description: "Workflow node key" }) nodeKey: string,
@@ -1306,6 +1330,7 @@ export class ProjectTaskCommands {
   }
 
   @Command({ name: "dispatch", description: "Dispatch a task using project owner/session defaults" })
+  @Returns(projectTaskOperationReturnSchema)
   async dispatch(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Arg("taskId", { description: "Existing task id" }) taskId: string,
@@ -1348,6 +1373,7 @@ export class ProjectTaskCommands {
 })
 export class ProjectResourceCommands {
   @Command({ name: "add", description: "Add one resource link to a project" })
+  @Returns(projectResourceReturnSchema)
   add(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Arg("target", { description: "Path, URL, group id, or locator" }) target: string,
@@ -1386,6 +1412,7 @@ export class ProjectResourceCommands {
   }
 
   @Command({ name: "list", description: "List resource links for a project" })
+  @Returns(projectResourcesListReturnSchema)
   list(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Option({ flags: "--type <type>", description: "Optional resource type filter" }) resourceType?: string,
@@ -1433,6 +1460,7 @@ export class ProjectResourceCommands {
   }
 
   @Command({ name: "show", description: "Show one resource link on a project" })
+  @Returns(projectResourceReturnSchema)
   show(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Arg("resource", { description: "Resource link id, label, or locator" }) resourceRef: string,
@@ -1456,6 +1484,7 @@ export class ProjectResourceCommands {
   }
 
   @Command({ name: "import", description: "Import multiple cheap resources into a project" })
+  @Returns(projectResourcesImportReturnSchema)
   import(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Option({ flags: "--repo <locator...>", description: "One or more repo locators (path or canonical URL)" })
@@ -1533,6 +1562,7 @@ export class ProjectResourceCommands {
 })
 export class ProjectFixtureCommands {
   @Command({ name: "seed", description: "Reset and seed the canonical project fixtures used in demos and smoke tests" })
+  @Returns(projectFixturesSeedReturnSchema)
   async seed(
     @Option({ flags: "--owner-agent <id>", description: "Owner agent for the seeded projects" }) ownerAgentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

@@ -5,6 +5,13 @@
 import "reflect-metadata";
 import { Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import {
+  declareCommandReturns,
+  selfContextReturnSchema,
+  selfExplainReturnSchema,
+  selfSectionOnlyReturnSchema,
+  selfWhoamiReturnSchema,
+} from "./operational-return-schemas.js";
 import { RAVI_CONTEXT_KEY_ENV, resolveRuntimeContextOrThrow } from "../../runtime/context-registry.js";
 import { resolveSession } from "../../router/sessions.js";
 import type { RouteConfig, SessionEntry } from "../../router/types.js";
@@ -489,6 +496,17 @@ export class SelfCommands {
     console.log(JSON.stringify(section.data, null, 2));
   }
 }
+
+declareCommandReturns(SelfCommands, {
+  chat: selfSectionOnlyReturnSchema,
+  context: selfContextReturnSchema,
+  explain: selfExplainReturnSchema,
+  knowledge: selfSectionOnlyReturnSchema,
+  permissions: selfSectionOnlyReturnSchema,
+  recent: selfSectionOnlyReturnSchema,
+  route: selfSectionOnlyReturnSchema,
+  whoami: selfWhoamiReturnSchema,
+});
 
 function parseDepth(value: string | undefined): SelfDepth {
   if (!value) return "normal";

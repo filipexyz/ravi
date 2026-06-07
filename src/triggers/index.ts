@@ -5,7 +5,7 @@
  */
 
 // Types
-export type { SessionTarget, Trigger, TriggerInput } from "./types.js";
+export type { SessionTarget, Trigger, TriggerInput, TriggerMessageSource } from "./types.js";
 export type { TriggerTopicCatalogEntry, TriggerTopicCategory, TriggerTopicDiagnostic } from "./topic-catalog.js";
 export { getTriggerTopicCatalog, getTriggerTopicDiagnostic } from "./topic-catalog.js";
 

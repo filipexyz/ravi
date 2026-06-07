@@ -11,6 +11,7 @@ mock.module("../decorators.js", () => ({
   Command: () => () => {},
   Scope: () => () => {},
   CliOnly: () => () => {},
+  Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -230,6 +231,8 @@ describe("TriggersCommands topic guidance", () => {
         name: "local mail watcher",
         topic: "ravi.inbox.mail.received",
         message: expect.stringContaining("ravi mail messages read {{data.mail.messageId}}"),
+        messageSource: "catalog",
+        messageTemplateId: "mail-inbox-default",
       }),
     );
     expect(payload).toMatchObject({

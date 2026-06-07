@@ -1,7 +1,17 @@
 import "reflect-metadata";
-import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
+import { Arg, CliOnly, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
+import {
+  watchConnectorsReturnSchema,
+  watchCreateReturnSchema,
+  watchEventsReturnSchema,
+  watchListReturnSchema,
+  watchMutationReturnSchema,
+  watchRemoveReturnSchema,
+  watchShowReturnSchema,
+  watchTriggerReturnSchema,
+} from "./operational-return-schemas.js";
 import { getAgent } from "../../router/config.js";
 import { getAccountForAgent } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
@@ -29,6 +39,7 @@ function printJson(payload: unknown): void {
 })
 export class WatchCommands {
   @Command({ name: "connectors", description: "List available watch connectors and event types" })
+  @Returns(watchConnectorsReturnSchema)
   connectors(
     @Option({ flags: "--provider <provider>", description: "Filter by provider id" }) provider?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -49,6 +60,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "create", description: "Create a watch" })
+  @Returns(watchCreateReturnSchema)
   async create(
     @Arg("provider", { description: "Connector id: github or npm" }) provider: string,
     @Arg("resource", { description: "Watched resource, e.g. owner/repo or npm package" }) resource: string,
@@ -95,6 +107,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "list", description: "List watches" })
+  @Returns(watchListReturnSchema)
   list(
     @Option({ flags: "--provider <provider>", description: "Filter by provider" }) provider?: string,
     @Option({ flags: "--status <status>", description: "active|disabled|error|all" }) status?: string,
@@ -143,6 +156,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "show", description: "Show watch details" })
+  @Returns(watchShowReturnSchema)
   show(
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -159,6 +173,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "enable", description: "Enable a watch" })
+  @Returns(watchMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -173,6 +188,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "disable", description: "Disable a watch" })
+  @Returns(watchMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -187,6 +203,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "rm", description: "Remove a watch" })
+  @Returns(watchRemoveReturnSchema)
   async rm(
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -201,6 +218,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "events", description: "Show trigger-ready event subjects for a watch" })
+  @Returns(watchEventsReturnSchema)
   events(
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -222,6 +240,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "trigger", description: "Create a trigger for a watch event in the current chat" })
+  @Returns(watchTriggerReturnSchema)
   async trigger(
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--message <prompt>", description: "Prompt to run when the watch fires" }) message?: string,

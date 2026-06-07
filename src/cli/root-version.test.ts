@@ -43,4 +43,33 @@ describe("CLI root version", () => {
     expect(result.stdout.trim()).not.toBe(pkg.version);
     expect(result.stderr).toContain("Artifact not found: art_missing");
   });
+
+  it("prints the live operational context in root help", () => {
+    const stateDir = join(tmpdir(), `ravi-root-help-${process.pid}`);
+    const result = spawnSync("bun", ["src/cli/index.ts", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+    rmSync(stateDir, { recursive: true, force: true });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Ravi Operational Context");
+    expect(result.stdout).toContain("ravi self permissions --json");
+    expect(result.stdout).toContain("ravi --help");
+  });
+
+  it("suggests the plural tasks command for singular task help", () => {
+    const stateDir = join(tmpdir(), `ravi-root-task-suggestion-${process.pid}`);
+    const result = spawnSync("bun", ["src/cli/index.ts", "task", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+    rmSync(stateDir, { recursive: true, force: true });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Unknown command: ravi task");
+    expect(result.stderr).toContain("Did you mean: ravi tasks --help?");
+  });
 });

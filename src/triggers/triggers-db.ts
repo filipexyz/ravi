@@ -22,6 +22,8 @@ interface TriggerRow {
   account_id: string | null;
   topic: string;
   message: string;
+  message_source: string | null;
+  message_template_id: string | null;
   session: string;
   reply_session: string | null;
   reply_source: string | null;
@@ -81,6 +83,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
     name: row.name,
     topic: row.topic,
     message: row.message,
+    messageSource: row.message_source === "catalog" ? "catalog" : "manual",
     session: row.session as SessionTarget,
     enabled: row.enabled === 1,
     cooldownMs: row.cooldown_ms,
@@ -91,6 +94,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
 
   if (row.agent_id !== null) trigger.agentId = row.agent_id;
   if (row.account_id !== null) trigger.accountId = row.account_id;
+  if (row.message_template_id !== null) trigger.messageTemplateId = row.message_template_id;
   if (row.reply_session !== null) trigger.replySession = row.reply_session;
   const replySource = parseReplySource(row.reply_source);
   if (replySource) trigger.replySource = replySource;
@@ -114,9 +118,9 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
 
   const stmt = db.prepare(`
     INSERT INTO triggers (
-      id, name, agent_id, account_id, topic, message, session, reply_session, reply_source, enabled, cooldown_ms,
-      filter, fire_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, name, agent_id, account_id, topic, message, message_source, message_template_id, session, reply_session,
+      reply_source, enabled, cooldown_ms, filter, fire_count, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -126,6 +130,8 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     input.accountId ?? null,
     input.topic,
     input.message,
+    input.messageSource ?? "manual",
+    input.messageTemplateId ?? null,
     input.session ?? "isolated",
     input.replySession ?? null,
     serializeReplySource(input.replySource),
@@ -167,7 +173,10 @@ export function dbListTriggers(opts?: { enabledOnly?: boolean }): Trigger[] {
 /**
  * Update a trigger.
  */
-export function dbUpdateTrigger(id: string, updates: Partial<Trigger>): Trigger {
+export function dbUpdateTrigger(
+  id: string,
+  updates: Partial<Trigger> & { messageTemplateId?: string | null },
+): Trigger {
   const db = getDb();
   const existing = dbGetTrigger(id);
 
@@ -200,6 +209,14 @@ export function dbUpdateTrigger(id: string, updates: Partial<Trigger>): Trigger 
   if (updates.message !== undefined) {
     fields.push("message = ?");
     values.push(updates.message);
+  }
+  if (updates.messageSource !== undefined) {
+    fields.push("message_source = ?");
+    values.push(updates.messageSource ?? "manual");
+  }
+  if (updates.messageTemplateId !== undefined) {
+    fields.push("message_template_id = ?");
+    values.push(updates.messageTemplateId ?? null);
   }
   if (updates.session !== undefined) {
     fields.push("session = ?");
