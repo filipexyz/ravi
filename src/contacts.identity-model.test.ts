@@ -369,6 +369,53 @@ describe("contacts identity graph schema", () => {
     expect(qualifiedStage?.opportunities.map((item) => item.opportunityId)).toContain(opportunity.id);
   });
 
+  it("creates opportunities in a custom pipeline resolved by name or ID", () => {
+    const pipeline = createCrmPipeline({
+      name: "sde-novo-contato",
+      entityType: "opportunity",
+      source: "test",
+    });
+    const stage = createCrmPipelineStage({
+      pipelineRef: pipeline.id,
+      key: "1-primeiro-contato",
+      name: "Primeiro Contato",
+      sortOrder: 10,
+      category: "new",
+      source: "test",
+    });
+    const account = createCrmAccount({ name: "Custom Pipeline Account", source: "test" });
+
+    const byName = createCrmOpportunity({
+      title: "Opp via pipeline name",
+      accountId: account.id,
+      pipelineId: "sde-novo-contato",
+      stageKey: "1-primeiro-contato",
+      source: "test",
+    });
+    expect(byName.pipelineId).toBe(pipeline.id);
+    expect(byName.stageId).toBe(stage.id);
+
+    const byId = createCrmOpportunity({
+      title: "Opp via pipeline id",
+      accountId: account.id,
+      pipelineId: pipeline.id,
+      stageKey: "1-primeiro-contato",
+      source: "test",
+    });
+    expect(byId.pipelineId).toBe(pipeline.id);
+    expect(byId.stageId).toBe(stage.id);
+
+    expect(() =>
+      createCrmOpportunity({
+        title: "Opp with unknown pipeline",
+        accountId: account.id,
+        pipelineId: "non-existent-pipeline",
+        stageKey: "1-primeiro-contato",
+        source: "test",
+      }),
+    ).toThrow(/CRM pipeline not found/);
+  });
+
   it("keeps contact timeline events append-only at storage level", () => {
     upsertContact("5511999910203", "Timeline Event", "allowed", "manual");
     const contact = getContact("5511999910203");
