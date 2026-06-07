@@ -13,10 +13,11 @@ import {
   type ChatReadingListRecord,
 } from "./router-db.js";
 
-interface SelectorMemberRow {
+interface ListMemberRow {
   id: string;
   list_id: string;
   chat_id: string;
+  source: string;
 }
 
 const SelectorScopeSchema = z.enum(["contact", "chat"]);
@@ -115,14 +116,14 @@ function contactMatchesSelector(
   return all.matched;
 }
 
-function listActiveSelectorMembers(listId: string): Map<string, SelectorMemberRow> {
+function listActiveMembersByChat(listId: string): Map<string, ListMemberRow> {
   const rows = getDb()
     .prepare(
-      `SELECT id, list_id, chat_id FROM chat_reading_list_members
-       WHERE list_id = ? AND removed_at IS NULL AND source = 'selector'`,
+      `SELECT id, list_id, chat_id, source FROM chat_reading_list_members
+       WHERE list_id = ? AND removed_at IS NULL`,
     )
-    .all(listId) as SelectorMemberRow[];
-  const map = new Map<string, SelectorMemberRow>();
+    .all(listId) as ListMemberRow[];
+  const map = new Map<string, ListMemberRow>();
   for (const row of rows) map.set(row.chat_id, row);
   return map;
 }
@@ -196,22 +197,28 @@ export function recomputeChatReadingList(input: RecomputeReadingListInput): Reco
   }
   totals.chatsConsidered = eligibleChatIds.size;
 
-  const currentMembers = listActiveSelectorMembers(list.id);
+  const currentMembers = listActiveMembersByChat(list.id);
 
   const added: RecomputeReadingListChange[] = [];
   const unchanged: RecomputeReadingListChange[] = [];
   for (const chatId of eligibleChatIds) {
     const contactId = chatIdToContactId.get(chatId);
-    if (currentMembers.has(chatId)) {
-      unchanged.push({ chatId, contactId, reason: "selector-match" });
+    const existing = currentMembers.get(chatId);
+    if (existing) {
+      unchanged.push({
+        chatId,
+        contactId,
+        reason: existing.source === "selector" ? "selector-match" : "already-member",
+      });
       continue;
     }
     added.push({ chatId, contactId, reason: "selector-match" });
   }
 
   const removed: RecomputeReadingListChange[] = [];
-  for (const [chatId] of currentMembers) {
+  for (const [chatId, member] of currentMembers) {
     if (eligibleChatIds.has(chatId)) continue;
+    if (member.source !== "selector") continue;
     removed.push({ chatId, reason: "selector-no-longer-matches" });
   }
 

@@ -6,6 +6,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 
 import { recomputeChatReadingList } from "./reading-list-recompute.js";
 import {
+  dbAddChatToReadingList,
   dbCreateChatReadingList,
   dbListChatReadingListMembers,
   dbUpsertChat,
@@ -119,6 +120,51 @@ describe("recomputeChatReadingList", () => {
     const members = dbListChatReadingListMembers({ listId: list.id });
     expect(members.total).toBe(1);
     expect(members.items[0]?.member.chatId).toBe(matching.chat.id);
+  });
+
+  it("hybrid: keeps manually-added members untouched even when contact matches selector", () => {
+    const matchingManual = seedContactWithDm("+5511999940001", "Manual Match", ["lifecycle:lead", "perfil:cliente"]);
+    seedContactWithDm("+5511999940002", "Selector Only", ["lifecycle:lead", "perfil:cliente"]);
+    const manualNoMatch = seedContactWithDm("+5511999940003", "Manual No Match", ["other:tag"]);
+
+    const list = dbCreateChatReadingList({
+      name: "sde-hybrid-test",
+      mode: "hybrid",
+      selector: baseSelector,
+    });
+
+    dbAddChatToReadingList({
+      listId: list.id,
+      chatId: matchingManual.chat.id,
+      source: "manual",
+      reason: "added by hand",
+    });
+    dbAddChatToReadingList({
+      listId: list.id,
+      chatId: manualNoMatch.chat.id,
+      source: "manual",
+      reason: "added by hand",
+    });
+
+    const first = recomputeChatReadingList({ listRef: list.id, apply: true });
+    expect(first.totals.added).toBe(1);
+    expect(first.totals.removed).toBe(0);
+    expect(first.totals.unchanged).toBe(1);
+    const firstUnchanged = first.unchanged[0];
+    expect(firstUnchanged?.chatId).toBe(matchingManual.chat.id);
+    expect(firstUnchanged?.reason).toBe("already-member");
+
+    const membersAfter = dbListChatReadingListMembers({ listId: list.id });
+    expect(membersAfter.total).toBe(3);
+    const sources = membersAfter.items.map((item) => item.member.source).sort();
+    expect(sources).toEqual(["manual", "manual", "selector"]);
+
+    const reapplied = recomputeChatReadingList({ listRef: list.id, apply: true });
+    expect(reapplied.totals.added).toBe(0);
+    expect(reapplied.totals.removed).toBe(0);
+    expect(reapplied.totals.unchanged).toBe(2);
+
+    expect(dbListChatReadingListMembers({ listId: list.id }).total).toBe(3);
   });
 
   it("supports 'any' match semantics", () => {
