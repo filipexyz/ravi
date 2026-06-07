@@ -20,6 +20,7 @@ import {
 } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "../session-trace/query.js";
+import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 
 function createDispatcher(maxConcurrentSessions = 10, interactiveReservedSessions = 0) {
   return new RuntimeSessionDispatcher({
@@ -433,6 +434,60 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
       const pending = dbGetDaemonRestartPendingMessages("epoch-active", "agent:dev:test:restart-active");
       expect((pending[0] as RuntimeUserMessage | undefined)?.message.content).toBe("queued user work");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not record daemon restart snapshots for terminal task sessions", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-restart-terminal-task-");
+    try {
+      const now = Date.now();
+      const created = dbCreateTask({
+        title: "terminal task restart",
+        instructions: "must not resume after done",
+        createdBy: "test",
+        createdByAgentId: "dev",
+        createdBySessionName: "dev",
+      });
+      const sessionName = `${created.task.id}-work`;
+      getOrCreateSession(`agent:dev:${sessionName}`, "dev", stateDir, { name: sessionName });
+      dbDispatchTask(created.task.id, {
+        agentId: "dev",
+        sessionName,
+        assignedBy: "test",
+      });
+      dbCompleteTask(created.task.id, {
+        actor: "test",
+        agentId: "dev",
+        sessionName,
+        message: "done",
+      });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-terminal-task", reason: "test", createdAt: now });
+
+      const dispatcher = createDispatcher(2);
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          lastActivity: now - 1_000,
+          currentTaskBarrierTaskId: created.task.id,
+        }),
+      );
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-terminal-task",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(0);
+      expect(
+        dbListEligibleDaemonRestartSessionSnapshots({
+          restartEpoch: "epoch-terminal-task",
+          now: now + 1_000,
+        }),
+      ).toEqual([]);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

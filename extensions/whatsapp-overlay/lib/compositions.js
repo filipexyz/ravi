@@ -27,10 +27,13 @@ export async function buildSnapshot(client, query) {
   });
 
   const now = Date.now();
-  const activeSessions = sessions.filter(isActive).map(toListEntry);
+  const taskSessionsToHide = await getHiddenTerminalTaskSessionNames(client);
+  const activeSessions = sessions
+    .filter((session) => isActive(session) && !taskSessionsToHide.has(getSessionName(session)))
+    .map(toListEntry);
   const activeKeys = new Set(activeSessions.map((s) => s.sessionKey));
   const recentSessions = sessions
-    .filter((s) => !activeKeys.has(s.sessionKey))
+    .filter((s) => !activeKeys.has(s.sessionKey) && !taskSessionsToHide.has(getSessionName(s)))
     .slice(0, 30)
     .map(toListEntry);
 
@@ -753,6 +756,58 @@ function normalizeTaskItem(raw) {
     launchPlan: raw?.launchPlan ?? null,
     events: raw?.events ?? [],
   };
+}
+
+async function getHiddenTerminalTaskSessionNames(client) {
+  if (!client?.tasks?.list) return new Set();
+  try {
+    const result = await client.tasks.list({ last: "all", allTime: true, all: true });
+    return buildHiddenTerminalTaskSessionNames(normalizeTasks(result));
+  } catch {
+    return new Set();
+  }
+}
+
+function buildHiddenTerminalTaskSessionNames(tasks) {
+  const hidden = new Set();
+  for (const raw of tasks) {
+    const item = normalizeTaskItem(raw);
+    const task = item.task ?? {};
+    if (!shouldHideTerminalTaskSession(task)) continue;
+    for (const sessionName of getTaskSessionNames(task)) {
+      if (isDedicatedTaskSessionName(sessionName, task)) {
+        hidden.add(sessionName);
+      }
+    }
+  }
+  return hidden;
+}
+
+function shouldHideTerminalTaskSession(task) {
+  return task?.status === "done" || task?.status === "failed" || Boolean(task?.archivedAt ?? task?.archived);
+}
+
+function getTaskSessionNames(task) {
+  return [
+    task?.workSessionName,
+    task?.assigneeSessionName,
+    task?.work_session_name,
+    task?.assignee_session_name,
+  ].filter((value) => typeof value === "string" && value.trim());
+}
+
+function isDedicatedTaskSessionName(sessionName, task = {}) {
+  const value = clean(sessionName);
+  if (!value) return false;
+  const taskId = clean(task?.id ?? task?.taskId);
+  if (taskId && (value === taskId || value.startsWith(`${taskId}-`) || value.startsWith(`${taskId}:`))) {
+    return true;
+  }
+  return /^task-[A-Za-z0-9_-]+-work(?:$|[:/])/.test(value);
+}
+
+function getSessionName(session) {
+  return session?.name ?? session?.sessionName ?? session?.sessionKey ?? null;
 }
 
 function mergeTaskDetail(item, detail) {

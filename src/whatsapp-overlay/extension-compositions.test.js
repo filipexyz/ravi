@@ -102,6 +102,53 @@ describe("whatsapp overlay extension compositions", () => {
     expect(snapshot.recentSessions.map((session) => session.sessionName)).toContain("ravimem");
   });
 
+  it("hides terminal task sessions from active and recent session lists", async () => {
+    const now = Date.now();
+    const client = {
+      sessions: {
+        list: async () => ({
+          sessions: [
+            {
+              sessionKey: "task-terminal-work",
+              name: "task-terminal-work",
+              agentId: "dev",
+              updatedAt: now,
+              createdAt: now - 10_000,
+              live: { activity: "thinking", summary: "stale restart resume", updatedAt: now },
+            },
+            {
+              sessionKey: "agent:active:main",
+              name: "active-session",
+              agentId: "active",
+              updatedAt: now - 1_000,
+              createdAt: now - 20_000,
+              live: { activity: "thinking", summary: "running", updatedAt: now },
+            },
+          ],
+        }),
+      },
+      tasks: {
+        list: async () => ({
+          tasks: [
+            {
+              id: "task-terminal",
+              status: "done",
+              assigneeSessionName: "task-terminal-work",
+            },
+          ],
+        }),
+      },
+      agents: {
+        list: async () => ({ agents: [{ id: "dev", name: "Dev" }] }),
+      },
+    };
+
+    const snapshot = await buildSnapshot(client, {});
+
+    expect(snapshot.activeSessions.map((session) => session.sessionName)).toEqual(["active-session"]);
+    expect(snapshot.recentSessions.map((session) => session.sessionName)).not.toContain("task-terminal-work");
+  });
+
   it("resolves chat list rows from the flat content-script entry shape", async () => {
     const now = Date.now();
     await setBindings([

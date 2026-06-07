@@ -10,7 +10,7 @@ import { nats } from "../nats.js";
 import { getSession, getSessionByName, type SessionEntry } from "../router/index.js";
 import { dbGetDaemonRestartPendingMessages, dbRecordDaemonRestartSessionSnapshot } from "../router/router-db.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
-import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
+import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
@@ -178,6 +178,13 @@ export class RuntimeSessionDispatcher {
     };
 
     for (const [sessionName, session] of this.streamingSessions) {
+      if (shouldSkipDaemonRestartTaskSessionSnapshot(sessionName, session)) {
+        log.info("Skipping daemon restart snapshot for terminal task session", {
+          sessionName,
+          taskBarrierTaskId: session.currentTaskBarrierTaskId ?? null,
+        });
+        continue;
+      }
       const pendingMessages = session.pendingMessages.map(cloneRuntimeUserMessage);
       const nonIdle = isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
       const snapshot = getAccumulator(sessionName, {
@@ -195,6 +202,7 @@ export class RuntimeSessionDispatcher {
           pendingAbort: session.pendingAbort,
           pendingWake: session.pendingWake,
           currentToolName: session.currentToolName ?? null,
+          currentTaskBarrierTaskId: session.currentTaskBarrierTaskId ?? null,
           currentTurnPendingIds: session.currentTurnPendingIds ?? [],
         },
       });
@@ -1789,6 +1797,29 @@ function describeDaemonRestartActivity(session: RuntimeHostStreamingSession): st
   if (session.turnActive) return "thinking";
   if (session.pendingMessages.length > 0 || session.pendingWake) return "queued";
   return "idle";
+}
+
+function shouldSkipDaemonRestartTaskSessionSnapshot(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+): boolean {
+  const taskId = session.currentTaskBarrierTaskId ?? inferTaskIdFromDedicatedTaskSessionName(sessionName);
+  if (!taskId && !isDedicatedTaskSessionName(sessionName)) {
+    return false;
+  }
+  return !dbHasActiveAssignedTaskForSession(sessionName, taskId);
+}
+
+function isDedicatedTaskSessionName(sessionName: string): boolean {
+  return /^task-[A-Za-z0-9_-]+-work(?:$|[:/])/.test(sessionName);
+}
+
+function inferTaskIdFromDedicatedTaskSessionName(sessionName: string): string | null {
+  if (!isDedicatedTaskSessionName(sessionName)) return null;
+  const workIndex = sessionName.indexOf("-work");
+  if (workIndex <= 0) return null;
+  const taskId = sessionName.slice(0, workIndex);
+  return taskId.startsWith("task-") ? taskId : null;
 }
 
 function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessage {
