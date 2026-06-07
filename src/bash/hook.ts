@@ -28,6 +28,7 @@ const log = logger.child("bash:hook");
  * Emit an audit event via NATS (fire-and-forget).
  */
 function emitAudit(event: { type: string; agentId: string; denied: string; reason: string; detail?: string }): void {
+  if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
   publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch(() => {});
 }
 

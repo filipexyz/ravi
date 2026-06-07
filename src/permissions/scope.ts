@@ -31,6 +31,7 @@ export async function flushAuditAndExit(code: number): Promise<never> {
  * Emit an audit event via NATS (fire-and-forget, flushed on exit).
  */
 function emitAudit(event: { type: string; agentId: string; denied: string; reason: string; command?: string }): void {
+  if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
   const p = publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch((err) => {
     console.error("[audit] emitAudit failed", err);
   });
