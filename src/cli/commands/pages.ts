@@ -144,6 +144,7 @@ export class PagesCommands {
     @Arg("site", { description: "Pages site id or slug" }) site: string,
     @Arg("hostnames", { variadic: true, description: "Custom hostname(s), e.g. www.example.com" })
     hostnames: string[],
+    @Option({ flags: "--check", description: "Run provider readiness check after binding" }) check?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -153,6 +154,7 @@ export class PagesCommands {
           project,
           site,
           hostnames,
+          check,
           console: consoleUrl,
         },
         this.deps,

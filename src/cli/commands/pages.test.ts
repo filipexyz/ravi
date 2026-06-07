@@ -192,7 +192,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.domains("filipe-ai", "filipe-ai", ["www.filipe.ai", "filipe.ai"], undefined, true),
+      command.domains("filipe-ai", "filipe-ai", ["www.filipe.ai", "filipe.ai"], true, undefined, true),
     );
     const payload = JSON.parse(output);
 
@@ -201,6 +201,7 @@ describe("pages CLI commands", () => {
         method: "POST",
         path: "/api/cli/projects/filipe-ai/pages/filipe-ai/domains",
         body: {
+          check: true,
           hostnames: ["www.filipe.ai", "filipe.ai"],
         },
         accessToken: "access-secret",

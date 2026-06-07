@@ -27,6 +27,7 @@ export interface PageSiteUpdateOptions extends PagesClientOptions {
 }
 
 export interface PageDomainBindOptions extends PagesClientOptions {
+  check?: boolean;
   hostnames: string[];
   project: string;
   site: string;
@@ -150,6 +151,7 @@ export class RaviPagesClient {
         requireText(options.site, "site"),
       )}/domains`,
       {
+        ...(options.check ? { check: true } : {}),
         hostnames: normalizeHostnames(options.hostnames),
       },
       accessToken,
