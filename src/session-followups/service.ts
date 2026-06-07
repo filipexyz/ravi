@@ -667,7 +667,17 @@ function getLatestExternalChatActivityAt(chatId: string): number | undefined {
   const row = getDb()
     .prepare(
       `
-      SELECT MAX(COALESCE(provider_timestamp, ingested_at, created_at)) AS value
+      SELECT MAX(
+        COALESCE(
+          CASE
+            WHEN provider_timestamp >= 1000000000 AND provider_timestamp < 100000000000
+              THEN provider_timestamp * 1000
+            ELSE provider_timestamp
+          END,
+          ingested_at,
+          created_at
+        )
+      ) AS value
       FROM chat_messages
       WHERE chat_id = ?
         AND deleted_at IS NULL

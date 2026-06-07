@@ -350,6 +350,55 @@ describe("session followup service", () => {
     expect(listSessionFollowupRuns({ cadenceId: cadence.id }).items).toHaveLength(3);
   });
 
+  it("normalizes external chat provider timestamps stored as epoch seconds", async () => {
+    dbUpsertInstance({ name: "main", channel: "whatsapp" });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "seconds-timestamp@g.us",
+      chatType: "group",
+      title: "Seconds Timestamp",
+      seenAt: 1_000,
+    });
+    const session = getOrCreateSession("agent:dev:whatsapp:main:group:seconds-timestamp", "dev", "/tmp/dev", {
+      name: "dev-seconds-timestamp",
+      accountId: "main",
+      channel: "whatsapp",
+    });
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id, attachedByType: "system" });
+
+    const anchorAtMs = Date.UTC(2026, 0, 1, 12, 0, 0);
+    dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "whatsapp",
+      instanceId: "main",
+      providerMessageId: "external-seconds-1",
+      rawChatId: "seconds-timestamp@g.us",
+      actorType: "contact",
+      contactId: "contact-1",
+      messageType: "text",
+      content: { text: "timestamp em segundos" },
+      providerTimestamp: Math.floor(anchorAtMs / 1000),
+      ingestedAt: anchorAtMs - 60_000,
+    });
+
+    createSessionFollowupCadence({
+      name: "Seconds timestamp followup",
+      targetType: "chat",
+      targetRef: chat.id,
+      schedule: { type: "every", every: 2 * 60 * 60 * 1000 },
+      messageTemplate: "Follow up after seconds timestamp.",
+      now: anchorAtMs,
+    });
+
+    const early = await runDueSessionFollowups({ now: anchorAtMs + 60_000 });
+    expect(early.sent).toBe(0);
+
+    const due = await runDueSessionFollowups({ now: anchorAtMs + 2 * 60 * 60 * 1000 });
+    expect(due.sent).toBe(1);
+    expect(prompts).toHaveLength(1);
+  });
+
   it("does not restart direct session idle steps from internal session updates", async () => {
     const session = getOrCreateSession("agent:dev:followup-direct-idle", "dev", "/tmp/dev", {
       name: "dev-followup-direct-idle",

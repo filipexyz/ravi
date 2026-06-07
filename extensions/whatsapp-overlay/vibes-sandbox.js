@@ -333,6 +333,8 @@
 
   function buildPattern(input) {
     switch (input.scene) {
+      case "cinematic":
+        return cinematic(input);
       case "techno":
         return techno(input);
       case "lofi":
