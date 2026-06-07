@@ -30489,6 +30489,10 @@ export const PagesCreateReturnSchema = {
 export const PagesDomainsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "check": {
+      "description": "Run provider readiness check after binding",
+      "type": "boolean"
+    },
     "console": {
       "description": "Console base URL",
       "type": "string"

@@ -3518,6 +3518,7 @@ export class RaviClient {
     },
     /** Bind custom hostnames to a Ravi Pages site */
     domains: async (project: string, site: string, hostnames: string[], options?: {
+      check?: boolean;
       console?: string;
     }): Promise<PagesDomainsReturn> => {
       return this.transport.call({

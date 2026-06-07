@@ -6267,6 +6267,7 @@ export type PagesCreateReturn = {
 
 /** Input shape for `pages.domains`. */
 export type PagesDomainsInput = {
+  check?: boolean;
   console?: string;
   hostnames: string[];
   project: string;
