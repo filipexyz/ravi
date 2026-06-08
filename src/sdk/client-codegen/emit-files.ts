@@ -300,11 +300,7 @@ function renderMethod(cmd: CommandRegistryEntry, indent: number, typeImports: Se
   const variadicArg = sig.args.find((a) => a.variadic);
   for (const arg of sig.args) {
     const optional = arg.required ? "" : "?";
-    if (arg.variadic) {
-      params.push(`${arg.name}: ${arg.type}`);
-    } else {
-      params.push(`${arg.name}${optional}: ${arg.type}`);
-    }
+    params.push(`${arg.name}${optional}: ${arg.type}`);
   }
   if (sig.options.length > 0) {
     const optBag = renderOptionsBag(sig, indent + 1);

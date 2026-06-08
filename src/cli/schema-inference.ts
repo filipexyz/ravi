@@ -141,6 +141,7 @@ export interface InferredArgSchema {
  *   @Arg("name")                                 -> z.string()
  *   @Arg("name", { required: false })            -> z.string().optional()
  *   @Arg("name", { variadic: true })             -> z.array(z.string())
+ *   @Arg("name", { required: false, variadic: true }) -> z.array(z.string()).optional()
  *   @Arg("name", { defaultValue: "x" })          -> z.string().default("x")
  *   @Arg("name", { variadic: true, defaultValue: ["a"] }) -> z.array(z.string()).default(["a"])
  */
@@ -152,6 +153,9 @@ export function inferArgSchema(arg: ArgMetadata): InferredArgSchema {
   if (arg.variadic) {
     if (arg.defaultValue !== undefined && Array.isArray(arg.defaultValue)) {
       return { schema: z.array(z.string()).default(arg.defaultValue.map(String)), source: "inferred" };
+    }
+    if (arg.required === false) {
+      return { schema: z.array(z.string()).optional(), source: "inferred" };
     }
     return { schema: z.array(z.string()), source: "inferred" };
   }
