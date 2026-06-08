@@ -10,7 +10,7 @@ import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
 import type { RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
-import { getOrCreateSession } from "../router/sessions.js";
+import { deleteSession, getOrCreateSession, getSessionByName, setSessionEphemeral } from "../router/sessions.js";
 import {
   dbGetDaemonRestartPendingMessages,
   dbListEligibleDaemonRestartSessionSnapshots,
@@ -768,6 +768,61 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     expect(interrupted).toBe(true);
     expect(pendingResolved).toBe(true);
     expect(dispatcher.pendingStarts).toHaveLength(0);
+  });
+
+  it("deletes ephemeral task-work sessions from DB on task terminal events", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-zombie-task-work-");
+    try {
+      const sessionName = "task-zombie-fix-work";
+      const entry = getOrCreateSession("agent:dev:test:zombie-fix", "dev", stateDir, { name: sessionName });
+      setSessionEphemeral(entry.sessionKey, 24 * 60 * 60_000);
+      expect(getSessionByName(sessionName)?.ephemeral).toBe(true);
+
+      const dispatcher = createDispatcher(1);
+      const runtime = new RuntimeHostSubscriptions({
+        isRunning: () => true,
+        dispatcher,
+        safeEmit: async () => {},
+      });
+
+      await runtime.handleTaskEventForRuntime({
+        taskId: "task-zombie-fix",
+        assigneeSessionName: sessionName,
+        event: { id: 7, type: "task.done", sessionName: "main" },
+      });
+
+      expect(getSessionByName(sessionName)).toBeNull();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not delete non-ephemeral task-work sessions on terminal events", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-zombie-task-work-permanent-");
+    try {
+      const sessionName = "task-permanent-work";
+      const entry = getOrCreateSession("agent:dev:test:permanent", "dev", stateDir, { name: sessionName });
+      // Do NOT call setSessionEphemeral — session stays permanent
+      expect(getSessionByName(sessionName)?.ephemeral).toBeFalsy();
+
+      const dispatcher = createDispatcher(1);
+      const runtime = new RuntimeHostSubscriptions({
+        isRunning: () => true,
+        dispatcher,
+        safeEmit: async () => {},
+      });
+
+      await runtime.handleTaskEventForRuntime({
+        taskId: "task-permanent",
+        assigneeSessionName: sessionName,
+        event: { id: 8, type: "task.done", sessionName: "main" },
+      });
+
+      expect(getSessionByName(sessionName)?.sessionKey).toBe(entry.sessionKey);
+      deleteSession(entry.sessionKey);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 
   it("releases blocked task runtime sessions without aborting normal sessions", async () => {
