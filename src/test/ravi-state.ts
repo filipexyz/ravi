@@ -16,6 +16,30 @@ const pendingStateDirs = new Set<string>();
 let pendingStateCleanupRegistered = false;
 let previousAuditSuppression: string | undefined;
 
+const RAVI_RUNTIME_CONTEXT_ENV_KEYS = [
+  "RAVI_ACCOUNT_ID",
+  "RAVI_ACTOR_AGENT_ID",
+  "RAVI_ACTOR_TYPE",
+  "RAVI_AGENT_ID",
+  "RAVI_CANONICAL_CHAT_ID",
+  "RAVI_CHANNEL",
+  "RAVI_CHAT_ID",
+  "RAVI_CONTACT_ID",
+  "RAVI_CONTEXT_KEY",
+  "RAVI_GROUP_ID",
+  "RAVI_GROUP_NAME",
+  "RAVI_INSTANCE_ID",
+  "RAVI_NORMALIZED_SENDER_ID",
+  "RAVI_PLATFORM_IDENTITY_ID",
+  "RAVI_RAW_SENDER_ID",
+  "RAVI_SENDER_ID",
+  "RAVI_SENDER_NAME",
+  "RAVI_SENDER_PHONE",
+  "RAVI_SESSION_KEY",
+  "RAVI_SESSION_NAME",
+  "RAVI_TURN_SCOPED_AUTHORITY",
+] as const;
+
 async function acquireRaviStateLock(): Promise<void> {
   const deadline = Date.now() + RAVI_STATE_LOCK_TIMEOUT_MS;
 
@@ -83,6 +107,14 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
   previousAuditSuppression = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
   process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
   return stateDir;
+}
+
+export function withoutRaviRuntimeContextEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const cleanEnv: NodeJS.ProcessEnv = { ...env };
+  for (const key of RAVI_RUNTIME_CONTEXT_ENV_KEYS) {
+    delete cleanEnv[key];
+  }
+  return cleanEnv;
 }
 
 export async function cleanupIsolatedRaviState(stateDir?: string | null): Promise<void> {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState, withoutRaviRuntimeContextEnv } from "../test/ravi-state.js";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -13,7 +13,7 @@ function runCli(args: string[]): { stdout: string; stderr: string } {
   const result = spawnSync("bun", ["src/cli/index.ts", ...args], {
     cwd: PROJECT_ROOT,
     env: {
-      ...process.env,
+      ...withoutRaviRuntimeContextEnv(),
       ...(stateDir ? { RAVI_STATE_DIR: stateDir } : {}),
       NO_COLOR: "1",
     },
