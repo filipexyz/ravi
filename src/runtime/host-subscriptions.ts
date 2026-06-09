@@ -1,4 +1,5 @@
 import { nats } from "../nats.js";
+import { deleteSession, getSessionByName } from "../router/sessions.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../session-control.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -98,6 +99,22 @@ export class RuntimeHostSubscriptions {
     if ((type === "task.done" || type === "task.failed") && deliverableSessionName) {
       await this.options.dispatcher.startDeferredAfterTaskSessionIfDeliverable(deliverableSessionName);
       this.options.dispatcher.wakeStreamingSessionIfDeliverable(deliverableSessionName);
+    }
+
+    // Delete ephemeral task-work sessions immediately on terminal events instead of waiting
+    // for natural TTL expiry. Without this, sessions linger as zombies in `ravi sessions list`
+    // for up to the session TTL (default 24h) even though the underlying task is `done`/`failed`.
+    if (type && (type === "task.done" || type === "task.failed") && releaseSessionName) {
+      const sessionEntry = getSessionByName(releaseSessionName);
+      if (sessionEntry?.ephemeral === true && isTaskRuntimeSessionName(sessionEntry.name ?? releaseSessionName)) {
+        deleteSession(sessionEntry.sessionKey);
+        log.info("Deleted ephemeral task-work session after task terminal event", {
+          sessionName: releaseSessionName,
+          sessionKey: sessionEntry.sessionKey,
+          taskId: data.taskId,
+          eventType: type,
+        });
+      }
     }
   }
 
