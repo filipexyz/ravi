@@ -1671,6 +1671,39 @@ public enum RaviSchemas {
 
   public static let AppsImportCliReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "command": {
@@ -1799,7 +1832,15 @@ public enum RaviSchemas {
       "id": {
         "type": "string"
       },
-      "manifest": {},
+      "manifest": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
       "manifestPath": {
         "type": "string"
       },
@@ -2752,6 +2793,39 @@ public enum RaviSchemas {
 
   public static let AppsScaffoldReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "command": {
@@ -2802,7 +2876,15 @@ public enum RaviSchemas {
       "id": {
         "type": "string"
       },
-      "manifest": {},
+      "manifest": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
       "manifestPath": {
         "type": "string"
       },

@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "08c65c30f071604e"
+    "version": "9fc3d7278ed53a94"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2212,6 +2212,39 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
                   "additionalProperties": false,
                   "properties": {
                     "command": {
@@ -2340,7 +2373,15 @@
                     "id": {
                       "type": "string"
                     },
-                    "manifest": {},
+                    "manifest": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
                     "manifestPath": {
                       "type": "string"
                     },
@@ -3397,6 +3438,39 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
                   "additionalProperties": false,
                   "properties": {
                     "command": {
@@ -3447,7 +3521,15 @@
                     "id": {
                       "type": "string"
                     },
-                    "manifest": {},
+                    "manifest": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
                     "manifestPath": {
                       "type": "string"
                     },

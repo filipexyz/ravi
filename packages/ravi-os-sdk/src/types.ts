@@ -401,7 +401,7 @@ export type AppsImportCliReturn = {
   }>;
   force: boolean;
   id: string;
-  manifest: unknown;
+  manifest: Record<string, unknown>;
   manifestPath: string;
   name: string;
   nextCommands: string[];
@@ -583,7 +583,7 @@ export type AppsScaffoldReturn = {
   }>;
   force: boolean;
   id: string;
-  manifest: unknown;
+  manifest: Record<string, unknown>;
   manifestPath: string;
   name: string;
   nextCommands: string[];

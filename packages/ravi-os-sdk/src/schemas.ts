@@ -1645,6 +1645,39 @@ export const AppsImportCliInputSchema = {
 
 /** JSON Schema for the return shape of `apps.import-cli`. */
 export const AppsImportCliReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "command": {
@@ -1773,7 +1806,15 @@ export const AppsImportCliReturnSchema = {
     "id": {
       "type": "string"
     },
-    "manifest": {},
+    "manifest": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
     "manifestPath": {
       "type": "string"
     },
@@ -2718,6 +2759,39 @@ export const AppsScaffoldInputSchema = {
 
 /** JSON Schema for the return shape of `apps.scaffold`. */
 export const AppsScaffoldReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "command": {
@@ -2768,7 +2842,15 @@ export const AppsScaffoldReturnSchema = {
     "id": {
       "type": "string"
     },
-    "manifest": {},
+    "manifest": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
     "manifestPath": {
       "type": "string"
     },

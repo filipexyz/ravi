@@ -573,7 +573,7 @@ public struct AppsImportCliReturn: Codable, Sendable {
   public var files: [RaviJSON]
   public var force: Bool
   public var id: String
-  public var manifest: RaviJSON
+  public var manifest: [String: RaviJSON]
   public var manifestPath: String
   public var name: String
   public var nextCommands: [String]
@@ -586,7 +586,7 @@ public struct AppsImportCliReturn: Codable, Sendable {
   public var specPath: RaviJSON
   public var warnings: [String]
 
-  public init(command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: RaviJSON, manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: RaviJSON, skillPath: RaviJSON, source: String, sourceCommand: String, specPath: RaviJSON, warnings: [String]) {
+  public init(command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: RaviJSON, skillPath: RaviJSON, source: String, sourceCommand: String, specPath: RaviJSON, warnings: [String]) {
     self.command = command
     self.confidence = confidence
     self.debugCandidates = debugCandidates
@@ -835,7 +835,7 @@ public struct AppsScaffoldReturn: Codable, Sendable {
   public var files: [RaviJSON]
   public var force: Bool
   public var id: String
-  public var manifest: RaviJSON
+  public var manifest: [String: RaviJSON]
   public var manifestPath: String
   public var name: String
   public var nextCommands: [String]
@@ -843,7 +843,7 @@ public struct AppsScaffoldReturn: Codable, Sendable {
   public var skillPath: RaviJSON
   public var specPath: RaviJSON
 
-  public init(command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: RaviJSON, manifestPath: String, name: String, nextCommands: [String], skill: RaviJSON, skillPath: RaviJSON, specPath: RaviJSON) {
+  public init(command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], skill: RaviJSON, skillPath: RaviJSON, specPath: RaviJSON) {
     self.command = command
     self.description = description
     self.dryRun = dryRun
