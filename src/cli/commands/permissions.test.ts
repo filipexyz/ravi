@@ -10,15 +10,23 @@ interface TestRelation {
   objectType: string;
   objectId: string;
   source: string;
+  grantMode?: "temporary" | "permanent";
+  expiresAt?: number | null;
+  revokedAt?: number | null;
+  reason?: string | null;
+  issuedBy?: string | null;
   createdAt: number;
 }
 
 let relations: TestRelation[] = [];
 let nextRelationId = 1;
 
-function matchesFilter(relation: TestRelation, filter?: Record<string, string>): boolean {
+function matchesFilter(relation: TestRelation, filter?: Record<string, unknown>): boolean {
   if (!filter) return true;
-  return Object.entries(filter).every(([key, value]) => relation[key as keyof TestRelation] === value);
+  return Object.entries(filter).every(([key, value]) => {
+    if (key === "includeInactive") return true;
+    return relation[key as keyof TestRelation] === value;
+  });
 }
 
 mock.module("../decorators.js", () => ({
@@ -35,9 +43,11 @@ mock.module("../context.js", () => ({
   fail: (message: string) => {
     throw new Error(message);
   },
+  getContext: () => undefined,
 }));
 
 mock.module("../../permissions/relations.js", () => ({
+  DEFAULT_MANUAL_GRANT_TTL_MS: 60 * 60 * 1000,
   grantRelation: (
     subjectType: string,
     subjectId: string,
@@ -45,15 +55,33 @@ mock.module("../../permissions/relations.js", () => ({
     objectType: string,
     objectId: string,
     source: string,
+    options?: {
+      permanent?: boolean;
+      ttlMs?: number;
+      expiresAt?: number;
+      reason?: string;
+      issuedBy?: string;
+    },
   ) => {
     const existing = relations.find((item) =>
-      matchesFilter(item, { subjectType, subjectId, relation, objectType, objectId }),
+      matchesFilter(item, {
+        subjectType,
+        subjectId,
+        relation,
+        objectType,
+        objectId,
+      }),
     );
     if (existing) {
       existing.source = source;
-      return;
+      existing.grantMode = options?.permanent ? "permanent" : source === "manual" ? "temporary" : "permanent";
+      existing.expiresAt = options?.permanent ? null : (options?.expiresAt ?? 3601);
+      existing.reason = options?.reason ?? null;
+      existing.issuedBy = options?.issuedBy ?? null;
+      existing.revokedAt = null;
+      return existing;
     }
-    relations.push({
+    const created = {
       id: nextRelationId++,
       subjectType,
       subjectId,
@@ -61,20 +89,46 @@ mock.module("../../permissions/relations.js", () => ({
       objectType,
       objectId,
       source,
+      grantMode: options?.permanent
+        ? ("permanent" as const)
+        : source === "manual"
+          ? ("temporary" as const)
+          : ("permanent" as const),
+      expiresAt: options?.permanent ? null : source === "manual" ? (options?.expiresAt ?? 3601) : null,
+      revokedAt: null,
+      reason: options?.reason ?? null,
+      issuedBy: options?.issuedBy ?? null,
       createdAt: 1,
-    });
+    };
+    relations.push(created);
+    return created;
   },
   revokeRelation: (subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) => {
     const before = relations.length;
     relations = relations.filter(
-      (item) => !matchesFilter(item, { subjectType, subjectId, relation, objectType, objectId }),
+      (item) =>
+        !matchesFilter(item, {
+          subjectType,
+          subjectId,
+          relation,
+          objectType,
+          objectId,
+        }),
     );
     return relations.length < before;
   },
   hasRelation: (subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) =>
-    relations.some((item) => matchesFilter(item, { subjectType, subjectId, relation, objectType, objectId })),
-  listRelations: (filter?: Record<string, string>) => relations.filter((relation) => matchesFilter(relation, filter)),
-  clearRelations: (filter?: Record<string, string>) => {
+    relations.some((item) =>
+      matchesFilter(item, {
+        subjectType,
+        subjectId,
+        relation,
+        objectType,
+        objectId,
+      }),
+    ),
+  listRelations: (filter?: Record<string, unknown>) => relations.filter((relation) => matchesFilter(relation, filter)),
+  clearRelations: (filter?: Record<string, unknown>) => {
     const before = relations.length;
     relations = relations.filter((relation) => !matchesFilter(relation, filter));
     return before - relations.length;
@@ -88,15 +142,31 @@ mock.module("../../permissions/relations.js", () => ({
       objectType: "system",
       objectId: "*",
       source: "config",
+      grantMode: "permanent",
+      expiresAt: null,
+      revokedAt: null,
+      reason: null,
+      issuedBy: null,
       createdAt: 1,
     });
   },
 }));
 
+mock.module("../../permissions/grant-notifications.js", () => ({
+  notifyPermissionGrantCreated: () => {},
+  notifyPermissionGrantsCreated: () => {},
+}));
+
 mock.module("../../permissions/engine.js", () => ({
   can: (subjectType: string, subjectId: string, permission: string, objectType: string, objectId: string) =>
     relations.some((item) =>
-      matchesFilter(item, { subjectType, subjectId, relation: permission, objectType, objectId }),
+      matchesFilter(item, {
+        subjectType,
+        subjectId,
+        relation: permission,
+        objectType,
+        objectId,
+      }),
     ),
 }));
 

@@ -508,16 +508,21 @@ export class ContextCommands {
         return buildPreToolUseDenyResult("Codex hook payload is missing tool_input.command");
       }
 
-      const decision = evaluateBashPermission(command, {
+      const bashContext = {
+        contextId: context.contextId,
+        context,
         agentId: context.agentId,
         kind: context.kind,
         sessionKey: context.sessionKey,
         sessionName: context.sessionName,
+        source: context.source,
         capabilities: context.capabilities,
-      });
+        metadata: context.metadata,
+      };
+      const decision = evaluateBashPermission(command, bashContext);
 
       if (!decision.allowed) {
-        emitBashDeniedAudit(command, decision, context.agentId);
+        emitBashDeniedAudit(command, decision, context.agentId, bashContext);
         return buildPreToolUseDenyResult(decision.reason ?? "Bash command denied by Ravi");
       }
 

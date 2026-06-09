@@ -361,6 +361,72 @@ export type AppsGuideReturn = {
   };
 };
 
+/** Input shape for `apps.import-cli`. */
+export type AppsImportCliInput = {
+  command: string;
+  description?: string;
+  dryRun?: boolean;
+  force?: boolean;
+  id?: string;
+  name?: string;
+  skipSkill?: boolean;
+  skipSpec?: boolean;
+  skipUi?: boolean;
+  source?: string;
+};
+
+/** Return shape for `apps.import-cli`. */
+export type AppsImportCliReturn = {
+  command: string;
+  confidence: "high" | "medium" | "low";
+  debugCandidates: Array<{
+    command: string;
+    confidence: "high" | "medium" | "low";
+    description: string | null;
+    destructive: boolean;
+    id: string;
+    interactive: boolean;
+    json: boolean;
+    mutating: boolean;
+    name: string;
+    reviewRequired: string[];
+    streaming: boolean;
+  }>;
+  description: string;
+  dryRun: boolean;
+  files: Array<{
+    action: "planned" | "created" | "overwritten";
+    kind: "manifest" | "spec" | "skill";
+    path: string;
+  }>;
+  force: boolean;
+  id: string;
+  manifest: Record<string, unknown>;
+  manifestPath: string;
+  name: string;
+  nextCommands: string[];
+  operationCandidates: Array<{
+    command: string;
+    confidence: "high" | "medium" | "low";
+    description: string | null;
+    destructive: boolean;
+    id: string;
+    interactive: boolean;
+    json: boolean;
+    mutating: boolean;
+    name: string;
+    reviewRequired: string[];
+    streaming: boolean;
+  }>;
+  reviewRequired: string[];
+  skill: string | null;
+  skillPath: string | null;
+  source: "manifest" | "registry" | "help";
+  sourceCommand: string;
+  specPath: string | null;
+  warnings: string[];
+};
+
 /** Input shape for `apps.list`. */
 export type AppsListInput = {
   limit?: string;
@@ -517,7 +583,7 @@ export type AppsScaffoldReturn = {
   }>;
   force: boolean;
   id: string;
-  manifest: unknown;
+  manifest: Record<string, unknown>;
   manifestPath: string;
   name: string;
   nextCommands: string[];
@@ -2003,6 +2069,57 @@ export type ChatsListsMembersInput = {
 /** Return shape for `chats.lists.members`. */
 export type ChatsListsMembersReturn = Record<string, unknown>;
 
+/** Input shape for `chats.lists.recompute`. */
+export type ChatsListsRecomputeInput = {
+  list: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.recompute`. */
+export type ChatsListsRecomputeReturn = {
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    selector?: Record<string, unknown>;
+    updatedAt: number;
+    visibility: string;
+  };
+  recompute: {
+    added: number;
+    addedChatIds: string[];
+    eligible: number;
+    eligibleChatIds: string[];
+    kept: number;
+    keptChatIds: string[];
+    list: {
+      archivedAt?: number;
+      createdAt: number;
+      description?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      mode: string;
+      name: string;
+      ownerId: string;
+      ownerType: string;
+      selector?: Record<string, unknown>;
+      updatedAt: number;
+      visibility: string;
+    };
+    preserved: number;
+    preservedChatIds: string[];
+    removed: number;
+    removedChatIds: string[];
+    selector: Record<string, unknown>;
+  };
+};
+
 /** Input shape for `chats.lists.remove`. */
 export type ChatsListsRemoveInput = {
   channel?: string;
@@ -2776,6 +2893,54 @@ export type CostsAgentsReturn = {
   };
 };
 
+/** Input shape for `costs.pricing`. */
+export type CostsPricingInput = {
+  dryRun?: boolean;
+  hours?: string;
+  includePriced?: boolean;
+  limit?: string;
+  recompute?: boolean;
+};
+
+/** Return shape for `costs.pricing`. */
+export type CostsPricingReturn = {
+  recompute?: {
+    attempted: number;
+    dryRun: boolean;
+    includePriced: boolean;
+    limit: number;
+    priced: number;
+    rows: Array<{
+      id: number;
+      model: string;
+      previousPricingStatus: string;
+      pricingError: string | null;
+      pricingModel: string | null;
+      pricingSource: string | null;
+      pricingStatus: string;
+      totalCost: number;
+    }>;
+    unpriced: number;
+    updated: number;
+  };
+  rows: Array<{
+    events: number;
+    lastCreatedAt: number | null;
+    model: string;
+    pricingModel: string | null;
+    pricingSource: string | null;
+    pricingStatus: string;
+    totalCost: number;
+    totalTokens: number;
+  }>;
+  window: {
+    effectiveHours: number;
+    requestedHours: string | null;
+    sinceMs: number;
+    untilMs: number;
+  };
+};
+
 /** Input shape for `costs.session`. */
 export type CostsSessionInput = {
   nameOrKey: string;
@@ -3122,6 +3287,7 @@ export type CrmOpportunityCreateInput = {
   currency?: string;
   idempotencyKey?: string;
   owner?: string;
+  pipeline?: string;
   stage?: string;
   title: string;
   value?: string;
@@ -6391,21 +6557,31 @@ export type PermissionsClearReturn = {
 
 /** Input shape for `permissions.grant`. */
 export type PermissionsGrantInput = {
+  expiresAt?: string;
   object: string;
+  permanent?: boolean;
+  reason?: string;
   relation: string;
   subject: string;
+  ttl?: string;
 };
 
 /** Return shape for `permissions.grant`. */
 export type PermissionsGrantReturn = {
   changedCount: number;
   relation: {
-    id?: string;
+    active?: boolean;
+    expiresAt?: number | null;
+    grantMode?: "temporary" | "permanent";
+    id?: string | number;
+    issuedBy?: string | null;
     object: string;
     objectId: string;
     objectMembers?: string[];
     objectType: string;
+    reason?: string | null;
     relation: string;
+    revokedAt?: number | null;
     source?: string;
     subject: string;
     subjectId: string;
@@ -6422,20 +6598,30 @@ export type PermissionsGrantReturn = {
 
 /** Input shape for `permissions.init`. */
 export type PermissionsInitInput = {
+  expiresAt?: string;
+  permanent?: boolean;
+  reason?: string;
   subject: string;
   template: string;
+  ttl?: string;
 };
 
 /** Return shape for `permissions.init`. */
 export type PermissionsInitReturn = {
   changedCount: number;
   relations: Array<{
-    id?: string;
+    active?: boolean;
+    expiresAt?: number | null;
+    grantMode?: "temporary" | "permanent";
+    id?: string | number;
+    issuedBy?: string | null;
     object: string;
     objectId: string;
     objectMembers?: string[];
     objectType: string;
+    reason?: string | null;
     relation: string;
+    revokedAt?: number | null;
     source?: string;
     subject: string;
     subjectId: string;
@@ -6451,6 +6637,7 @@ export type PermissionsInitReturn = {
 
 /** Input shape for `permissions.list`. */
 export type PermissionsListInput = {
+  all?: boolean;
   limit?: string;
   object?: string;
   offset?: string;
@@ -6462,6 +6649,7 @@ export type PermissionsListInput = {
 /** Return shape for `permissions.list`. */
 export type PermissionsListReturn = {
   filter: {
+    includeInactive?: boolean;
     objectId?: string;
     objectType?: string;
     relation?: string;
@@ -6471,12 +6659,18 @@ export type PermissionsListReturn = {
     [k: string]: unknown;
   };
   items: Array<{
-    id?: string;
+    active?: boolean;
+    expiresAt?: number | null;
+    grantMode?: "temporary" | "permanent";
+    id?: string | number;
+    issuedBy?: string | null;
     object: string;
     objectId: string;
     objectMembers?: string[];
     objectType: string;
+    reason?: string | null;
     relation: string;
+    revokedAt?: number | null;
     source?: string;
     subject: string;
     subjectId: string;
@@ -6493,12 +6687,18 @@ export type PermissionsListReturn = {
     total: number;
   };
   relations: Array<{
-    id?: string;
+    active?: boolean;
+    expiresAt?: number | null;
+    grantMode?: "temporary" | "permanent";
+    id?: string | number;
+    issuedBy?: string | null;
     object: string;
     objectId: string;
     objectMembers?: string[];
     objectType: string;
+    reason?: string | null;
     relation: string;
+    revokedAt?: number | null;
     source?: string;
     subject: string;
     subjectId: string;
@@ -6519,12 +6719,18 @@ export type PermissionsRevokeInput = {
 export type PermissionsRevokeReturn = {
   changedCount: number;
   relation: {
-    id?: string;
+    active?: boolean;
+    expiresAt?: number | null;
+    grantMode?: "temporary" | "permanent";
+    id?: string | number;
+    issuedBy?: string | null;
     object: string;
     objectId: string;
     objectMembers?: string[];
     objectType: string;
+    reason?: string | null;
     relation: string;
+    revokedAt?: number | null;
     source?: string;
     subject: string;
     subjectId: string;
@@ -6532,12 +6738,18 @@ export type PermissionsRevokeReturn = {
     [k: string]: unknown;
   };
   remainingIndividualRelations: Array<{
-    id?: string;
+    active?: boolean;
+    expiresAt?: number | null;
+    grantMode?: "temporary" | "permanent";
+    id?: string | number;
+    issuedBy?: string | null;
     object: string;
     objectId: string;
     objectMembers?: string[];
     objectType: string;
+    reason?: string | null;
     relation: string;
+    revokedAt?: number | null;
     source?: string;
     subject: string;
     subjectId: string;
@@ -6558,12 +6770,18 @@ export type PermissionsSyncInput = Record<string, never>;
 export type PermissionsSyncReturn = {
   changedCount: number;
   relations: Array<{
-    id?: string;
+    active?: boolean;
+    expiresAt?: number | null;
+    grantMode?: "temporary" | "permanent";
+    id?: string | number;
+    issuedBy?: string | null;
     object: string;
     objectId: string;
     objectMembers?: string[];
     objectType: string;
+    reason?: string | null;
     relation: string;
+    revokedAt?: number | null;
     source?: string;
     subject: string;
     subjectId: string;
@@ -7633,6 +7851,12 @@ export type SelfContextInput = {
 
 /** Return shape for `self.context`. */
 export type SelfContextReturn = {
+  actor: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
   chat: {
     data?: unknown;
     reason?: string;
@@ -7740,6 +7964,12 @@ export type SelfWhoamiInput = Record<string, never>;
 
 /** Return shape for `self.whoami`. */
 export type SelfWhoamiReturn = {
+  actor: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
   chat: {
     data?: unknown;
     reason?: string;
@@ -10603,7 +10833,7 @@ export type WhatsappGroupCreateInput = {
   agentProvider?: string;
   createAgent?: boolean;
   name: string;
-  participants: string;
+  participants?: string;
   skipTaggedAdmins?: boolean;
 };
 

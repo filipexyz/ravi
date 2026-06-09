@@ -19,7 +19,9 @@ Funcionalidades do WhatsApp expostas via Omni/Baileys. Permite criar grupos, reg
 
 **Criação de grupo:** `ravi whatsapp group create` usa a API HTTP pública do Omni (`POST /api/v2/instances/:id/groups`) e depois registra chat, rota, participantes e sessão no SQLite local do Ravi. Não use o tópico legado `ravi.whatsapp.group.create`.
 
-**Operações legadas de grupo:** comandos como `list`, `info`, `add`, `remove`, `promote`, `demote`, `leave`, `join`, `invite`, `rename`, `description` e `settings` ainda passam pelo bridge NATS legado `ravi.whatsapp.group.{op}` neste CLI. Verifique o contrato/handler antes de depender deles em automação.
+**Operações de grupo:** `list` e `info` tentam REST público do Omni e caem para o modelo local `chats` se o Omni falhar. Todas as mutações (`add`, `remove`, `promote`, `demote`, `leave`, `join`, `invite`, `revoke-invite`, `rename`, `description`, `settings`) usam contratos REST do Omni pelo cliente público. Não use nem sugira o bridge NATS legado `ravi.whatsapp.group.{op}`; quando um endpoint REST ainda não existir no Omni, o comando deve falhar explicitamente com erro `*_REST_UNAVAILABLE`.
+
+**Novo fio de trabalho:** quando o usuário pedir para criar um grupo/agent para um assunto novo, use o fluxo transacional de criação. Não tente localizar o grupo com `ravi whatsapp group list`: listagem não registra chat/rota/sessão. Use `group list` apenas para inspeção.
 
 **Gerenciamento de contas/instâncias:** use `ravi instances` (conectar, desconectar, status, policies).
 
@@ -61,6 +63,8 @@ ravi whatsapp group create "Vida - Health" "5511888888888" \
 
 Quando o comando roda dentro de uma sessão Ravi, o criador pode ser inferido pelo actor do contexto e entra como participante inicial. `--admin`/`--admins` também adiciona os números à lista inicial de participantes, mas **não promove admin automaticamente**: o contrato público atual do Omni ainda não expõe promoção de admin. Quando isso acontece, o payload retorna `adminPromotion.status = "skipped"` e o Ravi registra esses contatos como `member`, não `admin`.
 
+Se o usuário disser algo ambíguo como "criei um grupo para isso", "abre um grupo", "novo grupo/agent" ou "vamos separar esse assunto", trate como intenção de criar e rotear um novo workspace, salvo quando ele fornecer JID/link ou disser explicitamente que o grupo já existe.
+
 Saída:
 ```
 ✓ Group created: Vida - Health
@@ -93,7 +97,7 @@ ravi whatsapp group remove <groupId> "5511999999999"
 ```bash
 ravi whatsapp group promote <groupId> "5511999999999"
 ```
-Este comando ainda depende do bridge NATS legado. No fluxo `group create`, promoção automática de admin fica `skipped` até o Omni expor um contrato público para isso.
+No fluxo `group create`, promoção automática de admin fica `skipped` até o Omni expor e validar o contrato público de promoção em criação. Fora da criação, `promote` chama o contrato REST de participantes do Omni e deve falhar explicitamente se esse endpoint não estiver disponível.
 
 ### Remover admin
 ```bash

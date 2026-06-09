@@ -32,15 +32,132 @@ const HANDLERS = {
   "ravi:dom-command-result": noopDomResult,
 };
 
+const GUARDED_HANDLER_POLICIES = {
+  "ravi:get-snapshot": { ttlMs: 1500, staleMs: 8000, slowMs: 3500, backoffMs: 2000, maxBackoffMs: 15000 },
+  "ravi:get-session-workspace": { ttlMs: 2500, staleMs: 10000, slowMs: 4000, backoffMs: 2500, maxBackoffMs: 20000 },
+  "ravi:get-tasks": { ttlMs: 4000, staleMs: 15000, slowMs: 4500, backoffMs: 3000, maxBackoffMs: 25000 },
+  "ravi:get-crm": { ttlMs: 12000, staleMs: 30000, slowMs: 5000, backoffMs: 5000, maxBackoffMs: 30000 },
+  "ravi:get-insights": { ttlMs: 10000, staleMs: 30000, slowMs: 5000, backoffMs: 5000, maxBackoffMs: 30000 },
+  "ravi:get-artifacts": { ttlMs: 10000, staleMs: 30000, slowMs: 5000, backoffMs: 5000, maxBackoffMs: 30000 },
+  "ravi:get-omni-panel": { ttlMs: 5000, staleMs: 15000, slowMs: 4500, backoffMs: 3000, maxBackoffMs: 25000 },
+  "ravi:chat-list-resolve": { ttlMs: 5000, staleMs: 15000, slowMs: 4500, backoffMs: 3000, maxBackoffMs: 25000 },
+};
+const MAX_GUARDED_IN_FLIGHT = 4;
+const guardedRequestState = new Map();
+let guardedInFlightCount = 0;
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const handler = HANDLERS[message?.type];
   if (!handler) return undefined;
   Promise.resolve()
-    .then(() => handler(message.payload ?? {}))
+    .then(() => runGuardedHandler(message.type, handler, message.payload ?? {}))
     .then(sendResponse)
     .catch((error) => sendResponse(toErrorResponse(error)));
   return true;
 });
+
+async function runGuardedHandler(type, handler, payload) {
+  const policy = GUARDED_HANDLER_POLICIES[type];
+  if (!policy) return await handler(payload);
+
+  const key = `${type}:${stableStringify(payload)}`;
+  const now = Date.now();
+  const state = guardedRequestState.get(key) ?? {
+    cached: null,
+    inFlight: null,
+    failures: 0,
+    backoffUntil: 0,
+  };
+  guardedRequestState.set(key, state);
+
+  if (state.inFlight) return await state.inFlight;
+  if (state.cached && state.cached.expiresAt > now) return state.cached.value;
+  if (state.backoffUntil > now) {
+    if (state.cached && state.cached.staleUntil > now) return state.cached.value;
+    return {
+      ok: false,
+      code: "overlay_backoff",
+      error: `Overlay polling paused for ${Math.ceil((state.backoffUntil - now) / 1000)}s after slow/failing gateway calls.`,
+    };
+  }
+  if (guardedInFlightCount >= MAX_GUARDED_IN_FLIGHT) {
+    if (state.cached && state.cached.staleUntil > now) return state.cached.value;
+    return {
+      ok: false,
+      code: "overlay_rate_limited",
+      error: "Overlay request concurrency limit reached.",
+    };
+  }
+
+  const startedAt = Date.now();
+  guardedInFlightCount += 1;
+  state.inFlight = Promise.resolve()
+    .then(() => handler(payload))
+    .then((result) => {
+      const finishedAt = Date.now();
+      const latencyMs = finishedAt - startedAt;
+      const failed = result?.ok === false;
+      if (failed) {
+        markGuardedBackoff(state, policy, finishedAt);
+      } else {
+        state.failures = 0;
+        state.backoffUntil =
+          latencyMs > policy.slowMs
+            ? finishedAt + Math.min(policy.backoffMs, policy.maxBackoffMs)
+            : 0;
+      }
+      if (!failed) {
+        state.cached = {
+          value: result,
+          expiresAt: finishedAt + policy.ttlMs,
+          staleUntil: finishedAt + policy.staleMs,
+        };
+      }
+      return result;
+    })
+    .catch((error) => {
+      markGuardedBackoff(state, policy, Date.now());
+      throw error;
+    })
+    .finally(() => {
+      guardedInFlightCount = Math.max(0, guardedInFlightCount - 1);
+      state.inFlight = null;
+      pruneGuardedRequestState();
+    });
+
+  return await state.inFlight;
+}
+
+function markGuardedBackoff(state, policy, now) {
+  state.failures += 1;
+  const duration = Math.min(
+    policy.maxBackoffMs,
+    policy.backoffMs * 2 ** Math.min(state.failures - 1, 4),
+  );
+  state.backoffUntil = now + duration;
+}
+
+function pruneGuardedRequestState() {
+  if (guardedRequestState.size <= 80) return;
+  const now = Date.now();
+  for (const [key, state] of guardedRequestState.entries()) {
+    if (state.inFlight) continue;
+    if (state.cached && state.cached.staleUntil > now) continue;
+    guardedRequestState.delete(key);
+    if (guardedRequestState.size <= 60) break;
+  }
+}
+
+function stableStringify(value) {
+  if (value === undefined) return '"__undefined__"';
+  if (typeof value === "number" && !Number.isFinite(value)) return '"__nonfinite_number__"';
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+    .join(",")}}`;
+}
 
 function toErrorResponse(error) {
   if (error instanceof NoActiveServerError) {

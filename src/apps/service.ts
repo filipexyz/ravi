@@ -235,7 +235,7 @@ function readManifestRecord(path: string, root: RaviAppDiscoveryRoot): RaviAppMa
     id:
       typeof manifest.id === "string" && manifest.id.trim()
         ? manifest.id.trim().toLowerCase()
-        : manifestIdFromPath(path),
+        : manifestIdFromPath(path, root.rootPath),
     name: stringOrNull(manifest.name),
     version: stringOrNull(manifest.version),
     description: stringOrNull(manifest.description),
@@ -314,7 +314,7 @@ function validateManifest(
     warnings.push("versioning should be an object when present.");
   }
 
-  const expectedId = manifestIdFromPath(path);
+  const expectedId = manifestIdFromPath(path, root.rootPath);
   if (manifest.id && APP_ID_PATTERN.test(manifest.id) && expectedId !== manifest.id && root.source !== "plugin") {
     warnings.push(`Manifest id "${manifest.id}" does not match path-derived id "${expectedId}".`);
   }
@@ -1056,7 +1056,7 @@ function markDuplicateIds(records: RaviAppManifestRecord[]): void {
 
 function invalidRecord(path: string, root: RaviAppDiscoveryRoot, error: string): RaviAppManifestRecord {
   return {
-    id: manifestIdFromPath(path),
+    id: manifestIdFromPath(path, root.rootPath),
     name: null,
     version: null,
     description: null,
@@ -1074,12 +1074,18 @@ function invalidRecord(path: string, root: RaviAppDiscoveryRoot, error: string):
   };
 }
 
-function manifestIdFromPath(path: string): string {
-  return (
-    basename(dirname(path))
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-") || "unknown"
-  );
+function manifestIdFromPath(path: string, rootPath?: string): string {
+  const manifestDir = dirname(resolve(path));
+  const root = rootPath ? resolve(rootPath) : null;
+  const candidate =
+    root && !relative(root, manifestDir).startsWith("..") ? relative(root, manifestDir) : basename(manifestDir);
+  const segments = candidate
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .map((segment) => segment.toLowerCase().replace(/[^a-z0-9-]+/g, "-"))
+    .filter(Boolean);
+
+  return segments.join("/") || "unknown";
 }
 
 function requireString(manifest: Record<string, unknown>, key: string, errors: string[]): void {

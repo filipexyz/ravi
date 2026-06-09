@@ -76,6 +76,7 @@ function makeHealthyDeps() {
           updatedAt: 1,
         },
       ] as any,
+    dbListRoutes: () => [] as any,
     inspectAgentInstructionFiles: () => ({
       state: "agents-canonical" as const,
       agents: null,
@@ -87,12 +88,49 @@ function makeHealthyDeps() {
         { id: "a2", enabled: false },
       ] as any,
     getRuntimeCompatibilityIssues: () => [],
+    checkAppManifests: () => [] as any,
+    discoverAppManifests: () => [] as any,
+    listRelations: () => [] as any,
+    getRegistry: () => ({ commands: [] }) as any,
+    currentWeakPublicReturnCommands: () => [],
+    currentCliOnlyCommands: () => [],
+    queryRows: (sql: string) => {
+      if (sql.includes("sqlite_master")) {
+        return [
+          { name: "agents" },
+          { name: "instances" },
+          { name: "routes" },
+          { name: "chats" },
+          { name: "relations" },
+          { name: "message_metadata" },
+          { name: "cost_events" },
+          { name: "session_turns" },
+          { name: "schema_migrations" },
+        ] as any;
+      }
+      if (sql.includes("PRAGMA user_version")) {
+        return [{ user_version: 1 }] as any;
+      }
+      if (sql.includes("message_metadata")) {
+        return [{ total: 0, unresolved_actor: 0, unresolved_owner: 0 }] as any;
+      }
+      if (sql.includes("COUNT(*) AS total")) {
+        return [{ total: 0 }] as any;
+      }
+      return [] as any;
+    },
+    listSpecFiles: () => [],
+    listSkillFiles: () => [],
+    getGitInfo: () => ({ branch: "main", commit: "abc123", dirty: false, ahead: 0, behind: 0 }),
     exists: (path: string) =>
       [stateDir, join(stateDir, "ravi.db"), join(stateDir, "insights.db"), join(home, ".codex", "hooks.json")].includes(
         path,
       ),
     readFile: (path: string) => readFileSync(path, "utf8"),
+    readDir: () => [] as any,
     homeDir: () => home,
+    cwd: () => "/repo",
+    now: () => new Date("2026-06-08T12:00:00.000Z"),
   };
 }
 
@@ -110,12 +148,16 @@ describe("inspectDoctor", () => {
     const deps = makeHealthyDeps();
     const report = inspectDoctor(deps);
 
-    expect(report.summary.fail).toBe(0);
-    expect(report.summary.warn).toBe(0);
-    expect(report.checks.find((check) => check.id === "runtime.daemon")?.status).toBe("ok");
-    expect(report.checks.find((check) => check.id === "codex.bash-hook")?.status).toBe("ok");
-    expect(report.checks.find((check) => check.id === "agents.instructions")?.status).toBe("ok");
-    expect(report.checks.find((check) => check.id === "tasks.automations")?.summary).toContain("2 task automations");
+    expect(report.summary.errors).toBe(0);
+    expect(report.summary.warnings).toBe(0);
+    expect(report.ok).toBe(true);
+    expect(report.checks.find((check) => check.id === "runtime.daemon")?.status).toBe("pass");
+    expect(report.checks.find((check) => check.id === "codex.bash-hook")?.status).toBe("pass");
+    expect(report.checks.find((check) => check.id === "agents.instructions")?.status).toBe("pass");
+    expect(report.findings.find((finding) => finding.id === "tasks.automations")?.summary).toContain(
+      "2 task automations",
+    );
+    expect(report.findings.every((finding) => finding.severity !== "error")).toBe(true);
   });
 
   it("surfaces fail and warn states when critical config is missing or divergent", () => {
@@ -145,6 +187,7 @@ describe("inspectDoctor", () => {
           { id: "broken", cwd: "/agents/broken", provider: "codex" },
         ] as any,
       dbListInstances: () => [] as any,
+      dbListRoutes: () => [] as any,
       inspectAgentInstructionFiles: (cwd: string) =>
         ({
           state: cwd.includes("legacy") ? "legacy-claude-canonical" : "divergent-custom-both",
@@ -161,15 +204,42 @@ describe("inspectDoctor", () => {
               },
             ]
           : [],
+      checkAppManifests: () => [] as any,
+      discoverAppManifests: () => [] as any,
+      listRelations: () => [] as any,
+      getRegistry: () => ({ commands: [] }) as any,
+      currentWeakPublicReturnCommands: () => [],
+      currentCliOnlyCommands: () => [],
+      queryRows: (sql: string) => {
+        if (sql.includes("sqlite_master")) {
+          return [] as any;
+        }
+        if (sql.includes("PRAGMA user_version")) {
+          return [{ user_version: 0 }] as any;
+        }
+        if (sql.includes("message_metadata")) {
+          return [{ total: 0, unresolved_actor: 0, unresolved_owner: 0 }] as any;
+        }
+        if (sql.includes("COUNT(*) AS total")) {
+          return [{ total: 0 }] as any;
+        }
+        return [] as any;
+      },
+      listSpecFiles: () => [],
+      listSkillFiles: () => [],
+      getGitInfo: () => ({ branch: "main", commit: "abc123", dirty: false, ahead: 0, behind: 0 }),
       exists: (path: string) => path === stateDir || path === join(stateDir, "ravi.db"),
       readFile: () => "",
+      readDir: () => [] as any,
       homeDir: () => home,
+      cwd: () => "/repo",
+      now: () => new Date("2026-06-08T12:00:00.000Z"),
     });
 
-    expect(report.summary.fail).toBeGreaterThan(0);
-    expect(report.summary.warn).toBeGreaterThan(0);
+    expect(report.summary.errors).toBeGreaterThan(0);
+    expect(report.summary.warnings).toBeGreaterThan(0);
     expect(report.checks.find((check) => check.id === "runtime.daemon")?.status).toBe("fail");
-    expect(report.checks.find((check) => check.id === "substrate.insights-db")?.status).toBe("warn");
+    expect(report.checks.find((check) => check.id === "substrate.insights-db")?.severity).toBe("warn");
     expect(report.checks.find((check) => check.id === "codex.bash-hook")?.status).toBe("fail");
     expect(report.checks.find((check) => check.id === "agents.instructions")?.status).toBe("fail");
     expect(report.checks.find((check) => check.id === "runtime.providers")?.status).toBe("fail");
@@ -193,8 +263,10 @@ describe("runDoctor", () => {
 
     expect(lines).toHaveLength(1);
     const payload = JSON.parse(lines[0] ?? "{}");
-    expect(payload.summary.fail).toBe(0);
+    expect(payload.summary.errors).toBe(0);
+    expect(payload.ok).toBe(true);
     expect(Array.isArray(payload.checks)).toBe(true);
     expect(payload.checks.some((check: { id: string }) => check.id === "codex.bash-hook")).toBe(true);
+    expect(Array.isArray(payload.findings)).toBe(true);
   });
 });

@@ -902,15 +902,25 @@ describe("ContextCommands", () => {
       expect(publishedAuditEvents).toEqual([
         {
           topic: "ravi.audit.denied",
-          data: {
+          data: expect.objectContaining({
             type: "executable",
             agentId: "codex",
             denied: "git",
             reason: "Permission denied: agent:codex cannot execute: git",
+            dedupeKey: "audit.denied:executable:codex:git:Permission denied: agent:codex cannot execute: git",
             detail: "git status",
-          },
+            context: expect.objectContaining({
+              contextId: "ctx_codex",
+              kind: "agent-runtime",
+              agentId: "codex",
+              sessionKey: "agent:codex:main",
+              sessionName: "codex-main",
+              capabilitiesCount: 1,
+            }),
+          }),
         },
       ]);
+      expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("rctx_codex");
     });
 
     it("publishes env spoofing audit events", () => {
@@ -929,13 +939,21 @@ describe("ContextCommands", () => {
       expect(publishedAuditEvents).toEqual([
         {
           topic: "ravi.audit.denied",
-          data: {
+          data: expect.objectContaining({
             type: "env_spoofing",
             agentId: "codex",
             denied: "RAVI_* override",
             reason: "Cannot override RAVI environment variables",
             detail: "RAVI_AGENT_ID=main ravi sessions list",
-          },
+            context: expect.objectContaining({
+              contextId: "ctx_codex",
+              kind: "agent-runtime",
+              agentId: "codex",
+              sessionKey: "agent:codex:main",
+              sessionName: "codex-main",
+              capabilitiesCount: 1,
+            }),
+          }),
         },
       ]);
     });
@@ -956,13 +974,21 @@ describe("ContextCommands", () => {
       expect(publishedAuditEvents).toEqual([
         {
           topic: "ravi.audit.denied",
-          data: {
+          data: expect.objectContaining({
             type: "session_scope",
             agentId: "codex",
             denied: "main",
             reason: "Permission denied: agent:codex cannot access session:main",
             detail: "ravi sessions send main 'hello'",
-          },
+            context: expect.objectContaining({
+              contextId: "ctx_codex",
+              kind: "agent-runtime",
+              agentId: "codex",
+              sessionKey: "agent:codex:main",
+              sessionName: "codex-main",
+              capabilitiesCount: 1,
+            }),
+          }),
         },
       ]);
     });

@@ -13,13 +13,26 @@ import { dispatch, type AuditEvent } from "./dispatcher.js";
 @Group({ name: "demo", description: "Gateway demo commands", scope: "open" })
 class GatewayDemoCommands {
   @Command({ name: "echo", description: "Echo a name" })
-  @Returns(z.object({ ok: z.literal(true), name: z.string(), shout: z.boolean(), limit: z.string() }))
+  @Returns(
+    z.object({
+      ok: z.literal(true),
+      name: z.string(),
+      shout: z.boolean(),
+      limit: z.string(),
+    }),
+  )
   echo(
     @Arg("name", { description: "Recipient" }) name: string,
     @Option({ flags: "--shout", description: "Yell" }) shout?: boolean,
-    @Option({ flags: "--limit <n>", description: "Limit", defaultValue: "10" }) limit?: string,
+    @Option({ flags: "--limit <n>", description: "Limit", defaultValue: "10" })
+    limit?: string,
   ) {
-    return { ok: true as const, name, shout: shout === true, limit: String(limit ?? "10") };
+    return {
+      ok: true as const,
+      name,
+      shout: shout === true,
+      limit: String(limit ?? "10"),
+    };
   }
 
   @Command({ name: "void", description: "Returns nothing" })
@@ -49,18 +62,28 @@ class GatewayDemoCommands {
   blob() {
     return new Response(new Uint8Array([0xff, 0x00, 0x42]), {
       status: 200,
-      headers: { "content-type": "application/octet-stream", "content-length": "3" },
+      headers: {
+        "content-type": "application/octet-stream",
+        "content-length": "3",
+      },
     });
   }
 
-  @Command({ name: "wrong-blob", description: "Marked binary but returns plain object" })
+  @Command({
+    name: "wrong-blob",
+    description: "Marked binary but returns plain object",
+  })
   @Returns.binary()
   wrongBlob() {
     return { not: "a response" };
   }
 }
 
-@Group({ name: "secret", description: "Superadmin commands", scope: "superadmin" })
+@Group({
+  name: "secret",
+  description: "Superadmin commands",
+  scope: "superadmin",
+})
 class GatewaySuperadminCommands {
   @Command({ name: "ping", description: "Should be hidden by default" })
   ping() {
@@ -68,7 +91,11 @@ class GatewaySuperadminCommands {
   }
 }
 
-@Group({ name: "sessions", description: "Gateway session read commands", scope: "open" })
+@Group({
+  name: "sessions",
+  description: "Gateway session read commands",
+  scope: "open",
+})
 class GatewaySessionsCommands {
   @Command({ name: "list", description: "Noisy polling read" })
   list() {
@@ -76,7 +103,11 @@ class GatewaySessionsCommands {
   }
 }
 
-@Group({ name: "tasks", description: "Gateway task read commands", scope: "open" })
+@Group({
+  name: "tasks",
+  description: "Gateway task read commands",
+  scope: "open",
+})
 class GatewayTasksCommands {
   @Command({ name: "list", description: "Noisy polling read" })
   list() {
@@ -90,7 +121,11 @@ class GatewayTasksCommands {
   }
 }
 
-@Group({ name: "gated", description: "Skill-gated admin commands", scope: "admin" })
+@Group({
+  name: "gated",
+  description: "Skill-gated admin commands",
+  scope: "admin",
+})
 class GatewayGatedCommands {
   @Command({ name: "ping", description: "Gated ping" })
   ping() {
@@ -112,7 +147,10 @@ function findCmd(fullName: string) {
   return cmd;
 }
 
-function captureAudits(): { events: AuditEvent[]; emit: (e: AuditEvent) => void } {
+function captureAudits(): {
+  events: AuditEvent[];
+  emit: (e: AuditEvent) => void;
+} {
   const events: AuditEvent[] = [];
   return { events, emit: (e) => events.push(e) };
 }
@@ -127,13 +165,21 @@ describe("dispatch — body shape (flat-only)", () => {
       { emitAudit: audits.emit },
     );
     expect(result.response.status).toBe(200);
-    const body = (await result.response.json()) as { name: string; shout: boolean; limit: string };
+    const body = (await result.response.json()) as {
+      name: string;
+      shout: boolean;
+      limit: string;
+    };
     expect(body.name).toBe("rafa");
     expect(body.shout).toBe(true);
     expect(body.limit).toBe("5");
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]?.tool).toBe("demo_echo");
-    expect(audits.events[0]?.input).toMatchObject({ name: "rafa", shout: true, limit: "5" });
+    expect(audits.events[0]?.input).toMatchObject({
+      name: "rafa",
+      shout: true,
+      limit: "5",
+    });
   });
 
   it("rejects the wrapped {args, options} form as unknown keys", async () => {
@@ -145,7 +191,10 @@ describe("dispatch — body shape (flat-only)", () => {
       { emitAudit: audits.emit },
     );
     expect(result.response.status).toBe(400);
-    const body = (await result.response.json()) as { error: string; issues: { path: string[]; code: string }[] };
+    const body = (await result.response.json()) as {
+      error: string;
+      issues: { path: string[]; code: string }[];
+    };
     expect(body.error).toBe("ValidationError");
     expect(body.issues.some((i) => i.path[0] === "args" && i.code === "unrecognized_keys")).toBe(true);
     expect(body.issues.some((i) => i.path[0] === "options" && i.code === "unrecognized_keys")).toBe(true);
@@ -165,7 +214,10 @@ describe("dispatch — body shape (flat-only)", () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.echo"), { name: "luis", bogus: true }, {}, { emitAudit: audits.emit });
     expect(result.response.status).toBe(400);
-    const body = (await result.response.json()) as { error: string; issues: { path: string[]; code: string }[] };
+    const body = (await result.response.json()) as {
+      error: string;
+      issues: { path: string[]; code: string }[];
+    };
     expect(body.error).toBe("ValidationError");
     expect(body.issues.some((i) => i.path[0] === "bogus" && i.code === "unrecognized_keys")).toBe(true);
     expect(audits.events).toHaveLength(0);
@@ -177,7 +229,10 @@ describe("dispatch — validation", () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
     expect(result.response.status).toBe(400);
-    const body = (await result.response.json()) as { error: string; issues: { path: string[] }[] };
+    const body = (await result.response.json()) as {
+      error: string;
+      issues: { path: string[] }[];
+    };
     expect(body.error).toBe("ValidationError");
     expect(body.issues[0]?.path[0]).toBe("name");
     expect(audits.events).toHaveLength(0);
@@ -199,7 +254,10 @@ describe("dispatch — error path", () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.boom"), {}, {}, { emitAudit: audits.emit });
     expect(result.response.status).toBe(500);
-    const body = (await result.response.json()) as { error: string; message: string };
+    const body = (await result.response.json()) as {
+      error: string;
+      message: string;
+    };
     expect(body.error).toBe("InternalError");
     expect(body.message).toContain("kaboom");
     expect(audits.events).toHaveLength(1);
@@ -222,7 +280,10 @@ describe("dispatch — scope and superadmin gating", () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("secret.ping"), {}, {}, { emitAudit: audits.emit });
     expect(result.response.status).toBe(403);
-    const body = (await result.response.json()) as { error: string; reason: string };
+    const body = (await result.response.json()) as {
+      error: string;
+      reason: string;
+    };
     expect(body.error).toBe("PermissionDenied");
     expect(body.reason).toContain("superadmin");
     expect(audits.events).toHaveLength(0);
@@ -243,7 +304,10 @@ describe("dispatch — scope and superadmin gating", () => {
       const result = await dispatch(findCmd("gated.ping"), {}, { agentId: "locked" }, { emitAudit: audits.emit });
 
       expect(result.response.status).toBe(403);
-      const body = (await result.response.json()) as { error: string; reason: string };
+      const body = (await result.response.json()) as {
+        error: string;
+        reason: string;
+      };
       expect(body.error).toBe("PermissionDenied");
       expect(body.reason).toContain("requires execute");
       expect(audits.events).toHaveLength(1);
@@ -258,6 +322,7 @@ describe("dispatch — scope and superadmin gating", () => {
     try {
       const context = createRuntimeContext({
         kind: "admin-bootstrap",
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "tasks" }],
       });
 
       const audits = captureAudits();
@@ -316,7 +381,9 @@ describe("dispatch — CLI output", () => {
   it("marks gateway command context to suppress human CLI output", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.context"), {}, {}, { emitAudit: audits.emit });
-    const body = (await result.response.json()) as { suppressCliOutput: boolean };
+    const body = (await result.response.json()) as {
+      suppressCliOutput: boolean;
+    };
     expect(body.suppressCliOutput).toBe(true);
   });
 });
@@ -349,7 +416,10 @@ describe("dispatch — @Returns.binary() escape hatch", () => {
     const result = await dispatch(findCmd("demo.wrong-blob"), {}, {}, { emitAudit: audits.emit });
 
     expect(result.response.status).toBe(500);
-    const body = (await result.response.json()) as { error: string; issues: { message: string }[] };
+    const body = (await result.response.json()) as {
+      error: string;
+      issues: { message: string }[];
+    };
     expect(body.error).toBe("ReturnShapeError");
     expect(body.issues[0]?.message).toContain("@Returns.binary()");
     expect(body.issues[0]?.message).toContain("instead of a Response");

@@ -33,6 +33,20 @@ describe("buildGroupContext", () => {
     expect(context).toContain('You are replying inside the WhatsApp group "Ravi - Dev".');
     expect(context).toContain("Group members (3): Luis, Rafa, Ravi.");
   });
+
+  it("does not render raw channel ids as group members", () => {
+    const context = buildGroupContext({
+      channelId: "whatsapp-baileys",
+      channelName: "WhatsApp",
+      isGroup: true,
+      groupName: "Ravi - Dev",
+      groupMembers: ["Luis", "122054447747088", "178035101794451@lid", "Ravi Bot"],
+    });
+
+    expect(context).toContain("Group members (2): Luis, Ravi Bot.");
+    expect(context).not.toContain("122054447747088");
+    expect(context).not.toContain("178035101794451@lid");
+  });
 });
 
 describe("buildSystemPrompt", () => {
@@ -56,6 +70,7 @@ describe("buildSystemPrompt", () => {
       "session.runtime",
       "session.boundary",
       "channel.output_formatting",
+      "channel.thread_workspaces",
       "channel.reactions",
       "extra.extra.context",
     ]);
@@ -67,6 +82,11 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("ravi sessions actions --json");
     expect(prompt).toContain("ravi sessions delete-message <message-id>");
     expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(prompt).toContain("## WhatsApp Thread Workspaces");
+    expect(prompt).toContain("sugira proativamente criar um agent e um grupo dedicados");
+    expect(prompt).toContain('ravi whatsapp group create "<nome>" --agent <agent>');
+    expect(prompt).toContain('ravi whatsapp group create "<nome>" --agent <agent> --create-agent');
+    expect(prompt).toContain("Não use `ravi whatsapp group list` para descobrir grupo recém-criado");
     expect(prompt).toContain("O CLI infere a sessão pelo contexto de execução do agent.");
     expect(prompt).toContain("Leia os campos `promptHint` e `usage.tools` retornados por `actions --json`");
     expect(prompt).toContain("apagar ou editar suas próprias mensagens, reagir, responder, enviar stickers");
@@ -74,6 +94,18 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("focus_chat");
     expect(prompt).not.toContain('"id"');
     expect(prompt).not.toContain('"priority"');
+  });
+
+  it("keeps proactive agent/group suggestions scoped to WhatsApp prompts", () => {
+    const prompt = buildSystemPrompt("main", {
+      channelId: "matrix",
+      channelName: "Matrix",
+      isGroup: false,
+    });
+
+    expect(prompt).not.toContain("## WhatsApp Thread Workspaces");
+    expect(prompt).not.toContain("sugira proativamente criar um agent e um grupo dedicados");
+    expect(prompt).not.toContain("Não use `ravi whatsapp group list`");
   });
 
   it("keeps unprioritized legacy sections after typed sections when rendering mixed inputs", () => {

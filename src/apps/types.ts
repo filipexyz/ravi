@@ -93,6 +93,7 @@ export interface RaviAppScaffoldOptions {
   name?: string;
   description?: string;
   command?: string;
+  manifest?: RaviAppManifest;
   cwd?: string;
   dryRun?: boolean;
   force?: boolean;
@@ -121,6 +122,39 @@ export interface RaviAppScaffoldResult {
   files: RaviAppScaffoldFileResult[];
   manifest: RaviAppManifest;
   nextCommands: string[];
+}
+
+export type RaviAppImportCliSource = "auto" | "manifest" | "registry" | "help";
+export type RaviAppImportCliResolvedSource = "manifest" | "registry" | "help";
+export type RaviAppImportCliConfidence = "high" | "medium" | "low";
+
+export interface RaviAppImportCliOptions extends Omit<RaviAppScaffoldOptions, "command" | "manifest"> {
+  command: string;
+  source?: RaviAppImportCliSource;
+}
+
+export interface RaviAppImportCliOperationCandidate {
+  id: string;
+  name: string;
+  command: string;
+  description: string | null;
+  json: boolean;
+  mutating: boolean;
+  destructive: boolean;
+  streaming: boolean;
+  interactive: boolean;
+  confidence: RaviAppImportCliConfidence;
+  reviewRequired: string[];
+}
+
+export interface RaviAppImportCliResult extends RaviAppScaffoldResult {
+  sourceCommand: string;
+  source: RaviAppImportCliResolvedSource;
+  confidence: RaviAppImportCliConfidence;
+  operationCandidates: RaviAppImportCliOperationCandidate[];
+  debugCandidates: RaviAppImportCliOperationCandidate[];
+  warnings: string[];
+  reviewRequired: string[];
 }
 
 export interface RaviAppsGuidePrompt {

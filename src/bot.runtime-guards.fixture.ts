@@ -110,7 +110,13 @@ let canWithCapabilitiesImpl = (...args: Parameters<typeof actualCanWithCapabilit
   actualCanWithCapabilities(...args);
 let snapshotAgentCapabilitiesImpl = () =>
   [] as Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
-type TestCostResult = { inputCost: number; outputCost: number; cacheCost: number; totalCost: number } | null;
+type TestCostResult = {
+  inputCost: number;
+  outputCost: number;
+  cacheCost: number;
+  totalCost: number;
+  pricingStatus: "priced" | "unpriced";
+} | null;
 let calculateCostImpl: (
   model: string,
   usage: { inputTokens: number; outputTokens: number; cacheRead: number; cacheCreation: number },
@@ -496,8 +502,9 @@ mock.module("./hooks/sanitize-bash.js", () => ({
   }),
 }));
 
-mock.module("./constants.js", () => ({
+mock.module("./costs/pricing-catalog.js", () => ({
   calculateCost: (model: string, usage: Parameters<typeof calculateCostImpl>[1]) => calculateCostImpl(model, usage),
+  prewarmPricingCatalog: () => {},
 }));
 
 mock.module("./plugins/index.js", () => ({
@@ -975,7 +982,7 @@ describe("RaviBot runtime guards", () => {
     ];
 
     const bot = createBot();
-    await (bot as any).handlePromptImmediate("agent:main:codex-approval-bridge", makePrompt("hello"));
+    await (bot as any).handlePromptImmediate("agent:main:codex-approval-bridge", { prompt: "hello" });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     const approveRuntimeRequest = runtimeStartCalls[0]?.approveRuntimeRequest;
@@ -1473,7 +1480,7 @@ describe("RaviBot runtime guards", () => {
     const pricedModels: string[] = [];
     calculateCostImpl = (model) => {
       pricedModels.push(model);
-      return { inputCost: 1, outputCost: 2, cacheCost: 0, totalCost: 3 };
+      return { inputCost: 1, outputCost: 2, cacheCost: 0, totalCost: 3, pricingStatus: "priced" };
     };
     runtimeStartImpl = (providerId) => ({
       provider: providerId,

@@ -253,8 +253,9 @@ mock.module("./permissions/engine.js", () => ({
   canWithCapabilities: (...args: Parameters<typeof actualCanWithCapabilities>) => canWithCapabilitiesImpl(...args),
 }));
 
-mock.module("./constants.js", () => ({
+mock.module("./costs/pricing-catalog.js", () => ({
   calculateCost: () => null,
+  prewarmPricingCatalog: () => {},
 }));
 
 mock.module("./plugins/index.js", () => ({

@@ -175,7 +175,6 @@ Required shape:
   contactId?: string;
   agentId?: string;
   platformIdentityId?: string;
-  platformUserId?: string;
 }
 ```
 
@@ -185,6 +184,8 @@ Rules:
 - `outputChat` MUST describe the chat that will receive the session response when that chat differs from `sourceChat`.
 - If source and output are the same canonical chat, `outputChat` MAY be omitted or represented as `{ sameAsSource: true }`.
 - Participant lists MUST be scoped to their containing chat object.
+- Human-readable prompt rendering MUST use safe display labels for participants. It MUST NOT render WhatsApp LIDs, JIDs, phone-like ids, or other raw channel identifiers as member names; participants without a safe display label SHOULD be omitted from natural-language member lists.
+- Raw participant ids MAY remain in structured debug/provenance fields or transport caches, but they MUST NOT be presented to runtime agents as the addressing label to use in chat.
 - The prompt builder MUST NOT merge participants from multiple chats into one flat `groupMembers` or equivalent session-level list.
 - Legacy `context.groupMembers` MAY remain as a compatibility projection for the current source chat only. New code MUST prefer `sourceChat.participants` and `outputChat.participants`.
 - Prompt rendering SHOULD use explicit section labels such as "Current inbound chat" and "Current output chat" when both roles are present.

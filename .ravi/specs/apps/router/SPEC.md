@@ -61,7 +61,8 @@ ravi <app-id> [operation] [args...] --json
 - `ravi apps run <app-id> ...` is the canonical dispatch path. `ravi <app-id>
   ...` is only a root-level alias for the same router.
 - The root-level alias MUST activate only when the first argv token is not a
-  registered static command and is a valid discovered app id.
+  registered static command, is a valid discovered app id, and is visible to
+  the current runtime context.
 - Unknown root commands MUST continue to fail through the normal CLI error/help
   path. The app router MUST NOT swallow unrelated Commander errors.
 - The router MUST validate the app manifest before dispatching an operation.
@@ -83,6 +84,13 @@ ravi <app-id> [operation] [args...] --json
 - The router MUST perform manifest permission preflight before dispatch.
 - The router MUST still rely on runtime authorization at execution time for
   mutating, sensitive, externally visible, or identity-dependent operations.
+- When a runtime/agent principal exists, the router MUST authorize the app
+  object before dispatch:
+  - non-mutating operation: `use app:<app-id>`;
+  - mutating operation: `execute app:<app-id>`.
+- When a runtime/agent principal exists, router-owned discovery builtins
+  (`help`, `show`, `check`) MUST require `use app:<app-id>` before returning
+  manifest details, validation errors, operation ids, or next commands.
 - Mutating operations MUST declare `permission` or `permissions`.
 - When a child process or tool execution is launched inside Ravi runtime, the
   router SHOULD pass `RAVI_CONTEXT_KEY` when available and MUST NOT expose raw
@@ -157,6 +165,8 @@ Stream operations MUST declare `channel`.
   service/registry and refuses ambiguous or invalid entries.
 - The app router is not a permission grant. Manifest permissions describe
   requirements; runtime authorization remains authoritative.
+- `use app:<id>` and `execute app:<id>` are the app isolation boundary for
+  runtime dispatch. Manifest permissions MUST NOT be interpreted as grants.
 - The app router is not a replacement for first-party static CLI commands.
   Stable core commands may remain build-time registered when they need SDK
   codegen, decorators, or custom parser behavior.
@@ -173,6 +183,11 @@ Stream operations MUST declare `channel`.
   command.
 - A manifest id that collides with a static command SHOULD remain invokable
   through `ravi apps run <app-id> ...`.
+- A hidden manifest id SHOULD NOT resolve as a root-level dynamic alias.
+- In agent/runtime context, `ravi apps run <app-id> check --json` MUST fail
+  without `use app:<app-id>`.
+- In agent/runtime context, a mutating operation MUST fail without
+  `execute app:<app-id>` even when `use app:<app-id>` is present.
 
 ## Known Failure Modes
 

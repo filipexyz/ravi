@@ -8,6 +8,7 @@ import {
   checkAppManifests,
   discoverAppManifests,
   getAppManifest,
+  importCliApp,
   normalizeAppSource,
   scaffoldApp,
   printAppRunResult,
@@ -18,6 +19,17 @@ import {
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
+
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
 
 const appPermissionsSchema = z.object({
   required: z.array(z.string()),
@@ -100,8 +112,32 @@ const appsScaffoldReturnSchema = z.object({
   skillPath: z.string().nullable(),
   skill: z.string().nullable(),
   files: z.array(appScaffoldFileSchema),
-  manifest: z.unknown(),
+  manifest: z.record(z.string(), jsonValueSchema),
   nextCommands: z.array(z.string()),
+});
+
+const appImportCliOperationCandidateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  command: z.string(),
+  description: z.string().nullable(),
+  json: z.boolean(),
+  mutating: z.boolean(),
+  destructive: z.boolean(),
+  streaming: z.boolean(),
+  interactive: z.boolean(),
+  confidence: z.enum(["high", "medium", "low"]),
+  reviewRequired: z.array(z.string()),
+});
+
+const appsImportCliReturnSchema = appsScaffoldReturnSchema.extend({
+  sourceCommand: z.string(),
+  source: z.enum(["manifest", "registry", "help"]),
+  confidence: z.enum(["high", "medium", "low"]),
+  operationCandidates: z.array(appImportCliOperationCandidateSchema),
+  debugCandidates: z.array(appImportCliOperationCandidateSchema),
+  warnings: z.array(z.string()),
+  reviewRequired: z.array(z.string()),
 });
 
 const appGuidePromptSchema = z.object({
@@ -371,6 +407,59 @@ export class AppsCommands {
     }
   }
 
+  @Command({ name: "import-cli", description: "Create a Ravi app draft from an existing CLI contract" })
+  @Returns(appsImportCliReturnSchema)
+  importCli(
+    @Arg("command", { description: "CLI command to import, e.g. 'ravi apps' or 'my-cli'" }) command: string,
+    @Option({ flags: "--id <id>", description: "Stable app id to generate" }) id?: string,
+    @Option({ flags: "--name <name>", description: "Human display name" }) name?: string,
+    @Option({ flags: "--description <text>", description: "Short app description" }) description?: string,
+    @Option({ flags: "--source <source>", description: "Import source: auto|manifest|registry|help" }) source?: string,
+    @Option({ flags: "--dry-run", description: "Print planned files without writing" }) dryRun?: boolean,
+    @Option({ flags: "--force", description: "Overwrite existing scaffold files" }) force?: boolean,
+    @Option({ flags: "--skip-ui", description: "Do not include interfaces.ui in the manifest" }) skipUi?: boolean,
+    @Option({ flags: "--skip-skill", description: "Do not create a skill skeleton" }) skipSkill?: boolean,
+    @Option({ flags: "--skip-spec", description: "Do not create an app spec skeleton" }) skipSpec?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const appId = id?.trim();
+      if (!appId) throw new Error("Missing --id <app-id> for CLI import.");
+      const normalizedSource = normalizeImportSource(source);
+      const payload = importCliApp({
+        id: appId,
+        command,
+        name,
+        description,
+        ...(normalizedSource ? { source: normalizedSource } : {}),
+        dryRun,
+        force,
+        includeUi: skipUi !== true,
+        includeSkill: skipSkill !== true,
+        includeSpec: skipSpec !== true,
+      });
+
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      console.log(`${payload.dryRun ? "Planned" : "Created"} Ravi app import: ${payload.id}`);
+      console.log(`source: ${payload.source} (${payload.confidence})`);
+      console.log(`command: ${payload.sourceCommand}`);
+      console.log(`operations: ${payload.operationCandidates.length}`);
+      if (payload.debugCandidates.length > 0) console.log(`debug candidates: ${payload.debugCandidates.length}`);
+      for (const warning of payload.warnings) console.log(`warning: ${warning}`);
+      for (const item of payload.reviewRequired) console.log(`review: ${item}`);
+      for (const file of payload.files) console.log(`- ${file.action} ${file.kind}: ${file.path}`);
+      console.log("\nNext commands:");
+      for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
+      return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   @Command({ name: "guide", description: "Print agent guidance for discovering, scaffolding, and operating Ravi apps" })
   @Returns(appsGuideReturnSchema)
   guide(
@@ -418,4 +507,13 @@ export class AppsCommands {
       fail(error instanceof Error ? error.message : String(error));
     }
   }
+}
+
+function normalizeImportSource(value?: string): "auto" | "manifest" | "registry" | "help" | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === "auto" || normalized === "manifest" || normalized === "registry" || normalized === "help") {
+    return normalized;
+  }
+  throw new Error(`Invalid import source: ${value}. Use auto|manifest|registry|help.`);
 }

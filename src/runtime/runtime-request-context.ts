@@ -58,6 +58,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     capabilities,
     metadata: buildRuntimeContextMetadata({
       prompt,
+      resolvedSource,
       runtimeProviderId,
       model,
       runtimeResolution,
@@ -118,6 +119,7 @@ export function refreshRuntimeRequestContextForTurn(options: {
     capabilities,
     metadata: buildRuntimeContextMetadata({
       prompt: options.prompt,
+      resolvedSource: options.resolvedSource,
       runtimeProviderId: options.runtimeProviderId,
       model: options.model,
       runtimeResolution: options.runtimeResolution,
@@ -209,7 +211,10 @@ function buildDelegatedRuntimeContextInput(options: {
   prompt: RuntimeLaunchPrompt;
   resolvedSource?: RuntimeMessageTarget;
   capabilities: ContextCapability[];
-}): { capabilities: ContextCapability[]; metadata: Record<string, unknown> } | null {
+}): {
+  capabilities: ContextCapability[];
+  metadata: Record<string, unknown>;
+} | null {
   if (!shouldUseTurnScopedAuthorityForPrompt(options.prompt, options.resolvedSource)) {
     return null;
   }
@@ -223,11 +228,12 @@ function buildDelegatedRuntimeContextInput(options: {
   const surfaceCapabilities = surfacePrincipal
     ? snapshotSubjectCapabilities(surfacePrincipal.subjectType, surfacePrincipal.subjectId, { includeRoles: false })
     : [];
+  const includeSurfaceConstraint = Boolean(surfacePrincipal) || actorPrincipal?.subjectType !== "automation";
   const observationCapabilities = parseObservationPermissionGrants(options.prompt._observation?.permissionGrants);
   const effectiveCapabilities = buildEffectiveCapabilities({
     agentCapabilities: options.capabilities,
     actorCapabilities,
-    surfaceCapabilities,
+    ...(includeSurfaceConstraint ? { surfaceCapabilities } : {}),
     turnCapabilities: hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined,
   });
 
@@ -255,34 +261,56 @@ export function shouldUseTurnScopedAuthorityForPrompt(
   if (!isTurnScopedAuthorityEnabled()) {
     return false;
   }
-  return isExternalAuthoritySurface(resolveAuthorityActorMetadata(prompt, resolvedSource));
+  const actorMetadata = resolveAuthorityActorMetadata(prompt, resolvedSource);
+  return actorMetadata?.actorType === "automation" || isExternalAuthoritySurface(actorMetadata);
 }
 
 function resolveAuthorityActorMetadata(
   prompt: RuntimeLaunchPrompt,
   resolvedSource?: RuntimeMessageTarget,
-): (MessageActorMetadata & { channel?: string; channelId?: string; accountId?: string; chatId?: string }) | undefined {
+):
+  | (MessageActorMetadata & {
+      channel?: string;
+      channelId?: string;
+      accountId?: string;
+      chatId?: string;
+      threadId?: string;
+      sourceMessageId?: string;
+      automationId?: string;
+    })
+  | undefined {
   const source = resolvedSource ?? prompt.source;
   const context = prompt.context;
-  if (!source && !context) return undefined;
+  const automationPrincipal = resolveAutomationPromptPrincipal(prompt);
+  if (!source && !context && !automationPrincipal) return undefined;
   return {
     ...(source ?? {}),
     ...(context ?? {}),
     canonicalChatId: context?.canonicalChatId ?? source?.canonicalChatId,
-    actorType: context?.actorType ?? source?.actorType,
-    contactId: context?.contactId ?? source?.contactId,
-    actorAgentId: context?.actorAgentId ?? source?.actorAgentId,
+    actorType: automationPrincipal ? "automation" : (context?.actorType ?? source?.actorType),
+    contactId: automationPrincipal ? undefined : (context?.contactId ?? source?.contactId),
+    actorAgentId: automationPrincipal ? undefined : (context?.actorAgentId ?? source?.actorAgentId),
+    automationId: automationPrincipal?.subjectId,
     platformIdentityId: context?.platformIdentityId ?? source?.platformIdentityId,
     rawSenderId: context?.rawSenderId ?? source?.rawSenderId,
     normalizedSenderId: context?.normalizedSenderId ?? source?.normalizedSenderId,
     accountId: context?.accountId ?? source?.accountId,
     chatId: context?.chatId ?? source?.chatId,
+    threadId: source?.threadId,
+    sourceMessageId: source?.sourceMessageId,
   };
 }
 
 function isExternalAuthoritySurface(
   actorMetadata:
-    | (MessageActorMetadata & { channel?: string; channelId?: string; accountId?: string; chatId?: string })
+    | (MessageActorMetadata & {
+        channel?: string;
+        channelId?: string;
+        accountId?: string;
+        chatId?: string;
+        threadId?: string;
+        sourceMessageId?: string;
+      })
     | undefined,
 ): boolean {
   return Boolean(
@@ -297,6 +325,9 @@ function isExternalAuthoritySurface(
 function resolveActorPrincipal(actorMetadata: MessageActorMetadata | undefined): AuthorityPrincipal | null {
   if (actorMetadata?.actorType === "contact" && actorMetadata.contactId) {
     return { subjectType: "contact", subjectId: actorMetadata.contactId };
+  }
+  if (actorMetadata?.actorType === "automation" && actorMetadata.automationId) {
+    return { subjectType: "automation", subjectId: actorMetadata.automationId };
   }
   return null;
 }
@@ -314,11 +345,13 @@ function formatPrincipal(principal: AuthorityPrincipal): string {
 
 function buildRuntimeContextMetadata(options: {
   prompt: RuntimeLaunchPrompt;
+  resolvedSource?: RuntimeMessageTarget;
   runtimeProviderId: RuntimeProviderId;
   model: string;
   runtimeResolution: TaskRuntimeResolution;
   approvalSource?: RuntimeMessageTarget;
 }): Record<string, unknown> {
+  const actorMetadata = buildRuntimeContextActorMetadata(options.prompt, options.resolvedSource);
   return {
     runtimeProvider: options.runtimeProviderId,
     runtimeModel: options.model,
@@ -328,8 +361,56 @@ function buildRuntimeContextMetadata(options: {
       : {}),
     runtimeModelSource: options.runtimeResolution.sources.model,
     ...(options.approvalSource ? { approvalSource: options.approvalSource } : {}),
+    ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),
   };
+}
+
+function buildRuntimeContextActorMetadata(
+  prompt: RuntimeLaunchPrompt,
+  resolvedSource?: RuntimeMessageTarget,
+): Record<string, unknown> | null {
+  const actor = resolveAuthorityActorMetadata(prompt, resolvedSource);
+  const context = prompt.context;
+  const metadata: Record<string, unknown> = {};
+  copyStringField(metadata, "canonicalChatId", actor?.canonicalChatId);
+  copyStringField(metadata, "channel", actor?.channel);
+  copyStringField(metadata, "channelId", actor?.channelId);
+  copyStringField(metadata, "accountId", actor?.accountId);
+  copyStringField(metadata, "chatId", actor?.chatId);
+  copyStringField(metadata, "threadId", actor?.threadId);
+  copyStringField(metadata, "sourceMessageId", actor?.sourceMessageId);
+  copyStringField(metadata, "actorType", actor?.actorType);
+  copyStringField(metadata, "contactId", actor?.contactId);
+  copyStringField(metadata, "actorAgentId", actor?.actorAgentId);
+  copyStringField(metadata, "automationId", actor?.automationId);
+  copyStringField(metadata, "platformIdentityId", actor?.platformIdentityId);
+  copyStringField(metadata, "rawSenderId", actor?.rawSenderId);
+  copyStringField(metadata, "normalizedSenderId", actor?.normalizedSenderId);
+  copyStringField(metadata, "senderId", context?.senderId);
+  copyStringField(metadata, "senderPhone", context?.senderPhone);
+  if (typeof actor?.identityConfidence === "number") metadata.identityConfidence = actor.identityConfidence;
+  if (actor?.identityProvenance) metadata.identityProvenance = actor.identityProvenance;
+  return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+function resolveAutomationPromptPrincipal(prompt: RuntimeLaunchPrompt): AuthorityPrincipal | null {
+  if (prompt._cron && prompt._jobId) {
+    return { subjectType: "automation", subjectId: `cron:${prompt._jobId}` };
+  }
+  if (prompt._trigger && prompt._triggerId) {
+    return {
+      subjectType: "automation",
+      subjectId: `trigger:${prompt._triggerId}`,
+    };
+  }
+  return null;
+}
+
+function copyStringField(target: Record<string, unknown>, key: string, value: unknown): void {
+  if (typeof value !== "string") return;
+  const trimmed = value.trim();
+  if (trimmed) target[key] = trimmed;
 }
 
 function buildContextSource(resolvedSource?: RuntimeMessageTarget) {
@@ -345,7 +426,8 @@ function buildContextSource(resolvedSource?: RuntimeMessageTarget) {
 
 function isTurnScopedAuthorityEnabled(): boolean {
   const value = process.env.RAVI_TURN_SCOPED_AUTHORITY?.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "on";
+  if (!value) return true;
+  return value !== "0" && value !== "false" && value !== "off";
 }
 
 const MANAGED_RAVI_RUNTIME_ENV_KEYS = [
@@ -413,8 +495,18 @@ function parseObservationPermissionGrant(value: string): ContextCapability[] {
   const command = shortcut[2]!;
   if (command === "*") {
     return [
-      { permission: "use", objectType: "tool", objectId: `${group}_*`, source: "observer-rule" },
-      { permission: "execute", objectType: "group", objectId: group, source: "observer-rule" },
+      {
+        permission: "use",
+        objectType: "tool",
+        objectId: `${group}_*`,
+        source: "observer-rule",
+      },
+      {
+        permission: "execute",
+        objectType: "group",
+        objectId: group,
+        source: "observer-rule",
+      },
     ];
   }
 

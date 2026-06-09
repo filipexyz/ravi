@@ -68,6 +68,18 @@ function isPlausibleWhatsAppMentionDigits(value: string): boolean {
   return value.length >= MIN_WHATSAPP_MENTION_ID_DIGITS && value.length <= MAX_WHATSAPP_MENTION_ID_DIGITS;
 }
 
+function isRawChannelIdentifierLabel(value: string): boolean {
+  const cleaned = cleanMentionRef(value)
+    .trim()
+    .replace(/\s+\([^)]*\)\s*$/, "");
+  if (!cleaned) return false;
+  if (/^(?:lid|group):\d+$/i.test(cleaned)) return true;
+  if (/^\d+@(?:s\.whatsapp\.net|lid|g\.us)$/i.test(cleaned)) return true;
+  const base = baseIdentity(cleaned);
+  const digits = digitsOnly(base);
+  return digits === base && isPlausibleWhatsAppMentionDigits(digits);
+}
+
 function asWhatsAppPhoneJid(value: string | null | undefined): string | undefined {
   const cleaned = value ? cleanMentionRef(value) : "";
   if (!cleaned) return undefined;
@@ -127,7 +139,13 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 function safeDisplayName(value: string | undefined): string | undefined {
   const trimmed = value?.trim().replace(/^@+/, "");
   if (!trimmed || trimmed === "-") return undefined;
+  if (isRawChannelIdentifierLabel(trimmed)) return undefined;
   return trimmed;
+}
+
+function visibleMentionPlaceholderForDisplayName(value: string | null | undefined): string | undefined {
+  const displayName = safeDisplayName(value ?? undefined);
+  return displayName ? `@${displayName}` : undefined;
 }
 
 function collectMentionedJids(rawPayload: Record<string, unknown> | undefined): string[] {
@@ -414,6 +432,10 @@ function inlineAliasRegex(surface: string): RegExp {
   return new RegExp(`(?<=^|\\s)@${escaped}(?![\\p{L}\\p{N}_-])`, "giu");
 }
 
+function isVisiblePlaceholderAt(text: string, offset: number, placeholder: string): boolean {
+  return normalizeLookup(text.slice(offset, offset + placeholder.length)) === normalizeLookup(placeholder);
+}
+
 function resolveMention(
   ref: string,
   participants: readonly OmniMentionParticipant[] = [],
@@ -436,13 +458,16 @@ function resolveMention(
 
 function addResolvedMention(
   resolvedById: Map<string, ResolvedOmniMention>,
-  input: { id: string; displayName?: string; matched: string; source: "explicit" | "inline" },
+  input: { id: string; displayName?: string; matched: string; placeholder?: string; source: "explicit" | "inline" },
 ): ResolvedOmniMention {
   const existing = resolvedById.get(input.id);
   if (existing) return existing;
   const resolved: ResolvedOmniMention = {
     id: input.id,
-    placeholder: mentionPlaceholderForId(input.id),
+    placeholder:
+      input.placeholder ??
+      visibleMentionPlaceholderForDisplayName(input.displayName) ??
+      mentionPlaceholderForId(input.id),
     ...(input.displayName ? { displayName: input.displayName } : {}),
     source: input.source,
     matched: input.matched,
@@ -458,14 +483,18 @@ function replaceInlineMentions(
 ): string {
   let out = text;
   for (const alias of buildInlineMentionAliases(participants)) {
-    out = out.replace(inlineAliasRegex(alias.surface), (match) => {
+    out = out.replace(inlineAliasRegex(alias.surface), (match, offset: number, fullText: string) => {
       const id = participantMentionId(alias.participant);
+      const placeholder = visibleMentionPlaceholderForDisplayName(alias.participant.displayName);
+      if (!placeholder) return match;
       const resolved = addResolvedMention(resolvedById, {
         id,
         ...(alias.participant.displayName?.trim() ? { displayName: alias.participant.displayName.trim() } : {}),
         matched: match,
+        placeholder,
         source: "inline",
       });
+      if (isVisiblePlaceholderAt(fullText, offset, placeholder)) return match;
       return resolved.placeholder;
     });
   }

@@ -6,6 +6,7 @@ domain: apps
 capability: scaffold
 capabilities:
   - scaffold
+  - import-cli
   - manifest
   - router
   - skills
@@ -64,6 +65,8 @@ discover, inspect, validate, and continue implementing the app safely.
   with `ravi apps check`, and use declared operations only.
 - The scaffold MUST NOT execute generated commands, health checks, app code, or
   storage migrations.
+- Scaffold-from-CLI behavior, whether exposed as `ravi apps import-cli` or
+  `ravi apps scaffold --from-cli`, MUST follow `apps/import-cli`.
 
 ## Command Contract
 
@@ -72,6 +75,7 @@ ravi apps scaffold <app-id> \
   --name "Display Name" \
   --description "What this app does" \
   --command "ravi my-app" \
+  --from-cli "external-cli" \
   --dry-run \
   --force \
   --skip-ui \

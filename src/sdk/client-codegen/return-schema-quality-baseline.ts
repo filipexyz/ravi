@@ -24,7 +24,6 @@ export const WEAK_PUBLIC_RETURN_COMMANDS_BASELINE = [
   "apps.guide",
   "apps.prompts",
   "apps.run",
-  "apps.scaffold",
   "apps.show",
   "artifacts.archive",
   "artifacts.attach",

@@ -19,30 +19,60 @@ import { logger } from "../utils/logger.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
 import { agentCan, canWithCapabilityContext } from "../permissions/engine.js";
 import { recordPermissionDenial } from "../permissions/denials.js";
+import { buildAuditContextProvenance, type AuditContextProvenance } from "../permissions/audit-provenance.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
-import type { ContextCapability } from "../router/router-db.js";
+import type { ContextCapability, ContextRecord, ContextSource } from "../router/router-db.js";
 
 const log = logger.child("bash:hook");
 
 /**
  * Emit an audit event via NATS (fire-and-forget).
  */
-function emitAudit(event: { type: string; agentId: string; denied: string; reason: string; detail?: string }): void {
+function emitAudit(event: {
+  type: string;
+  agentId: string;
+  denied: string;
+  reason: string;
+  detail?: string;
+  dedupeKey?: string;
+  context?: AuditContextProvenance;
+}): void {
   if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
-  publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch(() => {});
+  publish("ravi.audit.denied", {
+    ...event,
+    dedupeKey: event.dedupeKey ?? buildAuditDeniedDedupeKey(event),
+  } as unknown as Record<string, unknown>).catch(() => {});
+}
+
+function buildAuditDeniedDedupeKey(event: { type: string; agentId: string; denied: string; reason: string }): string {
+  return ["audit.denied", event.type, event.agentId, event.denied, event.reason].map(normalizeDedupePart).join(":");
+}
+
+function normalizeDedupePart(value: string): string {
+  return value.trim().replace(/\s+/g, " ").slice(0, 240);
 }
 
 function buildBashDeniedAuditEvent(
   command: string,
   decision: BashPermissionDecision,
   agentId?: string,
-): { type: string; agentId: string; denied: string; reason: string; detail?: string } | null {
+  ctx?: BashPermissionContext,
+): {
+  type: string;
+  agentId: string;
+  denied: string;
+  reason: string;
+  detail?: string;
+  context?: AuditContextProvenance;
+} | null {
   if (decision.allowed || !decision.denialType) {
     return null;
   }
 
   const resolvedAgentId = agentId ?? "unknown";
   const detail = command.slice(0, 200);
+  const provenance = buildAuditContextProvenance(ctx);
+  const contextFields = provenance ? { context: provenance } : {};
 
   if (decision.denialType === "env_spoofing") {
     return {
@@ -51,6 +81,7 @@ function buildBashDeniedAuditEvent(
       denied: "RAVI_* override",
       reason: decision.reason ?? "Cannot override RAVI environment variables",
       detail,
+      ...contextFields,
     };
   }
 
@@ -61,6 +92,7 @@ function buildBashDeniedAuditEvent(
       denied: command.split(/\s+/)[0] ?? "unknown",
       reason: decision.reason ?? "Bash command denied by Ravi",
       detail,
+      ...contextFields,
     };
   }
 
@@ -71,6 +103,7 @@ function buildBashDeniedAuditEvent(
       denied: extractRaviTarget(command) ?? "unknown",
       reason: decision.reason ?? "Bash command denied by Ravi",
       detail,
+      ...contextFields,
     };
   }
 
@@ -178,11 +211,15 @@ interface BashHookOptions {
 }
 
 export interface BashPermissionContext {
+  contextId?: string;
+  context?: ContextRecord;
   agentId?: string;
   kind?: string | null;
   sessionKey?: string;
   sessionName?: string;
+  source?: ContextSource;
   capabilities?: ContextCapability[];
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface BashPermissionDecision {
@@ -315,8 +352,13 @@ export function buildPreToolUseDenyResult(reason: string): Record<string, unknow
   };
 }
 
-export function emitBashDeniedAudit(command: string, decision: BashPermissionDecision, agentId?: string): void {
-  const event = buildBashDeniedAuditEvent(command, decision, agentId);
+export function emitBashDeniedAudit(
+  command: string,
+  decision: BashPermissionDecision,
+  agentId?: string,
+  ctx?: BashPermissionContext,
+): void {
+  const event = buildBashDeniedAuditEvent(command, decision, agentId, ctx);
   if (!event) {
     return;
   }
@@ -333,6 +375,7 @@ function recordBashPermissionDenial(
   if (decision.allowed || decision.denialType === "env_spoofing") return;
   const subjectId = agentId ?? ctx.agentId;
   if (!subjectId) return;
+  const provenance = buildAuditContextProvenance(ctx);
 
   for (const denied of decision.deniedCapabilities ?? []) {
     recordPermissionDenial({
@@ -341,11 +384,13 @@ function recordBashPermissionDenial(
       agentId: subjectId,
       sessionKey: ctx.sessionKey,
       sessionName: ctx.sessionName,
+      contextId: ctx.contextId ?? ctx.context?.contextId,
       relation: denied.relation,
       objectType: denied.objectType,
       objectId: denied.objectId,
       reason: decision.reason,
       command,
+      detail: provenance ? { context: provenance } : undefined,
     });
   }
 }
@@ -411,8 +456,14 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
     const scopeCtx = getScopeContext();
     const bashContext = {
       agentId,
+      contextId: scopeCtx.contextId,
+      context: scopeCtx.context,
+      kind: scopeCtx.context?.kind,
       sessionKey: scopeCtx.sessionKey,
       sessionName: scopeCtx.sessionName,
+      source: scopeCtx.source,
+      capabilities: scopeCtx.context?.capabilities,
+      metadata: scopeCtx.context?.metadata,
     };
     const decision = evaluateBashPermission(command, bashContext);
 
@@ -421,7 +472,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
         command: command.slice(0, 200),
         reason: decision.reason,
       });
-      emitBashDeniedAudit(command, decision, agentId);
+      emitBashDeniedAudit(command, decision, agentId, bashContext);
       recordBashPermissionDenial(command, decision, bashContext, agentId);
 
       return buildPreToolUseDenyResult(decision.reason!);
@@ -432,7 +483,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
         command: command.slice(0, 200),
         reason: decision.reason,
       });
-      emitBashDeniedAudit(command, decision, agentId);
+      emitBashDeniedAudit(command, decision, agentId, bashContext);
       recordBashPermissionDenial(command, decision, bashContext, agentId);
 
       return buildPreToolUseDenyResult(decision.reason!);
@@ -443,7 +494,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
         command: command.slice(0, 200),
         reason: decision.reason,
       });
-      emitBashDeniedAudit(command, decision, agentId);
+      emitBashDeniedAudit(command, decision, agentId, bashContext);
       recordBashPermissionDenial(command, decision, bashContext, agentId);
 
       return buildPreToolUseDenyResult(decision.reason!);
@@ -484,6 +535,7 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
     // Check REBAC: can agent use this tool?
     if (!agentCan(agentId, "use", "tool", toolName)) {
       const scopeCtx = getScopeContext();
+      const provenance = buildAuditContextProvenance(scopeCtx);
       const reason = `Permission denied: agent:${agentId} cannot use tool:${toolName}`;
       log.warn("Tool blocked", { agentId, tool: toolName });
       recordPermissionDenial({
@@ -492,16 +544,19 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
         agentId,
         sessionKey: scopeCtx.sessionKey,
         sessionName: scopeCtx.sessionName,
+        contextId: scopeCtx.contextId,
         relation: "use",
         objectType: "tool",
         objectId: toolName,
         reason,
+        detail: provenance ? { context: provenance } : undefined,
       });
       emitAudit({
         type: "tool",
         agentId,
         denied: `tool:${toolName}`,
         reason,
+        ...(provenance ? { context: provenance } : {}),
       });
       return {
         hookSpecificOutput: {

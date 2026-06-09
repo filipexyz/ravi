@@ -172,6 +172,16 @@ function makeOtherTarget(): NonNullable<ResponseMessage["target"]> {
   };
 }
 
+function makeInstanceAliasTarget(): NonNullable<ResponseMessage["target"]> {
+  return {
+    channel: "whatsapp",
+    accountId: "11111111-1111-1111-1111-111111111111",
+    instanceId: "11111111-1111-1111-1111-111111111111",
+    chatId: "5511999999999@s.whatsapp.net",
+    sourceMessageId: "inbound-instance-alias",
+  };
+}
+
 describe("Gateway session trace instrumentation", () => {
   it("records response.emitted and delivery.delivered for successful channel delivery", async () => {
     const { sessionKey, sessionName } = seedSession();
@@ -508,7 +518,7 @@ describe("Gateway session trace instrumentation", () => {
 
       expect(send).toHaveBeenCalledTimes(1);
       const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
-      expect(text).toBe("oi @5511947879044 @91015272759397 @Luisalgo @12345678901234");
+      expect(text).toBe("oi @Luís Filipe @Ravi Bot @Luisalgo @12345678901234");
       expect(options).toMatchObject({
         mentions: expect.arrayContaining([
           { id: "5511947879044@s.whatsapp.net", type: "user" },
@@ -726,6 +736,32 @@ describe("Gateway session trace instrumentation", () => {
     );
   });
 
+  it("treats account-name and instance-id presence targets as the same chat", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => makeResponse().target,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "tool.started",
+      _source: makeInstanceAliasTarget(),
+    });
+
+    expect(renewActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      true,
+    );
+  });
+
   it("forces presence renewal from streamed activity when delivery runs outside the active consumer", async () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});
@@ -782,6 +818,28 @@ describe("Gateway session trace instrumentation", () => {
     await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
 
     expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears equivalent account-name and instance-id targets without duplicate fallback pauses", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const clearActiveTarget = mock(() => {});
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => makeResponse().target,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "turn.complete",
+      _source: makeInstanceAliasTarget(),
+    });
+
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalled();
   });
 
   it("stops presence immediately when the response is silent", async () => {

@@ -122,13 +122,13 @@ Para timeline completa de sessão, use `RAVI_EVENTS` junto de `MESSAGE`/`REACTIO
 | `ravi.instances.unregistered` | `{ instanceId, channelType, subject, from, chatId, isGroup, contentType, timestamp }` — cooldown 5min por instanceId |
 | `ravi.whatsapp.qr.{instanceId}` | `{ type: "qr", instanceId, qr, channelType }` |
 | `ravi.whatsapp.connected.{instanceId}` | `{ type: "connected", instanceId, channelType, profileName, ownerIdentifier }` |
-| `ravi.whatsapp.group.{op}` | `{ accountId, replyTopic, ... }` — bridge legado para ops: list, info, leave, add, remove, join, invite e similares (request-reply). `create` não usa mais este tópico; `ravi whatsapp group create` chama a API HTTP do Omni e registra chat/route/session localmente. |
+| `ravi.whatsapp.group.{op}` | **Aposentado para o CLI público.** O grupo `ravi whatsapp group` usa REST do Omni; não introduza novos callers request-reply para este tópico. |
 
 ### Auditoria
 
 | Tópico | Payload |
 |--------|---------|
-| `ravi.audit.denied` | `{ type: "env_spoofing"\|"executable"\|"session_scope"\|"tool"\|"group", agentId, denied, reason, detail? }` |
+| `ravi.audit.denied` | `{ type: "env_spoofing"\|"executable"\|"session_scope"\|"tool"\|"scope", agentId, denied, reason, dedupeKey, command?, detail?, denialId?, context? }` — `dedupeKey` é semântico e não inclui `denialId`; `context` é provenance segura (`contextId`, `kind`, sessão, `actorPrincipal`, `surfacePrincipal`, contadores de capabilities); nunca inclui `contextKey`. |
 
 ### Sistema e Config
 

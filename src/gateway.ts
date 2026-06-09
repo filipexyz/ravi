@@ -46,6 +46,7 @@ const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
 const POST_DELIVERY_RENEW_DELAY_MS = 1_000;
 const INTERRUPTED_PRESENCE_GRACE_MS = 15_000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Normalize a chatId to a valid WhatsApp JID for the omni API.
@@ -88,7 +89,7 @@ export interface GatewayOptions {
   emitEvent?: typeof nats.emit;
 }
 
-type PresenceTarget = { channel: string; accountId: string; chatId: string; threadId?: string };
+type PresenceTarget = { channel: string; accountId: string; instanceId?: string; chatId: string; threadId?: string };
 type MessageDeleteRequest = {
   channel?: string;
   accountId: string;
@@ -208,9 +209,29 @@ export class Gateway {
     };
   }
 
+  private resolvePresenceInstanceId(target: PresenceTarget): string | undefined {
+    if (target.instanceId) return target.instanceId;
+    if (!target.accountId) return undefined;
+
+    const config = configStore.getConfig();
+    if (UUID_RE.test(target.accountId)) return target.accountId;
+
+    for (const [instanceId, accountName] of Object.entries(config.instanceToAccount)) {
+      if (accountName === target.accountId) return instanceId;
+    }
+    return undefined;
+  }
+
+  private normalizePresenceChannel(channel: string): string {
+    return channel === "whatsapp-baileys" ? "whatsapp" : channel;
+  }
+
   private presenceTargetKey(target: PresenceTarget | undefined): string | undefined {
     if (!target) return undefined;
-    return [target.channel, target.accountId, normalizeOutboundJid(target.chatId), target.threadId ?? ""].join(":");
+    const instanceId = this.resolvePresenceInstanceId(target);
+    const channel = this.normalizePresenceChannel(target.channel);
+    const accountKey = instanceId ? `instance:${instanceId}` : `account:${target.accountId}`;
+    return [channel, accountKey, normalizeOutboundJid(target.chatId), target.threadId ?? ""].join(":");
   }
 
   private targetsMatch(left: PresenceTarget | undefined, right: PresenceTarget | undefined): boolean {

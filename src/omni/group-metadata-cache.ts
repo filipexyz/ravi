@@ -110,6 +110,18 @@ function cleanString(value: unknown): string | undefined {
   return trimmed;
 }
 
+function isRawChannelIdentifierLabel(value: string): boolean {
+  const cleaned = value
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/\s+\([^)]*\)\s*$/, "");
+  if (!cleaned) return false;
+  if (/^(?:lid|group):\d+$/i.test(cleaned)) return true;
+  if (/^\d+@(?:s\.whatsapp\.net|lid|g\.us)$/i.test(cleaned)) return true;
+  const base = cleaned.includes("@") ? cleaned.slice(0, cleaned.indexOf("@")) : cleaned;
+  return /^\d{10,15}$/.test(base);
+}
+
 function normalizeChatId(chatId: string): string {
   return chatId.includes("@") ? chatId.slice(0, chatId.indexOf("@")) : chatId.replace(/^group:/, "");
 }
@@ -559,9 +571,11 @@ export async function resolveOmniGroupMetadata(
 export function formatOmniGroupMembersForPrompt(metadata: OmniGroupMetadata | null | undefined): string[] | undefined {
   if (!metadata?.participants.length) return undefined;
 
-  return metadata.participants.map((participant) => {
-    const label = participant.displayName?.trim() || participant.platformUserId;
+  const members = metadata.participants.flatMap((participant) => {
+    const label = participant.displayName?.trim();
+    if (!label || isRawChannelIdentifierLabel(label)) return [];
     const role = participant.role?.trim();
-    return role && role !== "-" && role !== "member" ? `${label} (${role})` : label;
+    return role && role !== "-" && role !== "member" ? [`${label} (${role})`] : [label];
   });
+  return members.length ? members : undefined;
 }

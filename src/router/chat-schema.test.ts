@@ -31,7 +31,9 @@ import {
   dbUpsertSessionParticipant,
   getDb,
 } from "./router-db.js";
+import { recomputeChatReadingListMembers } from "../chats/reading-lists.js";
 import { getOrCreateSession } from "./sessions.js";
+import { attachTagSlugsToAsset } from "../tags/helpers.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 let stateDir: string | null = null;
@@ -613,6 +615,73 @@ describe("identity chat schema", () => {
       readerId: "observer",
     });
     expect(members.items[0]?.unreadMessageCount).toBe(1);
+  });
+
+  it("materializes dynamic reading-list members from contact tag selectors", () => {
+    const eligibleChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999901@s.whatsapp.net",
+      chatType: "dm",
+      title: "Eligible",
+    });
+    dbUpsertChatParticipant({
+      chatId: eligibleChat.id,
+      contactId: "contact_eligible",
+      source: "test",
+    });
+
+    const preservedChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999902@s.whatsapp.net",
+      chatType: "dm",
+      title: "Preserved",
+    });
+    dbUpsertChatParticipant({
+      chatId: preservedChat.id,
+      contactId: "contact_preserved",
+      source: "test",
+    });
+
+    const staleChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999903@s.whatsapp.net",
+      chatType: "dm",
+      title: "Stale",
+    });
+    dbUpsertChatParticipant({
+      chatId: staleChat.id,
+      contactId: "contact_stale",
+      source: "test",
+    });
+
+    attachTagSlugsToAsset({
+      assetType: "contact",
+      assetId: "contact_eligible",
+      tags: ["crm-eligible"],
+      source: "test",
+    });
+
+    const list = dbCreateChatReadingList({
+      name: "dynamic-crm",
+      ownerType: "agent",
+      ownerId: "crm",
+      mode: "dynamic",
+      selector: { contactTags: ["crm-eligible"] },
+    });
+    dbAddChatToReadingList({ listId: list.id, chatId: preservedChat.id, source: "manual" });
+    dbAddChatToReadingList({ listId: list.id, chatId: staleChat.id, source: "selector" });
+
+    const recompute = recomputeChatReadingListMembers(list);
+    expect(recompute.eligibleChatIds).toEqual([eligibleChat.id]);
+    expect(recompute.addedChatIds).toEqual([eligibleChat.id]);
+    expect(recompute.removedChatIds).toEqual([staleChat.id]);
+    expect(recompute.preservedChatIds).toEqual([preservedChat.id]);
+
+    const members = dbListChatReadingListMembers({ listId: list.id });
+    expect(members.items.map((item) => item.chat.id).sort()).toEqual([eligibleChat.id, preservedChat.id].sort());
   });
 
   it("requires active reading-list membership before reading deltas or writing cursors", () => {

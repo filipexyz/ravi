@@ -231,15 +231,29 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     pattern: "ravi.audit.denied",
     title: "Permission denied",
     description: "Permission or policy denial event.",
-    payload: "{ type, agentId, denied, reason, detail?, timestamp }",
+    payload: "{ type, agentId, denied, reason, dedupeKey, command?, detail?, denialId?, context?, timestamp }",
     schema: {
       version: 1,
       fields: [
         { path: "type", type: "string", required: true, description: "Audit event type." },
         { path: "agentId", type: "string", required: true, description: "Agent denied by policy." },
-        { path: "denied", type: "object", required: true, description: "Denied capability or resource facts." },
+        { path: "denied", type: "string", required: true, description: "Denied capability or resource facts." },
         { path: "reason", type: "string", required: true, description: "Policy denial reason." },
+        {
+          path: "dedupeKey",
+          type: "string",
+          required: true,
+          description: "Stable semantic key for repeated equivalent denials. It must not include denialId.",
+        },
+        { path: "command", type: "string", description: "CLI command or Bash command that triggered the denial." },
         { path: "detail", type: "string", description: "Optional safe details." },
+        { path: "denialId", type: "number", description: "Optional permission_denials ledger id." },
+        {
+          path: "context",
+          type: "object",
+          description:
+            "Safe runtime provenance: contextId, kind, session, actorPrincipal, surfacePrincipal and capability counts. Never includes contextKey.",
+        },
         { path: "timestamp", type: "string", description: "Event timestamp." },
       ],
     },

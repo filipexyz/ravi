@@ -864,7 +864,11 @@ function shortSql(sql: string): string {
 
 function reportSlowQuery(elapsed: number, method: string, sql: string): void {
   if (elapsed >= SLOW_QUERY_ERROR_MS) {
-    log.error("very slow db query (possible lock contention)", { ms: elapsed, method, sql: shortSql(sql) });
+    log.error("very slow db query (possible lock contention)", {
+      ms: elapsed,
+      method,
+      sql: shortSql(sql),
+    });
   } else if (elapsed >= SLOW_QUERY_WARN_MS) {
     log.warn("slow db query", { ms: elapsed, method, sql: shortSql(sql) });
   }
@@ -1452,6 +1456,11 @@ function getDb(): Database {
       object_type TEXT NOT NULL,
       object_id TEXT NOT NULL,
       source TEXT NOT NULL DEFAULT 'manual',
+      grant_mode TEXT NOT NULL DEFAULT 'permanent',
+      expires_at INTEGER,
+      revoked_at INTEGER,
+      reason TEXT,
+      issued_by TEXT,
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
@@ -1524,6 +1533,13 @@ function getDb(): Database {
       output_cost_usd REAL NOT NULL,
       cache_cost_usd REAL DEFAULT 0,
       total_cost_usd REAL NOT NULL,
+      pricing_status TEXT NOT NULL DEFAULT 'legacy',
+      pricing_source TEXT,
+      pricing_source_url TEXT,
+      pricing_source_version TEXT,
+      pricing_fetched_at INTEGER,
+      pricing_model TEXT,
+      pricing_error TEXT,
       created_at INTEGER NOT NULL
     );
 
@@ -1854,7 +1870,9 @@ function getDb(): Database {
   `);
 
   // Migration: add matrix_account column to agents if not exists
-  const agentColumns = db.prepare("PRAGMA table_info(agents)").all() as Array<{ name: string }>;
+  const agentColumns = db.prepare("PRAGMA table_info(agents)").all() as Array<{
+    name: string;
+  }>;
   if (!agentColumns.some((c) => c.name === "matrix_account")) {
     db.exec("ALTER TABLE agents ADD COLUMN matrix_account TEXT REFERENCES matrix_accounts(username)");
     log.info("Added matrix_account column to agents table");
@@ -1912,7 +1930,9 @@ function getDb(): Database {
     for (const col of toDrop) {
       db.exec(`ALTER TABLE agents DROP COLUMN ${col}`);
     }
-    log.info("Dropped legacy permission columns from agents table", { columns: toDrop });
+    log.info("Dropped legacy permission columns from agents table", {
+      columns: toDrop,
+    });
   }
 
   // Migration: add spec_mode column to agents if not exists
@@ -1988,7 +2008,9 @@ function getDb(): Database {
   db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_runtime_display ON sessions(runtime_session_display_id)");
 
   // Migration: add policy column to routes if not exists
-  const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
+  const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{
+    name: string;
+  }>;
   if (!routeColumns.some((c) => c.name === "policy")) {
     db.exec("ALTER TABLE routes ADD COLUMN policy TEXT");
     log.info("Added policy column to routes table");
@@ -2400,17 +2422,23 @@ function getDb(): Database {
     );
   `);
 
+  ensureRelationMigrations(db);
+  ensureCostEventMigrations(db);
   ensureIdentityChatMigrations(db);
   backfillChatModelOnce(db);
 
   // Create default agent if none exist
-  const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
+  const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as {
+    count: number;
+  };
   if (count.count === 0) {
     const now = Date.now();
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO agents (id, name, cwd, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?)
-    `).run("main", "Ravi", join(RAVI_DIR, "main"), now, now);
+    `,
+    ).run("main", "Ravi", join(RAVI_DIR, "main"), now, now);
     log.info("Created default agent: main");
   }
 
@@ -2424,7 +2452,9 @@ function getDb(): Database {
     db.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?").run(
       Date.now(),
     );
-    log.info("Cleaned up expired ephemeral sessions at startup", { count: expiredCount });
+    log.info("Cleaned up expired ephemeral sessions at startup", {
+      count: expiredCount,
+    });
   }
 
   log.debug("Database initialized", { path: nextDbPath });
@@ -2436,7 +2466,9 @@ function getDb(): Database {
  * Uses SQLite's changes() function since bun:sqlite doesn't expose db.changes.
  */
 function getDbChanges(): number {
-  const row = getDb().prepare("SELECT changes() AS c").get() as { c: number } | null;
+  const row = getDb().prepare("SELECT changes() AS c").get() as {
+    c: number;
+  } | null;
   return row?.c ?? 0;
 }
 
@@ -2465,10 +2497,13 @@ function ensureColumn(database: Database, table: string, column: string, definit
   if (!tableHasColumn(database, table, column)) {
     try {
       database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-      log.info("Added identity/chat schema column", { table, column });
+      log.info("Added schema column", { table, column });
     } catch (error) {
       if (isDuplicateColumnRace(error) && tableHasColumn(database, table, column)) {
-        log.debug("Identity/chat schema column already added by another process", { table, column });
+        log.debug("Schema column already added by another process", {
+          table,
+          column,
+        });
         return;
       }
       throw error;
@@ -2478,6 +2513,25 @@ function ensureColumn(database: Database, table: string, column: string, definit
 
 function isDuplicateColumnRace(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
+}
+
+function ensureRelationMigrations(database: Database): void {
+  ensureColumn(database, "relations", "grant_mode", "TEXT NOT NULL DEFAULT 'permanent'");
+  ensureColumn(database, "relations", "expires_at", "INTEGER");
+  ensureColumn(database, "relations", "revoked_at", "INTEGER");
+  ensureColumn(database, "relations", "reason", "TEXT");
+  ensureColumn(database, "relations", "issued_by", "TEXT");
+}
+
+function ensureCostEventMigrations(database: Database): void {
+  ensureColumn(database, "cost_events", "pricing_status", "TEXT NOT NULL DEFAULT 'legacy'");
+  ensureColumn(database, "cost_events", "pricing_source", "TEXT");
+  ensureColumn(database, "cost_events", "pricing_source_url", "TEXT");
+  ensureColumn(database, "cost_events", "pricing_source_version", "TEXT");
+  ensureColumn(database, "cost_events", "pricing_fetched_at", "INTEGER");
+  ensureColumn(database, "cost_events", "pricing_model", "TEXT");
+  ensureColumn(database, "cost_events", "pricing_error", "TEXT");
+  database.exec("CREATE INDEX IF NOT EXISTS idx_cost_events_pricing_status ON cost_events(pricing_status, created_at)");
 }
 
 function ensureIdentityChatMigrations(database: Database): void {
@@ -2715,7 +2769,9 @@ function backfillSessionSpeechModes(database: Database): void {
     )
     .run(now, now);
   if (result.changes > 0) {
-    log.info("Backfilled session subscription speech modes", { rows: result.changes });
+    log.info("Backfilled session subscription speech modes", {
+      rows: result.changes,
+    });
   }
 }
 
@@ -3201,7 +3257,9 @@ function mergeChatParticipantsIntoTarget(
       role: row.role,
       status: row.status,
       source: row.source,
-      metadata: mergeJsonRecords(parseJsonRecord(row.metadata_json), { canonicalizedFromChatId: sourceChatId }),
+      metadata: mergeJsonRecords(parseJsonRecord(row.metadata_json), {
+        canonicalizedFromChatId: sourceChatId,
+      }),
       seenAt: Math.max(row.last_seen_at, now),
     });
     database.prepare("DELETE FROM chat_participants WHERE id = ?").run(row.id);
@@ -3236,7 +3294,11 @@ function mergeSessionChatSubscriptionsIntoTarget(
 ): void {
   const rows = database
     .prepare("SELECT id, session_key, detached_at FROM session_chat_subscriptions WHERE chat_id = ?")
-    .all(sourceChatId) as Array<{ id: number; session_key: string; detached_at: number | null }>;
+    .all(sourceChatId) as Array<{
+    id: number;
+    session_key: string;
+    detached_at: number | null;
+  }>;
   for (const row of rows) {
     const activeTarget = database
       .prepare("SELECT 1 FROM session_chat_subscriptions WHERE chat_id = ? AND detached_at IS NULL")
@@ -3264,7 +3326,11 @@ function mergeReadingListMembersIntoTarget(
 ): void {
   const rows = database
     .prepare("SELECT id, list_id, removed_at FROM chat_reading_list_members WHERE chat_id = ?")
-    .all(sourceChatId) as Array<{ id: string; list_id: string; removed_at: number | null }>;
+    .all(sourceChatId) as Array<{
+    id: string;
+    list_id: string;
+    removed_at: number | null;
+  }>;
   for (const row of rows) {
     const activeTarget = database
       .prepare("SELECT 1 FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL")
@@ -4018,7 +4084,10 @@ function backfillChatModel(database: Database): void {
           instanceId: "",
           platformChatId: row.chat_id,
           chatType: inferChatType(row.chat_id),
-          rawProvenance: { sourceTable: "message_metadata", chatId: row.chat_id },
+          rawProvenance: {
+            sourceTable: "message_metadata",
+            chatId: row.chat_id,
+          },
           seenAt: now,
         });
       }
@@ -4339,8 +4408,9 @@ function getStatements(): PreparedStatements {
     insertCostEvent: database.prepare(`
       INSERT INTO cost_events (session_key, agent_id, model, input_tokens, output_tokens,
         cache_read_tokens, cache_creation_tokens, input_cost_usd, output_cost_usd, cache_cost_usd,
-        total_cost_usd, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_cost_usd, pricing_status, pricing_source, pricing_source_url, pricing_source_version,
+        pricing_fetched_at, pricing_model, pricing_error, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     // Instances
     upsertInstance: database.prepare(`
@@ -4903,7 +4973,11 @@ export function dbListChats(
     offset?: number | string | null;
   } = {},
 ): ListPage<ChatListItem> {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 25, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 25,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const where: string[] = [];
   const params: Array<string | number> = [];
   if (input.channel?.trim()) {
@@ -4965,7 +5039,11 @@ export function dbListChats(
     `,
     )
     .all(...params, limit, offset) as Array<
-    ChatRow & { message_count: number; participant_count: number; last_message_id: string | null }
+    ChatRow & {
+      message_count: number;
+      participant_count: number;
+      last_message_id: string | null;
+    }
   >;
   return {
     total: count?.total ?? 0,
@@ -5040,7 +5118,10 @@ export function dbListChatIdsByContactIds(input: {
         ORDER BY contact_id ASC, rank ASC
       `,
       )
-      .all(...chunk, ...chunk, limitPerContact) as Array<{ contact_id: string; chat_id: string }>;
+      .all(...chunk, ...chunk, limitPerContact) as Array<{
+      contact_id: string;
+      chat_id: string;
+    }>;
 
     for (const row of rows) {
       const chats = result.get(row.contact_id);
@@ -5148,7 +5229,11 @@ export function dbListAgentChatMessagesPage(input: {
     return { total: 0, limit: 0, offset: 0, items: [] };
   }
 
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 10, maxLimit: 100, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 10,
+    maxLimit: 100,
+    minLimit: 1,
+  });
   const order = input.order === "asc" ? "ASC" : "DESC";
   const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?"];
   const params: SQLQueryBindings[] = [agentId];
@@ -5246,7 +5331,11 @@ export function dbListChatMessagesPage(input: {
   offset?: number | string | null;
   order?: "asc" | "desc";
 }): ListPage<ChatMessageWithSortKey> {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 50,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const order = input.order === "desc" ? "DESC" : "ASC";
   const database = getDb();
   const count = database.prepare("SELECT COUNT(*) AS total FROM chat_messages WHERE chat_id = ?").get(input.chatId) as
@@ -5278,7 +5367,11 @@ export function dbListChatMessagesPageByContactId(input: {
   offset?: number | string | null;
   order?: "asc" | "desc";
 }): ListPage<ChatMessageWithSortKey> & { contactId: string } {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 50,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const order = input.order === "asc" ? "ASC" : "DESC";
   const database = getDb();
   const whereClauses = ["m.contact_id = ?"];
@@ -5515,7 +5608,11 @@ export function dbListChatReadingLists(
     offset?: number | string | null;
   } = {},
 ): ListPage<ChatReadingListRecord> {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 50,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const where: string[] = [];
   const params: Array<string | number> = [];
   if (input.ownerType?.trim()) {
@@ -5542,7 +5639,12 @@ export function dbListChatReadingLists(
     `,
     )
     .all(...params, limit, offset) as ChatReadingListRow[];
-  return { total: count?.total ?? 0, limit, offset, items: rows.map(rowToChatReadingList) };
+  return {
+    total: count?.total ?? 0,
+    limit,
+    offset,
+    items: rows.map(rowToChatReadingList),
+  };
 }
 
 export function dbFindChatReadingList(input: {
@@ -5736,7 +5838,11 @@ export function dbListChatReadingListMembers(input: {
   limit?: number | string | null;
   offset?: number | string | null;
 }): ListPage<ChatReadingListMemberItem> {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 50,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const { readerType, readerId } = normalizeReadingCursorReader(input);
   const database = getDb();
   const count = database
@@ -5756,7 +5862,12 @@ export function dbListChatReadingListMembers(input: {
   const items = rows.flatMap((memberRow): ChatReadingListMemberItem[] => {
     const chat = dbGetChat(memberRow.chat_id);
     if (!chat) return [];
-    const cursor = dbGetChatReadingCursor({ listId: input.listId, chatId: chat.id, readerType, readerId });
+    const cursor = dbGetChatReadingCursor({
+      listId: input.listId,
+      chatId: chat.id,
+      readerType,
+      readerId,
+    });
     const messageCount = database
       .prepare("SELECT COUNT(*) AS total FROM chat_messages WHERE chat_id = ?")
       .get(chat.id) as { total: number } | undefined;
@@ -5786,7 +5897,12 @@ export function dbGetChatReadingDelta(input: {
   if (!list || !chat) return null;
   requireActiveChatReadingListMember(list.id, chat.id);
   const { readerType, readerId } = normalizeReadingCursorReader(input);
-  const previousCursor = dbGetChatReadingCursor({ listId: list.id, chatId: chat.id, readerType, readerId });
+  const previousCursor = dbGetChatReadingCursor({
+    listId: list.id,
+    chatId: chat.id,
+    readerType,
+    readerId,
+  });
   const messages = listChatMessagesAfterCursor({
     chatId: chat.id,
     afterSortKey: previousCursor?.lastReadMessageSortKey,
@@ -5841,7 +5957,12 @@ export function dbMarkChatReadingCursor(input: {
   if (!chat) throw new Error(`Chat not found: ${input.chatId}`);
   requireActiveChatReadingListMember(list.id, chat.id);
   const { readerType, readerId } = normalizeReadingCursorReader(input);
-  const previous = dbGetChatReadingCursor({ listId: list.id, chatId: chat.id, readerType, readerId });
+  const previous = dbGetChatReadingCursor({
+    listId: list.id,
+    chatId: chat.id,
+    readerType,
+    readerId,
+  });
   const requestedMessageId = input.messageId?.trim();
   const message = requestedMessageId ? dbGetChatMessageWithSortKey(requestedMessageId) : latestChatMessage(chat.id);
   if (requestedMessageId && !message) {
@@ -6839,7 +6960,10 @@ export function dbUpsertSkillGateRule(input: DbSkillGateRuleInput): DbSkillGateR
     existing?.createdAt ?? now,
     now,
   );
-  log.info("Upserted skill gate rule", { id, disabled: input.disabled === true });
+  log.info("Upserted skill gate rule", {
+    id,
+    disabled: input.disabled === true,
+  });
   return dbGetSkillGateRule(id)!;
 }
 
@@ -7187,7 +7311,9 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
         if (target.revokedAt && target.revokedAt <= revokedAt) {
           // Still update metadata if a reason or cascade flag should be set.
         }
-        const metadata: Record<string, unknown> = { ...(target.metadata ?? {}) };
+        const metadata: Record<string, unknown> = {
+          ...(target.metadata ?? {}),
+        };
         if (reasonNote) {
           metadata[reasonKey] = reasonNote;
         }
@@ -7220,7 +7346,10 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
 }
 
 export function dbRevokeContext(contextId: string, revokedAt = Date.now()): ContextRecord {
-  const result = dbRevokeContextCascade(contextId, { revokedAt, cascade: false });
+  const result = dbRevokeContextCascade(contextId, {
+    revokedAt,
+    cascade: false,
+  });
   return result.context;
 }
 
@@ -7370,7 +7499,10 @@ export function dbUpsertMatrixAccount(account: Omit<MatrixAccount, "createdAt" |
     now,
   );
 
-  log.info("Upserted matrix account", { username: account.username, userId: account.userId });
+  log.info("Upserted matrix account", {
+    username: account.username,
+    userId: account.userId,
+  });
   return dbGetMatrixAccount(account.username)!;
 }
 
@@ -7552,9 +7684,15 @@ export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMe
 
 export function dbListMessageMetaByContactId(
   contactId: string,
-  options: { limit?: number | string | null; offset?: number | string | null } = {},
+  options: {
+    limit?: number | string | null;
+    offset?: number | string | null;
+  } = {},
 ): MessageMetadataPage {
-  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const { limit, offset } = normalizeLimitOffsetPage(options, {
+    defaultLimit: 50,
+    maxLimit: 500,
+  });
   const db = getDb();
   const total =
     (
@@ -7667,7 +7805,9 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
         (
           db
             .prepare("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ? AND id <= ?")
-            .get(now - SESSION_EVENTS_TTL_MS, traceExportCursor) as { c: number }
+            .get(now - SESSION_EVENTS_TTL_MS, traceExportCursor) as {
+            c: number;
+          }
         ).c ?? 0,
       );
     };
@@ -7765,6 +7905,13 @@ export interface CostEvent {
   outputCostUsd: number;
   cacheCostUsd: number;
   totalCostUsd: number;
+  pricingStatus?: string | null;
+  pricingSource?: string | null;
+  pricingSourceUrl?: string | null;
+  pricingSourceVersion?: string | null;
+  pricingFetchedAt?: number | null;
+  pricingModel?: string | null;
+  pricingError?: string | null;
   createdAt: number;
 }
 
@@ -7785,6 +7932,13 @@ export function dbInsertCostEvent(event: Omit<CostEvent, "id">): void {
     event.outputCostUsd,
     event.cacheCostUsd,
     event.totalCostUsd,
+    event.pricingStatus ?? "legacy",
+    event.pricingSource ?? null,
+    event.pricingSourceUrl ?? null,
+    event.pricingSourceVersion ?? null,
+    event.pricingFetchedAt ?? null,
+    event.pricingModel ?? null,
+    event.pricingError ?? null,
     event.createdAt,
   );
 }
@@ -7805,6 +7959,46 @@ interface AgentCostRow extends CostSummaryRow {
 
 interface SessionCostRow extends CostSummaryRow {
   session_key: string;
+}
+
+export interface CostPricingCoverageRow {
+  pricing_status: string;
+  model: string;
+  pricing_model: string | null;
+  pricing_source: string | null;
+  events: number;
+  total_cost: number;
+  total_input: number;
+  total_output: number;
+  total_cache_read: number;
+  total_cache_creation: number;
+  last_created_at: number | null;
+}
+
+export interface CostEventPricingRecomputeRow {
+  id: number;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  pricing_status: string;
+  created_at: number;
+}
+
+export interface CostEventPricingUpdate {
+  id: number;
+  inputCostUsd: number;
+  outputCostUsd: number;
+  cacheCostUsd: number;
+  totalCostUsd: number;
+  pricingStatus: string;
+  pricingSource?: string | null;
+  pricingSourceUrl?: string | null;
+  pricingSourceVersion?: string | null;
+  pricingFetchedAt?: number | null;
+  pricingModel?: string | null;
+  pricingError?: string | null;
 }
 
 /**
@@ -7931,6 +8125,116 @@ export function dbGetCostReport(fromMs: number, toMs: number): AgentCostRow[] {
     ORDER BY total_cost DESC`,
     )
     .all(fromMs, toMs) as AgentCostRow[];
+}
+
+/**
+ * Audit pricing coverage for recent cost events.
+ */
+export function dbGetCostPricingCoverage(sinceMs: number): CostPricingCoverageRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `WITH coverage AS (
+      SELECT
+        CASE
+          WHEN pricing_status = 'priced' AND pricing_source IS NULL AND pricing_model IS NULL THEN 'legacy'
+          ELSE pricing_status
+        END as pricing_status,
+        model,
+        pricing_model,
+        pricing_source,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens,
+        total_cost_usd,
+        created_at
+      FROM cost_events
+      WHERE created_at >= ?
+    )
+    SELECT
+      pricing_status,
+      model,
+      pricing_model,
+      pricing_source,
+      COUNT(*) as events,
+      COALESCE(SUM(total_cost_usd), 0) as total_cost,
+      COALESCE(SUM(input_tokens), 0) as total_input,
+      COALESCE(SUM(output_tokens), 0) as total_output,
+      COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+      COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+      MAX(created_at) as last_created_at
+    FROM coverage
+    GROUP BY pricing_status, model, pricing_model, pricing_source
+    ORDER BY
+      CASE pricing_status WHEN 'unpriced' THEN 0 ELSE 1 END,
+      events DESC,
+      last_created_at DESC`,
+    )
+    .all(sinceMs) as CostPricingCoverageRow[];
+}
+
+export function dbListCostEventsForPricingRecompute(options: {
+  sinceMs: number;
+  limit: number;
+  includePriced?: boolean;
+}): CostEventPricingRecomputeRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+        id,
+        model,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens,
+        pricing_status,
+        created_at
+      FROM cost_events
+      WHERE created_at >= ?
+        AND (
+          ? = 1
+          OR pricing_status IS NULL
+          OR pricing_status != 'priced'
+          OR (pricing_status = 'priced' AND pricing_source IS NULL AND pricing_model IS NULL)
+        )
+      ORDER BY created_at ASC
+      LIMIT ?`,
+    )
+    .all(options.sinceMs, options.includePriced ? 1 : 0, options.limit) as CostEventPricingRecomputeRow[];
+}
+
+export function dbUpdateCostEventPricing(update: CostEventPricingUpdate): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE cost_events
+      SET input_cost_usd = ?,
+        output_cost_usd = ?,
+        cache_cost_usd = ?,
+        total_cost_usd = ?,
+        pricing_status = ?,
+        pricing_source = ?,
+        pricing_source_url = ?,
+        pricing_source_version = ?,
+        pricing_fetched_at = ?,
+        pricing_model = ?,
+        pricing_error = ?
+      WHERE id = ?`,
+  ).run(
+    update.inputCostUsd,
+    update.outputCostUsd,
+    update.cacheCostUsd,
+    update.totalCostUsd,
+    update.pricingStatus,
+    update.pricingSource ?? null,
+    update.pricingSourceUrl ?? null,
+    update.pricingSourceVersion ?? null,
+    update.pricingFetchedAt ?? null,
+    update.pricingModel ?? null,
+    update.pricingError ?? null,
+    update.id,
+  );
 }
 
 /**

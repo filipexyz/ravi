@@ -8,6 +8,8 @@ import type {
   RaviAppRunResult,
 } from "./types.js";
 import { emitCliAuditEvent } from "../cli/audit.js";
+import { getContext } from "../cli/context.js";
+import { agentCan, canWithCapabilityContext } from "../permissions/engine.js";
 
 interface ResolvedOperation {
   id: string;
@@ -75,7 +77,11 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
 
 export function resolveAppAliasInvocation(
   argv: string[],
-  options: { staticRootCommands?: Set<string>; cwd?: string; env?: NodeJS.ProcessEnv } = {},
+  options: {
+    staticRootCommands?: Set<string>;
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  } = {},
 ): RaviAppAliasInvocation | null {
   if (argv.length === 0) return null;
   const first = argv[0];
@@ -108,7 +114,11 @@ export function resolveAppAliasInvocation(
 
 export async function maybeRunAppAliasRoute(
   argv: string[],
-  options: { staticRootCommands?: Set<string>; cwd?: string; env?: NodeJS.ProcessEnv } = {},
+  options: {
+    staticRootCommands?: Set<string>;
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  } = {},
 ): Promise<boolean> {
   const invocation = resolveAppAliasInvocation(argv, options);
   if (!invocation) return false;
@@ -202,6 +212,7 @@ async function dispatchResolvedOperation(
   if (mutating && !hasDeclaredOperationPermission(operation)) {
     throw new Error(`Mutating operation ${resolved.id} must declare permission or permissions.`);
   }
+  enforceAppPermission(appId, resolved.id, mutating);
 
   if (interfaceName === "builtin") {
     const handler = operation.handler?.trim();
@@ -288,8 +299,18 @@ async function runCliOperation(
     durationMs: Date.now() - options.startedAt,
     command,
     exitCode: run.exitCode,
-    ...(options.json ? { stdout: run.stdout, stderr: run.stderr, result: parsed ?? run.stdout.trim() } : {}),
-    ...(run.exitCode === 0 ? {} : { error: run.stderr.trim() || `Command exited with code ${run.exitCode}` }),
+    ...(options.json
+      ? {
+          stdout: run.stdout,
+          stderr: run.stderr,
+          result: parsed ?? run.stdout.trim(),
+        }
+      : {}),
+    ...(run.exitCode === 0
+      ? {}
+      : {
+          error: run.stderr.trim() || `Command exited with code ${run.exitCode}`,
+        }),
   };
 }
 
@@ -370,6 +391,19 @@ function hasDeclaredOperationPermission(operation: RaviAppOperationDeclaration):
   );
 }
 
+function enforceAppPermission(appId: string, operationId: string, mutating: boolean): void {
+  const ctx = getContext();
+  if (!ctx?.agentId) return;
+
+  const relation = mutating ? "execute" : "use";
+  const allowed = ctx.context
+    ? canWithCapabilityContext({ ...ctx.context, agentId: ctx.context.agentId ?? ctx.agentId }, relation, "app", appId)
+    : agentCan(ctx.agentId, relation, "app", appId);
+  if (allowed) return;
+
+  throw new Error(`Permission denied: agent:${ctx.agentId} requires ${relation} on app:${appId} for ${operationId}`);
+}
+
 function toSummary(record: RaviAppManifestRecord): Record<string, unknown> {
   return {
     id: record.id,
@@ -396,7 +430,11 @@ function toDetail(record: RaviAppManifestRecord): Record<string, unknown> {
   };
 }
 
-function stripRouterFlags(argv: string[]): { json: boolean; help: boolean; args: string[] } {
+function stripRouterFlags(argv: string[]): {
+  json: boolean;
+  help: boolean;
+  args: string[];
+} {
   let json = false;
   let help = false;
   const args: string[] = [];

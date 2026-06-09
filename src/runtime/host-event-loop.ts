@@ -1,4 +1,4 @@
-import { calculateCost } from "../constants.js";
+import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
@@ -59,6 +59,7 @@ import {
 } from "./skill-visibility.js";
 import type {
   RuntimeCapabilities,
+  RuntimeEvent,
   RuntimeEventMetadata,
   RuntimeProviderId,
   RuntimeSessionHandle,
@@ -70,6 +71,7 @@ const log = logger.child("bot");
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
 const MAX_TURN_FAILURE_RESPONSE = 320;
+const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
 
 export type RuntimeSafeEmit = (topic: string, data: Record<string, unknown>) => Promise<void>;
 
@@ -418,6 +420,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     drainPendingStarts,
     restartStashedSession,
   } = options;
+  prewarmPricingCatalog();
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
   ) => {
@@ -598,6 +601,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     30_000,
     Number(process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS) || 3 * 60 * 1000,
   );
+  const PROVIDER_TURN_INACTIVITY_TIMEOUT_MS = Math.max(
+    1_000,
+    Number(process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS) || 15 * 60 * 1000,
+  );
+  const PROVIDER_TURN_INACTIVITY_CHECK_MS = Math.min(
+    30_000,
+    Math.max(1_000, Math.floor(PROVIDER_TURN_INACTIVITY_TIMEOUT_MS / 10)),
+  );
   let toolStuckTimer: ReturnType<typeof setTimeout> | undefined;
   let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
   const clearProviderInactivityWatch = () => {
@@ -664,6 +675,64 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const emitRuntimeEvent = async (event: Record<string, unknown>) => {
     const augmented = streaming.currentSource ? { ...event, _source: streaming.currentSource } : event;
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
+  };
+
+  const recordProviderTurnInactivityTimeout = (idleMs: number) => {
+    const currentTurnId = streaming.currentTraceTurnId;
+    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded) {
+      return;
+    }
+
+    log.warn("Provider turn inactive — aborting session", {
+      runId,
+      sessionName,
+      turnId: currentTurnId,
+      timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+      idleMs,
+    });
+    safeEmit(`ravi.session.${sessionName}.runtime`, {
+      type: "provider.inactive",
+      reason: PROVIDER_TURN_INACTIVITY_REASON,
+      timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+      idleMs,
+      sessionName,
+      turnId: currentTurnId,
+    }).catch(() => {});
+    recordTraceEvent({
+      turnId: currentTurnId,
+      provider: runtimeSession.provider,
+      model,
+      eventType: "session.timeout",
+      eventGroup: "session",
+      status: "timeout",
+      source: streaming.currentSource,
+      payloadJson: {
+        reason: PROVIDER_TURN_INACTIVITY_REASON,
+        timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+        idleMs,
+        pendingMessages: streaming.pendingMessages.length,
+        currentTurnPendingIds: streaming.currentTurnPendingIds ?? [],
+      },
+    });
+    recordTerminalTraceOnce({
+      status: "timeout",
+      eventType: "turn.failed",
+      abortReason: PROVIDER_TURN_INACTIVITY_REASON,
+      error: `Provider produced no runtime events for ${PROVIDER_TURN_INACTIVITY_TIMEOUT_MS}ms.`,
+      payloadJson: {
+        reason: PROVIDER_TURN_INACTIVITY_REASON,
+        timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+        idleMs,
+        autoRecovered: true,
+      },
+    });
+    flushObservationEvents("turn.failed", {
+      provider: runtimeSession.provider,
+      reason: PROVIDER_TURN_INACTIVITY_REASON,
+      timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+      idleMs,
+      autoRecovered: true,
+    });
   };
 
   const patchLiveState = (
@@ -796,8 +865,56 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
   };
 
+  const runtimeEventIterator = runtimeSession.events[Symbol.asyncIterator]();
+  const readNextRuntimeEvent = async (): Promise<IteratorResult<RuntimeEvent>> => {
+    const nextEvent = runtimeEventIterator.next();
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let timedOut = false;
+    const timeout = new Promise<IteratorResult<RuntimeEvent>>((resolve) => {
+      interval = setInterval(() => {
+        if (timedOut || streaming.done || streaming.abortController.signal.aborted) return;
+        if (!streaming.turnActive || streaming.toolRunning || streaming.compacting) return;
+
+        const idleMs = Date.now() - streaming.lastActivity;
+        if (idleMs < PROVIDER_TURN_INACTIVITY_TIMEOUT_MS) return;
+
+        timedOut = true;
+        recordProviderTurnInactivityTimeout(idleMs);
+        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
+        restartStashedReason = PROVIDER_TURN_INACTIVITY_REASON;
+        streaming.interrupted = true;
+        streaming.turnActive = false;
+        streaming.internalAbortReason = PROVIDER_TURN_INACTIVITY_REASON;
+        clearActiveToolState();
+        markRuntimeLiveIdle(sessionName, "provider turn inactive");
+        signalTurnComplete();
+        clearTraceTurnState();
+        streaming.done = true;
+        if (!streaming.abortController.signal.aborted) {
+          streaming.abortController.abort();
+        }
+        Promise.resolve(runtimeEventIterator.return?.()).catch((error) => {
+          log.warn("Failed to close inactive provider event iterator", { runId, sessionName, error });
+        });
+        resolve({ done: true, value: undefined as never });
+      }, PROVIDER_TURN_INACTIVITY_CHECK_MS);
+      interval.unref?.();
+    });
+
+    try {
+      return await Promise.race([nextEvent, timeout]);
+    } finally {
+      if (interval) clearInterval(interval);
+    }
+  };
+
   try {
-    for await (const event of runtimeSession.events) {
+    while (!streaming.done) {
+      const next = await readNextRuntimeEvent();
+      if (next.done) {
+        break;
+      }
+      const event = next.value;
       if (streaming.done) {
         break;
       }
@@ -1353,7 +1470,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               cacheCreation,
             })
           : null;
-        if (cost && executionModel) {
+        const resolvedCost = cost ? await cost : null;
+        if (resolvedCost && executionModel) {
           dbInsertCostEvent({
             sessionKey: session.sessionKey,
             agentId: agent.id,
@@ -1362,10 +1480,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             outputTokens,
             cacheReadTokens: cacheRead,
             cacheCreationTokens: cacheCreation,
-            inputCostUsd: cost.inputCost,
-            outputCostUsd: cost.outputCost,
-            cacheCostUsd: cost.cacheCost,
-            totalCostUsd: cost.totalCost,
+            inputCostUsd: resolvedCost.inputCost,
+            outputCostUsd: resolvedCost.outputCost,
+            cacheCostUsd: resolvedCost.cacheCost,
+            totalCostUsd: resolvedCost.totalCost,
+            pricingStatus: resolvedCost.pricingStatus,
+            pricingSource: resolvedCost.pricing?.source ?? null,
+            pricingSourceUrl: resolvedCost.pricing?.sourceUrl ?? null,
+            pricingSourceVersion: resolvedCost.pricing?.sourceVersion ?? null,
+            pricingFetchedAt: resolvedCost.pricing?.fetchedAt ?? null,
+            pricingModel: resolvedCost.pricing?.model ?? null,
+            pricingError: resolvedCost.pricingError ?? null,
             createdAt: Date.now(),
           });
         }
@@ -1374,19 +1499,30 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           eventType: "turn.complete",
           providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
           usage: event.usage,
-          costUsd: cost?.totalCost ?? null,
+          costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
           payloadJson: {
             execution: event.execution ?? null,
             session: event.session ?? null,
             metadata: event.metadata ?? null,
+            pricing:
+              resolvedCost?.pricingStatus === "priced"
+                ? {
+                    status: resolvedCost.pricingStatus,
+                    source: resolvedCost.pricing?.source ?? null,
+                    model: resolvedCost.pricing?.model ?? null,
+                    sourceVersion: resolvedCost.pricing?.sourceVersion ?? null,
+                    fetchedAt: resolvedCost.pricing?.fetchedAt ?? null,
+                    stale: resolvedCost.pricing?.stale ?? null,
+                  }
+                : { status: resolvedCost?.pricingStatus ?? "skipped", error: resolvedCost?.pricingError ?? null },
             promptTooLongReset: streaming._promptTooLong ?? false,
           },
         });
         flushObservationEvents("turn.complete", {
           provider: runtimeSession.provider,
           usage: event.usage,
-          costUsd: cost?.totalCost ?? null,
+          costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
           providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
           promptTooLongReset: streaming._promptTooLong ?? false,
@@ -1782,6 +1918,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   } finally {
     log.info("Streaming session ended", { runId, sessionName });
 
+    clearProviderInactivityWatch();
+    if (toolStuckTimer !== undefined) {
+      clearTimeout(toolStuckTimer);
+      toolStuckTimer = undefined;
+    }
     streaming.done = true;
     streaming.starting = false;
     streaming.compacting = false;
