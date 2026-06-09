@@ -20,6 +20,17 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
 const appPermissionsSchema = z.object({
   required: z.array(z.string()),
   optional: z.array(z.string()),
@@ -101,7 +112,7 @@ const appsScaffoldReturnSchema = z.object({
   skillPath: z.string().nullable(),
   skill: z.string().nullable(),
   files: z.array(appScaffoldFileSchema),
-  manifest: z.unknown(),
+  manifest: z.record(z.string(), jsonValueSchema),
   nextCommands: z.array(z.string()),
 });
 

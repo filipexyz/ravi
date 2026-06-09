@@ -1617,6 +1617,351 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AppsImportCliInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "description": "CLI command to import, e.g. 'ravi apps' or 'my-cli'",
+        "type": "string"
+      },
+      "description": {
+        "description": "Short app description",
+        "type": "string"
+      },
+      "dryRun": {
+        "description": "Print planned files without writing",
+        "type": "boolean"
+      },
+      "force": {
+        "description": "Overwrite existing scaffold files",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Stable app id to generate",
+        "type": "string"
+      },
+      "name": {
+        "description": "Human display name",
+        "type": "string"
+      },
+      "skipSkill": {
+        "description": "Do not create a skill skeleton",
+        "type": "boolean"
+      },
+      "skipSpec": {
+        "description": "Do not create an app spec skeleton",
+        "type": "boolean"
+      },
+      "skipUi": {
+        "description": "Do not include interfaces.ui in the manifest",
+        "type": "boolean"
+      },
+      "source": {
+        "description": "Import source: auto|manifest|registry|help",
+        "type": "string"
+      }
+    },
+    "required": [
+      "command"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AppsImportCliReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "type": "string"
+      },
+      "confidence": {
+        "enum": [
+          "high",
+          "medium",
+          "low"
+        ],
+        "type": "string"
+      },
+      "debugCandidates": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "confidence": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ],
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "destructive": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "interactive": {
+              "type": "boolean"
+            },
+            "json": {
+              "type": "boolean"
+            },
+            "mutating": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "reviewRequired": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "streaming": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "command",
+            "description",
+            "json",
+            "mutating",
+            "destructive",
+            "streaming",
+            "interactive",
+            "confidence",
+            "reviewRequired"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "description": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "files": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "planned",
+                "created",
+                "overwritten"
+              ],
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "manifest",
+                "spec",
+                "skill"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "action"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "force": {
+        "type": "boolean"
+      },
+      "id": {
+        "type": "string"
+      },
+      "manifest": {},
+      "manifestPath": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "nextCommands": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "operationCandidates": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "confidence": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ],
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "destructive": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "interactive": {
+              "type": "boolean"
+            },
+            "json": {
+              "type": "boolean"
+            },
+            "mutating": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "reviewRequired": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "streaming": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "command",
+            "description",
+            "json",
+            "mutating",
+            "destructive",
+            "streaming",
+            "interactive",
+            "confidence",
+            "reviewRequired"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "reviewRequired": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "skill": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "skillPath": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "source": {
+        "enum": [
+          "manifest",
+          "registry",
+          "help"
+        ],
+        "type": "string"
+      },
+      "sourceCommand": {
+        "type": "string"
+      },
+      "specPath": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "description",
+      "command",
+      "dryRun",
+      "force",
+      "manifestPath",
+      "specPath",
+      "skillPath",
+      "skill",
+      "files",
+      "manifest",
+      "nextCommands",
+      "sourceCommand",
+      "source",
+      "confidence",
+      "operationCandidates",
+      "debugCandidates",
+      "warnings",
+      "reviewRequired"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AppsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -11263,6 +11608,274 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChatsListsRecomputeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "list": {
+        "description": "List id or name",
+        "type": "string"
+      },
+      "owner": {
+        "description": "Owner scope when resolving list by name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "list"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsListsRecomputeReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "list": {
+        "additionalProperties": false,
+        "properties": {
+          "archivedAt": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "selector": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "ownerType",
+          "ownerId",
+          "visibility",
+          "mode",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "recompute": {
+        "additionalProperties": false,
+        "properties": {
+          "added": {
+            "type": "number"
+          },
+          "addedChatIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "eligible": {
+            "type": "number"
+          },
+          "eligibleChatIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kept": {
+            "type": "number"
+          },
+          "keptChatIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "list": {
+            "additionalProperties": false,
+            "properties": {
+              "archivedAt": {
+                "type": "number"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "description": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "mode": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ownerId": {
+                "type": "string"
+              },
+              "ownerType": {
+                "type": "string"
+              },
+              "selector": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "visibility": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "ownerType",
+              "ownerId",
+              "visibility",
+              "mode",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "preserved": {
+            "type": "number"
+          },
+          "preservedChatIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removed": {
+            "type": "number"
+          },
+          "removedChatIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "selector": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "list",
+          "selector",
+          "eligibleChatIds",
+          "addedChatIds",
+          "removedChatIds",
+          "keptChatIds",
+          "preservedChatIds",
+          "added",
+          "removed",
+          "kept",
+          "preserved",
+          "eligible"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "list",
+      "recompute"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ChatsListsRemoveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -14271,6 +14884,244 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CostsPricingInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dryRun": {
+        "description": "Preview recompute results without updating cost_events",
+        "type": "boolean"
+      },
+      "hours": {
+        "description": "Time window in hours (default: 24)",
+        "type": "string"
+      },
+      "includePriced": {
+        "description": "Also recompute rows already marked as priced",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Maximum rows to recompute (default: 500, max: 5000)",
+        "type": "string"
+      },
+      "recompute": {
+        "description": "Recompute pricing metadata for non-priced rows in the window",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CostsPricingReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "recompute": {
+        "additionalProperties": false,
+        "properties": {
+          "attempted": {
+            "type": "number"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "includePriced": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "priced": {
+            "type": "number"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "previousPricingStatus": {
+                  "type": "string"
+                },
+                "pricingError": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pricingModel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pricingSource": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pricingStatus": {
+                  "type": "string"
+                },
+                "totalCost": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "model",
+                "previousPricingStatus",
+                "pricingStatus",
+                "totalCost",
+                "pricingModel",
+                "pricingSource",
+                "pricingError"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "unpriced": {
+            "type": "number"
+          },
+          "updated": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "dryRun",
+          "includePriced",
+          "limit",
+          "attempted",
+          "updated",
+          "priced",
+          "unpriced",
+          "rows"
+        ],
+        "type": "object"
+      },
+      "rows": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "events": {
+              "type": "number"
+            },
+            "lastCreatedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "model": {
+              "type": "string"
+            },
+            "pricingModel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pricingSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pricingStatus": {
+              "type": "string"
+            },
+            "totalCost": {
+              "type": "number"
+            },
+            "totalTokens": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "pricingStatus",
+            "model",
+            "pricingModel",
+            "pricingSource",
+            "events",
+            "totalCost",
+            "totalTokens",
+            "lastCreatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "window": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveHours": {
+            "type": "number"
+          },
+          "requestedHours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sinceMs": {
+            "type": "number"
+          },
+          "untilMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestedHours",
+          "effectiveHours",
+          "sinceMs",
+          "untilMs"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "window",
+      "rows"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CostsSessionInputSchema = #"""
   {
     "additionalProperties": false,
@@ -15513,6 +16364,10 @@ public enum RaviSchemas {
       },
       "owner": {
         "description": "Owner, e.g. agent:main",
+        "type": "string"
+      },
+      "pipeline": {
+        "description": "Pipeline ID or name",
         "type": "string"
       },
       "stage": {
@@ -31083,6 +31938,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "check": {
+        "description": "Run provider readiness check after binding",
+        "type": "boolean"
+      },
       "console": {
         "description": "Console base URL",
         "type": "string"
@@ -31754,8 +32613,20 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "expiresAt": {
+        "description": "Temporary grant expiration as ISO time or epoch seconds",
+        "type": "string"
+      },
       "object": {
         "description": "Object (e.g., system:*, group:contacts, session:dev-*)",
+        "type": "string"
+      },
+      "permanent": {
+        "description": "Create an explicit permanent grant",
+        "type": "boolean"
+      },
+      "reason": {
+        "description": "Reason stored with the grant",
         "type": "string"
       },
       "relation": {
@@ -31764,6 +32635,10 @@ public enum RaviSchemas {
       },
       "subject": {
         "description": "Subject (e.g., agent:dev)",
+        "type": "string"
+      },
+      "ttl": {
+        "description": "Temporary grant TTL (default: 1h; examples: 15m, 2h, 7d)",
         "type": "string"
       }
     },
@@ -31786,8 +32661,45 @@ public enum RaviSchemas {
       "relation": {
         "additionalProperties": {},
         "properties": {
-          "id": {
+          "active": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grantMode": {
+            "enum": [
+              "temporary",
+              "permanent"
+            ],
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "issuedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "object": {
             "type": "string"
@@ -31804,8 +32716,28 @@ public enum RaviSchemas {
           "objectType": {
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relation": {
             "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "type": "string"
@@ -31873,12 +32805,28 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "expiresAt": {
+        "description": "Temporary grant expiration as ISO time or epoch seconds",
+        "type": "string"
+      },
+      "permanent": {
+        "description": "Create explicit permanent grants",
+        "type": "boolean"
+      },
+      "reason": {
+        "description": "Reason stored with the grants",
+        "type": "string"
+      },
       "subject": {
         "description": "Subject (e.g., agent:dev)",
         "type": "string"
       },
       "template": {
         "description": "Template: sdk-tools, all-tools, safe-executables, full-access, tool-groups",
+        "type": "string"
+      },
+      "ttl": {
+        "description": "Temporary grant TTL (default: 1h; examples: 15m, 2h, 7d)",
         "type": "string"
       }
     },
@@ -31901,8 +32849,45 @@ public enum RaviSchemas {
         "items": {
           "additionalProperties": {},
           "properties": {
-            "id": {
+            "active": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grantMode": {
+              "enum": [
+                "temporary",
+                "permanent"
+              ],
               "type": "string"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "issuedBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "object": {
               "type": "string"
@@ -31919,8 +32904,28 @@ public enum RaviSchemas {
             "objectType": {
               "type": "string"
             },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "relation": {
               "type": "string"
+            },
+            "revokedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "source": {
               "type": "string"
@@ -31979,6 +32984,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "all": {
+        "description": "Include expired and revoked relations",
+        "type": "boolean"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -32015,6 +33024,9 @@ public enum RaviSchemas {
       "filter": {
         "additionalProperties": {},
         "properties": {
+          "includeInactive": {
+            "type": "boolean"
+          },
           "objectId": {
             "type": "string"
           },
@@ -32040,8 +33052,45 @@ public enum RaviSchemas {
         "items": {
           "additionalProperties": {},
           "properties": {
-            "id": {
+            "active": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grantMode": {
+              "enum": [
+                "temporary",
+                "permanent"
+              ],
               "type": "string"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "issuedBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "object": {
               "type": "string"
@@ -32058,8 +33107,28 @@ public enum RaviSchemas {
             "objectType": {
               "type": "string"
             },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "relation": {
               "type": "string"
+            },
+            "revokedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "source": {
               "type": "string"
@@ -32141,8 +33210,45 @@ public enum RaviSchemas {
         "items": {
           "additionalProperties": {},
           "properties": {
-            "id": {
+            "active": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grantMode": {
+              "enum": [
+                "temporary",
+                "permanent"
+              ],
               "type": "string"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "issuedBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "object": {
               "type": "string"
@@ -32159,8 +33265,28 @@ public enum RaviSchemas {
             "objectType": {
               "type": "string"
             },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "relation": {
               "type": "string"
+            },
+            "revokedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "source": {
               "type": "string"
@@ -32239,8 +33365,45 @@ public enum RaviSchemas {
       "relation": {
         "additionalProperties": {},
         "properties": {
-          "id": {
+          "active": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grantMode": {
+            "enum": [
+              "temporary",
+              "permanent"
+            ],
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "issuedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "object": {
             "type": "string"
@@ -32257,8 +33420,28 @@ public enum RaviSchemas {
           "objectType": {
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relation": {
             "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "type": "string"
@@ -32288,8 +33471,45 @@ public enum RaviSchemas {
         "items": {
           "additionalProperties": {},
           "properties": {
-            "id": {
+            "active": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grantMode": {
+              "enum": [
+                "temporary",
+                "permanent"
+              ],
               "type": "string"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "issuedBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "object": {
               "type": "string"
@@ -32306,8 +33526,28 @@ public enum RaviSchemas {
             "objectType": {
               "type": "string"
             },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "relation": {
               "type": "string"
+            },
+            "revokedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "source": {
               "type": "string"
@@ -32382,8 +33622,45 @@ public enum RaviSchemas {
         "items": {
           "additionalProperties": {},
           "properties": {
-            "id": {
+            "active": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grantMode": {
+              "enum": [
+                "temporary",
+                "permanent"
+              ],
               "type": "string"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "issuedBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "object": {
               "type": "string"
@@ -32400,8 +33677,28 @@ public enum RaviSchemas {
             "objectType": {
               "type": "string"
             },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "relation": {
               "type": "string"
+            },
+            "revokedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "source": {
               "type": "string"
@@ -36306,6 +37603,28 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {
+      "actor": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "chat": {
         "additionalProperties": {},
         "properties": {
@@ -36472,6 +37791,7 @@ public enum RaviSchemas {
       "depth",
       "limit",
       "identity",
+      "actor",
       "session",
       "chat",
       "route",
@@ -36673,6 +37993,28 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {
+      "actor": {
+        "additionalProperties": {},
+        "properties": {
+          "data": {},
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "chat": {
         "additionalProperties": {},
         "properties": {
@@ -36757,6 +38099,7 @@ public enum RaviSchemas {
     "required": [
       "generatedAt",
       "identity",
+      "actor",
       "session",
       "chat",
       "route",
@@ -48183,7 +49526,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "participants": {
-        "description": "Phone numbers to add (comma-separated)",
+        "description": "Phone numbers to add (comma-separated); omitted uses current contact actor when available",
         "type": "string"
       },
       "skipTaggedAdmins": {
@@ -48192,8 +49535,7 @@ public enum RaviSchemas {
       }
     },
     "required": [
-      "name",
-      "participants"
+      "name"
     ],
     "type": "object"
   }
