@@ -229,6 +229,12 @@ Discovery MUST parse metadata, validate schema, resolve relative paths, and
 build an index. It MUST NOT spawn declared binaries or execute health checks
 during indexing.
 
+Manifests generated from CLI import are still ordinary `ravi.app/v1`
+manifests. Any import provenance, confidence, or review-required metadata
+belongs in the import report, generated spec, generated skill, or explicit
+manifest extension supported by the validator; discovery MUST NOT infer trust
+merely because a manifest was generated.
+
 ## Interface Rules
 
 - `interfaces.cli.command` SHOULD reference the canonical user/operator
@@ -259,6 +265,9 @@ during indexing.
   or `stream`.
 - Builtin operations MUST declare an allowlisted router `handler`.
 - CLI operations MUST declare `command` and SHOULD support `--json`.
+- CLI operations generated from imported command metadata SHOULD be reviewed
+  before agents or UIs rely on them, especially when mutation risk, permission
+  metadata, input schema, or output schema came from heuristics.
 - CLI operations MUST NOT command back into their own public dynamic alias,
   such as `ravi <app-id> <operation>`, because that recursively re-enters the
   app router.

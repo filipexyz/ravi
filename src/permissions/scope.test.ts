@@ -111,6 +111,23 @@ describe("Scope Isolation", () => {
   // --------------------------------------------------------------------------
 
   describe("enforceScopeCheck", () => {
+    it("allows open scope for direct CLI without an agent principal", () => {
+      expect(enforceScopeCheck("open", "apps", "list").allowed).toBe(true);
+    });
+
+    it("requires an explicit group grant for open scope in agent context", () => {
+      process.env.RAVI_AGENT_ID = "dev";
+      process.env.RAVI_SESSION_KEY = "agent:dev:dev-main";
+      process.env.RAVI_SESSION_NAME = "dev-main";
+
+      const denied = enforceScopeCheck("open", "apps", "list");
+      expect(denied.allowed).toBe(false);
+      expect(denied.errorMessage).toContain("requires execute on group:apps_list");
+
+      grant("agent", "dev", "execute", "group", "apps_list");
+      expect(enforceScopeCheck("open", "apps", "list").allowed).toBe(true);
+    });
+
     it("allows CLI groups for live superadmin with stale runtime capabilities", () => {
       grant("agent", "dev", "admin", "system", "*");
       process.env.RAVI_AGENT_ID = "dev";
@@ -153,7 +170,13 @@ describe("Scope Isolation", () => {
       const result = enforceScopeCheck("admin", "agents", "create");
 
       expect(result.allowed).toBe(false);
-      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+      expect(
+        listPermissionDenials({
+          subjectType: "agent",
+          subjectId: "dev",
+          resolved: false,
+        }),
+      ).toContainEqual(
         expect.objectContaining({
           agentId: "dev",
           sessionKey: "agent:dev:dev-main",
@@ -163,6 +186,57 @@ describe("Scope Isolation", () => {
           objectId: "agents_create",
         }),
       );
+    });
+
+    it("records safe runtime context provenance for denied CLI group scope", () => {
+      const context = {
+        contextId: "ctx_turn",
+        agentId: "pattern-reviewer",
+        sessionKey: "agent:pattern-reviewer:cron:7db11046",
+        sessionName: "pattern-reviewer-cron-pattern-reviewer-delta-sweep",
+        context: {
+          contextId: "ctx_turn",
+          contextKey: "rctx_secret",
+          kind: "turn-runtime",
+          agentId: "pattern-reviewer",
+          sessionKey: "agent:pattern-reviewer:cron:7db11046",
+          sessionName: "pattern-reviewer-cron-pattern-reviewer-delta-sweep",
+          capabilities: [],
+          metadata: {
+            authorityMode: "delegated",
+            actorPrincipal: "automation:cron:7db11046",
+            surfacePrincipal: "chat:178035101794451@lid",
+            effectiveCapabilityCount: 0,
+            runtimeProvider: "codex",
+          },
+          createdAt: 0,
+        },
+      } satisfies ToolContext;
+
+      const result = runWithContext(context, () => enforceScopeCheck("open", "chats_lists", "members"));
+
+      expect(result.allowed).toBe(false);
+      const denials = listPermissionDenials({
+        subjectType: "agent",
+        subjectId: "pattern-reviewer",
+        resolved: false,
+      });
+      expect(denials).toHaveLength(1);
+      expect(denials[0]).toMatchObject({
+        contextId: "ctx_turn",
+        detail: {
+          context: {
+            contextId: "ctx_turn",
+            kind: "turn-runtime",
+            actorPrincipal: "automation:cron:7db11046",
+            surfacePrincipal: "chat:178035101794451@lid",
+            effectiveCapabilityCount: 0,
+            capabilitiesCount: 0,
+          },
+        },
+      });
+      expect(JSON.stringify(denials[0].detail)).not.toContain("rctx_secret");
+      expect(JSON.stringify(denials[0].detail)).not.toContain("runtimeProvider");
     });
   });
 

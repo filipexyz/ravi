@@ -1,8 +1,10 @@
 import "reflect-metadata";
+import { z } from "zod";
 import { Arg, Command, Group, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
+import { recomputeChatReadingListMembers } from "../../chats/reading-lists.js";
 import {
   dbAddChatToReadingList,
   dbBackfillChatMessageProviderTimestamps,
@@ -30,6 +32,50 @@ import { getContact } from "../../contacts.js";
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
+
+const jsonValueReturnSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueReturnSchema),
+    z.record(z.string(), jsonValueReturnSchema),
+  ]),
+);
+
+const chatReadingListReturnSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  ownerType: z.string(),
+  ownerId: z.string(),
+  visibility: z.string(),
+  mode: z.string(),
+  selector: z.record(z.string(), jsonValueReturnSchema).optional(),
+  metadata: z.record(z.string(), jsonValueReturnSchema).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  archivedAt: z.number().optional(),
+});
+
+const chatReadingListRecomputeReturnSchema = z.object({
+  list: chatReadingListReturnSchema,
+  recompute: z.object({
+    list: chatReadingListReturnSchema,
+    selector: z.record(z.string(), jsonValueReturnSchema),
+    eligibleChatIds: z.array(z.string()),
+    addedChatIds: z.array(z.string()),
+    removedChatIds: z.array(z.string()),
+    keptChatIds: z.array(z.string()),
+    preservedChatIds: z.array(z.string()),
+    added: z.number(),
+    removed: z.number(),
+    kept: z.number(),
+    preserved: z.number(),
+    eligible: z.number(),
+  }),
+});
 
 function parseScopedRef(
   value: string | undefined,
@@ -606,6 +652,26 @@ export class ChatReadingListCommands {
   }
 
   @Scope("admin")
+  @Command({ name: "recompute", description: "Materialize dynamic reading-list selector membership" })
+  recompute(
+    @Arg("list", { description: "List id or name" }) listRef: string,
+    @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const list = resolveReadingList(listRef, owner);
+    const recompute = recomputeChatReadingListMembers(list);
+    const payload = { list, recompute };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      `Recomputed ${list.name}: eligible=${recompute.eligible} added=${recompute.added} removed=${recompute.removed} kept=${recompute.kept} preserved=${recompute.preserved}`,
+    );
+    return payload;
+  }
+
+  @Scope("admin")
   @Command({ name: "delta", description: "Read what changed in a chat since this list reader cursor" })
   delta(
     @Arg("list", { description: "List id or name" }) listRef: string,
@@ -712,5 +778,6 @@ declareCommandReturns(ChatReadingListCommands, {
   list: commandEnvelopeReturnSchema,
   markRead: commandEnvelopeReturnSchema,
   members: commandEnvelopeReturnSchema,
+  recompute: chatReadingListRecomputeReturnSchema,
   remove: commandEnvelopeReturnSchema,
 });

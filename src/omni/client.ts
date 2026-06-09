@@ -41,10 +41,52 @@ type OmniGroupRecord = {
   isCommunity?: boolean;
 };
 
+type OmniChatRecord = {
+  id?: string;
+  instanceId?: string;
+  externalId?: string;
+  chatType?: string;
+  channel?: string;
+  name?: string | null;
+  participantCount?: number | null;
+  [key: string]: unknown;
+};
+
+type OmniChatParticipantRecord = {
+  id?: string;
+  chatId?: string;
+  platformUserId?: string;
+  displayName?: string | null;
+  role?: string | null;
+  [key: string]: unknown;
+};
+
+type OmniGroupParticipantAction = "remove" | "promote" | "demote";
+
+type OmniGroupInviteRecord = {
+  groupJid?: string;
+  chatId?: string;
+  code?: string;
+  inviteLink?: string;
+  link?: string;
+  [key: string]: unknown;
+};
+
+type OmniGroupJoinRecord = {
+  groupJid?: string;
+  groupId?: string;
+  joined?: boolean;
+  [key: string]: unknown;
+};
+
 type RequestOptions = {
   method?: string;
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
+};
+
+type RequestAttempt = RequestOptions & {
+  path: string;
 };
 
 type ApiEnvelope<T> = {
@@ -101,6 +143,32 @@ export function createOmniClient(config: { baseUrl: string; apiKey: string; cliV
     return payload;
   }
 
+  async function requestData<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    const payload = await request<T>(path, options);
+    return (payload.data ?? payload) as T;
+  }
+
+  async function requestFirstData<T>(
+    attempts: RequestAttempt[],
+    unavailable: { code: string; message: string },
+  ): Promise<T> {
+    let lastError: unknown;
+    for (const { path, ...options } of attempts) {
+      try {
+        return await requestData<T>(path, options);
+      } catch (err) {
+        lastError = err;
+        if (err instanceof OmniApiError && (err.status === 404 || err.code === "NOT_FOUND")) continue;
+        throw err;
+      }
+    }
+    throw new OmniApiError(unavailable.message, {
+      status: 404,
+      code: unavailable.code,
+      details: lastError instanceof Error ? lastError.message : undefined,
+    });
+  }
+
   return {
     instances: {
       async list(params?: RequestOptions["query"]): Promise<PaginatedResponse<InstanceRecord>> {
@@ -151,6 +219,198 @@ export function createOmniClient(config: { baseUrl: string; apiKey: string; cliV
       },
       async createGroup(id: string, body: { subject: string; participants: string[] }): Promise<OmniGroupRecord> {
         const payload = await request<OmniGroupRecord>(`/instances/${encodeURIComponent(id)}/groups`, {
+          method: "POST",
+          body,
+        });
+        return payload.data ?? {};
+      },
+      async addGroupParticipants(id: string, groupJid: string, body: { participants: string[] }): Promise<JsonObject> {
+        const encodedInstance = encodeURIComponent(id);
+        const encodedGroup = encodeURIComponent(groupJid);
+        const paths = [
+          `/instances/${encodedInstance}/groups/${encodedGroup}/participants`,
+          `/groups/${encodedGroup}/participants`,
+        ];
+        let lastError: unknown;
+        for (const path of paths) {
+          try {
+            return await requestData<JsonObject>(path, {
+              method: "POST",
+              body: {
+                instanceId: id,
+                groupId: groupJid,
+                participants: body.participants,
+              },
+            });
+          } catch (err) {
+            lastError = err;
+            if (err instanceof OmniApiError && (err.status === 404 || err.code === "NOT_FOUND")) continue;
+            throw err;
+          }
+        }
+        throw new OmniApiError("Omni group participant REST endpoint is not available", {
+          status: 404,
+          code: "GROUP_PARTICIPANTS_REST_UNAVAILABLE",
+          details: lastError instanceof Error ? lastError.message : undefined,
+        });
+      },
+      async updateGroupParticipants(
+        id: string,
+        groupJid: string,
+        body: { action: OmniGroupParticipantAction; participants: string[] },
+      ): Promise<JsonObject> {
+        const encodedInstance = encodeURIComponent(id);
+        const encodedGroup = encodeURIComponent(groupJid);
+        const requestBody = {
+          instanceId: id,
+          groupId: groupJid,
+          action: body.action,
+          participants: body.participants,
+        };
+        return requestFirstData<JsonObject>(
+          [
+            {
+              path: `/instances/${encodedInstance}/groups/${encodedGroup}/participants/${body.action}`,
+              method: "POST",
+              body: requestBody,
+            },
+            {
+              path: `/groups/${encodedGroup}/participants/${body.action}`,
+              method: "POST",
+              body: requestBody,
+            },
+            {
+              path: `/instances/${encodedInstance}/groups/${encodedGroup}/participants`,
+              method: "PATCH",
+              body: requestBody,
+            },
+            {
+              path: `/groups/${encodedGroup}/participants`,
+              method: "PATCH",
+              body: requestBody,
+            },
+          ],
+          {
+            code: "GROUP_PARTICIPANTS_REST_UNAVAILABLE",
+            message: `Omni group participant ${body.action} REST endpoint is not available`,
+          },
+        );
+      },
+      async getGroupInvite(id: string, groupJid: string): Promise<OmniGroupInviteRecord> {
+        return requestData<OmniGroupInviteRecord>(
+          `/instances/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupJid)}/invite`,
+        );
+      },
+      async revokeGroupInvite(id: string, groupJid: string): Promise<OmniGroupInviteRecord> {
+        return requestData<OmniGroupInviteRecord>(
+          `/instances/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupJid)}/invite/revoke`,
+          { method: "POST" },
+        );
+      },
+      async joinGroup(id: string, body: { code: string }): Promise<OmniGroupJoinRecord> {
+        return requestData<OmniGroupJoinRecord>(`/instances/${encodeURIComponent(id)}/groups/join`, {
+          method: "POST",
+          body,
+        });
+      },
+      async leaveGroup(id: string, groupJid: string): Promise<JsonObject> {
+        const encodedInstance = encodeURIComponent(id);
+        const encodedGroup = encodeURIComponent(groupJid);
+        const requestBody = { instanceId: id, groupId: groupJid };
+        return requestFirstData<JsonObject>(
+          [
+            { path: `/instances/${encodedInstance}/groups/${encodedGroup}/leave`, method: "POST", body: requestBody },
+            { path: `/groups/${encodedGroup}/leave`, method: "POST", body: requestBody },
+          ],
+          {
+            code: "GROUP_LEAVE_REST_UNAVAILABLE",
+            message: "Omni group leave REST endpoint is not available",
+          },
+        );
+      },
+      async renameGroup(id: string, groupJid: string, body: { subject: string }): Promise<JsonObject> {
+        const encodedInstance = encodeURIComponent(id);
+        const encodedGroup = encodeURIComponent(groupJid);
+        const requestBody = { instanceId: id, groupId: groupJid, subject: body.subject };
+        return requestFirstData<JsonObject>(
+          [
+            { path: `/instances/${encodedInstance}/groups/${encodedGroup}`, method: "PATCH", body: requestBody },
+            { path: `/instances/${encodedInstance}/groups/${encodedGroup}/subject`, method: "PUT", body: requestBody },
+            { path: `/instances/${encodedInstance}/groups/${encodedGroup}/subject`, method: "POST", body: requestBody },
+            { path: `/groups/${encodedGroup}`, method: "PATCH", body: requestBody },
+          ],
+          {
+            code: "GROUP_RENAME_REST_UNAVAILABLE",
+            message: "Omni group rename REST endpoint is not available",
+          },
+        );
+      },
+      async setGroupDescription(id: string, groupJid: string, body: { description: string }): Promise<JsonObject> {
+        const encodedInstance = encodeURIComponent(id);
+        const encodedGroup = encodeURIComponent(groupJid);
+        const requestBody = { instanceId: id, groupId: groupJid, description: body.description };
+        return requestFirstData<JsonObject>(
+          [
+            { path: `/instances/${encodedInstance}/groups/${encodedGroup}`, method: "PATCH", body: requestBody },
+            {
+              path: `/instances/${encodedInstance}/groups/${encodedGroup}/description`,
+              method: "PUT",
+              body: requestBody,
+            },
+            {
+              path: `/instances/${encodedInstance}/groups/${encodedGroup}/description`,
+              method: "POST",
+              body: requestBody,
+            },
+            { path: `/groups/${encodedGroup}`, method: "PATCH", body: requestBody },
+          ],
+          {
+            code: "GROUP_DESCRIPTION_REST_UNAVAILABLE",
+            message: "Omni group description REST endpoint is not available",
+          },
+        );
+      },
+      async setGroupSettings(id: string, groupJid: string, body: { setting: string }): Promise<JsonObject> {
+        const encodedInstance = encodeURIComponent(id);
+        const encodedGroup = encodeURIComponent(groupJid);
+        const requestBody = { instanceId: id, groupId: groupJid, setting: body.setting };
+        return requestFirstData<JsonObject>(
+          [
+            {
+              path: `/instances/${encodedInstance}/groups/${encodedGroup}/settings`,
+              method: "POST",
+              body: requestBody,
+            },
+            { path: `/instances/${encodedInstance}/groups/${encodedGroup}`, method: "PATCH", body: requestBody },
+            { path: `/groups/${encodedGroup}/settings`, method: "POST", body: requestBody },
+          ],
+          {
+            code: "GROUP_SETTINGS_REST_UNAVAILABLE",
+            message: "Omni group settings REST endpoint is not available",
+          },
+        );
+      },
+    },
+    chats: {
+      async list(params?: RequestOptions["query"]): Promise<PaginatedResponse<OmniChatRecord>> {
+        const payload = await request<OmniChatRecord[]>("/chats", { query: params });
+        return {
+          items: payload.items ?? payload.data ?? [],
+          meta: payload.meta,
+        };
+      },
+      async listParticipants(id: string): Promise<PaginatedResponse<OmniChatParticipantRecord>> {
+        const payload = await request<OmniChatParticipantRecord[]>(`/chats/${encodeURIComponent(id)}/participants`);
+        return {
+          items: payload.items ?? payload.data ?? [],
+          meta: payload.meta,
+        };
+      },
+      async addParticipant(
+        id: string,
+        body: { platformUserId: string; displayName?: string; role?: string },
+      ): Promise<OmniChatParticipantRecord> {
+        const payload = await request<OmniChatParticipantRecord>(`/chats/${encodeURIComponent(id)}/participants`, {
           method: "POST",
           body,
         });

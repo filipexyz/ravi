@@ -41,7 +41,8 @@ The model is Discord-role-like: nothing is available by default, and capabilitie
 - `delegator`: principal that caused execution. For human inbound, this is normally `contact:<id>`.
 - `executor`: agent that will run the provider turn.
 - `surface`: chat, thread, route, instance, project, or session context where the invocation happened.
-- `role`: reusable authority bundle assigned to a principal or surface.
+- `role`: reusable authority bundle assigned to a principal or surface. This
+  is the canonical graph primitive for permission profiles/groups.
 - `effective_capability`: capability that survived all delegation constraints and is present in the runtime context used by tools.
 
 ## Invariants
@@ -53,6 +54,8 @@ The model is Discord-role-like: nothing is available by default, and capabilitie
 - Unknown or unresolved actors MUST receive no delegated tool/executable/CLI/session/contact authority.
 - A user-facing response channel is not the same as tool authority. Ravi MAY answer textually while denying tools.
 - Break-glass authority MUST be distinguishable from normal delegated authority in traces and context provenance.
+- Delegation grants SHOULD be temporary by default unless the operator explicitly marks them permanent.
+- Apps, automations, chats, roles, contacts, and sessions MUST be represented as explicit subjects/objects when they carry authority.
 
 ## Canonical Formula
 
@@ -77,6 +80,16 @@ effective_caps = automation_caps INTERSECT agent_caps INTERSECT target_surface_c
 
 Internal execution MUST use an explicit `automation:<id>` or `system:<id>` principal. It MUST NOT silently inherit the last human speaker.
 
+For app execution:
+
+```text
+agent:<agent-id> use app:<app-id>      # non-mutating app operation
+agent:<agent-id> execute app:<app-id>  # mutating app operation
+```
+
+Manifest-declared permissions are requirements, not grants. A runtime context
+with an `agentId` MUST authorize the app object before operation dispatch.
+
 ## Role Model
 
 Roles SHOULD be modeled in the same relation graph whenever they affect execution.
@@ -95,3 +108,18 @@ role:public-chat use toolgroup:read-only
 
 Role expansion MUST preserve provenance so a denial/allow trace can say whether the capability came from a direct grant, role membership, surface policy, route policy, or explicit turn approval.
 
+## Profile Boundary
+
+Permission profiles/groups MUST use the role model rather than ad-hoc arrays in
+agent, app, contact, or session config.
+
+- `role:<id> <relation> <object-type>:<object-id>` defines profile
+  capabilities.
+- `<principal> member role:<id>` assigns that profile to an actor-like
+  principal.
+- `<surface> constrain role:<id>` constrains authority on a chat, session,
+  route, project, or similar surface.
+- Profile grants and memberships MUST obey the same lifetime, revocation, and
+  audit rules as direct grants.
+- Profile expansion MUST happen before turn capability materialization and MUST
+  retain provenance in the context.

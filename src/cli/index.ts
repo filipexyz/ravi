@@ -60,7 +60,10 @@ program
   .command("doctor")
   .description("Inspect critical Ravi runtime, substrate, and contract health")
   .option("--json", "Print raw JSON result")
-  .action(async (options: { json?: boolean }) => {
+  .option("--full", "Print full informational findings and evidence")
+  .option("--strict", "Exit non-zero on warnings")
+  .option("--domain <domain>", "Run one doctor domain")
+  .action(async (options: { json?: boolean; full?: boolean; strict?: boolean; domain?: string }) => {
     await runWithCliAudit(
       {
         group: "_root",
@@ -69,7 +72,14 @@ program
         input: options,
         closeLazyConnection: true,
       },
-      () => runDoctor({ json: options.json }),
+      () =>
+        runDoctor({
+          json: options.json,
+          full: options.full,
+          strict: options.strict,
+          domain: options.domain,
+          setExitCode: true,
+        }),
     );
   });
 

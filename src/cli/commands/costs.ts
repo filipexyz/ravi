@@ -10,10 +10,16 @@ import {
   dbGetCostByAgent,
   dbGetCostForAgent,
   dbGetCostForSession,
+  dbGetCostPricingCoverage,
+  dbListCostEventsForPricingRecompute,
   dbGetTopSessions,
+  dbUpdateCostEventPricing,
   getSession,
   resolveSession,
+  type CostEventPricingRecomputeRow,
+  type CostPricingCoverageRow,
 } from "../../router/index.js";
+import { calculateCost, loadPricingCatalog, type CostBreakdown } from "../../costs/pricing-catalog.js";
 
 type CostSummary = {
   total_cost: number;
@@ -31,6 +37,17 @@ type AgentCostRow = CostSummary & {
 
 type SessionCostRow = CostSummary & {
   session_key: string;
+};
+
+type PricingRecomputePayloadRow = {
+  id: number;
+  model: string;
+  previousPricingStatus: string;
+  pricingStatus: string;
+  totalCost: number;
+  pricingModel: string | null;
+  pricingSource: string | null;
+  pricingError: string | null;
 };
 
 const costWindowReturnSchema = z.object({
@@ -95,6 +112,45 @@ const costsSessionReturnSchema = z.object({
   summary: costSummaryReturnSchema,
 });
 
+const costsPricingReturnSchema = z.object({
+  window: costWindowReturnSchema,
+  rows: z.array(
+    z.object({
+      pricingStatus: z.string(),
+      model: z.string(),
+      pricingModel: z.string().nullable(),
+      pricingSource: z.string().nullable(),
+      events: z.number(),
+      totalCost: z.number(),
+      totalTokens: z.number(),
+      lastCreatedAt: z.number().nullable(),
+    }),
+  ),
+  recompute: z
+    .object({
+      dryRun: z.boolean(),
+      includePriced: z.boolean(),
+      limit: z.number(),
+      attempted: z.number(),
+      updated: z.number(),
+      priced: z.number(),
+      unpriced: z.number(),
+      rows: z.array(
+        z.object({
+          id: z.number(),
+          model: z.string(),
+          previousPricingStatus: z.string(),
+          pricingStatus: z.string(),
+          totalCost: z.number(),
+          pricingModel: z.string().nullable(),
+          pricingSource: z.string().nullable(),
+          pricingError: z.string().nullable(),
+        }),
+      ),
+    })
+    .optional(),
+});
+
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
@@ -108,6 +164,12 @@ function hoursToSinceMs(hours?: string): number {
 function normalizeHours(hours?: string): number {
   const value = Number(hours ?? "24");
   return Number.isFinite(value) && value > 0 ? value : 24;
+}
+
+function normalizeLimit(limit: string | undefined, fallback: number, max: number): number {
+  const value = Number(limit ?? String(fallback));
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.min(Math.trunc(value), max);
 }
 
 function totalTokens(summary: CostSummary): number {
@@ -143,6 +205,21 @@ function formatTokens(value: number): string {
   return String(value);
 }
 
+function formatDate(value: number | null): string {
+  return value ? new Date(value).toISOString() : "-";
+}
+
+function unavailableCatalogCost(model: string): CostBreakdown {
+  return {
+    inputCost: 0,
+    outputCost: 0,
+    cacheCost: 0,
+    totalCost: 0,
+    pricingStatus: "unpriced",
+    pricingError: `No pricing catalog available while recomputing model "${model}".`,
+  };
+}
+
 function printSummary(label: string, summary: CostSummary): void {
   console.log(`\n${label}\n`);
   console.log(`  Cost:         ${formatUsd(summary.total_cost)}`);
@@ -157,6 +234,95 @@ function printSummary(label: string, summary: CostSummary): void {
     )}`,
   );
   console.log();
+}
+
+async function recomputePricingRows(input: {
+  sinceMs: number;
+  limit?: string;
+  includePriced?: boolean;
+  dryRun?: boolean;
+}): Promise<{
+  dryRun: boolean;
+  includePriced: boolean;
+  limit: number;
+  attempted: number;
+  updated: number;
+  priced: number;
+  unpriced: number;
+  rows: PricingRecomputePayloadRow[];
+}> {
+  const limit = normalizeLimit(input.limit, 500, 5_000);
+  const includePriced = input.includePriced === true;
+  const dryRun = input.dryRun === true;
+  const events = dbListCostEventsForPricingRecompute({
+    sinceMs: input.sinceMs,
+    limit,
+    includePriced,
+  }) as CostEventPricingRecomputeRow[];
+  const catalog = await loadPricingCatalog();
+  const rows: PricingRecomputePayloadRow[] = [];
+  let priced = 0;
+  let unpriced = 0;
+
+  for (const event of events) {
+    const cost = catalog
+      ? await calculateCost(
+          event.model,
+          {
+            inputTokens: event.input_tokens,
+            outputTokens: event.output_tokens,
+            cacheRead: event.cache_read_tokens,
+            cacheCreation: event.cache_creation_tokens,
+          },
+          { catalog },
+        )
+      : unavailableCatalogCost(event.model);
+
+    if (cost.pricingStatus === "priced") {
+      priced += 1;
+    } else {
+      unpriced += 1;
+    }
+
+    if (!dryRun) {
+      dbUpdateCostEventPricing({
+        id: event.id,
+        inputCostUsd: cost.inputCost,
+        outputCostUsd: cost.outputCost,
+        cacheCostUsd: cost.cacheCost,
+        totalCostUsd: cost.totalCost,
+        pricingStatus: cost.pricingStatus,
+        pricingSource: cost.pricing?.source ?? null,
+        pricingSourceUrl: cost.pricing?.sourceUrl ?? null,
+        pricingSourceVersion: cost.pricing?.sourceVersion ?? null,
+        pricingFetchedAt: cost.pricing?.fetchedAt ?? null,
+        pricingModel: cost.pricing?.model ?? null,
+        pricingError: cost.pricingError ?? null,
+      });
+    }
+
+    rows.push({
+      id: event.id,
+      model: event.model,
+      previousPricingStatus: event.pricing_status,
+      pricingStatus: cost.pricingStatus,
+      totalCost: cost.totalCost,
+      pricingModel: cost.pricing?.model ?? null,
+      pricingSource: cost.pricing?.source ?? null,
+      pricingError: cost.pricingError ?? null,
+    });
+  }
+
+  return {
+    dryRun,
+    includePriced,
+    limit,
+    attempted: events.length,
+    updated: dryRun ? 0 : events.length,
+    priced,
+    unpriced,
+    rows,
+  };
 }
 
 @Group({
@@ -354,6 +520,88 @@ export class CostCommands {
       return payload;
     }
     printSummary(`Session Cost (${session?.name ?? sessionKey})`, summary);
+    return payload;
+  }
+
+  @Command({ name: "pricing", description: "Audit pricing coverage for recent cost events" })
+  @Returns(costsPricingReturnSchema)
+  async pricing(
+    @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--recompute", description: "Recompute pricing metadata for non-priced rows in the window" })
+    recompute?: boolean,
+    @Option({ flags: "--limit <n>", description: "Maximum rows to recompute (default: 500, max: 5000)" })
+    limit?: string,
+    @Option({ flags: "--include-priced", description: "Also recompute rows already marked as priced" })
+    includePriced?: boolean,
+    @Option({ flags: "--dry-run", description: "Preview recompute results without updating cost_events" })
+    dryRun?: boolean,
+  ) {
+    const sinceMs = hoursToSinceMs(hours);
+    const recomputeResult = recompute
+      ? await recomputePricingRows({
+          sinceMs,
+          limit,
+          includePriced,
+          dryRun,
+        })
+      : undefined;
+    const rows = dbGetCostPricingCoverage(sinceMs) as CostPricingCoverageRow[];
+    const payloadRows = rows.map((row) => ({
+      pricingStatus: row.pricing_status,
+      model: row.model,
+      pricingModel: row.pricing_model,
+      pricingSource: row.pricing_source,
+      events: row.events,
+      totalCost: row.total_cost,
+      totalTokens: row.total_input + row.total_output + row.total_cache_read + row.total_cache_creation,
+      lastCreatedAt: row.last_created_at,
+    }));
+    const payload = {
+      window: buildWindowJson(hours),
+      rows: payloadRows,
+      ...(recomputeResult ? { recompute: recomputeResult } : {}),
+    };
+
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`\nPricing Coverage (${hours ?? "24"}h)\n`);
+    if (recomputeResult) {
+      console.log(
+        `  Recompute: ${recomputeResult.dryRun ? "dry-run, " : ""}${recomputeResult.updated}/${recomputeResult.attempted} rows updated, ${recomputeResult.priced} priced, ${recomputeResult.unpriced} unpriced`,
+      );
+      console.log();
+    }
+    console.log(
+      "  STATUS     EVENTS  COST       TOKENS      MODEL                         PRICING MODEL                 SOURCE",
+    );
+    console.log(
+      "  ---------  ------  ---------  ----------  ----------------------------  ----------------------------  ------",
+    );
+    for (const row of payloadRows) {
+      console.log(
+        `  ${row.pricingStatus.padEnd(9)}  ${String(row.events).padStart(6)}  ${formatUsd(row.totalCost).padStart(
+          9,
+        )}  ${formatTokens(row.totalTokens).padStart(10)}  ${row.model.slice(0, 28).padEnd(28)}  ${String(
+          row.pricingModel ?? "-",
+        )
+          .slice(0, 28)
+          .padEnd(28)}  ${row.pricingSource ?? "-"}`,
+      );
+    }
+
+    const notFullyPriced = payloadRows.filter((row) => row.pricingStatus !== "priced");
+    if (notFullyPriced.length > 0) {
+      console.log();
+      console.log("  Pricing gaps or legacy rows:");
+      for (const row of notFullyPriced) {
+        console.log(`  - ${row.model} (${row.events} events, last ${formatDate(row.lastCreatedAt)})`);
+      }
+    }
+    console.log();
     return payload;
   }
 }

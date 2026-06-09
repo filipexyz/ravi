@@ -8,6 +8,10 @@ const tempRoots: string[] = [];
 const originalCwd = process.cwd();
 const originalHome = process.env.HOME;
 const originalStateDir = process.env.RAVI_STATE_DIR;
+const contextEnvKeys = ["RAVI_CONTEXT_KEY", "RAVI_SESSION_KEY", "RAVI_SESSION_NAME", "RAVI_AGENT_ID"] as const;
+const originalContextEnv = new Map<(typeof contextEnvKeys)[number], string | undefined>(
+  contextEnvKeys.map((key) => [key, process.env[key]]),
+);
 
 function makeRepo(): string {
   const root = mkdtempSync(join(tmpdir(), "ravi-apps-cli-"));
@@ -16,6 +20,9 @@ function makeRepo(): string {
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "test-repo" }));
   process.env.HOME = join(root, ".home");
   process.env.RAVI_STATE_DIR = join(root, ".state");
+  for (const key of contextEnvKeys) {
+    delete process.env[key];
+  }
   writeFileSync(
     join(root, "src", "apps", "apps", "ravi.app.json"),
     JSON.stringify(
@@ -85,6 +92,11 @@ afterEach(() => {
   else process.env.HOME = originalHome;
   if (originalStateDir === undefined) delete process.env.RAVI_STATE_DIR;
   else process.env.RAVI_STATE_DIR = originalStateDir;
+  for (const key of contextEnvKeys) {
+    const value = originalContextEnv.get(key);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   while (tempRoots.length > 0) {
     const root = tempRoots.pop();
     if (root) rmSync(root, { recursive: true, force: true });
@@ -232,6 +244,38 @@ describe("AppsCommands", () => {
     };
     expect(check.ok).toBe(true);
     expect(check.results[0]).toMatchObject({ id: "music", ok: true, errors: [] });
+
+    const nested = captureJson(() =>
+      commands.scaffold(
+        "console/control",
+        "Console Control",
+        "Operate Console control surfaces.",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ) as {
+      id: string;
+      manifestPath: string;
+      skill: string;
+    };
+    expect(nested.id).toBe("console/control");
+    expect(nested.skill).toBe("ravi-system-console-control");
+    expect(existsSync(nested.manifestPath)).toBe(true);
+
+    const nestedCheck = captureJson(() => commands.check("console/control", true)) as {
+      ok: boolean;
+      results: Array<{ id: string; ok: boolean; errors: string[]; warnings: string[] }>;
+    };
+    expect(nestedCheck.ok).toBe(true);
+    expect(nestedCheck.results[0]).toMatchObject({ id: "console/control", ok: true, errors: [] });
+    expect(nestedCheck.results[0]?.warnings).not.toContain(
+      'Manifest id "console/control" does not match path-derived id "control".',
+    );
 
     const existingDryRun = captureJson(() =>
       commands.scaffold(

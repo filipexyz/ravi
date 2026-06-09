@@ -169,11 +169,24 @@ Só apague ou edite mensagens próprias quando estiver corrigindo ou removendo u
 /**
  * Build group context section for system prompt
  */
+function isRawChannelIdentifierLabel(value: string): boolean {
+  const cleaned = value
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/\s+\([^)]*\)\s*$/, "");
+  if (!cleaned) return false;
+  if (/^(?:lid|group):\d+$/i.test(cleaned)) return true;
+  if (/^\d+@(?:s\.whatsapp\.net|lid|g\.us)$/i.test(cleaned)) return true;
+  const base = cleaned.includes("@") ? cleaned.slice(0, cleaned.indexOf("@")) : cleaned;
+  return /^\d{10,15}$/.test(base);
+}
+
 export function buildGroupContext(ctx: ChannelContext): string {
   if (!ctx.isGroup) return "";
 
   const groupLabel = ctx.groupName?.trim() || ctx.groupId?.trim() || "current group";
-  const groupMembers = ctx.groupMembers?.filter((member) => member.trim().length > 0) ?? [];
+  const groupMembers =
+    ctx.groupMembers?.filter((member) => member.trim().length > 0 && !isRawChannelIdentifierLabel(member)) ?? [];
   const memberCount = groupMembers.length;
   const isLargeGroup = memberCount >= 3;
 
@@ -309,6 +322,31 @@ Regras:
 Tabelas com caracteres | - + funcionam bem no terminal.`;
 }
 
+function whatsappThreadWorkspaceText(): string {
+  return `WhatsApp é a superfície principal para separar trabalho por contexto.
+
+Quando o usuário começar um fio novo que parece durável, recorrente ou grande o bastante para merecer memória própria, sugira proativamente criar um agent e um grupo dedicados.
+
+Sugira isso especialmente quando o assunto tiver:
+- domínio próprio (ex: bugs, usage, insights, calendário, inbox, produto, cliente, projeto);
+- necessidade de acompanhamento recorrente, crons, triggers, specs ou tarefas;
+- risco de poluir o grupo atual com contexto longo;
+- participantes ou permissões diferentes;
+- chance de virar uma rotina operacional.
+
+Formato preferido:
+- "Isso parece um fio próprio. Quer que eu crie um agent/grupo dedicado para <tema>?"
+- Se o usuário confirmar e você tiver permissão, use \`ravi whatsapp group create "<nome>" --agent <agent>\`.
+- Se o agent ainda não existir, use o fluxo transacional em uma chamada: \`ravi whatsapp group create "<nome>" --agent <agent> --create-agent\`.
+- Se o usuário pedir diretamente para criar, aja sem rediscutir.
+
+Interprete pedidos como "cria um grupo", "criei um grupo para isso", "vamos abrir um grupo", "novo agent/grupo" como intenção de criar/rotear um novo workspace, a menos que o usuário traga explicitamente um JID, link de convite ou diga que o grupo já existe.
+
+Não use \`ravi whatsapp group list\` para descobrir grupo recém-criado ou como fallback de criação. \`group list\` é operação de inspeção e não cria nem registra chat/rota/sessão; o caminho correto para novo fio é \`whatsapp group create\`, que cria o grupo pelo Omni e registra chat, rota e sessão localmente.
+
+Não sugira grupo novo para perguntas rápidas, correções pequenas, respostas pontuais, ou quando a sugestão atrapalharia o fluxo atual.`;
+}
+
 /**
  * Build reactions section for system prompt
  */
@@ -387,6 +425,10 @@ Your text output is NOT sent to the channel. Use these tools to send explicitly.
     if (!isSentinel) {
       // Add output formatting based on channel
       add("channel.output_formatting", "Output Formatting", outputFormattingText(ctx.channelName), 70);
+
+      if (ctx.channelName === "WhatsApp") {
+        add("channel.thread_workspaces", "WhatsApp Thread Workspaces", whatsappThreadWorkspaceText(), 75);
+      }
 
       if (supportsChannelCapability(ctx, "reactions")) {
         add("channel.reactions", "Reactions", reactionsText(), 80);

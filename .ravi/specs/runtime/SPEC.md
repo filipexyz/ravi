@@ -80,7 +80,8 @@ The runtime abstraction exists so new execution engines can be added without cop
 - Dispatch trace rows MUST use the canonical `session_key` when a session row exists. `session_name` MAY be included as a secondary lookup field, but MUST NOT replace the canonical key.
 - Cloud trace export MUST be asynchronous and best-effort by default. A failed export MUST NOT fail, block, or delay local runtime execution.
 - Background starts such as task and observation sessions MUST NOT be able to consume all runtime start capacity when interactive channel sessions are waiting. The dispatcher SHOULD reserve a small configurable capacity lane for interactive sessions.
-- Stalled-turn watchdog recovery MUST NOT be used. Missing terminal events are provider/adapter bugs and MUST be fixed at that boundary.
+- Provider turns that stop emitting runtime events MUST be bounded by a host-side inactivity timeout. On timeout the event loop MUST record `session.timeout` plus a terminal `turn.failed` snapshot with status `timeout`, abort the provider process, preserve pending/current turn messages, and restart from the stashed queue when possible.
+- Stalled-turn recovery MUST be explicit and traceable. Silent clearing of `turnActive` or dropping queued messages is forbidden.
 - New providers MUST add provider contract tests, event normalization tests, and runtime capability matrix coverage before live use.
 
 ## Validation
@@ -95,7 +96,8 @@ The runtime abstraction exists so new execution engines can be added without cop
 
 ## Known Failure Modes
 
-- A provider emits a tool result but no terminal event, leaving `turnActive` true until explicit interruption.
+- A provider accepts a turn but emits no runtime events or terminal event, leaving `turnActive` true and causing `after_response`/`after_task` prompts to queue forever unless the inactivity timeout closes the turn.
+- A provider emits a tool result but no terminal event; this is covered by the tighter provider-inactivity watchdog after tool result delivery.
 - Raw provider keepalive/status events update `lastActivity` and mask a logically stuck turn.
 - Multiple assistant messages in one turn are aggregated into one durable assistant message while also being emitted as separate responses; UI consumers can misread boundaries.
 - Host tool tracking currently assumes one active tool at a time. Parallel provider tools would corrupt `currentToolId/currentToolName`.

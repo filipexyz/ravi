@@ -112,7 +112,12 @@ export {
   dbGetCostForSession,
   dbGetTopSessions,
   dbGetCostReport,
+  dbGetCostPricingCoverage,
+  dbListCostEventsForPricingRecompute,
+  dbUpdateCostEventPricing,
   type CostEvent,
+  type CostEventPricingRecomputeRow,
+  type CostPricingCoverageRow,
 } from "./router-db.js";
 
 // Session Name

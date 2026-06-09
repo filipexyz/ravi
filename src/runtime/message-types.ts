@@ -9,6 +9,7 @@ export interface MessageActorMetadata {
   actorType?: "contact" | "agent" | "system" | "unknown" | (string & {});
   contactId?: string;
   actorAgentId?: string;
+  automationId?: string;
   platformIdentityId?: string;
   rawSenderId?: string;
   normalizedSenderId?: string;
@@ -127,6 +128,14 @@ export interface PromptMessage {
   _runtimeModel?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
+  /** Cron runner prompt marker. */
+  _cron?: boolean;
+  /** Cron job id when `_cron` is true. */
+  _jobId?: string;
+  /** Trigger runner prompt marker. */
+  _trigger?: boolean;
+  /** Trigger id when `_trigger` is true. */
+  _triggerId?: string;
   /** Ravi thread metadata. Distinct from provider-native thread/topic IDs. */
   _thread?: ThreadHandoffPromptMetadata;
   /**

@@ -4,6 +4,7 @@ const VIEW_STATE_POLL_INTERVAL_MS = 1000;
 const CHAT_LIST_RESOLVE_INTERVAL_MS = 2500;
 const MESSAGE_CHIP_REFRESH_INTERVAL_MS = 2500;
 const DOM_COMMAND_POLL_INTERVAL_MS = 1500;
+const LAYOUT_SYNC_INTERVAL_MS = 500;
 const VIEW_STATE_REPUBLISH_MS = 2500;
 const HUMAN_CHAT_NAV_INTENT_TTL_MS = 4000;
 const ROOT_ID = "ravi-wa-overlay-root";
@@ -15,6 +16,7 @@ const VIBES_MENU_ID = "ravi-wa-vibes-menu";
 const VIBES_COMPOSER_DRAFT_MIN_INTERVAL_MS = 120;
 const PANEL_TOGGLE_ID = "ravi-wa-panel-toggle";
 const PANEL_RAIL_TOGGLE_ID = "ravi-wa-panel-rail-toggle";
+const NATIVE_SIDEBAR_RESIZE_HANDLE_ID = "ravi-wa-native-sidebar-resize-handle";
 const SESSION_MAIN_HOST_ID = "ravi-wa-session-main-host";
 const LAYOUT_CLASS = "ravi-wa-layout-active";
 const LAYOUT_HOST_CLASS = "ravi-wa-layout-host";
@@ -44,6 +46,7 @@ const ACTIVE_WORKSPACE_KEY_STORAGE = "ravi-wa-overlay-workspace";
 const WORKSPACE_SESSION_KEY_STORAGE = "ravi-wa-overlay-workspace-session";
 const OMNI_INSTANCE_KEY_STORAGE = "ravi-wa-overlay-instance";
 const OVERLAY_PANEL_VISIBLE_KEY_STORAGE = "ravi-wa-overlay-panel-visible";
+const NATIVE_SIDEBAR_WIDTH_KEY_STORAGE = "ravi-wa-native-sidebar-width";
 const V3_PLACEHOLDERS_KEY_STORAGE = "ravi-wa-overlay-v3-placeholders";
 const OMNI_POLL_INTERVAL_MS = 6000;
 const V3_PLACEHOLDER_POLL_INTERVAL_MS = 5000;
@@ -82,6 +85,9 @@ const TASK_KANBAN_COLUMNS = [
 const RUNTIME_CLAUDE_ALIAS_MODELS = new Set(["sonnet", "haiku", "opus"]);
 const NATIVE_SIDEBAR_SEARCH_SELECTOR =
   "input[role='textbox'][aria-label*='Pesquisar ou começar'], input[placeholder*='Pesquisar ou começar'], input[role='textbox'][aria-label*='Search'], input[placeholder*='Search']";
+const NATIVE_SIDEBAR_MIN_WIDTH = 260;
+const NATIVE_SIDEBAR_MAX_WIDTH = 640;
+const NATIVE_SIDEBAR_MIN_MAIN_WIDTH = 420;
 const taskDrawerStateApi = globalThis.__RAVI_WA_TASK_DRAWER_STATE__ || null;
 if (!taskDrawerStateApi) {
   throw new Error("[ravi-wa-overlay] task drawer state helpers unavailable");
@@ -131,6 +137,8 @@ const detectionLogs = [];
 let bridgeError = null;
 let pollingStopped = false;
 let domCommandInFlight = false;
+let snapshotRefreshInFlight = false;
+let sessionWorkspaceRefreshInFlight = false;
 let chatListRefreshInFlight = false;
 let openMessageChip = null;
 let openMessageId = null;
@@ -168,6 +176,7 @@ let preferredOmniInstance = loadPreferredOmniInstance();
 let profileMenuOpen = false;
 let vibesMenuOpen = false;
 let overlayPanelVisible = loadOverlayPanelVisible();
+let nativeSidebarWidth = loadNativeSidebarWidth();
 let v3PlaceholdersEnabled = false;
 let selectedOmniChatId = null;
 let selectedOmniSessionKey = null;
@@ -182,7 +191,9 @@ let currentLayoutHost = null;
 let currentLayoutMain = null;
 let currentLayoutSideBranch = null;
 let currentLayoutMainBranch = null;
+let currentNativeSidebarBranch = null;
 let currentSessionMainHost = null;
+let nativeSidebarResizeState = null;
 let sessionWorkspaceDraft = "";
 let sessionWorkspaceSubmitting = false;
 let sessionWorkspaceShouldScrollToEnd = false;
@@ -286,6 +297,8 @@ function boot() {
   intervalIds.push(setInterval(refreshArtifacts, ARTIFACTS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshCrm, CRM_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(pollDomCommands, DOM_COMMAND_POLL_INTERVAL_MS));
+  intervalIds.push(setInterval(syncLayoutChrome, LAYOUT_SYNC_INTERVAL_MS));
+  window.addEventListener("resize", syncLayoutChrome);
   window.addEventListener("resize", syncMessagePopoverPosition);
   window.addEventListener("resize", scheduleV3PlaceholderRender);
   window.addEventListener("resize", renderChatSessionEditor);
@@ -396,7 +409,9 @@ function restoreWorkspaceScrollState(captures) {
 
 async function refreshSnapshot() {
   if (pollingStopped) return;
+  if (snapshotRefreshInFlight) return;
   const context = detectChatContext();
+  snapshotRefreshInFlight = true;
   try {
     const snapshot = await chrome.runtime.sendMessage({
       type: "ravi:get-snapshot",
@@ -419,15 +434,19 @@ async function refreshSnapshot() {
   } catch (error) {
     silenceVibes("snapshot-runtime-error");
     handleRuntimeError(error);
+  } finally {
+    snapshotRefreshInFlight = false;
   }
 }
 
 async function refreshSessionWorkspace(force = false) {
   if (pollingStopped) return;
+  if (sessionWorkspaceRefreshInFlight) return;
   if (!selectedWorkspaceSessionKey) return;
   if (!force && activeWorkspace !== "ravi") return;
   const requestedSessionKey = selectedWorkspaceSessionKey;
 
+  sessionWorkspaceRefreshInFlight = true;
   try {
     const workspace = await chrome.runtime.sendMessage({
       type: "ravi:get-session-workspace",
@@ -453,6 +472,8 @@ async function refreshSessionWorkspace(force = false) {
     }
   } catch (error) {
     handleRuntimeError(error);
+  } finally {
+    sessionWorkspaceRefreshInFlight = false;
   }
 }
 
@@ -549,7 +570,8 @@ function buildTasksRequestPayload(taskId = selectedTaskId) {
 
 async function refreshTasks(force = false) {
   if (pollingStopped || tasksInFlight) return;
-  if (!force && activeWorkspace !== "tasks" && activeWorkspace !== "ravi") return;
+  if (!force && activeWorkspace !== "tasks") return;
+  if (force && activeWorkspace !== "tasks" && !selectedTaskId) return;
 
   tasksInFlight = true;
   try {
@@ -712,10 +734,10 @@ function refreshAll() {
   refreshViewState();
   refreshSnapshot();
   refreshSessionWorkspace(true);
-  refreshTasks(true);
-  refreshArtifacts(true);
-  refreshCrm(true);
-  refreshOmniPanel(true);
+  if (activeWorkspace === "tasks") refreshTasks(true);
+  if (activeWorkspace === "artifacts") refreshArtifacts(true);
+  if (activeWorkspace === "crm") refreshCrm(true);
+  if (activeWorkspace === "omni") refreshOmniPanel(true);
   refreshChatListOverlay();
   refreshMessageChips();
   refreshV3Placeholders();
@@ -4728,7 +4750,10 @@ function syncLayoutChrome() {
   const sidePane = getWhatsAppPane("side");
   const mainPane = getWhatsAppPane("main");
   const host = sidePane && mainPane ? findLayoutHost(sidePane, mainPane) : null;
-  if (!root || !drawer || !sidePane || !mainPane || !host) return;
+  if (!root || !drawer || !sidePane || !mainPane || !host) {
+    syncNativeSidebarResizeControl(null, null, { hidden: true });
+    return;
+  }
   const sideBranch = findDirectChildBranch(host, sidePane);
   const mainBranch = findDirectChildBranch(host, mainPane);
 
@@ -4770,12 +4795,237 @@ function syncLayoutChrome() {
   mainBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
   drawer.classList.toggle("ravi-hidden", !overlayPanelVisible);
   document.getElementById(PANEL_RAIL_TOGGLE_ID)?.classList.toggle("ravi-hidden", overlayPanelVisible);
+  syncNativeSidebarResizeControl(host, sideBranch, { hidden: fullWorkspace });
 
   currentLayoutHost = host;
   currentLayoutMain = mainPane;
   currentLayoutSideBranch = sideBranch;
   currentLayoutMainBranch = mainBranch;
   syncWorkspaceLauncher();
+}
+
+function syncNativeSidebarResizeControl(host, sideBranch, options = {}) {
+  const handle = ensureNativeSidebarResizeHandle();
+  const invalidTarget =
+    !(host instanceof HTMLElement) ||
+    !(sideBranch instanceof HTMLElement);
+  const resized =
+    nativeSidebarWidth !== null &&
+    nativeSidebarWidth !== undefined;
+  const hidden =
+    Boolean(options.hidden) ||
+    invalidTarget ||
+    window.innerWidth < 760;
+
+  if (currentNativeSidebarBranch && currentNativeSidebarBranch !== sideBranch) {
+    clearNativeSidebarWidthStyles(currentNativeSidebarBranch);
+  }
+
+  if (host instanceof HTMLElement) {
+    host.setAttribute(
+      "data-ravi-native-sidebar-resized",
+      resized ? "true" : "false",
+    );
+  }
+
+  if (hidden) {
+    handle.classList.add("ravi-hidden");
+    handle.classList.remove("ravi-wa-native-sidebar-resize-handle--resized");
+    handle.removeAttribute("aria-valuenow");
+    return;
+  }
+
+  currentNativeSidebarBranch = sideBranch;
+  applyNativeSidebarWidth(sideBranch, host);
+
+  const sideRect = sideBranch.getBoundingClientRect();
+  const bounds = resolveNativeSidebarWidthBounds(host);
+  handle.classList.remove("ravi-hidden");
+  handle.classList.toggle(
+    "ravi-wa-native-sidebar-resize-handle--resized",
+    resized,
+  );
+  handle.style.left = `${Math.round(sideRect.right)}px`;
+  handle.style.top = `${Math.round(sideRect.top)}px`;
+  handle.style.height = `${Math.max(0, Math.round(sideRect.height))}px`;
+  handle.setAttribute("aria-valuemin", String(bounds.min));
+  handle.setAttribute("aria-valuemax", String(bounds.max));
+  handle.setAttribute("aria-valuenow", String(Math.round(sideRect.width)));
+}
+
+function ensureNativeSidebarResizeHandle() {
+  let handle = document.getElementById(NATIVE_SIDEBAR_RESIZE_HANDLE_ID);
+  if (handle instanceof HTMLElement) return handle;
+
+  handle = document.createElement("div");
+  handle.id = NATIVE_SIDEBAR_RESIZE_HANDLE_ID;
+  handle.className = "ravi-wa-native-sidebar-resize-handle ravi-hidden";
+  handle.setAttribute("role", "separator");
+  handle.setAttribute("aria-orientation", "vertical");
+  handle.setAttribute("aria-label", "Redimensionar lista de chats");
+  handle.setAttribute("tabindex", "0");
+  handle.setAttribute("title", "Arraste para redimensionar a lista de chats. Duplo clique para resetar.");
+  handle.innerHTML = `<span aria-hidden="true"></span>`;
+  handle.addEventListener("pointerdown", handleNativeSidebarResizePointerDown);
+  handle.addEventListener("dblclick", handleNativeSidebarResizeDoubleClick);
+  handle.addEventListener("keydown", handleNativeSidebarResizeKeydown);
+  document.body.appendChild(handle);
+  return handle;
+}
+
+function handleNativeSidebarResizePointerDown(event) {
+  const handle = document.getElementById(NATIVE_SIDEBAR_RESIZE_HANDLE_ID);
+  if (!(handle instanceof HTMLElement)) return;
+  if (!(currentLayoutHost instanceof HTMLElement)) return;
+  if (!(currentNativeSidebarBranch instanceof HTMLElement)) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const sideRect = currentNativeSidebarBranch.getBoundingClientRect();
+  const direction = resolveNativeSidebarResizeDirection(currentNativeSidebarBranch);
+  nativeSidebarResizeState = {
+    startX: event.clientX,
+    startWidth: sideRect.width,
+    direction,
+    host: currentLayoutHost,
+    branch: currentNativeSidebarBranch,
+  };
+  handle.classList.add("ravi-wa-native-sidebar-resize-handle--active");
+  document.body.classList.add("ravi-wa-native-sidebar-resizing");
+  window.addEventListener("pointermove", handleNativeSidebarResizePointerMove, true);
+  window.addEventListener("pointerup", finishNativeSidebarResize, true);
+  window.addEventListener("pointercancel", finishNativeSidebarResize, true);
+}
+
+function handleNativeSidebarResizePointerMove(event) {
+  if (!nativeSidebarResizeState) return;
+  event.preventDefault();
+  const nextWidth =
+    nativeSidebarResizeState.startWidth +
+    (event.clientX - nativeSidebarResizeState.startX) *
+      nativeSidebarResizeState.direction;
+  setNativeSidebarWidth(nextWidth, nativeSidebarResizeState.host, nativeSidebarResizeState.branch, {
+    persist: false,
+  });
+}
+
+function finishNativeSidebarResize() {
+  if (!nativeSidebarResizeState) return;
+  persistNativeSidebarWidth(nativeSidebarWidth);
+  nativeSidebarResizeState = null;
+  document.body.classList.remove("ravi-wa-native-sidebar-resizing");
+  document
+    .getElementById(NATIVE_SIDEBAR_RESIZE_HANDLE_ID)
+    ?.classList.remove("ravi-wa-native-sidebar-resize-handle--active");
+  window.removeEventListener("pointermove", handleNativeSidebarResizePointerMove, true);
+  window.removeEventListener("pointerup", finishNativeSidebarResize, true);
+  window.removeEventListener("pointercancel", finishNativeSidebarResize, true);
+}
+
+function handleNativeSidebarResizeDoubleClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  resetNativeSidebarWidth();
+}
+
+function handleNativeSidebarResizeKeydown(event) {
+  if (!(currentLayoutHost instanceof HTMLElement)) return;
+  if (!(currentNativeSidebarBranch instanceof HTMLElement)) return;
+
+  const direction = resolveNativeSidebarResizeDirection(currentNativeSidebarBranch);
+  const currentWidth = currentNativeSidebarBranch.getBoundingClientRect().width;
+  if (event.key === "Home" || event.key === "Escape") {
+    event.preventDefault();
+    resetNativeSidebarWidth();
+    return;
+  }
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+  event.preventDefault();
+  const step = event.shiftKey ? 32 : 16;
+  const delta = event.key === "ArrowRight" ? step : -step;
+  setNativeSidebarWidth(
+    currentWidth + delta * direction,
+    currentLayoutHost,
+    currentNativeSidebarBranch,
+  );
+}
+
+function setNativeSidebarWidth(width, host, sideBranch, options = {}) {
+  if (!(host instanceof HTMLElement) || !(sideBranch instanceof HTMLElement)) return;
+  nativeSidebarWidth = clampNativeSidebarWidth(width, host);
+  applyNativeSidebarWidth(sideBranch, host);
+  syncNativeSidebarResizeControl(host, sideBranch);
+  if (options.persist !== false) {
+    persistNativeSidebarWidth(nativeSidebarWidth);
+  }
+}
+
+function resetNativeSidebarWidth() {
+  nativeSidebarWidth = null;
+  persistNativeSidebarWidth(null);
+  clearNativeSidebarWidthStyles(currentNativeSidebarBranch);
+  syncNativeSidebarResizeControl(currentLayoutHost, currentLayoutSideBranch);
+}
+
+function applyNativeSidebarWidth(sideBranch, host) {
+  if (!(sideBranch instanceof HTMLElement)) return;
+  if (nativeSidebarWidth === null || nativeSidebarWidth === undefined) {
+    clearNativeSidebarWidthStyles(sideBranch);
+    return;
+  }
+
+  const boundedWidth = clampNativeSidebarWidth(nativeSidebarWidth, host);
+  const width = `${boundedWidth}px`;
+  sideBranch.setAttribute("data-ravi-native-sidebar-width", String(boundedWidth));
+  sideBranch.style.flex = `0 0 ${width}`;
+  sideBranch.style.width = width;
+  sideBranch.style.minWidth = width;
+  sideBranch.style.maxWidth = width;
+}
+
+function clearNativeSidebarWidthStyles(sideBranch) {
+  if (!(sideBranch instanceof HTMLElement)) return;
+  sideBranch.removeAttribute("data-ravi-native-sidebar-width");
+  sideBranch.style.removeProperty("flex");
+  sideBranch.style.removeProperty("width");
+  sideBranch.style.removeProperty("min-width");
+  sideBranch.style.removeProperty("max-width");
+}
+
+function resolveNativeSidebarResizeDirection(sideBranch) {
+  const sideRect = sideBranch?.getBoundingClientRect?.();
+  const mainRect = currentLayoutMainBranch?.getBoundingClientRect?.();
+  if (!sideRect || !mainRect) return 1;
+  return sideRect.left <= mainRect.left ? 1 : -1;
+}
+
+function clampNativeSidebarWidth(width, host) {
+  const numeric = Number(width);
+  const bounds = resolveNativeSidebarWidthBounds(host);
+  if (!Number.isFinite(numeric)) return bounds.min;
+  return Math.max(bounds.min, Math.min(bounds.max, Math.round(numeric)));
+}
+
+function resolveNativeSidebarWidthBounds(host) {
+  const hostWidth =
+    host instanceof HTMLElement
+      ? host.getBoundingClientRect().width
+      : window.innerWidth;
+  const overlayRoot = document.getElementById(ROOT_ID);
+  const overlayWidth =
+    overlayPanelVisible && overlayRoot instanceof HTMLElement
+      ? overlayRoot.getBoundingClientRect().width
+      : 0;
+  const maxByMain = Math.floor(hostWidth - overlayWidth - NATIVE_SIDEBAR_MIN_MAIN_WIDTH);
+  const maxByRatio = Math.floor(hostWidth * 0.55);
+  const max = Math.max(
+    220,
+    Math.min(NATIVE_SIDEBAR_MAX_WIDTH, maxByRatio, maxByMain),
+  );
+  const min = Math.min(NATIVE_SIDEBAR_MIN_WIDTH, max);
+  return { min, max };
 }
 
 function getWhatsAppPane(id) {
@@ -5076,11 +5326,10 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     ? escapeHtml(shorten(focusedTaskMatch.note.text, 160))
     : focusedSession
       ? escapeHtml(focusedLive?.summary || "sem evento vivo")
-      : escapeHtml(
-          (
-            snapshot?.warnings || ["Nenhuma sessão do Ravi em foco agora."]
-          ).join(" "),
-        );
+      : escapeHtml(formatWarningsText(
+          snapshot?.warnings,
+          "Nenhuma sessão do Ravi em foco agora.",
+        ));
   const heroStateClass = focusedTask
     ? taskStatusClass(focusedTask.status)
     : focusedSession
@@ -5442,7 +5691,7 @@ function renderOmniWorkspace(body, context) {
             panel?.warnings?.length
               ? `
             <section class="ravi-wa-card ravi-wa-notice ravi-wa-notice--info">
-              <p>${escapeHtml(panel.warnings.join(" · "))}</p>
+              <p>${escapeHtml(formatWarningsText(panel.warnings, "", " · "))}</p>
             </section>
           `
               : ""
@@ -15707,6 +15956,15 @@ function loadOverlayPanelVisible() {
   }
 }
 
+function loadNativeSidebarWidth() {
+  try {
+    const value = Number(window.localStorage.getItem(NATIVE_SIDEBAR_WIDTH_KEY_STORAGE));
+    return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+  } catch {
+    return null;
+  }
+}
+
 function loadV3PlaceholdersEnabled() {
   try {
     return window.localStorage.getItem(V3_PLACEHOLDERS_KEY_STORAGE) === "true";
@@ -15733,6 +15991,21 @@ function persistOverlayPanelVisible(value) {
       window.localStorage.removeItem(OVERLAY_PANEL_VISIBLE_KEY_STORAGE);
     } else {
       window.localStorage.setItem(OVERLAY_PANEL_VISIBLE_KEY_STORAGE, "false");
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function persistNativeSidebarWidth(value) {
+  try {
+    if (Number.isFinite(Number(value)) && Number(value) > 0) {
+      window.localStorage.setItem(
+        NATIVE_SIDEBAR_WIDTH_KEY_STORAGE,
+        String(Math.round(Number(value))),
+      );
+    } else {
+      window.localStorage.removeItem(NATIVE_SIDEBAR_WIDTH_KEY_STORAGE);
     }
   } catch {
     // ignore localStorage failures inside WhatsApp Web
@@ -15829,6 +16102,34 @@ function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function formatWarningsText(warnings, fallback, separator = " ") {
+  const source =
+    Array.isArray(warnings) && warnings.length
+      ? warnings
+      : fallback
+        ? [fallback]
+        : [];
+  return source
+    .map(formatWarningText)
+    .filter(Boolean)
+    .join(separator);
+}
+
+function formatWarningText(warning) {
+  if (typeof warning === "string") return warning.trim();
+  if (!warning || typeof warning !== "object") return "";
+  if (typeof warning.message === "string" && warning.message.trim()) {
+    return warning.message.trim();
+  }
+  if (typeof warning.error === "string" && warning.error.trim()) {
+    return warning.error.trim();
+  }
+  if (typeof warning.code === "string" && warning.code.trim()) {
+    return warning.code.trim();
+  }
+  return "";
 }
 
 function shorten(value, max) {

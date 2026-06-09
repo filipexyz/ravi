@@ -8,6 +8,7 @@ capabilities:
   - timeline
   - policy
   - discovery
+  - authorization
   - routing-context
 tags:
   - contacts
@@ -49,6 +50,9 @@ Contacts participates in Ravi's channel abstraction boundary: Omni supplies raw 
 - A chat/group/thread MUST NOT be modeled as a person contact. It belongs to chat/conversation/session context.
 - Operational policy such as approval status, opt-out, reply mode, allowed agents, tags, and notes MUST be separated from raw identity resolution.
 - Identity linking MUST be auditable and reversible when the evidence is not absolute.
+- Contact discovery, lookup, timeline, profile, and CRM projections MUST be
+  authorized through the contact authorization boundary. Contact policy status
+  MUST NOT be treated as REBAC authority.
 
 ## Core Concepts
 
@@ -108,6 +112,8 @@ An internal `identity` service/module MAY exist, but the user-facing command SHO
 - Ravi MUST abstract Omni behind normalized contacts/chats/sessions/actors for product and agent-facing code.
 - Raw Omni/channel ids MUST remain available for provenance, debugging, replay, and transport-level repair.
 - `contacts` owns canonical CRM/person records and policy.
+- `contacts/authorization` owns which runtime principals can discover, read, or
+  mutate contact records.
 - `contact_events` owns contact timeline/audit/context history. Current contact fields, tags, metadata, and policies are projections over explicit state and timeline events, not replacements for identity resolution.
 - `agents` owns Ravi agents.
 - `sessions` owns runtime continuity and conversation state. A session MAY store a primary contact for DM convenience, but MUST NOT be the source of identity truth.
@@ -125,3 +131,5 @@ An internal `identity` service/module MAY exist, but the user-facing command SHO
 - Treating operational approval status as a general relationship/lifecycle status.
 - Letting agents mutate contact identity/profile from weak context without event provenance or review.
 - Reconstructing identity from sessions instead of durable channel identity records.
+- Letting CRM or raw identity lookup expose a hidden contact after
+  `contacts list` correctly filtered it.

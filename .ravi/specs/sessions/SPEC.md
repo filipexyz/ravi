@@ -5,6 +5,8 @@ kind: domain
 domain: sessions
 capabilities:
   - attach
+  - visibility
+  - rebac
 tags:
   - sessions
   - runtime
@@ -73,10 +75,22 @@ Sessions do NOT own:
 - `ravi sessions send` and related inter-session commands inject prompt/context into a Ravi session. They MUST NOT be documented as direct external channel delivery primitives. Visible outbound channel delivery belongs to the session response path or to explicit channel/media/outbound commands.
 - Session reset MUST clear provider continuity state (per `runtime/session-continuity`) but MUST NOT silently drop attach subscriptions — those are routing/wiring, not provider state.
 - Deletion of a session MUST cascade to delete its subscriptions.
+- Session visibility is authorization-bearing. Runtime principals MUST only
+  list, inspect, read, trace, or mutate sessions they own or have explicit
+  grants for.
+- `access session:<id>` authorizes session discovery/read/trace beyond the
+  current own session.
+- `modify session:<id>` authorizes session mutation beyond the current own
+  session.
+- A chat attached to a session is not by itself permission to read or mutate
+  that session.
+- Hidden sessions SHOULD appear missing on direct lookup.
 
 ## Validation
 
 - `bun test src/router/sessions.test.ts src/router/sessions.rename.test.ts src/router/commit-matched-route.test.ts`
+- Scope tests SHOULD cover `sessions list/info/read/trace` filtering through
+  `access session:<id>` and mutation through `modify session:<id>`.
 
 ## Known Failure Modes
 

@@ -47,6 +47,32 @@ describe("runtime request context authority", () => {
     stateDir = null;
   });
 
+  it("uses turn-scoped authority by default when the env var is unset", () => {
+    delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    grantRelation("agent", agent.id, "admin", "system", "*");
+    grantRelation("contact", "luis", "use", "tool", "Read");
+    grantRelation("chat", "chat_group_1", "use", "tool", "*");
+
+    const prompt = promptForContact("luis", "read");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/rebac-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.kind).toBe("turn-runtime");
+    expect(runtimeContext.metadata?.authorityMode).toBe("delegated");
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+  });
+
   it("creates and refreshes turn-runtime authority from agent, contact and chat grants", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
@@ -68,7 +94,10 @@ describe("runtime request context authority", () => {
       runtimeResolution,
       resolvedSource: source,
     });
-    const runtimeEnv: Record<string, string> = { ...raviEnv, RAVI_TASK_ID: "stale-task" };
+    const runtimeEnv: Record<string, string> = {
+      ...raviEnv,
+      RAVI_TASK_ID: "stale-task",
+    };
 
     expect(runtimeContext.kind).toBe("turn-runtime");
     expect(
@@ -78,6 +107,16 @@ describe("runtime request context authority", () => {
       authorityMode: "delegated",
       actorPrincipal: "contact:luis",
       surfacePrincipal: "chat:chat_group_1",
+      actor: {
+        actorType: "contact",
+        contactId: "luis",
+        canonicalChatId: "chat_group_1",
+        chatId: "120363428243036323@g.us",
+      },
+      actorMetadata: {
+        actorType: "contact",
+        contactId: "luis",
+      },
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(false);
@@ -112,6 +151,11 @@ describe("runtime request context authority", () => {
       authorityMode: "delegated",
       actorPrincipal: "contact:ana",
       surfacePrincipal: "chat:chat_group_1",
+      actor: {
+        actorType: "contact",
+        contactId: "ana",
+        canonicalChatId: "chat_group_1",
+      },
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
@@ -150,6 +194,69 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(false);
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("runs cron prompts as automation principals instead of inheriting agent authority", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    grantRelation("agent", agent.id, "admin", "system", "*");
+    grantRelation("automation", "cron:job-1", "use", "tool", "Read");
+
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[Cron: audit] run",
+      _cron: true,
+      _jobId: "job-1",
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/rebac-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(runtimeContext.kind).toBe("turn-runtime");
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "delegated",
+      actorPrincipal: "automation:cron:job-1",
+      actorResolution: "resolved",
+      actor: {
+        actorType: "automation",
+        automationId: "cron:job-1",
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("fails closed for automation prompts without automation grants", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    grantRelation("agent", agent.id, "admin", "system", "*");
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/rebac-agent",
+      agent,
+      prompt: {
+        prompt: "[Trigger: audit] run",
+        _trigger: true,
+        _triggerId: "trigger-1",
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(runtimeContext.kind).toBe("turn-runtime");
+    expect(runtimeContext.metadata?.actorPrincipal).toBe("automation:trigger:trigger-1");
+    expect(runtimeContext.capabilities).toEqual([]);
   });
 });
 

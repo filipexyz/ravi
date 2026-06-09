@@ -9,12 +9,13 @@ import { Group, Command, Arg, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
-import { requestReply } from "../../utils/request-reply.js";
 import { findContactsByTag, getContact, getContactById, normalizePhone, searchContacts } from "../../contacts.js";
 import {
   dbBindSessionToChat,
   dbCreateRoute,
+  dbFindChat,
   dbGetInstance,
+  dbListChats,
   dbUpsertChat,
   dbUpsertChatParticipant,
   getFirstAccountName,
@@ -38,11 +39,7 @@ import { expandHome } from "../../router/resolver.js";
 import { ensureAgentInstructionFiles } from "../../runtime/agent-instructions.js";
 import { nats } from "../../nats.js";
 
-const TOPIC_PREFIX = "ravi.whatsapp.group";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Operations that may take longer (write operations on WhatsApp) */
-const SLOW_OPS = new Set(["create", "leave", "add", "remove", "join"]);
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -65,6 +62,10 @@ function normalizeGroupJid(groupId: string): string {
   if (trimmed.startsWith("group:")) return `${trimmed.slice("group:".length)}@g.us`;
   if (trimmed.includes("@")) return trimmed;
   return `${trimmed}@g.us`;
+}
+
+function normalizeGroupLookupKey(groupId: string): string {
+  return normalizeGroupJid(groupId).replace(/@g\.us$/, "");
 }
 
 function resolveGroupSendChatId(groupId: string): string {
@@ -131,15 +132,28 @@ function asNonEmptyString(value: unknown): string | null {
 }
 
 function isGroupParticipantIdentity(value: string): boolean {
-  return /^\d+$/.test(value) || value.startsWith("lid:");
+  return /^\d+$/.test(value);
 }
 
-function collectContactPhoneRefs(contact: ReturnType<typeof getContact> | ReturnType<typeof getContactById>): string[] {
+function isContactParticipantIdentityPlatform(platform: string): boolean {
+  return platform === "phone";
+}
+
+function collectContactParticipantRefs(
+  contact: ReturnType<typeof getContact> | ReturnType<typeof getContactById>,
+): string[] {
   if (!contact) return [];
   return [
     contact.phone,
-    ...contact.identities.filter((identity) => identity.platform === "phone").map((identity) => identity.value),
+    ...contact.identities
+      .filter((identity) => isContactParticipantIdentityPlatform(identity.platform))
+      .map((identity) => identity.value),
   ].filter(Boolean);
+}
+
+function isNonContactRuntimeActor(actorType: string | null): boolean {
+  const normalized = actorType?.trim().toLowerCase();
+  return normalized === "agent" || normalized === "system";
 }
 
 function inferActorAdminPhones(): string[] {
@@ -160,12 +174,15 @@ function inferActorAdminPhones(): string[] {
   const records = [
     metadata,
     asRecord(metadata?.actor),
+    asRecord(metadata?.currentActor),
     asRecord(metadata?.actorMetadata),
     asRecord(metadata?.source),
     asRecord(context?.source),
   ].filter((record): record is Record<string, unknown> => Boolean(record));
 
   for (const record of records) {
+    const actorType = asNonEmptyString(record.actorType ?? record.type);
+    if (isNonContactRuntimeActor(actorType)) continue;
     pushRef(record.senderPhone);
     pushRef(record.phone);
     pushRef(record.contactPhone);
@@ -174,26 +191,33 @@ function inferActorAdminPhones(): string[] {
     pushRef(record.normalizedSenderId);
     pushRef(record.platformUserId);
     pushRef(record.normalizedPlatformUserId);
+    pushRef(record.platformIdentityId);
     pushContactId(record.contactId);
   }
 
-  pushContactId(env.RAVI_CONTACT_ID);
-  pushRef(env.RAVI_SENDER_PHONE);
-  pushRef(env.RAVI_SENDER_ID);
-  pushRef(env.RAVI_NORMALIZED_SENDER_ID);
-  pushRef(env.RAVI_RAW_SENDER_ID);
+  const envActorType = env.RAVI_ACTOR_TYPE;
+  if (!isNonContactRuntimeActor(envActorType ?? null)) {
+    pushContactId(env.RAVI_CONTACT_ID);
+    pushRef(env.RAVI_PLATFORM_IDENTITY_ID);
+    pushRef(env.RAVI_SENDER_PHONE);
+    pushRef(env.RAVI_SENDER_ID);
+    pushRef(env.RAVI_NORMALIZED_SENDER_ID);
+    pushRef(env.RAVI_RAW_SENDER_ID);
+  }
 
   const resolved: string[] = [];
   for (const contactId of uniqueStrings(contactIds)) {
-    resolved.push(...collectContactPhoneRefs(getContactById(contactId)));
+    resolved.push(...collectContactParticipantRefs(getContactById(contactId)));
   }
 
   for (const ref of refs) {
     const normalized = normalizePhone(ref);
-    if (!normalized || normalized.startsWith("group:")) continue;
-    const contact = getContact(normalized) ?? getContact(ref);
-    const contactRefs = collectContactPhoneRefs(contact);
-    resolved.push(...(contactRefs.length > 0 ? contactRefs : [normalized]));
+    if (normalized.startsWith("group:")) continue;
+    const contact = getContact(ref) ?? (normalized ? getContact(normalized) : null);
+    const contactRefs = collectContactParticipantRefs(contact);
+    if (contactRefs.length > 0) resolved.push(...contactRefs);
+    else if (normalized && !normalized.startsWith("lid:") && !normalized.startsWith("group:"))
+      resolved.push(normalized);
   }
 
   return uniquePhones(resolved).filter(isGroupParticipantIdentity);
@@ -321,24 +345,6 @@ function validateParticipantsAreContacts(participants: string[]): void {
   }
 }
 
-/** Send a group operation and wait for the result */
-async function groupRequest<T = Record<string, unknown>>(
-  op: string,
-  data: Record<string, unknown>,
-  account?: string,
-): Promise<T> {
-  const timeout = SLOW_OPS.has(op) ? 45000 : 15000;
-  const acctName = resolveGroupAccount(account);
-  return requestReply<T>(
-    `${TOPIC_PREFIX}.${op}`,
-    {
-      ...data,
-      accountId: acctName,
-    },
-    timeout,
-  );
-}
-
 function resolveGroupInstance(account?: string): { accountId: string; instanceId: string } {
   const accountId = resolveGroupAccount(account);
   if (!accountId) fail("No WhatsApp account configured.");
@@ -348,6 +354,21 @@ function resolveGroupInstance(account?: string): { accountId: string; instanceId
   if (!instanceId) fail(`No omni instance mapped for account "${accountId}".`);
 
   return { accountId, instanceId };
+}
+
+function resolveGroupOmniContext(account?: string) {
+  const connection = resolveOmniConnection();
+  if (!connection) fail("Omni API is not configured. Set OMNI_API_URL/OMNI_API_KEY or ~/.omni/config.json.");
+
+  const { accountId, instanceId } = resolveGroupInstance(account);
+  const client = createOmniClient({ baseUrl: connection.apiUrl, apiKey: connection.apiKey });
+  return { accountId, instanceId, client };
+}
+
+function normalizeGroupInviteCode(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/chat\.whatsapp\.com\/([^/?#\s]+)/i);
+  return match?.[1] ?? trimmed;
 }
 
 async function createGroupViaOmni(input: {
@@ -375,6 +396,344 @@ async function createGroupViaOmni(input: {
   };
 }
 
+function normalizeOmniGroupRecord(group: Record<string, unknown>): {
+  id: string;
+  subject: string;
+  size: number;
+  isCommunity: boolean;
+  raw: Record<string, unknown>;
+} | null {
+  const id = asNonEmptyString(group.id) ?? asNonEmptyString(group.externalId);
+  if (!id) return null;
+  const participants = Array.isArray(group.participants) ? group.participants.length : undefined;
+  return {
+    id,
+    subject: asNonEmptyString(group.subject) ?? asNonEmptyString(group.name) ?? id,
+    size: Number(group.size ?? group.memberCount ?? participants ?? 0),
+    isCommunity: Boolean(group.isCommunity),
+    raw: group,
+  };
+}
+
+async function listGroupsViaOmni(account?: string): Promise<{
+  accountId: string;
+  instanceId: string;
+  source: "omni.rest" | "local.chat_model";
+  groups: Array<{
+    id: string;
+    subject: string;
+    size: number;
+    isCommunity: boolean;
+    raw: Record<string, unknown>;
+  }>;
+  meta?: Record<string, unknown>;
+}> {
+  const connection = resolveOmniConnection();
+  if (!connection) fail("Omni API is not configured. Set OMNI_API_URL/OMNI_API_KEY or ~/.omni/config.json.");
+
+  const { accountId, instanceId } = resolveGroupInstance(account);
+  const client = createOmniClient({ baseUrl: connection.apiUrl, apiKey: connection.apiKey });
+  try {
+    const response = await client.instances.listGroups(instanceId, { limit: 500 });
+    return {
+      accountId,
+      instanceId,
+      source: "omni.rest",
+      groups: response.items
+        .map((group) => normalizeOmniGroupRecord(group as Record<string, unknown>))
+        .filter((group): group is NonNullable<typeof group> => Boolean(group)),
+      meta: response.meta,
+    };
+  } catch (err) {
+    const local = dbListChats({
+      channel: "whatsapp",
+      instanceId,
+      chatType: "group",
+      limit: 500,
+    });
+    return {
+      accountId,
+      instanceId,
+      source: "local.chat_model",
+      groups: local.items.map((item) => ({
+        id: item.chat.platformChatId,
+        subject: item.chat.title ?? item.chat.platformChatId,
+        size: item.participantCount,
+        isCommunity: false,
+        raw: {
+          ...item.chat,
+          messageCount: item.messageCount,
+          participantCount: item.participantCount,
+        },
+      })),
+      meta: {
+        fallbackReason: err instanceof Error ? err.message : String(err),
+        total: local.total,
+        source: "local.chat_model",
+      },
+    };
+  }
+}
+
+async function getGroupInfoViaOmni(
+  groupId: string,
+  account?: string,
+): Promise<
+  Record<string, unknown> & { id: string; subject: string; participants?: Array<{ id: string; admin: string | null }> }
+> {
+  const connection = resolveOmniConnection();
+  if (!connection) fail("Omni API is not configured. Set OMNI_API_URL/OMNI_API_KEY or ~/.omni/config.json.");
+
+  const { accountId, instanceId } = resolveGroupInstance(account);
+  const groupJid = normalizeGroupJid(groupId);
+  const lookup = normalizeGroupLookupKey(groupId);
+  const list = await listGroupsViaOmni(account);
+  const group = list.groups.find((item) => {
+    const id = normalizeGroupLookupKey(item.id);
+    return id === lookup || item.id === groupId || item.subject === groupId;
+  });
+  const metadata = await resolveOmniGroupMetadata({
+    omniApiUrl: connection.apiUrl,
+    omniApiKey: connection.apiKey,
+    accountId,
+    instanceId,
+    chatId: groupJid,
+    channel: "whatsapp",
+    fallbackName: group?.subject,
+  }).catch(() => null);
+
+  if (!group && !metadata) fail(`Group not found via Omni REST: ${groupId}`);
+
+  const participants = metadata?.participants.map((participant) => ({
+    id: participant.platformUserId,
+    admin: participant.role === "admin" || participant.role === "owner" ? participant.role : null,
+  }));
+  return {
+    ...(group?.raw ?? {}),
+    id: group?.id ?? metadata?.externalId ?? groupJid,
+    subject: group?.subject ?? metadata?.name ?? groupJid,
+    owner: (group?.raw.owner as unknown) ?? undefined,
+    size: group?.size ?? metadata?.participantCount ?? participants?.length ?? 0,
+    isCommunity: group?.isCommunity ?? false,
+    ...(participants ? { participants } : {}),
+    accountId,
+    instanceId,
+    source: "omni.rest",
+  };
+}
+
+function syncAddedGroupParticipantsToLocalChat(input: {
+  accountId: string;
+  instanceId: string;
+  groupJid: string;
+  participants: string[];
+}): {
+  status: "updated" | "skipped";
+  chatId?: string;
+  contacts?: number;
+  admins?: number;
+  agent?: boolean;
+  reason?: string;
+} {
+  const chat =
+    dbFindChat({ channel: "whatsapp", instanceId: input.instanceId, platformChatId: input.groupJid }) ??
+    dbFindChat({ channel: "whatsapp", instanceId: input.accountId, platformChatId: input.groupJid });
+  if (!chat) return { status: "skipped", reason: "local_chat_not_registered" };
+  return {
+    status: "updated",
+    chatId: chat.id,
+    ...upsertGroupChatParticipants({
+      chatId: chat.id,
+      participants: input.participants,
+      admins: [],
+      source: "whatsapp.group.add",
+    }),
+  };
+}
+
+async function addGroupParticipantsViaOmni(input: {
+  groupId: string;
+  participants: string[];
+  account?: string;
+}): Promise<Record<string, unknown>> {
+  const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
+  const groupJid = normalizeGroupJid(input.groupId);
+  const result = await client.instances.addGroupParticipants(instanceId, groupJid, {
+    participants: input.participants,
+  });
+  return {
+    status: "added",
+    source: "omni.rest.group_participants",
+    accountId,
+    instanceId,
+    groupId: groupJid,
+    participants: input.participants,
+    result,
+    localParticipants: syncAddedGroupParticipantsToLocalChat({
+      accountId,
+      instanceId,
+      groupJid,
+      participants: input.participants,
+    }),
+    changedCount: input.participants.length,
+  };
+}
+
+async function updateGroupParticipantsViaOmni(input: {
+  action: "remove" | "promote" | "demote";
+  status: string;
+  groupId: string;
+  participants: string[];
+  account?: string;
+}): Promise<Record<string, unknown>> {
+  const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
+  const groupJid = normalizeGroupJid(input.groupId);
+  const result = await client.instances.updateGroupParticipants(instanceId, groupJid, {
+    action: input.action,
+    participants: input.participants,
+  });
+  return {
+    status: input.status,
+    source: "omni.rest.group_participants",
+    accountId,
+    instanceId,
+    groupId: groupJid,
+    participants: input.participants,
+    result,
+    changedCount: input.participants.length,
+  };
+}
+
+async function getGroupInviteViaOmni(input: { groupId: string; account?: string }): Promise<Record<string, unknown>> {
+  const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
+  const groupJid = normalizeGroupJid(input.groupId);
+  const result = await client.instances.getGroupInvite(instanceId, groupJid);
+  const code = result.code;
+  const link = result.inviteLink ?? result.link ?? (code ? `https://chat.whatsapp.com/${code}` : undefined);
+  return {
+    status: "invite_link",
+    source: "omni.rest.group_invite",
+    accountId,
+    instanceId,
+    groupId: groupJid,
+    invite: { code, link },
+    result,
+  };
+}
+
+async function revokeGroupInviteViaOmni(input: {
+  groupId: string;
+  account?: string;
+}): Promise<Record<string, unknown>> {
+  const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
+  const groupJid = normalizeGroupJid(input.groupId);
+  const result = await client.instances.revokeGroupInvite(instanceId, groupJid);
+  const code = result.code;
+  const link = result.inviteLink ?? result.link ?? (code ? `https://chat.whatsapp.com/${code}` : undefined);
+  return {
+    status: "invite_revoked",
+    source: "omni.rest.group_invite",
+    accountId,
+    instanceId,
+    groupId: groupJid,
+    invite: { code, link },
+    result,
+    changedCount: 1,
+  };
+}
+
+async function joinGroupViaOmni(input: { code: string; account?: string }): Promise<Record<string, unknown>> {
+  const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
+  const code = normalizeGroupInviteCode(input.code);
+  const result = await client.instances.joinGroup(instanceId, { code });
+  const groupId = result.groupJid ?? result.groupId ?? "";
+  return {
+    status: "joined",
+    source: "omni.rest.group_join",
+    accountId,
+    instanceId,
+    code,
+    groupId,
+    result,
+    changedCount: 1,
+  };
+}
+
+async function leaveGroupViaOmni(input: { groupId: string; account?: string }): Promise<Record<string, unknown>> {
+  const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
+  const groupJid = normalizeGroupJid(input.groupId);
+  const result = await client.instances.leaveGroup(instanceId, groupJid);
+  return {
+    status: "left",
+    source: "omni.rest.group",
+    accountId,
+    instanceId,
+    groupId: groupJid,
+    result,
+    changedCount: 1,
+  };
+}
+
+async function renameGroupViaOmni(input: {
+  groupId: string;
+  subject: string;
+  account?: string;
+}): Promise<Record<string, unknown>> {
+  const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
+  const groupJid = normalizeGroupJid(input.groupId);
+  const result = await client.instances.renameGroup(instanceId, groupJid, { subject: input.subject });
+  return {
+    status: "renamed",
+    source: "omni.rest.group",
+    accountId,
+    instanceId,
+    groupId: groupJid,
+    subject: input.subject,
+    result,
+    changedCount: 1,
+  };
+}
+
+async function setGroupDescriptionViaOmni(input: {
+  groupId: string;
+  description: string;
+  account?: string;
+}): Promise<Record<string, unknown>> {
+  const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
+  const groupJid = normalizeGroupJid(input.groupId);
+  const result = await client.instances.setGroupDescription(instanceId, groupJid, { description: input.description });
+  return {
+    status: "description_updated",
+    source: "omni.rest.group",
+    accountId,
+    instanceId,
+    groupId: groupJid,
+    description: input.description,
+    result,
+    changedCount: 1,
+  };
+}
+
+async function setGroupSettingsViaOmni(input: {
+  groupId: string;
+  setting: string;
+  account?: string;
+}): Promise<Record<string, unknown>> {
+  const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
+  const groupJid = normalizeGroupJid(input.groupId);
+  const result = await client.instances.setGroupSettings(instanceId, groupJid, { setting: input.setting });
+  return {
+    status: "setting_applied",
+    source: "omni.rest.group",
+    accountId,
+    instanceId,
+    groupId: groupJid,
+    setting: input.setting,
+    result,
+    changedCount: 1,
+  };
+}
+
 @Group({
   name: "whatsapp.group",
   description: "WhatsApp group management",
@@ -388,10 +747,7 @@ export class GroupCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching groups to skip (default: 0)" }) offset?: string,
   ) {
-    const result = await groupRequest<{
-      groups: { id: string; subject: string; size: number; isCommunity: boolean }[];
-      total: number;
-    }>("list", {}, account);
+    const result = await listGroupsViaOmni(account);
     const groups = result.groups.filter((group) => !group.isCommunity);
     const page = paginateCliItems(groups, { limit, offset });
     const pagination = buildCliOffsetPagination({
@@ -403,11 +759,14 @@ export class GroupCommands {
       options: ["--account", account],
     });
     const payload = {
-      accountId: resolveGroupAccount(account),
+      accountId: result.accountId,
+      instanceId: result.instanceId,
       total: page.total,
       pagination,
       items: page.items,
       groups: page.items,
+      source: result.source,
+      meta: result.meta,
     };
 
     if (asJson) {
@@ -446,7 +805,7 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = await groupRequest<Record<string, unknown>>("info", { groupId }, account);
+    const result = await getGroupInfoViaOmni(groupId, account);
 
     if (asJson) {
       printJson({
@@ -574,7 +933,11 @@ export class GroupCommands {
   @Command({ name: "create", description: "Create a new group" })
   async create(
     @Arg("name", { description: "Group name/subject" }) name: string,
-    @Arg("participants", { description: "Phone numbers to add (comma-separated)" }) participantsStr: string,
+    @Arg("participants", {
+      required: false,
+      description: "Phone numbers to add (comma-separated); omitted uses current contact actor when available",
+    })
+    participantsStr?: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--agent <id>", description: "Agent to route this group chat to" })
     agent?: string,
@@ -817,20 +1180,13 @@ export class GroupCommands {
     // Validate all participants exist in contacts before adding
     validateParticipantsAreContacts(participants);
 
-    const result = await groupRequest("add", { groupId, participants }, account);
+    const payload = await addGroupParticipantsViaOmni({ groupId, participants, account });
     if (asJson) {
-      printJson({
-        status: "added",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        participants,
-        result,
-        changedCount: participants.length,
-      });
-      return result;
+      printJson(payload);
+      return payload;
     }
     console.log(`✓ Added ${participants.length} participant(s)`);
-    return result;
+    return payload;
   }
 
   @Command({ name: "remove", description: "Remove participants from a group" })
@@ -844,20 +1200,19 @@ export class GroupCommands {
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
-    const result = await groupRequest("remove", { groupId, participants }, account);
+    const payload = await updateGroupParticipantsViaOmni({
+      action: "remove",
+      status: "removed",
+      groupId,
+      participants,
+      account,
+    });
     if (asJson) {
-      printJson({
-        status: "removed",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        participants,
-        result,
-        changedCount: participants.length,
-      });
-      return result;
+      printJson(payload);
+      return payload;
     }
     console.log(`✓ Removed ${participants.length} participant(s)`);
-    return result;
+    return payload;
   }
 
   @Command({ name: "promote", description: "Promote participants to admin" })
@@ -871,20 +1226,19 @@ export class GroupCommands {
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
-    const result = await groupRequest("promote", { groupId, participants }, account);
+    const payload = await updateGroupParticipantsViaOmni({
+      action: "promote",
+      status: "promoted",
+      groupId,
+      participants,
+      account,
+    });
     if (asJson) {
-      printJson({
-        status: "promoted",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        participants,
-        result,
-        changedCount: participants.length,
-      });
-      return result;
+      printJson(payload);
+      return payload;
     }
     console.log(`✓ Promoted ${participants.length} participant(s) to admin`);
-    return result;
+    return payload;
   }
 
   @Command({ name: "demote", description: "Demote participants from admin" })
@@ -898,20 +1252,19 @@ export class GroupCommands {
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
-    const result = await groupRequest("demote", { groupId, participants }, account);
+    const payload = await updateGroupParticipantsViaOmni({
+      action: "demote",
+      status: "demoted",
+      groupId,
+      participants,
+      account,
+    });
     if (asJson) {
-      printJson({
-        status: "demoted",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        participants,
-        result,
-        changedCount: participants.length,
-      });
-      return result;
+      printJson(payload);
+      return payload;
     }
     console.log(`✓ Demoted ${participants.length} participant(s) from admin`);
-    return result;
+    return payload;
   }
 
   @Command({ name: "invite", description: "Get group invite link" })
@@ -920,18 +1273,14 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = await groupRequest<{ code: string; link: string }>("invite", { groupId }, account);
+    const payload = await getGroupInviteViaOmni({ groupId, account });
     if (asJson) {
-      printJson({
-        status: "invite_link",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        invite: result,
-      });
-      return result;
+      printJson(payload);
+      return payload;
     }
-    console.log(`✓ Invite link: ${result.link}`);
-    return result;
+    const invite = payload.invite as { link?: string };
+    console.log(`✓ Invite link: ${invite.link ?? "-"}`);
+    return payload;
   }
 
   @Command({ name: "revoke-invite", description: "Revoke current invite link" })
@@ -940,19 +1289,14 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = await groupRequest<{ code: string; link: string }>("revoke-invite", { groupId }, account);
+    const payload = await revokeGroupInviteViaOmni({ groupId, account });
     if (asJson) {
-      printJson({
-        status: "invite_revoked",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        invite: result,
-        changedCount: 1,
-      });
-      return result;
+      printJson(payload);
+      return payload;
     }
-    console.log(`✓ Invite revoked. New link: ${result.link}`);
-    return result;
+    const invite = payload.invite as { link?: string };
+    console.log(`✓ Invite revoked. New link: ${invite.link ?? "-"}`);
+    return payload;
   }
 
   @Command({ name: "join", description: "Join a group via invite link/code" })
@@ -961,20 +1305,13 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = await groupRequest<{ groupId: string }>("join", { code }, account);
+    const payload = await joinGroupViaOmni({ code, account });
     if (asJson) {
-      printJson({
-        status: "joined",
-        accountId: resolveGroupAccount(account),
-        code,
-        groupId: result.groupId,
-        result,
-        changedCount: 1,
-      });
-      return result;
+      printJson(payload);
+      return payload;
     }
-    console.log(`✓ Joined group: ${result.groupId}`);
-    return result;
+    console.log(`✓ Joined group: ${payload.groupId}`);
+    return payload;
   }
 
   @Command({ name: "leave", description: "Leave a group" })
@@ -983,19 +1320,12 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = await groupRequest("leave", { groupId }, account);
-    const payload = {
-      status: "left",
-      accountId: resolveGroupAccount(account),
-      groupId,
-      result,
-      changedCount: 1,
-    };
+    const payload = await leaveGroupViaOmni({ groupId, account });
     if (asJson) {
       printJson(payload);
       return payload;
     }
-    console.log(`✓ Left group: ${groupId}`);
+    console.log(`✓ Left group: ${payload.groupId}`);
     return payload;
   }
 
@@ -1006,15 +1336,7 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = await groupRequest("rename", { groupId, subject: name }, account);
-    const payload = {
-      status: "renamed",
-      accountId: resolveGroupAccount(account),
-      groupId,
-      subject: name,
-      result,
-      changedCount: 1,
-    };
+    const payload = await renameGroupViaOmni({ groupId, subject: name, account });
     if (asJson) {
       printJson(payload);
       return payload;
@@ -1030,15 +1352,7 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = await groupRequest("description", { groupId, description: text }, account);
-    const payload = {
-      status: "description_updated",
-      accountId: resolveGroupAccount(account),
-      groupId,
-      description: text,
-      result,
-      changedCount: 1,
-    };
+    const payload = await setGroupDescriptionViaOmni({ groupId, description: text, account });
     if (asJson) {
       printJson(payload);
       return payload;
@@ -1062,15 +1376,7 @@ export class GroupCommands {
       fail(`Invalid setting: ${setting}. Valid: ${valid.join(", ")}`);
     }
 
-    const result = await groupRequest("settings", { groupId, setting }, account);
-    const payload = {
-      status: "setting_applied",
-      accountId: resolveGroupAccount(account),
-      groupId,
-      setting,
-      result,
-      changedCount: 1,
-    };
+    const payload = await setGroupSettingsViaOmni({ groupId, setting, account });
     if (asJson) {
       printJson(payload);
       return payload;

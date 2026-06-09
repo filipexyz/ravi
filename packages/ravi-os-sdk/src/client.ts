@@ -181,7 +181,7 @@ export class RaviClient {
       });
     },
     /** Run a Ravi app operation through the runtime app router */
-    run: async (id: string, operation?: string, args: string[]): Promise<AppsRunReturn> => {
+    run: async (id: string, operation?: string, args?: string[]): Promise<AppsRunReturn> => {
       return this.transport.call({
         groupSegments: ["apps"],
         command: "run",
@@ -949,7 +949,7 @@ export class RaviClient {
       });
     },
     /** Render a Ravi command into its composed prompt */
-    run: async (name: string, args: string[], options?: {
+    run: async (name: string, args?: string[], options?: {
       agent?: string;
     }): Promise<CommandsRunReturn> => {
       return this.transport.call({

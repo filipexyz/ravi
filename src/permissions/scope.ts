@@ -8,7 +8,9 @@
 import { getContext } from "../cli/context.js";
 import { agentCan } from "./engine.js";
 import { recordPermissionDenial } from "./denials.js";
+import { buildAuditContextProvenance, type AuditContextProvenance } from "./audit-provenance.js";
 import { publish, closeNats } from "../nats.js";
+import type { ContextRecord, ContextSource } from "../router/router-db.js";
 import type { SessionEntry } from "../router/types.js";
 import type { ScopeType } from "../cli/decorators.js";
 
@@ -30,12 +32,33 @@ export async function flushAuditAndExit(code: number): Promise<never> {
 /**
  * Emit an audit event via NATS (fire-and-forget, flushed on exit).
  */
-function emitAudit(event: { type: string; agentId: string; denied: string; reason: string; command?: string }): void {
+function emitAudit(event: {
+  type: string;
+  agentId: string;
+  denied: string;
+  reason: string;
+  command?: string;
+  denialId?: number;
+  dedupeKey?: string;
+  context?: AuditContextProvenance;
+}): void {
   if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
-  const p = publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch((err) => {
+  const enriched = {
+    ...event,
+    dedupeKey: event.dedupeKey ?? buildAuditDeniedDedupeKey(event),
+  };
+  const p = publish("ravi.audit.denied", enriched as unknown as Record<string, unknown>).catch((err) => {
     console.error("[audit] emitAudit failed", err);
   });
   pendingAudits.push(p);
+}
+
+function buildAuditDeniedDedupeKey(event: { type: string; agentId: string; denied: string; reason: string }): string {
+  return ["audit.denied", event.type, event.agentId, event.denied, event.reason].map(normalizeDedupePart).join(":");
+}
+
+function normalizeDedupePart(value: string): string {
+  return value.trim().replace(/\s+/g, " ").slice(0, 240);
 }
 
 function recordScopeDenial(input: {
@@ -45,19 +68,30 @@ function recordScopeDenial(input: {
   objectId: string;
   reason: string;
   command?: string;
-}): void {
-  recordPermissionDenial({
+}) {
+  const provenance = buildAuditContextProvenance(input.ctx);
+  return recordPermissionDenial({
     subjectType: "agent",
     subjectId: input.ctx.agentId,
     agentId: input.ctx.agentId,
     sessionKey: input.ctx.sessionKey,
     sessionName: input.ctx.sessionName,
+    contextId: input.ctx.contextId,
     relation: input.relation,
     objectType: input.objectType,
     objectId: input.objectId,
     reason: input.reason,
     command: input.command,
+    detail: provenance ? { context: provenance } : undefined,
   });
+}
+
+function scopeAuditMetadata(ctx: ScopeContext, denial?: { id: number } | null) {
+  const provenance = buildAuditContextProvenance(ctx);
+  return {
+    ...(denial?.id ? { denialId: denial.id } : {}),
+    ...(provenance ? { context: provenance } : {}),
+  };
 }
 
 // ============================================================================
@@ -65,9 +99,12 @@ function recordScopeDenial(input: {
 // ============================================================================
 
 export interface ScopeContext {
+  contextId?: string;
+  context?: ContextRecord;
   agentId?: string;
   sessionKey?: string;
   sessionName?: string;
+  source?: ContextSource;
 }
 
 /**
@@ -76,9 +113,12 @@ export interface ScopeContext {
 export function getScopeContext(): ScopeContext {
   const ctx = getContext();
   return {
+    contextId: ctx?.contextId,
+    context: ctx?.context,
     agentId: ctx?.agentId ?? process.env.RAVI_AGENT_ID,
     sessionKey: ctx?.sessionKey ?? process.env.RAVI_SESSION_KEY,
     sessionName: ctx?.sessionName ?? process.env.RAVI_SESSION_NAME,
+    source: ctx?.source,
   };
 }
 
@@ -262,18 +302,47 @@ export function enforceScopeCheck(
   allowed: boolean;
   errorMessage: string;
 } {
-  if (scope === "open" || scope === "resource") {
+  if (scope === "resource") {
     return { allowed: true, errorMessage: "" };
   }
 
   const ctx = getScopeContext();
+
+  if (scope === "open") {
+    if (!ctx.agentId) return { allowed: true, errorMessage: "" };
+    const groupAllowed = agentCan(ctx.agentId, "execute", "group", groupName ?? "*");
+    const commandAllowed =
+      commandName && groupName ? agentCan(ctx.agentId, "execute", "group", `${groupName}_${commandName}`) : false;
+    if (groupAllowed || commandAllowed) return { allowed: true, errorMessage: "" };
+
+    const target = commandName && groupName ? `group:${groupName}_${commandName}` : `group:${groupName ?? "*"}`;
+    const objectId = commandName && groupName ? `${groupName}_${commandName}` : (groupName ?? "*");
+    const reason = `Permission denied: agent:${ctx.agentId} requires execute on ${target}`;
+    const denial = recordScopeDenial({
+      ctx,
+      relation: "execute",
+      objectType: "group",
+      objectId,
+      reason,
+      command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
+    });
+    emitAudit({
+      type: "scope",
+      agentId: ctx.agentId,
+      denied: target,
+      reason,
+      ...scopeAuditMetadata(ctx, denial),
+      command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
+    });
+    return { allowed: false, errorMessage: reason };
+  }
 
   switch (scope) {
     case "superadmin": {
       const allowed = agentCan(ctx.agentId, "admin", "system", "*");
       if (!allowed) {
         const reason = `Permission denied: agent:${ctx.agentId} requires admin on system:*`;
-        recordScopeDenial({
+        const denial = recordScopeDenial({
           ctx,
           relation: "admin",
           objectType: "system",
@@ -286,6 +355,7 @@ export function enforceScopeCheck(
           agentId: ctx.agentId!,
           denied: "system:*",
           reason,
+          ...scopeAuditMetadata(ctx, denial),
           command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
       }
@@ -308,7 +378,7 @@ export function enforceScopeCheck(
       const target = commandName && groupName ? `group:${groupName}_${commandName}` : `group:${groupName ?? "*"}`;
       const objectId = commandName && groupName ? `${groupName}_${commandName}` : (groupName ?? "*");
       const reason = `Permission denied: agent:${ctx.agentId} requires execute on ${target}`;
-      recordScopeDenial({
+      const denial = recordScopeDenial({
         ctx,
         relation: "execute",
         objectType: "group",
@@ -321,15 +391,19 @@ export function enforceScopeCheck(
         agentId: ctx.agentId!,
         denied: target,
         reason,
+        ...scopeAuditMetadata(ctx, denial),
         command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
       });
-      return { allowed: false, errorMessage: `Permission denied: agent:${ctx.agentId} requires execute on ${target}` };
+      return {
+        allowed: false,
+        errorMessage: `Permission denied: agent:${ctx.agentId} requires execute on ${target}`,
+      };
     }
     case "writeContacts": {
       const wcAllowed = canWriteContacts(ctx);
       if (!wcAllowed) {
         const reason = `Permission denied: agent:${ctx.agentId} requires write_contacts`;
-        recordScopeDenial({
+        const denial = recordScopeDenial({
           ctx,
           relation: "write_contacts",
           objectType: "system",
@@ -342,6 +416,7 @@ export function enforceScopeCheck(
           agentId: ctx.agentId!,
           denied: "write_contacts",
           reason,
+          ...scopeAuditMetadata(ctx, denial),
           command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
       }
@@ -352,6 +427,9 @@ export function enforceScopeCheck(
     }
     default:
       // Fail-secure: unknown scope = deny
-      return { allowed: false, errorMessage: `Permission denied: agent:${ctx.agentId} — unknown scope "${scope}"` };
+      return {
+        allowed: false,
+        errorMessage: `Permission denied: agent:${ctx.agentId} — unknown scope "${scope}"`,
+      };
   }
 }

@@ -1437,6 +1437,7 @@ export const selfWhoamiReturnSchema = z
   .object({
     generatedAt: z.number(),
     identity: looseObjectSchema,
+    actor: selfSectionReturnSchema,
     session: selfSectionReturnSchema,
     chat: selfSectionReturnSchema,
     route: selfSectionReturnSchema,
@@ -1450,6 +1451,7 @@ export const selfContextReturnSchema = z
     depth: z.string(),
     limit: z.number(),
     identity: looseObjectSchema,
+    actor: selfSectionReturnSchema,
     session: selfSectionReturnSchema,
     chat: selfSectionReturnSchema,
     route: selfSectionReturnSchema,

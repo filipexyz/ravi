@@ -18,7 +18,7 @@ applies_to:
 owners:
   - ravi-dev
 status: draft
-normative: false
+normative: true
 ---
 
 # Contact CRM Schemas
@@ -52,6 +52,11 @@ ravi crm opportunity <opportunity>
 - Retried CRM create/write commands SHOULD accept `idempotency_key` and return the existing row/event when the same key was already applied.
 - Non-null `idempotency_key` values MUST be protected by partial unique indexes on the table that stores them.
 - Contact merges MUST move CRM projections, memberships, stakeholders, tasks, activities, participants, and facts from source contact to target contact before deleting the source projection.
+- CRM read surfaces MUST NOT bypass contact authorization. Until explicit CRM
+  object grants exist, CRM reads MUST be filtered through visible backing
+  contacts.
+- CRM write surfaces MUST require `write_contacts system:*` or future explicit
+  CRM mutation relations.
 
 ## Enum Sets
 

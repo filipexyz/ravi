@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { dbGetChatMessage, dbUpsertChat, dbUpsertChatMessage } from "../../router/router-db.js";
+import {
+  dbCreateChatReadingList,
+  dbGetChatMessage,
+  dbUpsertChat,
+  dbUpsertChatMessage,
+  dbUpsertChatParticipant,
+} from "../../router/router-db.js";
+import { attachTagSlugsToAsset } from "../../tags/helpers.js";
 import { ChatReadingListCommands, ChatsCommands } from "./chats.js";
 
 let stateDir: string | null = null;
@@ -123,6 +130,43 @@ describe("ChatsCommands --json", () => {
     });
     const member = (members.members as Array<Record<string, unknown>>)[0]!;
     expect(member.unreadMessageCount).toBe(1);
+  });
+
+  it("recomputes dynamic reading-list selectors as JSON", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999911@s.whatsapp.net",
+      chatType: "dm",
+      title: "Tagged contact",
+    });
+    dbUpsertChatParticipant({
+      chatId: chat.id,
+      contactId: "contact_tagged",
+      source: "test",
+    });
+    attachTagSlugsToAsset({
+      assetType: "contact",
+      assetId: "contact_tagged",
+      tags: ["crm-cli-dynamic"],
+      source: "test",
+    });
+    dbCreateChatReadingList({
+      name: "crm-cli-dynamic",
+      ownerType: "agent",
+      ownerId: "crm",
+      mode: "dynamic",
+      selector: { tags: ["crm-cli-dynamic"] },
+    });
+
+    const lists = new ChatReadingListCommands();
+    const payload = captureJson(() => {
+      lists.recompute("crm-cli-dynamic", "agent:crm", true);
+    });
+
+    expect((payload.recompute as Record<string, unknown>).eligible).toBe(1);
+    expect((payload.recompute as Record<string, unknown>).added).toBe(1);
+    expect((payload.recompute as Record<string, unknown>).addedChatIds).toEqual([chat.id]);
   });
 
   it("backfills provider timestamps from raw message provenance", () => {

@@ -64,6 +64,7 @@ ravi permissions grant agent:dev execute group:service
 ```
 
 **Subcomando específico** — dá acesso a só um comando dentro do grupo:
+
 ```bash
 # Só restart, não status/logs
 ravi permissions grant agent:dev execute group:daemon_restart
@@ -102,67 +103,78 @@ ravi permissions grant agent:dev read_own_contacts system:*
 ravi permissions grant agent:dev read_tagged_contacts system:leads
 ```
 
-### Grupos que NÃO precisam de grant (scope: open/resource)
+### Scope `open` e `resource`
 
-Estes funcionam pra qualquer agent sem grant:
-- `sessions` (open) — mas comandos de modificação checam session scope inline
-- `media` (open)
-- `react` (open)
-- `stickers` (open)
-- `tools` (open)
-- `transcribe` (open)
-- `video` (open)
-- `whatsapp.dm` (open)
-- `cron` (resource) — checa ownership do recurso
-- `triggers` (resource) — checa ownership do recurso
+`open` NÃO é bypass para runtime com agent.
+
+- CLI local sem principal pode executar comandos `open`.
+- Se houver `agentId`/contexto runtime, `open` exige `execute group:<grupo>` ou `execute group:<grupo>_<comando>`.
+- `resource` continua usando checagens de ownership no comando, mas não deve ser usado para mutação sensível sem dono resolvido.
+
+Exemplo:
+
+```bash
+ravi permissions grant agent:dev execute group:apps
+ravi permissions grant agent:dev execute group:apps_run
+```
 
 ## ERROS COMUNS
 
 ❌ **ERRADO** — usar `system:daemon` pra liberar o grupo daemon:
+
 ```bash
 ravi permissions grant agent:dev execute system:daemon
 ```
+
 Isso não funciona! O engine checa `group:daemon`, não `system:daemon`.
 
 ✅ **CERTO:**
+
 ```bash
 ravi permissions grant agent:dev execute group:daemon
 ```
 
 ❌ **ERRADO** — usar `admin` pra dar acesso a um grupo específico:
+
 ```bash
 ravi permissions grant agent:dev admin group:daemon
 ```
+
 `admin` só funciona com `system:*` (superadmin total).
 
 ✅ **CERTO** — usar `execute`:
+
 ```bash
 ravi permissions grant agent:dev execute group:daemon
 ```
 
 ❌ **ERRADO** — confundir `group` com `executable`:
+
 ```bash
 ravi permissions grant agent:dev execute group:*   # libera comandos CLI, NÃO executáveis
 ```
 
 ✅ **CERTO** — object types separados:
+
 ```bash
 ravi permissions grant agent:dev execute group:*        # comandos CLI
 ravi permissions grant agent:dev execute executable:*   # executáveis do sistema
 ```
 
 ❌ **ERRADO** — relação errada pra executáveis:
+
 ```bash
 ravi permissions grant agent:dev use executable:git   # "use" é pra SDK tools
 ```
 
 ✅ **CERTO:**
+
 ```bash
 ravi permissions grant agent:dev execute executable:git  # executáveis usam "execute"
 ravi permissions grant agent:dev use tool:Bash           # SDK tools usam "use"
 ```
 
-### SDK Tools (use tool:*)
+### SDK Tools (use tool:\*)
 
 Controla quais SDK tools um agent pode usar:
 
@@ -180,7 +192,7 @@ ravi permissions check agent:dev use tool:Bash
 
 SDK tools disponíveis: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, `TaskOutput`, `TaskStop`, `TodoWrite`, `NotebookEdit`, `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `EnterWorktree`, `Skill`, `TeamCreate`, `TeamDelete`, `SendMessage`, `LSP`, `ToolSearch`.
 
-### Tool Groups (use toolgroup:*)
+### Tool Groups (use toolgroup:\*)
 
 Em vez de dar grant tool por tool, use **tool groups** pra conceder acesso a um conjunto de tools de uma vez:
 
@@ -200,20 +212,20 @@ ravi permissions check agent:dev use tool:Read   # ✓ se tem toolgroup:read-onl
 
 **Grupos disponíveis:**
 
-| Grupo | Tools |
-|---|---|
-| `read-only` | Read, Glob, Grep, WebFetch, WebSearch, LSP, ToolSearch |
-| `write` | Edit, Write, NotebookEdit |
-| `execute` | Bash, Task, TaskOutput, TaskStop |
-| `plan` | EnterPlanMode, ExitPlanMode, AskUserQuestion, TodoWrite |
-| `teams` | TeamCreate, TeamDelete, SendMessage |
-| `navigate` | EnterWorktree, Skill |
+| Grupo       | Tools                                                   |
+| ----------- | ------------------------------------------------------- |
+| `read-only` | Read, Glob, Grep, WebFetch, WebSearch, LSP, ToolSearch  |
+| `write`     | Edit, Write, NotebookEdit                               |
+| `execute`   | Bash, Task, TaskOutput, TaskStop                        |
+| `plan`      | EnterPlanMode, ExitPlanMode, AskUserQuestion, TodoWrite |
+| `teams`     | TeamCreate, TeamDelete, SendMessage                     |
+| `navigate`  | EnterWorktree, Skill                                    |
 
 **Como funciona:** Quando o engine checa `can(agent:X, use, tool, Read)`, se não encontra grant direto pra `tool:Read`, verifica se o agent tem algum `toolgroup` que inclui `Read`. Se sim, permite.
 
 **Combina com grants individuais:** Um agent pode ter `toolgroup:read-only` + `tool:Bash` — os dois se somam.
 
-### Executáveis do sistema (execute executable:*)
+### Executáveis do sistema (execute executable:\*)
 
 Controla quais binários do sistema um agent pode rodar via Bash:
 
@@ -246,7 +258,8 @@ ravi permissions init agent:dev tool-groups
 ravi permissions init agent:dev safe-executables
 
 # Cobertura completa: wildcards em TODOS os object types reconhecidos pelo engine
-# (tool, executable, toolgroup, agent, contact, cron, group, session, system, team, trigger).
+# (tool, executable, toolgroup, agent, app, automation, calendar, chat, contact,
+# cron, group, mailbox, network, platform_identity, session, system, team, trigger).
 # Use quando o agent precisa operar livremente em todas as superfícies (sessions, contatos,
 # triggers, crons, agents, system admin), não só rodar tools SDK + binários do sistema.
 ravi permissions init agent:dev full-access
@@ -254,11 +267,30 @@ ravi permissions init agent:dev full-access
 
 `full-access` significa "permitido pelo Ravi". Ele não promete que hooks globais do provider, policies locais, RTK, Codex/Claude PreToolUse ou outras integrações externas vão permitir o comando final. Se `permissions check` retorna permitido mas a tool ainda falha, trate como fronteira de runtime/hook e investigue a mensagem de denial antes de adicionar mais grants.
 
-> **Nota histórica:** antes deste PR, `full-access` aplicava apenas `use tool:*` + `execute executable:*` (2 grants) — o nome prometia "tudo" mas deixava de fora as superfícies in-process do REBAC (sessions, contacts, agents, etc), forçando o operador a aplicar 24 wildcards adicionais via `permissions grant`. Agora `full-access` cobre os 27 pares (relation, objectType) válidos em um único comando.
+> **Nota histórica:** antes deste PR, `full-access` aplicava apenas `use tool:*` + `execute executable:*` (2 grants) — o nome prometia "tudo" mas deixava de fora as superfícies in-process do REBAC (sessions, contacts, agents, apps, automações, etc). Agora `full-access` cobre os pares `(relation, objectType)` válidos em um único comando.
+
+## Lifetime dos Grants
+
+Grants manuais novos são temporários por padrão.
+
+```bash
+# Temporário com TTL padrão de 1h
+ravi permissions grant agent:dev execute group:apps
+
+# Temporário customizado
+ravi permissions grant agent:dev execute group:apps --ttl 15m
+ravi permissions grant agent:dev execute group:apps --expires-at 2026-06-07T15:00:00Z
+
+# Permanente só quando explícito
+ravi permissions grant agent:dev execute group:apps --permanent
+```
+
+Use `ravi permissions list --all` para auditar grants ativos, expirados e revogados.
 
 ## Comandos
 
 ### Listar permissões
+
 ```bash
 # Todas
 ravi permissions list
@@ -277,16 +309,19 @@ ravi permissions list --source manual
 ```
 
 ### Conceder permissão
+
 ```bash
 ravi permissions grant <sujeito> <relação> <objeto>
 ```
 
 ### Revocar permissão
+
 ```bash
 ravi permissions revoke <sujeito> <relação> <objeto>
 ```
 
 ### Verificar permissão
+
 ```bash
 ravi permissions check <sujeito> <permissão> <objeto>
 ```
@@ -305,6 +340,7 @@ ravi permissions check agent:main admin system:*
 ```
 
 ### Sincronizar com configs
+
 ```bash
 ravi permissions sync
 ```
@@ -312,6 +348,7 @@ ravi permissions sync
 Re-lê as configs dos agents e regenera as relações `source=config`. Relações manuais não são afetadas.
 
 ### Limpar permissões
+
 ```bash
 # Limpar só manuais
 ravi permissions clear
@@ -323,6 +360,7 @@ ravi permissions clear --all
 ## Wildcards
 
 Wildcards só funcionam no final do object ID:
+
 - `*` — tudo
 - `dev-*` — tudo que começa com "dev-"
 - ❌ `*-dev` ou `a*b` — inválidos

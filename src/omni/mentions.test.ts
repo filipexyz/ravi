@@ -19,7 +19,7 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("@91015272759397 olha isso");
+    expect(prepared.text).toBe("@Ravi Bot olha isso");
     expect(prepared.mentions).toEqual([{ id: "91015272759397@lid", type: "user" }]);
     expect(prepared.resolved[0]).toMatchObject({
       id: "91015272759397@lid",
@@ -34,7 +34,7 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("oi @91015272759397");
+    expect(prepared.text).toBe("oi @Ravi Bot");
     expect(prepared.mentions).toEqual([{ id: "91015272759397@lid", type: "user" }]);
   });
 
@@ -45,7 +45,7 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("@5511999999999 olha isso");
+    expect(prepared.text).toBe("@Israel Nunes olha isso");
     expect(prepared.mentions).toEqual([{ id: "5511999999999@s.whatsapp.net", type: "user" }]);
   });
 
@@ -65,7 +65,7 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("@5511947879044 confere");
+    expect(prepared.text).toBe("@Luís Filipe confere");
     expect(prepared.mentions).toEqual([{ id: "5511947879044@s.whatsapp.net", type: "user" }]);
   });
 
@@ -81,7 +81,7 @@ describe("Omni mention preparation", () => {
       ],
     });
 
-    expect(prepared.text).toBe("@5511947879044 confere");
+    expect(prepared.text).toBe("@Luís Filipe confere");
     expect(prepared.mentions).toEqual([{ id: "5511947879044@s.whatsapp.net", type: "user" }]);
     expect(prepared.resolved[0]).toMatchObject({
       id: "5511947879044@s.whatsapp.net",
@@ -105,8 +105,18 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("oi @91015272759397 e @910152727593970");
+    expect(prepared.text).toBe("oi @Ravi Bot e @910152727593970");
     expect(prepared.mentions).toEqual([{ id: "91015272759397@lid", type: "user" }]);
+  });
+
+  it("does not auto-resolve raw participant ids without a safe display label", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi @91015272759397",
+      participants: [{ platformUserId: "91015272759397@lid" }],
+    });
+
+    expect(prepared.text).toBe("oi @91015272759397");
+    expect(prepared.mentions).toEqual([]);
   });
 
   it("does not resolve inline ids that are not participants", () => {

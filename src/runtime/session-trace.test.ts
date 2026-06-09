@@ -143,6 +143,16 @@ function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
   };
 }
 
+function makeNeverEndingRuntimeSession(): RuntimeSessionHandle {
+  return {
+    provider: PROVIDER,
+    events: (async function* () {
+      await new Promise(() => {});
+    })(),
+    interrupt: async () => {},
+  };
+}
+
 function makeSkillVisibility(state: "advertised" | "loaded" = "loaded"): RuntimeSkillVisibilitySnapshot {
   return {
     skills: [
@@ -1009,6 +1019,58 @@ describe("runtime session trace instrumentation", () => {
       rawEvent: { type: "error", message: "provider down" },
     });
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
+  });
+
+  it("times out active provider turns that stop emitting runtime events", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS = "1000";
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "stuck audit alert",
+      deliveryBarrier: "after_task",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      lastActivity: Date.now() - 2_000,
+    });
+    seedAdapterTrace(streaming, "turn-provider-inactive");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    try {
+      await runTraceLoop(streaming, makeNeverEndingRuntimeSession(), {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      });
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "provider_turn_inactive" }]);
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["stuck audit alert"]);
+    expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
+
+    const events = listSessionEvents(SESSION_KEY);
+    expect(events.some((event) => event.eventType === "session.timeout" && event.status === "timeout")).toBe(true);
+    const terminal = events.find((event) => event.eventType === "turn.failed");
+    expect(terminal?.status).toBe("timeout");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "provider_turn_inactive",
+      autoRecovered: true,
+    });
+    expect(getSessionTurn("turn-provider-inactive")?.status).toBe("timeout");
   });
 
   it("stashes the current turn and restarts after retryable credential failure before tools", async () => {

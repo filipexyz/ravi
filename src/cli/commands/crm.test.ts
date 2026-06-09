@@ -723,6 +723,7 @@ describe("CRM commands", () => {
         "Pilot",
         "crm_acc_1",
         "contact-1",
+        "crm_pipeline_new",
         "qualified",
         "500000",
         "BRL",
@@ -749,7 +750,13 @@ describe("CRM commands", () => {
 
     expect(lastProfileUpdateInput).toMatchObject({ ownerType: "agent", ownerId: "dev", source: "test" });
     expect(lastAccountCreateInput).toMatchObject({ name: "Acme", ownerType: "team", ownerId: "sales" });
-    expect(lastOpportunityCreateInput).toMatchObject({ valueCents: 500000, ownerType: "agent", ownerId: "dev" });
+    expect(lastOpportunityCreateInput).toMatchObject({
+      pipelineId: "crm_pipeline_new",
+      stageKey: "qualified",
+      valueCents: 500000,
+      ownerType: "agent",
+      ownerId: "dev",
+    });
     expect(lastTaskCreateInput).toMatchObject({ priority: "urgent", ownerType: "agent", ownerId: "dev" });
   });
 

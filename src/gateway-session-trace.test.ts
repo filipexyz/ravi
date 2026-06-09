@@ -518,7 +518,7 @@ describe("Gateway session trace instrumentation", () => {
 
       expect(send).toHaveBeenCalledTimes(1);
       const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
-      expect(text).toBe("oi @5511947879044 @91015272759397 @Luisalgo @12345678901234");
+      expect(text).toBe("oi @Luís Filipe @Ravi Bot @Luisalgo @12345678901234");
       expect(options).toMatchObject({
         mentions: expect.arrayContaining([
           { id: "5511947879044@s.whatsapp.net", type: "user" },

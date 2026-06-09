@@ -116,7 +116,7 @@ describe("Omni group metadata cache", () => {
       normalizedPlatformUserId: "5511999990000",
       mentionUserId: "5511999990000@s.whatsapp.net",
     });
-    expect(formatOmniGroupMembersForPrompt(first)).toEqual(["Luis Filipe (admin)", "R M", "278507271802901"]);
+    expect(formatOmniGroupMembersForPrompt(first)).toEqual(["Luis Filipe (admin)", "R M"]);
     expect(fetchCalls).toHaveLength(2);
 
     const second = await resolveOmniGroupMetadata({

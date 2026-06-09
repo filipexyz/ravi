@@ -32,7 +32,7 @@ applies_to:
 owners:
   - ravi-rebac
   - ravi-dev
-status: draft
+status: active
 normative: true
 ---
 
@@ -94,6 +94,16 @@ Rules:
 
 User-initiated execution MUST use an invocation-scoped runtime context or equivalent turn-scoped capability overlay.
 
+Turn-scoped authority MUST be enabled by default. `RAVI_TURN_SCOPED_AUTHORITY`
+is an opt-out compatibility switch only:
+
+- unset: enabled;
+- `1`, `true`, `on`: enabled;
+- `0`, `false`, `off`: disabled for explicit legacy/debug operation.
+
+Production deployments SHOULD NOT run with this opt-out disabled except during
+controlled break-glass debugging.
+
 The context MUST include:
 
 - `context_kind`: distinguishable from long-lived agent root contexts, e.g. `invocation-runtime` or `turn-runtime`.
@@ -139,8 +149,14 @@ All authority-bearing surfaces MUST authorize against the effective invocation c
 - Tool groups: `use toolgroup:<group>`
 - Bash command approval: `use tool:Bash` and `execute executable:<binary>`
 - Ravi CLI admin groups: `execute group:<group>` or `execute group:<group>_<command>`
+- App discovery and non-mutating app operation: `use app:<app-id>`
+- Mutating app operation: `execute app:<app-id>`
 - Session read/write: `access session:<id>` and `modify session:<id>`
-- Contact/CRM writes: `write_contacts system:*` or narrower future contact-scoped relations
+- Contact/CRM reads: `read_contact contact:<id>`,
+  `read_own_contacts system:*`, `read_tagged_contacts system:<tag>`, or a
+  future explicit CRM object relation
+- Contact/CRM writes: `write_contacts system:*` or narrower future contact/CRM
+  scoped relations
 - Gateway streams: `view/access <object>`
 - Child context issuance: requested child capabilities MUST be a subset of effective parent capabilities
 
@@ -166,6 +182,12 @@ Role expansion MUST be deterministic and auditable. If two roles disagree, the m
 
 - Cron, trigger, observer, workflow, and daemon events MUST run as explicit `automation:<id>` or `system:<id>` principals.
 - Automation MUST NOT inherit the last human actor in the session.
+- Cron prompts MUST resolve as `automation:cron:<job-id>`.
+- Trigger prompts MUST resolve as `automation:trigger:<trigger-id>`.
+- Automation prompts with no automation grants MUST receive an empty effective
+  capability set even when the executor agent is superadmin.
+- Automation prompts without a chat/source MAY omit the surface constraint; if
+  they target or reply into a chat, that chat MAY further constrain authority.
 - Observer permission grants apply to the observer runtime context only. They MUST NOT grant tools to the source session or source actor.
 - If automation posts into a human chat, its outbound delivery authority is separate from tool authority.
 
@@ -183,4 +205,3 @@ The model MUST NOT be trusted to self-enforce per-user authority. The host layer
 - A chat-level constraint can reduce an owner's power in a public group.
 - A cron job runs under its automation principal and does not inherit the last speaker.
 - Runtime traces can explain the allow/deny decision in terms of agent, actor, surface, turn, roles, and context id.
-
