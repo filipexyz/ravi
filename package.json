@@ -1,6 +1,6 @@
 {
   "name": "ravi.bot",
-  "version": "3.260607.2",
+  "version": "3.260609.1",
   "description": "Personal multi-agent runtime for Ravi",
   "type": "module",
   "main": "dist/bundle/index.js",
