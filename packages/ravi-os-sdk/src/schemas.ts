@@ -1592,6 +1592,349 @@ export const AppsGuideReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.import-cli`. */
+export const AppsImportCliInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "description": "CLI command to import, e.g. 'ravi apps' or 'my-cli'",
+      "type": "string"
+    },
+    "description": {
+      "description": "Short app description",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Print planned files without writing",
+      "type": "boolean"
+    },
+    "force": {
+      "description": "Overwrite existing scaffold files",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Stable app id to generate",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human display name",
+      "type": "string"
+    },
+    "skipSkill": {
+      "description": "Do not create a skill skeleton",
+      "type": "boolean"
+    },
+    "skipSpec": {
+      "description": "Do not create an app spec skeleton",
+      "type": "boolean"
+    },
+    "skipUi": {
+      "description": "Do not include interfaces.ui in the manifest",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "Import source: auto|manifest|registry|help",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.import-cli`. */
+export const AppsImportCliReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "type": "string"
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "type": "string"
+    },
+    "debugCandidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destructive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interactive": {
+            "type": "boolean"
+          },
+          "json": {
+            "type": "boolean"
+          },
+          "mutating": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reviewRequired": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "streaming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "command",
+          "description",
+          "json",
+          "mutating",
+          "destructive",
+          "streaming",
+          "interactive",
+          "confidence",
+          "reviewRequired"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "description": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "planned",
+              "created",
+              "overwritten"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "manifest",
+              "spec",
+              "skill"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "action"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "force": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "manifest": {},
+    "manifestPath": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "nextCommands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "operationCandidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destructive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interactive": {
+            "type": "boolean"
+          },
+          "json": {
+            "type": "boolean"
+          },
+          "mutating": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reviewRequired": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "streaming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "command",
+          "description",
+          "json",
+          "mutating",
+          "destructive",
+          "streaming",
+          "interactive",
+          "confidence",
+          "reviewRequired"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "reviewRequired": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skill": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "skillPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "enum": [
+        "manifest",
+        "registry",
+        "help"
+      ],
+      "type": "string"
+    },
+    "sourceCommand": {
+      "type": "string"
+    },
+    "specPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "description",
+    "command",
+    "dryRun",
+    "force",
+    "manifestPath",
+    "specPath",
+    "skillPath",
+    "skill",
+    "files",
+    "manifest",
+    "nextCommands",
+    "sourceCommand",
+    "source",
+    "confidence",
+    "operationCandidates",
+    "debugCandidates",
+    "warnings",
+    "reviewRequired"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.list`. */
 export const AppsListInputSchema = {
   "additionalProperties": false,

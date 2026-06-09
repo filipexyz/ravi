@@ -361,6 +361,72 @@ export type AppsGuideReturn = {
   };
 };
 
+/** Input shape for `apps.import-cli`. */
+export type AppsImportCliInput = {
+  command: string;
+  description?: string;
+  dryRun?: boolean;
+  force?: boolean;
+  id?: string;
+  name?: string;
+  skipSkill?: boolean;
+  skipSpec?: boolean;
+  skipUi?: boolean;
+  source?: string;
+};
+
+/** Return shape for `apps.import-cli`. */
+export type AppsImportCliReturn = {
+  command: string;
+  confidence: "high" | "medium" | "low";
+  debugCandidates: Array<{
+    command: string;
+    confidence: "high" | "medium" | "low";
+    description: string | null;
+    destructive: boolean;
+    id: string;
+    interactive: boolean;
+    json: boolean;
+    mutating: boolean;
+    name: string;
+    reviewRequired: string[];
+    streaming: boolean;
+  }>;
+  description: string;
+  dryRun: boolean;
+  files: Array<{
+    action: "planned" | "created" | "overwritten";
+    kind: "manifest" | "spec" | "skill";
+    path: string;
+  }>;
+  force: boolean;
+  id: string;
+  manifest: unknown;
+  manifestPath: string;
+  name: string;
+  nextCommands: string[];
+  operationCandidates: Array<{
+    command: string;
+    confidence: "high" | "medium" | "low";
+    description: string | null;
+    destructive: boolean;
+    id: string;
+    interactive: boolean;
+    json: boolean;
+    mutating: boolean;
+    name: string;
+    reviewRequired: string[];
+    streaming: boolean;
+  }>;
+  reviewRequired: string[];
+  skill: string | null;
+  skillPath: string | null;
+  source: "manifest" | "registry" | "help";
+  sourceCommand: string;
+  specPath: string | null;
+  warnings: string[];
+};
+
 /** Input shape for `apps.list`. */
 export type AppsListInput = {
   limit?: string;
