@@ -35,16 +35,18 @@ export function scaffoldApp(options: RaviAppScaffoldOptions): RaviAppScaffoldRes
   const specPath = includeSpec ? join(repoRoot, ".ravi", "specs", "apps", ...id.split("/"), "SPEC.md") : null;
   const skillSourcePath = join(repoRoot, "src", "plugins", "internal", "ravi-system");
   const skillPath = includeSkill ? join(skillSourcePath, "skills", appSlug, "SKILL.md") : null;
-  const manifest = buildScaffoldManifest({
-    id,
-    appSlug,
-    operationPrefix,
-    name,
-    description,
-    command,
-    includeUi,
-    skill,
-  });
+  const manifest =
+    options.manifest ??
+    buildScaffoldManifest({
+      id,
+      appSlug,
+      operationPrefix,
+      name,
+      description,
+      command,
+      includeUi,
+      skill,
+    });
 
   const targets: ScaffoldTarget[] = [
     {
