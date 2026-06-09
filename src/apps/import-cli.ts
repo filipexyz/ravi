@@ -67,6 +67,7 @@ const MUTATING_VERBS = new Set([
   "restart",
   "revoke",
   "run",
+  "scaffold",
   "send",
   "set",
   "start",
@@ -82,6 +83,7 @@ const MUTATING_VERBS = new Set([
 ]);
 
 const DESTRUCTIVE_VERBS = new Set(["cancel", "clear", "delete", "deny", "remove", "revoke", "stop"]);
+const RESERVED_ROUTER_OPERATION_NAMES = new Set(["help", "show", "check"]);
 
 export function importCliApp(options: RaviAppImportCliOptions): RaviAppImportCliResult {
   const id = normalizeAppId(options.id);
@@ -267,7 +269,7 @@ function candidateFromRegistryCommand(
 ): RaviAppImportCliOperationCandidate {
   const localSegments = entry.groupSegments.slice(selectedSegments.length);
   localSegments.push(entry.command);
-  const localName = localSegments.map(slugSegment).join(".");
+  const localName = avoidReservedOperationName(localSegments.map(slugSegment).join("."));
   const mutating = isLikelyMutating(localName);
   const destructive = isLikelyDestructive(localName);
   const base = ["ravi", ...entry.groupSegments, entry.command].join(" ");
@@ -297,7 +299,7 @@ function candidateFromSelfDescription(
   baseCommand: string,
 ): RaviAppImportCliOperationCandidate {
   const declaredName = stringField(item.name) || stringField(item.id) || `operation-${index + 1}`;
-  const name = slugOperationName(declaredName);
+  const name = avoidReservedOperationName(slugOperationName(declaredName));
   const command = stringField(item.command) || `${baseCommand} ${declaredName} {args}`;
   const json = boolField(item.json) ?? command.includes("--json");
   const mutating = boolField(item.mutating) ?? boolField(item.write) ?? isLikelyMutating(name);
@@ -500,6 +502,10 @@ function slugOperationName(value: string): string {
     .filter(Boolean)
     .map(slugSegment)
     .join(".");
+}
+
+function avoidReservedOperationName(name: string): string {
+  return RESERVED_ROUTER_OPERATION_NAMES.has(name) ? `cli.${name}` : name;
 }
 
 function slugSegment(value: string): string {
