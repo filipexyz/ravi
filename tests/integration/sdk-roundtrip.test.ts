@@ -18,7 +18,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { ArtifactsCommands } from "../../src/cli/commands/artifacts.js";
 import { buildRegistry } from "../../src/cli/registry-snapshot.js";
 import { createArtifact } from "../../src/artifacts/store.js";
-import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../src/test/ravi-state.js";
+import {
+  cleanupIsolatedRaviState,
+  createIsolatedRaviState,
+  RAVI_RUNTIME_CONTEXT_ENV_KEYS,
+} from "../../src/test/ravi-state.js";
 import { startGateway, type GatewayHandle } from "../../src/sdk/gateway/server.js";
 
 import { RaviClient } from "../../packages/ravi-os-sdk/src/index.js";
@@ -29,8 +33,10 @@ const registry = buildRegistry([ArtifactsCommands]);
 
 let stateDir: string | null = null;
 let handle: GatewayHandle | null = null;
+const originalRuntimeContextEnv = new Map(RAVI_RUNTIME_CONTEXT_ENV_KEYS.map((key) => [key, process.env[key]]));
 
 beforeEach(async () => {
+  for (const key of RAVI_RUNTIME_CONTEXT_ENV_KEYS) delete process.env[key];
   stateDir = await createIsolatedRaviState("ravi-sdk-roundtrip-");
   handle = startGateway({ host: "127.0.0.1", port: 0, registry });
 });
@@ -42,6 +48,11 @@ afterEach(async () => {
   }
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
+  for (const key of RAVI_RUNTIME_CONTEXT_ENV_KEYS) {
+    const value = originalRuntimeContextEnv.get(key);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 });
 
 function buildClient(): RaviClient {

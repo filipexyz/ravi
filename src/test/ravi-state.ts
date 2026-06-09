@@ -16,7 +16,7 @@ const pendingStateDirs = new Set<string>();
 let pendingStateCleanupRegistered = false;
 let previousAuditSuppression: string | undefined;
 
-const RAVI_RUNTIME_CONTEXT_ENV_KEYS = [
+export const RAVI_RUNTIME_CONTEXT_ENV_KEYS = [
   "RAVI_ACCOUNT_ID",
   "RAVI_ACTOR_AGENT_ID",
   "RAVI_ACTOR_TYPE",
