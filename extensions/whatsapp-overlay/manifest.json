@@ -40,7 +40,8 @@
         "content.js"
       ],
       "css": [
-        "styles.css"
+        "styles.css",
+        "theme-nubank.css"
       ],
       "run_at": "document_idle"
     }

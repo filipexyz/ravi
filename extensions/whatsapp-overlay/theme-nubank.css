@@ -1,0 +1,279 @@
+#ravi-wa-overlay-root,
+#ravi-wa-session-main-host {
+  --ravi-nu-bg: #0d0d0d;
+  --ravi-nu-surface: #111111;
+  --ravi-nu-surface-2: #161616;
+  --ravi-nu-surface-3: #1d1d1d;
+  --ravi-nu-border: rgba(255, 255, 255, 0.075);
+  --ravi-nu-border-strong: rgba(255, 255, 255, 0.12);
+  --ravi-nu-text: #f2f0f4;
+  --ravi-nu-muted: #8d8794;
+  --ravi-nu-subtle: #b8b0bf;
+  --ravi-nu-accent: #820ad1;
+  --ravi-nu-accent-2: #b14cff;
+  --ravi-nu-accent-soft: rgba(130, 10, 209, 0.16);
+  --ravi-nu-green: #32d583;
+  --ravi-nu-amber: #f5c542;
+  --ravi-nu-red: #ff5f57;
+  color-scheme: dark;
+}
+
+#ravi-wa-overlay-drawer {
+  border-left-color: var(--ravi-nu-border);
+  background:
+    linear-gradient(180deg, rgba(17, 17, 17, 0.985), rgba(13, 13, 13, 0.985)),
+    var(--ravi-nu-bg);
+  color: var(--ravi-nu-text);
+  box-shadow: inset 12px 0 20px rgba(0, 0, 0, 0.12);
+}
+
+#ravi-wa-overlay-root[data-workspace="omni"] #ravi-wa-overlay-drawer,
+#ravi-wa-overlay-root[data-workspace="crm"] #ravi-wa-overlay-drawer,
+#ravi-wa-overlay-root[data-workspace="insights"] #ravi-wa-overlay-drawer,
+#ravi-wa-overlay-root[data-workspace="tasks"] #ravi-wa-overlay-drawer {
+  background: var(--ravi-nu-bg);
+}
+
+.ravi-wa-drawer-header {
+  border-bottom-color: var(--ravi-nu-border);
+  background: rgba(17, 17, 17, 0.92);
+}
+
+#ravi-wa-overlay-panel-subtitle,
+.ravi-wa-empty,
+.ravi-wa-card p,
+.ravi-wa-profile-menu__head span,
+.ravi-wa-profile-menu__empty,
+.ravi-wa-profile-menu__footer,
+.ravi-wa-profile-row__body small,
+.ravi-wa-sidebar-search span {
+  color: var(--ravi-nu-muted);
+}
+
+.ravi-wa-card,
+.ravi-wa-profile-menu,
+.ravi-wa-vibes-menu,
+.ravi-wa-crm-panel,
+.ravi-wa-crm-contact,
+.ravi-wa-crm-action,
+.ravi-wa-crm-opportunity,
+.ravi-wa-artifact-tile,
+.ravi-wa-omni-column {
+  border-color: var(--ravi-nu-border);
+  background: rgba(255, 255, 255, 0.026);
+}
+
+.ravi-wa-card h3,
+.ravi-wa-profile-menu__head strong,
+.ravi-wa-profile-row__body strong,
+.ravi-wa-crm-panel h3,
+.ravi-wa-crm-contact__main strong,
+.ravi-wa-crm-action strong,
+.ravi-wa-crm-opportunity strong,
+.ravi-wa-artifacts-bar__title h2,
+.ravi-wa-artifact-tile__label {
+  color: var(--ravi-nu-text);
+}
+
+.ravi-wa-hero-card,
+.ravi-wa-omni-hero,
+.ravi-wa-crm-hero,
+.ravi-wa-artifacts-bar {
+  background:
+    radial-gradient(circle at top right, var(--ravi-nu-accent-soft), transparent 38%),
+    rgba(255, 255, 255, 0.028);
+}
+
+.ravi-wa-vibes-toggle,
+.ravi-wa-profile-toggle,
+.ravi-wa-panel-toggle,
+.ravi-wa-panel-rail-toggle,
+.ravi-wa-drawer-header button {
+  border-color: var(--ravi-nu-border) !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+  color: var(--ravi-nu-subtle) !important;
+}
+
+.ravi-wa-vibes-toggle:hover,
+.ravi-wa-profile-toggle:hover,
+.ravi-wa-profile-toggle--open,
+.ravi-wa-panel-toggle:hover,
+.ravi-wa-panel-rail-toggle:hover {
+  border-color: rgba(130, 10, 209, 0.42) !important;
+  background: var(--ravi-nu-accent-soft) !important;
+  color: var(--ravi-nu-text) !important;
+}
+
+.ravi-wa-profile-toggle--connected,
+.ravi-wa-vibes-toggle--enabled {
+  border-color: rgba(50, 213, 131, 0.3) !important;
+}
+
+.ravi-wa-profile-toggle--active {
+  border-color: rgba(177, 76, 255, 0.42) !important;
+}
+
+.ravi-wa-profile-toggle__dot,
+.ravi-wa-profile-row__dot,
+.ravi-wa-vibes-toggle__dot {
+  border-color: var(--ravi-nu-surface);
+  background: #6f6678;
+}
+
+.ravi-wa-profile-toggle__dot--connected,
+.ravi-wa-profile-row__dot--connected,
+.ravi-wa-vibes-toggle--enabled .ravi-wa-vibes-toggle__dot {
+  background: var(--ravi-nu-green);
+}
+
+.ravi-wa-profile-toggle__dot--active,
+.ravi-wa-profile-row__dot--active {
+  background: var(--ravi-nu-accent-2);
+}
+
+.ravi-wa-sidebar-search input,
+.ravi-wa-crm-search,
+.ravi-wa-artifacts-search,
+.ravi-wa-artifact-kind-select select {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  border-color: var(--ravi-nu-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ravi-nu-text);
+}
+
+#ravi-wa-overlay-body,
+.ravi-wa-card,
+.ravi-wa-sidebar-search {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ravi-wa-sidebar-search input:focus,
+.ravi-wa-crm-search:focus,
+.ravi-wa-artifacts-search:focus,
+.ravi-wa-artifact-kind-select select:focus {
+  border-color: rgba(130, 10, 209, 0.64);
+}
+
+.ravi-wa-meta-chip,
+.ravi-wa-crm-chip,
+.ravi-wa-artifact-chip,
+.ravi-wa-artifact-tile__chip,
+.ravi-wa-state-pill {
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--ravi-nu-subtle);
+}
+
+.ravi-wa-crm-chip--active,
+.ravi-wa-artifact-chip--active,
+.ravi-wa-state-pill--running,
+.ravi-wa-state-pill--completed {
+  background: var(--ravi-nu-accent-soft);
+  color: #e6ccff;
+}
+
+.ravi-wa-nav-row--selected {
+  background: rgba(130, 10, 209, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(130, 10, 209, 0.34),
+    inset 3px 0 0 var(--ravi-nu-accent-2);
+}
+
+.ravi-wa-nav-row--selected:hover {
+  background: rgba(130, 10, 209, 0.16);
+}
+
+.ravi-wa-nav-row__state--thinking,
+.ravi-wa-nav-row__state--compacting {
+  background: rgba(130, 10, 209, 0.18);
+  color: #e6ccff;
+}
+
+.ravi-wa-provider-avatar--codex {
+  background: linear-gradient(180deg, rgba(130, 10, 209, 0.98), rgba(78, 11, 125, 0.98));
+  border-color: rgba(216, 180, 254, 0.36);
+  color: #ffffff;
+}
+
+.ravi-wa-provider-avatar--claude {
+  background: linear-gradient(180deg, rgba(64, 47, 32, 0.98), rgba(32, 26, 22, 0.98));
+  border-color: rgba(245, 197, 66, 0.28);
+  color: #f8e1a0;
+}
+
+.ravi-wa-provider-avatar--openai {
+  background: linear-gradient(180deg, rgba(35, 52, 68, 0.98), rgba(18, 28, 36, 0.98));
+  border-color: rgba(155, 193, 214, 0.28);
+  color: #d8edf6;
+}
+
+.ravi-wa-provider-avatar--gemini,
+.ravi-wa-provider-avatar--pi {
+  background: linear-gradient(180deg, rgba(95, 33, 148, 0.98), rgba(49, 24, 75, 0.98));
+  border-color: rgba(209, 178, 255, 0.3);
+  color: #f1e6ff;
+}
+
+.ravi-wa-provider-avatar--unknown {
+  background: linear-gradient(180deg, rgba(48, 45, 52, 0.98), rgba(24, 23, 27, 0.98));
+  border-color: var(--ravi-nu-border-strong);
+  color: var(--ravi-nu-subtle);
+}
+
+.ravi-wa-crm-eyebrow,
+.ravi-wa-artifacts-bar__eyebrow,
+.ravi-wa-omni-hero strong,
+.ravi-wa-tasks-toolbar__eyebrow {
+  color: #c891ff;
+}
+
+.ravi-wa-native-sidebar-resize-handle::before {
+  background: rgba(130, 10, 209, 0.26);
+}
+
+.ravi-wa-native-sidebar-resize-handle span,
+.ravi-wa-native-sidebar-resize-handle:hover span,
+.ravi-wa-native-sidebar-resize-handle:focus-visible span,
+.ravi-wa-native-sidebar-resize-handle--active span {
+  background: rgba(130, 10, 209, 0.72);
+}
+
+#ravi-wa-session-main-host,
+.sw-chat,
+.sw-thread {
+  background-color: var(--ravi-nu-bg);
+}
+
+.sw-header,
+.sw-system-prompt,
+.sw-composer {
+  border-color: var(--ravi-nu-border) !important;
+  background: var(--ravi-nu-surface) !important;
+}
+
+.sw-header__avatar,
+.sw-composer__send:not([disabled]) {
+  background: var(--ravi-nu-accent);
+  color: #ffffff;
+}
+
+.sw-header__back:hover,
+.sw-header__action:hover {
+  background: var(--ravi-nu-accent-soft);
+  color: var(--ravi-nu-text);
+}
+
+.ravi-wa-tasks-page {
+  --ravi-wa-task-surface: var(--ravi-nu-surface);
+  --ravi-wa-task-surface-2: var(--ravi-nu-surface-2);
+  --ravi-wa-task-surface-3: var(--ravi-nu-bg);
+  --ravi-wa-task-border: var(--ravi-nu-border);
+  --ravi-wa-task-border-strong: var(--ravi-nu-border-strong);
+  --ravi-wa-task-text: var(--ravi-nu-text);
+  --ravi-wa-task-muted: var(--ravi-nu-muted);
+  --ravi-wa-task-subtle: var(--ravi-nu-subtle);
+  --ravi-wa-task-accent: var(--ravi-nu-accent);
+  background: linear-gradient(180deg, #111111 0, #0d0d0d 100%);
+}
