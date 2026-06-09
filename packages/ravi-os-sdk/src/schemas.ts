@@ -11137,6 +11137,272 @@ export const ChatsListsMembersReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `chats.lists.recompute`. */
+export const ChatsListsRecomputeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.recompute`. */
+export const ChatsListsRecomputeReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "selector": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "recompute": {
+      "additionalProperties": false,
+      "properties": {
+        "added": {
+          "type": "number"
+        },
+        "addedChatIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "eligible": {
+          "type": "number"
+        },
+        "eligibleChatIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kept": {
+          "type": "number"
+        },
+        "keptChatIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "list": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "mode": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string"
+            },
+            "ownerType": {
+              "type": "string"
+            },
+            "selector": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "ownerType",
+            "ownerId",
+            "visibility",
+            "mode",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "preserved": {
+          "type": "number"
+        },
+        "preservedChatIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "removed": {
+          "type": "number"
+        },
+        "removedChatIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "selector": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "list",
+        "selector",
+        "eligibleChatIds",
+        "addedChatIds",
+        "removedChatIds",
+        "keptChatIds",
+        "preservedChatIds",
+        "added",
+        "removed",
+        "kept",
+        "preserved",
+        "eligible"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "list",
+    "recompute"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.lists.remove`. */
 export const ChatsListsRemoveInputSchema = {
   "additionalProperties": false,
@@ -14031,6 +14297,242 @@ export const CostsAgentsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `costs.pricing`. */
+export const CostsPricingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview recompute results without updating cost_events",
+      "type": "boolean"
+    },
+    "hours": {
+      "description": "Time window in hours (default: 24)",
+      "type": "string"
+    },
+    "includePriced": {
+      "description": "Also recompute rows already marked as priced",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum rows to recompute (default: 500, max: 5000)",
+      "type": "string"
+    },
+    "recompute": {
+      "description": "Recompute pricing metadata for non-priced rows in the window",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `costs.pricing`. */
+export const CostsPricingReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "recompute": {
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "number"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "includePriced": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "priced": {
+          "type": "number"
+        },
+        "rows": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "number"
+              },
+              "model": {
+                "type": "string"
+              },
+              "previousPricingStatus": {
+                "type": "string"
+              },
+              "pricingError": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pricingModel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pricingSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pricingStatus": {
+                "type": "string"
+              },
+              "totalCost": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "model",
+              "previousPricingStatus",
+              "pricingStatus",
+              "totalCost",
+              "pricingModel",
+              "pricingSource",
+              "pricingError"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "unpriced": {
+          "type": "number"
+        },
+        "updated": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "dryRun",
+        "includePriced",
+        "limit",
+        "attempted",
+        "updated",
+        "priced",
+        "unpriced",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "rows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "type": "number"
+          },
+          "lastCreatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "pricingModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pricingSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pricingStatus": {
+            "type": "string"
+          },
+          "totalCost": {
+            "type": "number"
+          },
+          "totalTokens": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "pricingStatus",
+          "model",
+          "pricingModel",
+          "pricingSource",
+          "events",
+          "totalCost",
+          "totalTokens",
+          "lastCreatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "window": {
+      "additionalProperties": false,
+      "properties": {
+        "effectiveHours": {
+          "type": "number"
+        },
+        "requestedHours": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sinceMs": {
+          "type": "number"
+        },
+        "untilMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestedHours",
+        "effectiveHours",
+        "sinceMs",
+        "untilMs"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "window",
+    "rows"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `costs.session`. */
 export const CostsSessionInputSchema = {
   "additionalProperties": false,
@@ -15235,6 +15737,10 @@ export const CrmOpportunityCreateInputSchema = {
     },
     "owner": {
       "description": "Owner, e.g. agent:main",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "Pipeline ID or name",
       "type": "string"
     },
     "stage": {
@@ -31152,8 +31658,20 @@ export const PermissionsClearReturnSchema = {
 export const PermissionsGrantInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "expiresAt": {
+      "description": "Temporary grant expiration as ISO time or epoch seconds",
+      "type": "string"
+    },
     "object": {
       "description": "Object (e.g., system:*, group:contacts, session:dev-*)",
+      "type": "string"
+    },
+    "permanent": {
+      "description": "Create an explicit permanent grant",
+      "type": "boolean"
+    },
+    "reason": {
+      "description": "Reason stored with the grant",
       "type": "string"
     },
     "relation": {
@@ -31162,6 +31680,10 @@ export const PermissionsGrantInputSchema = {
     },
     "subject": {
       "description": "Subject (e.g., agent:dev)",
+      "type": "string"
+    },
+    "ttl": {
+      "description": "Temporary grant TTL (default: 1h; examples: 15m, 2h, 7d)",
       "type": "string"
     }
   },
@@ -31183,8 +31705,45 @@ export const PermissionsGrantReturnSchema = {
     "relation": {
       "additionalProperties": {},
       "properties": {
-        "id": {
+        "active": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grantMode": {
+          "enum": [
+            "temporary",
+            "permanent"
+          ],
           "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "issuedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "object": {
           "type": "string"
@@ -31201,8 +31760,28 @@ export const PermissionsGrantReturnSchema = {
         "objectType": {
           "type": "string"
         },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "relation": {
           "type": "string"
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "source": {
           "type": "string"
@@ -31269,12 +31848,28 @@ export const PermissionsGrantReturnSchema = {
 export const PermissionsInitInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "expiresAt": {
+      "description": "Temporary grant expiration as ISO time or epoch seconds",
+      "type": "string"
+    },
+    "permanent": {
+      "description": "Create explicit permanent grants",
+      "type": "boolean"
+    },
+    "reason": {
+      "description": "Reason stored with the grants",
+      "type": "string"
+    },
     "subject": {
       "description": "Subject (e.g., agent:dev)",
       "type": "string"
     },
     "template": {
       "description": "Template: sdk-tools, all-tools, safe-executables, full-access, tool-groups",
+      "type": "string"
+    },
+    "ttl": {
+      "description": "Temporary grant TTL (default: 1h; examples: 15m, 2h, 7d)",
       "type": "string"
     }
   },
@@ -31296,8 +31891,45 @@ export const PermissionsInitReturnSchema = {
       "items": {
         "additionalProperties": {},
         "properties": {
-          "id": {
+          "active": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grantMode": {
+            "enum": [
+              "temporary",
+              "permanent"
+            ],
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "issuedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "object": {
             "type": "string"
@@ -31314,8 +31946,28 @@ export const PermissionsInitReturnSchema = {
           "objectType": {
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relation": {
             "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "type": "string"
@@ -31373,6 +32025,10 @@ export const PermissionsInitReturnSchema = {
 export const PermissionsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "all": {
+      "description": "Include expired and revoked relations",
+      "type": "boolean"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -31408,6 +32064,9 @@ export const PermissionsListReturnSchema = {
     "filter": {
       "additionalProperties": {},
       "properties": {
+        "includeInactive": {
+          "type": "boolean"
+        },
         "objectId": {
           "type": "string"
         },
@@ -31433,8 +32092,45 @@ export const PermissionsListReturnSchema = {
       "items": {
         "additionalProperties": {},
         "properties": {
-          "id": {
+          "active": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grantMode": {
+            "enum": [
+              "temporary",
+              "permanent"
+            ],
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "issuedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "object": {
             "type": "string"
@@ -31451,8 +32147,28 @@ export const PermissionsListReturnSchema = {
           "objectType": {
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relation": {
             "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "type": "string"
@@ -31534,8 +32250,45 @@ export const PermissionsListReturnSchema = {
       "items": {
         "additionalProperties": {},
         "properties": {
-          "id": {
+          "active": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grantMode": {
+            "enum": [
+              "temporary",
+              "permanent"
+            ],
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "issuedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "object": {
             "type": "string"
@@ -31552,8 +32305,28 @@ export const PermissionsListReturnSchema = {
           "objectType": {
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relation": {
             "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "type": "string"
@@ -31630,8 +32403,45 @@ export const PermissionsRevokeReturnSchema = {
     "relation": {
       "additionalProperties": {},
       "properties": {
-        "id": {
+        "active": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grantMode": {
+          "enum": [
+            "temporary",
+            "permanent"
+          ],
           "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "issuedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "object": {
           "type": "string"
@@ -31648,8 +32458,28 @@ export const PermissionsRevokeReturnSchema = {
         "objectType": {
           "type": "string"
         },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "relation": {
           "type": "string"
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "source": {
           "type": "string"
@@ -31679,8 +32509,45 @@ export const PermissionsRevokeReturnSchema = {
       "items": {
         "additionalProperties": {},
         "properties": {
-          "id": {
+          "active": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grantMode": {
+            "enum": [
+              "temporary",
+              "permanent"
+            ],
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "issuedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "object": {
             "type": "string"
@@ -31697,8 +32564,28 @@ export const PermissionsRevokeReturnSchema = {
           "objectType": {
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relation": {
             "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "type": "string"
@@ -31771,8 +32658,45 @@ export const PermissionsSyncReturnSchema = {
       "items": {
         "additionalProperties": {},
         "properties": {
-          "id": {
+          "active": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grantMode": {
+            "enum": [
+              "temporary",
+              "permanent"
+            ],
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "issuedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "object": {
             "type": "string"
@@ -31789,8 +32713,28 @@ export const PermissionsSyncReturnSchema = {
           "objectType": {
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relation": {
             "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "type": "string"
@@ -35563,6 +36507,28 @@ export const SelfContextInputSchema = {
 export const SelfContextReturnSchema = {
   "additionalProperties": {},
   "properties": {
+    "actor": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
     "chat": {
       "additionalProperties": {},
       "properties": {
@@ -35729,6 +36695,7 @@ export const SelfContextReturnSchema = {
     "depth",
     "limit",
     "identity",
+    "actor",
     "session",
     "chat",
     "route",
@@ -35918,6 +36885,28 @@ export const SelfWhoamiInputSchema = {
 export const SelfWhoamiReturnSchema = {
   "additionalProperties": {},
   "properties": {
+    "actor": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
     "chat": {
       "additionalProperties": {},
       "properties": {
@@ -36002,6 +36991,7 @@ export const SelfWhoamiReturnSchema = {
   "required": [
     "generatedAt",
     "identity",
+    "actor",
     "session",
     "chat",
     "route",
@@ -47127,7 +48117,7 @@ export const WhatsappGroupCreateInputSchema = {
       "type": "string"
     },
     "participants": {
-      "description": "Phone numbers to add (comma-separated)",
+      "description": "Phone numbers to add (comma-separated); omitted uses current contact actor when available",
       "type": "string"
     },
     "skipTaggedAdmins": {
@@ -47136,8 +48126,7 @@ export const WhatsappGroupCreateInputSchema = {
     }
   },
   "required": [
-    "name",
-    "participants"
+    "name"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
