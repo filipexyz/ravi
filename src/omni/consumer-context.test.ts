@@ -365,6 +365,91 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
+  it("resolves new WhatsApp LID group senders through contact intake without canonicalizing the group as a DM", async () => {
+    contactIntakeMode = "discovered";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-group-lid-intake",
+      type: "message.received",
+      payload: {
+        externalId: "msg-group-lid-intake",
+        chatId: "120363424772797713@g.us",
+        from: "35082198892544@lid",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Tars",
+          chatName: "Rbbt <> Nubank",
+          isGroup: true,
+          key: {
+            participantAlt: "551148637337@s.whatsapp.net",
+          },
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(ensureContactFromInboundCalls).toHaveLength(1);
+    expect(ensureContactFromInboundCalls[0]).toMatchObject({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "35082198892544@lid",
+      contactIdentity: "551148637337",
+      displayName: "Tars",
+      chatType: "group",
+      providerMessageId: "msg-group-lid-intake",
+      intakeMode: "discovered",
+    });
+    expect(chatMessageCalls[0]).toMatchObject({
+      providerMessageId: "msg-group-lid-intake",
+      rawChatId: "120363424772797713@g.us",
+      rawSenderId: "35082198892544",
+      normalizedSenderId: "551148637337",
+      actorType: "contact",
+      contactId: "contact_auto",
+      platformIdentityId: "pi_auto",
+      messageType: "text",
+    });
+    expect(chatParticipantCalls[0]).toMatchObject({
+      contactId: "contact_auto",
+      platformIdentityId: "pi_auto",
+      rawPlatformUserId: "35082198892544",
+      normalizedPlatformUserId: "551148637337",
+      source: "inbound_message",
+    });
+    expect(sessionParticipantCalls[0]).toMatchObject({
+      ownerType: "contact",
+      ownerId: "contact_auto",
+      platformIdentityId: "pi_auto",
+      role: "human",
+    });
+    const groupChat = actualRouterDbModule.dbFindChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+    });
+    expect(groupChat).toMatchObject({
+      chatType: "group",
+      normalizedChatId: "group:120363424772797713",
+    });
+  });
+
   it("does not mute an existing primary output subscription on repeated inbound from the same chat", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     const sender = {

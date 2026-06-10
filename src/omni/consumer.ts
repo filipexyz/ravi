@@ -766,16 +766,17 @@ export class OmniConsumer {
       });
     }
 
-    if (
-      !isGroup &&
+    const explicitResolvedSender =
+      rawPayloadString(rawPayload, "resolvedSenderPhone") ??
+      cleanString((rawPayload?.key as Record<string, unknown> | undefined)?.participantAlt);
+    const shouldRunContactIntake =
       senderPlatformIdentity?.ownerType !== "agent" &&
       instanceConfig?.contactIntakeMode &&
-      instanceConfig.contactIntakeMode !== "off"
-    ) {
+      instanceConfig.contactIntakeMode !== "off" &&
+      (!isGroup || Boolean(explicitResolvedSender));
+
+    if (shouldRunContactIntake) {
       try {
-        const explicitResolvedSender =
-          rawPayloadString(rawPayload, "resolvedSenderPhone") ??
-          cleanString((rawPayload?.key as Record<string, unknown> | undefined)?.participantAlt);
         const rawSenderIsLid = sessionChannel === "whatsapp" && isWhatsAppLidSender(payload.from);
         const contactIdentity = rawSenderIsLid && !explicitResolvedSender ? `lid:${senderPhone}` : resolvedSenderPhone;
         const intake = ensureContactFromInbound({
@@ -807,7 +808,7 @@ export class OmniConsumer {
         });
         if (intake.platformIdentity) senderPlatformIdentity = intake.platformIdentity;
         if (intake.contact) senderContact = intake.contact;
-        if (!threadId && !isNonDmChannel && intake.contact?.id) {
+        if (!isGroup && !threadId && !isNonDmChannel && intake.contact?.id) {
           canonicalChat = dbCanonicalizeDmChatForContact({
             chatId: canonicalChat.id,
             contactId: intake.contact.id,
