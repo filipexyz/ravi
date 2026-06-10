@@ -375,6 +375,7 @@ export class AgentsCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("cwd", { description: "Working directory" }) cwd: string,
     @Option({ flags: "--provider <provider>", description: "Runtime provider id" }) provider?: string,
+    @Option({ flags: "--model <model>", description: "Runtime model selector" }) model?: string,
     @Option({
       flags: "--allow-runtime-mismatch",
       description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
@@ -383,10 +384,17 @@ export class AgentsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const normalizedProvider = provider?.trim() || undefined;
+    const normalizedModel = model?.trim() || undefined;
+    if (normalizedModel) validateAgentModelValue(normalizedProvider, normalizedModel);
     assertAgentMutationRuntime(allowRuntimeMismatch);
 
     try {
-      createAgent({ id, cwd, ...(normalizedProvider ? { provider: normalizedProvider } : {}) });
+      createAgent({
+        id,
+        cwd,
+        ...(normalizedProvider ? { provider: normalizedProvider } : {}),
+        ...(normalizedModel ? { model: normalizedModel } : {}),
+      });
 
       // Ensure directory exists
       const config = loadRouterConfig();
@@ -396,7 +404,13 @@ export class AgentsCommands {
       });
 
       const createdAgent =
-        getAgent(id) ?? ({ id, cwd, ...(normalizedProvider ? { provider: normalizedProvider } : {}) } as AgentConfig);
+        getAgent(id) ??
+        ({
+          id,
+          cwd,
+          ...(normalizedProvider ? { provider: normalizedProvider } : {}),
+          ...(normalizedModel ? { model: normalizedModel } : {}),
+        } as AgentConfig);
       const payload = {
         action: "create" as const,
         changed: true as const,
@@ -415,6 +429,9 @@ export class AgentsCommands {
         console.log(`  CWD: ${cwd}`);
         if (normalizedProvider) {
           console.log(`  Provider: ${normalizedProvider}`);
+        }
+        if (normalizedModel) {
+          console.log(`  Model: ${normalizedModel}`);
         }
         console.log(`  Permissions: closed (no tools, no executables)`);
         console.log(`  Use 'ravi permissions init agent:${id} full-access' to configure`);

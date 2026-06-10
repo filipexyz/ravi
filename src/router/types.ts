@@ -59,7 +59,7 @@ export interface AgentConfig {
   /** Model override for this agent */
   model?: string;
 
-  /** Runtime provider for this agent (defaults to Claude when unset) */
+  /** Runtime provider for this agent (defaults to Codex when unset) */
   provider?: RuntimeProviderId;
 
   /** Default DM scope for this agent */

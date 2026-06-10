@@ -11,15 +11,15 @@ import type {
 
 type RuntimeProviderFactory = () => SessionRuntimeProvider;
 
-export const DEFAULT_RUNTIME_PROVIDER_ID: RuntimeProviderId = "claude";
+export const DEFAULT_RUNTIME_PROVIDER_ID: RuntimeProviderId = "codex";
 
 const runtimeProviderFactories = new Map<RuntimeProviderId, RuntimeProviderFactory>([
-  [DEFAULT_RUNTIME_PROVIDER_ID, createClaudeRuntimeProvider],
+  ["claude", createClaudeRuntimeProvider],
   ["codex", createCodexRuntimeProvider],
   ["pi", createPiRuntimeProvider],
 ]);
 
-const builtInRuntimeProviderIds = new Set<RuntimeProviderId>([DEFAULT_RUNTIME_PROVIDER_ID, "codex", "pi"]);
+const builtInRuntimeProviderIds = new Set<RuntimeProviderId>(["claude", "codex", "pi"]);
 
 export function registerRuntimeProvider(providerId: RuntimeProviderId, factory: RuntimeProviderFactory): void {
   runtimeProviderFactories.set(providerId, factory);

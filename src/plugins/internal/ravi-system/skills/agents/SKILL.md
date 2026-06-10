@@ -21,10 +21,12 @@ Agents são identidades operacionais do Ravi com configurações específicas: d
 ### 1. Criar o agent
 
 ```bash
-ravi agents create <id> <cwd> [--provider <provider>]
+ravi agents create <id> <cwd> [--provider <provider>] [--model <model>]
 ```
 
 O `cwd` é o diretório onde fica o `AGENTS.md` do agent (suas instruções canônicas). Crie o diretório e o `AGENTS.md` antes. O Ravi materializa um `CLAUDE.md` de compatibilidade quando necessário.
+
+**Regra de criação completa:** agent novo deve nascer com as configurações runtime conhecidas, não ser criado "cru" para depois corrigir manualmente. Quando souber o runtime, passe `--provider` e `--model` no `agents create`; quando estiver criando junto com WhatsApp, passe `--agent-provider` e `--agent-model` no `whatsapp group create --create-agent`. Configure permissões REBAC antes de colocar o agent numa rota live.
 
 ## Runtimes Disponíveis
 
@@ -34,15 +36,18 @@ Providers built-in atuais:
 
 | Provider | Uso esperado | Modelo |
 |----------|--------------|--------|
-| `claude` | Runtime default e mais completo para agents com hooks, plugins, MCP e remote spawn. | Selector nativo do provider, ou default quando vazio. |
-| `codex` | Runtime por subprocess/RPC com CLI Ravi via shell/contexto e controle de runtime. | Ex: `gpt-5.5`, `gpt-5.4`, `gpt-4.1-mini`. |
+| `codex` | Runtime default por subprocess/RPC com CLI Ravi via shell/contexto e controle de runtime. | Ex: `gpt-5.5`, `gpt-5.4`, `gpt-4.1-mini`. |
+| `claude` | Runtime completo para agents que precisam de hooks, plugins, MCP e remote spawn. | Selector nativo do provider, ou default quando vazio. |
 | `pi` | Runtime por Pi coding agent em RPC, bom para agentes rápidos/dev e providers externos. | Use `provider/model`, ex: `kimi-coding/kimi-for-coding` ou `openai/gpt-4.1-mini`. |
 
 Comandos comuns:
 
 ```bash
 # Criar já usando runtime específico
-ravi agents create familia-sp ~/ravi/familia-sp --provider pi
+ravi agents create familia-sp ~/ravi/familia-sp --provider pi --model kimi-coding/kimi-for-coding
+
+# Criar com o runtime default recomendado
+ravi agents create familia-sp ~/ravi/familia-sp --provider codex --model gpt-5.5
 
 # Trocar runtime do agent
 ravi agents set familia-sp provider pi
@@ -59,6 +64,7 @@ Notas operacionais:
 
 - Mudar `provider` ou `model` não requer restart do daemon.
 - Sessões já ativas não mudam retroativamente no meio de um turno; a troca vale para o próximo start/turn compatível.
+- Para agents novos, prefira criar já com provider/model corretos. Use `agents set` para correção ou migração de agent existente, não como etapa normal de criação.
 - Provider ids são abertos em config, mas só providers registrados no daemon executam. Se salvar um provider inexistente, a falha aparece no start da sessão.
 - `pi` exige selector de modelo completo quando o valor também é um provider do Pi. `kimi-coding` sozinho é inválido; use `kimi-coding/<model-id>`.
 - `pi` usa ferramentas nativas do provider no MVP. Se o agent precisa executar tools/comandos, configure permissões coerentes antes de colocar em rota live.
@@ -142,7 +148,7 @@ ravi agents show <id>
 
 ### Criar agent
 ```bash
-ravi agents create <id> <cwd>
+ravi agents create <id> <cwd> --provider codex --model gpt-5.5
 ```
 
 ### Sincronizar instruções legadas
@@ -289,7 +295,7 @@ Escreva o `AGENTS.md` com a identidade e instruções do agent. Estrutura recome
 #### 2. Criar o agent no sistema
 
 ```bash
-ravi agents create <agent-id> ~/ravi/<agent-id>
+ravi agents create <agent-id> ~/ravi/<agent-id> --provider codex --model gpt-5.5
 ```
 
 #### 3. Criar grupo WhatsApp dedicado
@@ -325,8 +331,8 @@ mkdir -p ~/ravi/comm
 
 # 2. Escrever AGENTS.md (com identidade de coach de comunicação)
 
-# 3. Criar agent
-ravi agents create comm ~/ravi/comm
+# 3. Criar agent já com runtime completo
+ravi agents create comm ~/ravi/comm --provider codex --model gpt-5.5
 
 # 4. Usuário cria grupo "Vida - Comunicação" no WhatsApp e manda msg
 
@@ -346,7 +352,7 @@ mkdir -p ~/ravi/atendimento
 # (crie o AGENTS.md com as instruções do agent)
 
 # 2. Criar agent
-ravi agents create atendimento ~/ravi/atendimento
+ravi agents create atendimento ~/ravi/atendimento --provider codex --model gpt-5.5
 
 # 3. Rotear grupo pro agent
 ravi instances routes add main group:120363425628305127 atendimento

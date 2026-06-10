@@ -58,10 +58,14 @@ ravi whatsapp group create "Vida - Health" "5511947879044" --agent health
 ravi whatsapp group create "Vida - Health" "5511888888888" \
   --agent health \
   --create-agent \
-  --agent-cwd ~/ravi/health
+  --agent-cwd ~/ravi/health \
+  --agent-provider codex \
+  --agent-model gpt-5.5
 ```
 
-Quando o comando roda dentro de uma sessão Ravi, o criador pode ser inferido pelo actor do contexto e entra como participante inicial. `--admin`/`--admins` também adiciona os números à lista inicial de participantes, mas **não promove admin automaticamente**: o contrato público atual do Omni ainda não expõe promoção de admin. Quando isso acontece, o payload retorna `adminPromotion.status = "skipped"` e o Ravi registra esses contatos como `member`, não `admin`.
+Ao criar agent inline com `--create-agent`, passe todas as configurações conhecidas no mesmo comando: `--agent-cwd`, `--agent-provider` e `--agent-model`. Use ajustes posteriores (`ravi agents set ...`) só para corrigir/migrar agent existente, não como fluxo normal de criação.
+
+Quando o comando roda dentro de uma sessão Ravi, o criador pode ser inferido pelo actor do contexto e entra como participante inicial/admin. `--admin`/`--admins` também adiciona os números à lista inicial de participantes e o Ravi tenta promovê-los via contrato REST público de participantes do Omni logo após a criação. Quando a promoção passa, o payload retorna `adminPromotion.status = "promoted"` e o Ravi registra esses contatos como `admin`. Se o Omni falhar depois do grupo existir, o payload retorna `adminPromotion.status = "failed"` com o erro e os contatos ficam registrados sem confirmação de admin.
 
 Se o usuário disser algo ambíguo como "criei um grupo para isso", "abre um grupo", "novo grupo/agent" ou "vamos separar esse assunto", trate como intenção de criar e rotear um novo workspace, salvo quando ele fornecer JID/link ou disser explicitamente que o grupo já existe.
 
@@ -97,7 +101,7 @@ ravi whatsapp group remove <groupId> "5511999999999"
 ```bash
 ravi whatsapp group promote <groupId> "5511999999999"
 ```
-No fluxo `group create`, promoção automática de admin fica `skipped` até o Omni expor e validar o contrato público de promoção em criação. Fora da criação, `promote` chama o contrato REST de participantes do Omni e deve falhar explicitamente se esse endpoint não estiver disponível.
+No fluxo `group create`, o Ravi usa o mesmo contrato REST de participantes do Omni para promover actor/admins inferidos ou explicitados. Fora da criação, `promote` chama esse mesmo contrato e deve falhar explicitamente se o endpoint não estiver disponível.
 
 ### Remover admin
 ```bash
@@ -165,10 +169,19 @@ ravi whatsapp group create "Equipe" "5511999" --account business
 ravi whatsapp group create "Vida - Finanças" "5511947879044" --agent financas
 
 # Cria o agent se ainda não existir; o actor da sessão entra como participante inicial:
-ravi whatsapp group create "Vida - Finanças" "5511888888888" --agent financas --create-agent
+ravi whatsapp group create "Vida - Finanças" "5511888888888" \
+  --agent financas \
+  --create-agent \
+  --agent-provider codex \
+  --agent-model gpt-5.5
 
 # Fora de uma sessão Ravi, ou para participantes que você quer incluir explicitamente:
-ravi whatsapp group create "Vida - Finanças" "5511888888888" --agent financas --admin 5511947879044
+ravi whatsapp group create "Vida - Finanças" "5511888888888" \
+  --agent financas \
+  --create-agent \
+  --agent-provider codex \
+  --agent-model gpt-5.5 \
+  --admin 5511947879044
 ```
 
 Sem `--agent`, precisa rotear manualmente:

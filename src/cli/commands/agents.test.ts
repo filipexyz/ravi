@@ -35,6 +35,7 @@ type SessionLike = {
 
 let currentAgent: AgentLike | null = null;
 let allAgents: AgentLike[] = [];
+let createAgentCalls: Array<Record<string, unknown>> = [];
 let updateAgentCalls: Array<{ id: string; partial: Record<string, unknown> }> = [];
 let resolvedSession: SessionLike | null = null;
 let mainSession: SessionLike | null = null;
@@ -92,7 +93,11 @@ mock.module("../../router/config.js", () => ({
   getRaviDir: () => "/tmp/ravi",
   getAgent: (id: string) => (currentAgent?.id === id ? currentAgent : null),
   getAllAgents: () => allAgents,
-  createAgent: () => {},
+  createAgent: (input: Record<string, unknown>) => {
+    createAgentCalls.push(input);
+    currentAgent = input as AgentLike;
+    return input;
+  },
   updateAgent: (id: string, partial: Record<string, unknown>) => {
     updateAgentCalls.push({ id, partial });
     if (currentAgent?.id === id) {
@@ -168,6 +173,7 @@ describe("AgentsCommands set model validation", () => {
   beforeEach(() => {
     currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "pi" };
     allAgents = [];
+    createAgentCalls = [];
     updateAgentCalls = [];
     resolvedSession = null;
     mainSession = null;
@@ -220,12 +226,34 @@ describe("AgentsCommands set model validation", () => {
       },
     ]);
   });
+
+  it("creates agents with provider and model in one mutation", async () => {
+    currentAgent = null;
+    const commands = new AgentsCommands();
+
+    const payload = await commands.create("dev", "/tmp/dev", "codex", "gpt-5.5", true, true);
+
+    expect(createAgentCalls).toEqual([{ id: "dev", cwd: "/tmp/dev", provider: "codex", model: "gpt-5.5" }]);
+    expect(payload?.agent).toMatchObject({ id: "dev", provider: "codex", model: "gpt-5.5" });
+  });
+
+  it("validates model when creating an agent", async () => {
+    currentAgent = null;
+    const commands = new AgentsCommands();
+
+    expect(() => commands.create("dev", "/tmp/dev", "pi", "kimi-coding", true, true)).toThrow(
+      "Invalid Pi model selector: 'kimi-coding' is a provider id",
+    );
+
+    expect(createAgentCalls).toHaveLength(0);
+  });
 });
 
 describe("AgentsCommands debug --json", () => {
   beforeEach(() => {
     currentAgent = { id: "dev", cwd: "/tmp/dev" };
     allAgents = [];
+    createAgentCalls = [];
     updateAgentCalls = [];
     resolvedSession = null;
     mainSession = null;
@@ -348,6 +376,7 @@ describe("AgentsCommands sync-instructions --json", () => {
       { id: "missing", cwd: "/tmp/missing" },
       { id: "divergent", cwd: "/tmp/divergent" },
     ];
+    createAgentCalls = [];
     updateAgentCalls = [];
     resolvedSession = null;
     mainSession = null;

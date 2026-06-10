@@ -30,8 +30,8 @@ type RequestCall = {
 
 let requestCalls: RequestCall[] = [];
 let emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
-let knownAgents = new Map<string, { id: string; cwd: string; provider?: string }>();
-let createdAgents: Array<{ id: string; cwd: string; provider?: string }> = [];
+let knownAgents = new Map<string, { id: string; cwd: string; provider?: string; model?: string }>();
+let createdAgents: Array<{ id: string; cwd: string; provider?: string; model?: string }> = [];
 let routeCreates: Array<Record<string, unknown>> = [];
 let chatParticipants: Array<Record<string, unknown>> = [];
 let sessionAttachments: Array<Record<string, unknown>> = [];
@@ -305,7 +305,7 @@ mock.module("../../router/session-name.js", () => ({
 
 mock.module("../../router/config.js", () => ({
   getAgent: (id: string) => knownAgents.get(id) ?? null,
-  createAgent: (input: { id: string; cwd: string; provider?: string }) => {
+  createAgent: (input: { id: string; cwd: string; provider?: string; model?: string }) => {
     knownAgents.set(input.id, input);
     createdAgents.push(input);
     return input;
@@ -438,7 +438,9 @@ describe("channel command --json output", () => {
 
     expect(remove).toMatchObject({ status: "removed", source: "omni.rest.group_participants" });
     expect(promote).toMatchObject({ status: "promoted", source: "omni.rest.group_participants" });
+    expect(promote.localParticipants).toMatchObject({ status: "updated", admins: 1 });
     expect(demote).toMatchObject({ status: "demoted", source: "omni.rest.group_participants" });
+    expect(demote.localParticipants).toMatchObject({ status: "updated", admins: 0 });
     expect(invite).toMatchObject({ status: "invite_link", source: "omni.rest.group_invite" });
     expect(revoke).toMatchObject({ status: "invite_revoked", source: "omni.rest.group_invite" });
     expect(join).toMatchObject({ status: "joined", source: "omni.rest.group_join", code: "invite-code" });
@@ -489,6 +491,7 @@ describe("channel command --json output", () => {
         true,
         "/tmp/launch-agent",
         "codex",
+        "gpt-5.5",
         undefined,
         undefined,
         true,
@@ -496,7 +499,9 @@ describe("channel command --json output", () => {
       ),
     );
 
-    expect(createdAgents).toEqual([{ id: "launch-agent", cwd: "/tmp/launch-agent", provider: "codex" }]);
+    expect(createdAgents).toEqual([
+      { id: "launch-agent", cwd: "/tmp/launch-agent", provider: "codex", model: "gpt-5.5" },
+    ]);
     expect(omniGroupCreates).toEqual([
       {
         instanceId: "instance-main",
@@ -508,6 +513,14 @@ describe("channel command --json output", () => {
     ]);
     expect(requestCalls.find((call) => call.topic.endsWith(".create"))).toBeUndefined();
     expect(requestCalls.find((call) => call.topic.endsWith(".promote"))).toBeUndefined();
+    expect(omniGroupParticipantUpdates).toEqual([
+      {
+        instanceId: "instance-main",
+        groupJid: "120363@g.us",
+        action: "promote",
+        participants: ["5511888888888"],
+      },
+    ]);
     expect(routeCreates[0]).toMatchObject({
       pattern: "group:120363",
       accountId: "main",
@@ -517,17 +530,18 @@ describe("channel command --json output", () => {
     expect(chatParticipants).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ contactId: "contact-5511999999999", role: "member" }),
-        expect.objectContaining({ contactId: "contact-luis", role: "member" }),
+        expect.objectContaining({ contactId: "contact-luis", role: "admin" }),
         expect.objectContaining({ agentId: "launch-agent", role: "agent" }),
       ]),
     );
     expect(sessionAttachments[0]).toMatchObject({ role: "primary", setOutputTarget: true, speechMode: "speak" });
     expect(payload.agent).toMatchObject({ status: "created", agentId: "launch-agent" });
     expect(payload.adminPromotion).toMatchObject({
-      status: "skipped",
-      reason: "omni_group_admin_promotion_not_supported",
+      status: "promoted",
+      source: "omni.rest.group_participants",
       actorAdmins: ["5511888888888"],
       explicitAdmins: [],
+      changedCount: 1,
     });
     expect(payload.session).toMatchObject({ status: "created", agent: "launch-agent" });
   });
@@ -555,6 +569,7 @@ describe("channel command --json output", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         true,
         true,
       ),
@@ -571,8 +586,13 @@ describe("channel command --json output", () => {
     expect(payload.actorAdmins).toEqual(["5511888888888"]);
     expect(payload.participants).toEqual(["5511888888888"]);
     expect(chatParticipants).toEqual(
-      expect.arrayContaining([expect.objectContaining({ contactId: "contact-luis", role: "member" })]),
+      expect.arrayContaining([expect.objectContaining({ contactId: "contact-luis", role: "admin" })]),
     );
+    expect(payload.adminPromotion).toMatchObject({
+      status: "promoted",
+      actorAdmins: ["5511888888888"],
+      changedCount: 1,
+    });
   });
 
   it("prints WhatsApp DM send results as typed JSON", async () => {

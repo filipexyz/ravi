@@ -175,6 +175,8 @@ function getCachedOmniGroupMetadata(input: {
   chatId: string;
   maxAgeMs?: number;
 }): OmniGroupMetadata | null {
+  if (input.maxAgeMs !== undefined && input.maxAgeMs <= 0) return null;
+
   const row = getDb()
     .prepare(
       `

@@ -37,12 +37,18 @@ import { generateSessionName, ensureUniqueName } from "../../router/session-name
 import { createAgent, getAgent } from "../../router/config.js";
 import { expandHome } from "../../router/resolver.js";
 import { ensureAgentInstructionFiles } from "../../runtime/agent-instructions.js";
+import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
+import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { nats } from "../../nats.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function emitConfigChanged() {
@@ -227,11 +233,18 @@ function defaultAgentCwd(agentId: string): string {
   return `${homedir()}/ravi/${agentId}`;
 }
 
-function ensureGroupAgent(input: { agentId: string; createIfMissing?: boolean; cwd?: string; provider?: string }): {
+function ensureGroupAgent(input: {
+  agentId: string;
+  createIfMissing?: boolean;
+  cwd?: string;
+  provider?: string;
+  model?: string;
+}): {
   status: "existing" | "created";
   agentId: string;
   cwd: string;
   provider?: string;
+  model?: string;
 } {
   const existing = getAgent(input.agentId);
   if (existing) {
@@ -240,6 +253,7 @@ function ensureGroupAgent(input: { agentId: string; createIfMissing?: boolean; c
       agentId: existing.id,
       cwd: expandHome(existing.cwd),
       ...(existing.provider ? { provider: existing.provider } : {}),
+      ...(existing.model ? { model: existing.model } : {}),
     };
   }
 
@@ -247,12 +261,20 @@ function ensureGroupAgent(input: { agentId: string; createIfMissing?: boolean; c
     fail(`Agent not found: ${input.agentId}. Pass --create-agent to create it before routing the group.`);
   }
 
+  const provider = input.provider?.trim() || undefined;
+  const model = input.model?.trim() || undefined;
+  if (model) {
+    const result = validateRuntimeModelSelector(provider ?? DEFAULT_RUNTIME_PROVIDER_ID, model);
+    if (!result.ok) fail(result.error ?? `Invalid model: ${model}`);
+  }
+
   const cwd = expandHome(input.cwd?.trim() || defaultAgentCwd(input.agentId));
   mkdirSync(cwd, { recursive: true });
   const created = createAgent({
     id: input.agentId,
     cwd,
-    ...(input.provider?.trim() ? { provider: input.provider.trim() } : {}),
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
   });
   ensureAgentInstructionFiles(cwd, {
     createAgentsStub: `# ${input.agentId}\n\nInstruções do agente aqui.\n`,
@@ -262,6 +284,7 @@ function ensureGroupAgent(input: { agentId: string; createIfMissing?: boolean; c
     agentId: created.id,
     cwd,
     ...(created.provider ? { provider: created.provider } : {}),
+    ...(created.model ? { model: created.model } : {}),
   };
 }
 
@@ -500,6 +523,7 @@ async function getGroupInfoViaOmni(
     chatId: groupJid,
     channel: "whatsapp",
     fallbackName: group?.subject,
+    maxAgeMs: 0,
   }).catch(() => null);
 
   if (!group && !metadata) fail(`Group not found via Omni REST: ${groupId}`);
@@ -551,6 +575,39 @@ function syncAddedGroupParticipantsToLocalChat(input: {
   };
 }
 
+function syncUpdatedGroupParticipantsToLocalChat(input: {
+  action: "remove" | "promote" | "demote";
+  accountId: string;
+  instanceId: string;
+  groupJid: string;
+  participants: string[];
+}): {
+  status: "updated" | "skipped";
+  chatId?: string;
+  contacts?: number;
+  admins?: number;
+  agent?: boolean;
+  reason?: string;
+} {
+  if (input.action === "remove") return { status: "skipped", reason: "remove_local_sync_not_supported" };
+
+  const chat =
+    dbFindChat({ channel: "whatsapp", instanceId: input.instanceId, platformChatId: input.groupJid }) ??
+    dbFindChat({ channel: "whatsapp", instanceId: input.accountId, platformChatId: input.groupJid });
+  if (!chat) return { status: "skipped", reason: "local_chat_not_registered" };
+
+  return {
+    status: "updated",
+    chatId: chat.id,
+    ...upsertGroupChatParticipants({
+      chatId: chat.id,
+      participants: input.participants,
+      admins: input.action === "promote" ? input.participants : [],
+      source: `whatsapp.group.${input.action}`,
+    }),
+  };
+}
+
 async function addGroupParticipantsViaOmni(input: {
   groupId: string;
   participants: string[];
@@ -585,6 +642,7 @@ async function updateGroupParticipantsViaOmni(input: {
   groupId: string;
   participants: string[];
   account?: string;
+  syncLocal?: boolean;
 }): Promise<Record<string, unknown>> {
   const { accountId, instanceId, client } = resolveGroupOmniContext(input.account);
   const groupJid = normalizeGroupJid(input.groupId);
@@ -600,6 +658,17 @@ async function updateGroupParticipantsViaOmni(input: {
     groupId: groupJid,
     participants: input.participants,
     result,
+    ...(input.syncLocal === false
+      ? {}
+      : {
+          localParticipants: syncUpdatedGroupParticipantsToLocalChat({
+            action: input.action,
+            accountId,
+            instanceId,
+            groupJid,
+            participants: input.participants,
+          }),
+        }),
     changedCount: input.participants.length,
   };
 }
@@ -947,6 +1016,8 @@ export class GroupCommands {
     agentCwd?: string,
     @Option({ flags: "--agent-provider <provider>", description: "Runtime provider id for --create-agent" })
     agentProvider?: string,
+    @Option({ flags: "--agent-model <model>", description: "Runtime model selector for --create-agent" })
+    agentModel?: string,
     @Option({
       flags: "--admin <phones...>",
       description: "Phone numbers to add and promote as group admins. Can be repeated or comma-separated.",
@@ -980,6 +1051,7 @@ export class GroupCommands {
           createIfMissing: createAgentIfMissing,
           cwd: agentCwd,
           provider: agentProvider,
+          model: agentModel,
         })
       : null;
 
@@ -1009,26 +1081,56 @@ export class GroupCommands {
       }
     }
 
-    // Promote admin-tagged contacts to group admin
+    // Promote admin-tagged contacts to group admin.
     const taggedAdminPhones = skipTaggedAdmins
       ? []
       : findContactsByTag("admin")
           .flatMap((c) => c.identities.filter((i) => i.platform === "phone").map((i) => i.value))
           .filter(Boolean);
-    const adminPhones = uniquePhones([...actorAdmins, ...explicitAdmins, ...taggedAdminPhones]);
-    const confirmedAdminPhones: string[] = [];
+    const taggedAdmins = uniquePhones(taggedAdminPhones);
+    const participantPhoneSet = new Set(participants.map((phone) => normalizePhone(phone)));
+    const eligibleTaggedAdmins = taggedAdmins.filter((phone) => participantPhoneSet.has(normalizePhone(phone)));
+    const skippedTaggedAdmins = taggedAdmins.filter((phone) => !participantPhoneSet.has(normalizePhone(phone)));
+    const adminPhones = uniquePhones([...actorAdmins, ...explicitAdmins, ...eligibleTaggedAdmins]);
+    let confirmedAdminPhones: string[] = [];
 
     if (adminPhones.length > 0) {
-      jsonPayload.adminPromotion = {
-        status: "skipped",
-        reason: "omni_group_admin_promotion_not_supported",
-        participants: adminPhones,
-        actorAdmins,
-        explicitAdmins,
-        taggedAdmins: uniquePhones(taggedAdminPhones),
-        changedCount: 0,
-      };
-      if (!asJson) console.log(`  Admins:       skipped (not exposed by Omni API)`);
+      try {
+        const promotion = await updateGroupParticipantsViaOmni({
+          action: "promote",
+          status: "promoted",
+          groupId: result.id,
+          participants: adminPhones,
+          account,
+          syncLocal: false,
+        });
+        confirmedAdminPhones = adminPhones;
+        jsonPayload.adminPromotion = {
+          ...promotion,
+          participants: adminPhones,
+          actorAdmins,
+          explicitAdmins,
+          taggedAdmins: eligibleTaggedAdmins,
+          skippedTaggedAdmins,
+          changedCount: adminPhones.length,
+        };
+        if (!asJson) console.log(`  Admins:       promoted ${adminPhones.length}`);
+      } catch (err) {
+        const msg = errorMessage(err);
+        jsonPayload.adminPromotion = {
+          status: "failed",
+          source: "omni.rest.group_participants",
+          reason: "omni_group_admin_promotion_failed",
+          error: msg,
+          participants: adminPhones,
+          actorAdmins,
+          explicitAdmins,
+          taggedAdmins: eligibleTaggedAdmins,
+          skippedTaggedAdmins,
+          changedCount: 0,
+        };
+        if (!asJson) console.log(`  Admins:       failed (${msg})`);
+      }
     }
 
     // Register chat and route to agent if specified.
@@ -1071,7 +1173,7 @@ export class GroupCommands {
         jsonPayload.route = { status: "created", route };
         if (!asJson) console.log(`  Route:        ${agent}`);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         jsonPayload.route = { status: "failed", agent, accountId: routeAcct, error: msg };
         if (!asJson) console.log(`  Route:        failed (${msg})`);
       }
