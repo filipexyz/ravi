@@ -65,6 +65,26 @@ Minimum validation:
 
 Deep validation against a live provider catalog or credentials MAY be implemented as explicit preflight, but MUST NOT be required for every config write unless the provider can do it cheaply and deterministically.
 
+## Model Option Compatibility
+
+Provider adapters MUST treat model options as model-specific capabilities, not as global provider defaults.
+
+When a provider introduces a model with a changed option contract, Ravi MUST update the provider SDK or adapter before exposing that model as supported. The adapter MUST then normalize Ravi's canonical runtime options into only the native options accepted by that model.
+
+At minimum, model capability data SHOULD cover:
+
+- whether `thinking` can be disabled;
+- whether adaptive thinking is required;
+- supported adaptive thinking displays;
+- supported reasoning effort values;
+- output configuration support;
+- sampling parameter support;
+- tool-use, vision, PDF, response schema, prompt caching, and computer-use support when the provider reports those features.
+
+Adaptive-thinking-only models MUST NOT receive a native disabled-thinking option. If Ravi's canonical request asks for `thinking=off`, the adapter MUST omit the native thinking override or map it to the provider's documented no-op/default behavior instead of sending an invalid disabled-thinking payload.
+
+Pricing and capability metadata SHOULD come from a maintained model catalog when available. Hardcoded model branches MAY be used as a short-term compatibility shim, but each branch MUST be covered by provider tests and SHOULD be replaced by model catalog data.
+
 ## Credential Fallback
 
 Provider credential selection and fallback are governed by `runtime/providers/credential-fallback`.
@@ -136,6 +156,7 @@ Structured capabilities every provider MUST expose:
 - `systemPrompt`: append, override, or provider-composed prompt behavior.
 - `terminalEvents`: whether terminal events are provider-guaranteed or adapter-enforced.
 - `skillVisibility`: how the provider exposes skill availability, synchronization, advertisement, request, and loaded-state evidence.
+- `modelOptions`: model-level option constraints such as disabled thinking, adaptive thinking, effort, output config, sampling, media, and tool-use support.
 
 The legacy fields remain until downstream call sites are migrated. New provider decisions MUST prefer structured fields.
 
@@ -180,6 +201,7 @@ Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime sur
 - Provider adapters MUST NOT mutate Ravi tasks or sessions directly, except through canonical terminal state returned to the host event loop.
 - Provider adapters MUST NOT bypass Ravi permission policy.
 - Provider adapters MUST NOT require provider-specific branches outside registry, model catalog, or provider-local files.
+- Provider adapters MUST NOT send native model options that are incompatible with the selected model.
 - Provider adapters MUST include enough metadata for trace correlation: provider, native event, thread id when available, turn id when available, item id when available.
 - A provider that supports restricted tool access MUST route permission decisions through Ravi host services or host hooks.
 - A provider that cannot support restricted access MUST declare that through capabilities so the launcher can reject incompatible agents.

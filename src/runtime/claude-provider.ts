@@ -234,7 +234,7 @@ function buildClaudeQueryOptions(
     pathToClaudeCodeExecutable?: string;
   },
 ): Options {
-  const thinking = resolveClaudeThinkingConfig(input.thinking);
+  const thinking = resolveClaudeThinkingConfig(input.thinking, input.model);
   const effort = toStrongestCompatibleRuntimeEffort(input.effort);
   return {
     model: input.model,
@@ -278,9 +278,12 @@ function buildClaudeQueryOptions(
   };
 }
 
-function resolveClaudeThinkingConfig(thinking?: RuntimeThinking): Options["thinking"] | undefined {
+function resolveClaudeThinkingConfig(thinking?: RuntimeThinking, model?: string): Options["thinking"] | undefined {
   switch (thinking) {
     case "off":
+      if (isAdaptiveThinkingOnlyClaudeModel(model)) {
+        return undefined;
+      }
       return { type: "disabled" };
     case "verbose":
       return { type: "adaptive", display: "summarized" };
@@ -289,6 +292,14 @@ function resolveClaudeThinkingConfig(thinking?: RuntimeThinking): Options["think
     default:
       return undefined;
   }
+}
+
+function isAdaptiveThinkingOnlyClaudeModel(model?: string): boolean {
+  const normalized = model?.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return normalized === "claude-fable-5" || normalized === "fable" || normalized === "claude-mythos-5";
 }
 
 function stringifyUserPrompt(content: unknown): string {

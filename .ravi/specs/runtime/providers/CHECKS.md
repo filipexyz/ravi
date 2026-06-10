@@ -8,6 +8,8 @@
 - `startSession` returns a handle with `provider`, `events`, and `interrupt`.
 - Optional `setModel` causes direct model switch strategy.
 - Missing `setModel` causes restart-next-turn strategy.
+- Model-specific option normalization omits unsupported native options.
+- Adaptive-thinking-only models do not receive disabled-thinking payloads when Ravi canonical input is `thinking=off`.
 
 ## Event Normalization Tests
 
@@ -30,3 +32,11 @@
 - Provider emits overlapping tool calls.
 - Provider exits process without terminal event.
 - Provider sends raw status/keepalive forever while turn is logically stuck.
+
+## SDK/Model Update Checks
+
+- Provider SDK version supports the model selector being exposed.
+- Direct peer dependencies required by the provider SDK are satisfied.
+- New model aliases are covered by provider-local tests.
+- Pricing is available through the model catalog or explicitly marked unknown.
+- New model capability differences are recorded in provider capability data or a covered provider-local compatibility shim.

@@ -331,6 +331,55 @@ describe("createClaudeRuntimeProvider", () => {
     expect(queryCalls[0]?.options.effort).toBe("max");
   });
 
+  it("omits disabled thinking for Claude Fable 5", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-fable-thinking" }];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        { model: "claude-fable-5", thinking: "off" },
+      ),
+    );
+
+    await collectEvents(session.events);
+
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0]?.options.model).toBe("claude-fable-5");
+    expect(queryCalls[0]?.options.thinking).toBeUndefined();
+  });
+
+  it("keeps summarized adaptive thinking for Claude Fable 5 verbose mode", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-fable-verbose" }];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        { model: "claude-fable-5", thinking: "verbose" },
+      ),
+    );
+
+    await collectEvents(session.events);
+
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0]?.options.thinking).toEqual({ type: "adaptive", display: "summarized" });
+  });
+
   it("updates active and subsequent query models without recreating the provider session", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-model" }];
     queryGate = new Promise<void>((resolve) => {
