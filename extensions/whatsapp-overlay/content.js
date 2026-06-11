@@ -47,6 +47,8 @@ const WORKSPACE_SESSION_KEY_STORAGE = "ravi-wa-overlay-workspace-session";
 const OMNI_INSTANCE_KEY_STORAGE = "ravi-wa-overlay-instance";
 const OVERLAY_PANEL_VISIBLE_KEY_STORAGE = "ravi-wa-overlay-panel-visible";
 const NATIVE_SIDEBAR_WIDTH_KEY_STORAGE = "ravi-wa-native-sidebar-width";
+const NATIVE_SIDEBAR_COLLAPSED_KEY_STORAGE = "ravi-wa-native-sidebar-collapsed";
+const NATIVE_SIDEBAR_COLLAPSE_TOGGLE_ID = "ravi-wa-native-sidebar-collapse-toggle";
 const V3_PLACEHOLDERS_KEY_STORAGE = "ravi-wa-overlay-v3-placeholders";
 const OMNI_POLL_INTERVAL_MS = 6000;
 const V3_PLACEHOLDER_POLL_INTERVAL_MS = 5000;
@@ -88,6 +90,12 @@ const NATIVE_SIDEBAR_SEARCH_SELECTOR =
 const NATIVE_SIDEBAR_MIN_WIDTH = 260;
 const NATIVE_SIDEBAR_MAX_WIDTH = 640;
 const NATIVE_SIDEBAR_MIN_MAIN_WIDTH = 420;
+const NATIVE_SIDEBAR_COLLAPSED_WIDTH = 150;
+const NATIVE_SIDEBAR_WIDTH_TRANSITION =
+  "flex-basis 260ms cubic-bezier(0.22, 1, 0.36, 1)," +
+  " width 260ms cubic-bezier(0.22, 1, 0.36, 1)," +
+  " min-width 260ms cubic-bezier(0.22, 1, 0.36, 1)," +
+  " max-width 260ms cubic-bezier(0.22, 1, 0.36, 1)";
 const taskDrawerStateApi = globalThis.__RAVI_WA_TASK_DRAWER_STATE__ || null;
 if (!taskDrawerStateApi) {
   throw new Error("[ravi-wa-overlay] task drawer state helpers unavailable");
@@ -177,6 +185,7 @@ let profileMenuOpen = false;
 let vibesMenuOpen = false;
 let overlayPanelVisible = loadOverlayPanelVisible();
 let nativeSidebarWidth = loadNativeSidebarWidth();
+let nativeSidebarCollapsed = loadNativeSidebarCollapsed();
 let v3PlaceholdersEnabled = false;
 let selectedOmniChatId = null;
 let selectedOmniSessionKey = null;
@@ -4752,6 +4761,7 @@ function syncLayoutChrome() {
   const host = sidePane && mainPane ? findLayoutHost(sidePane, mainPane) : null;
   if (!root || !drawer || !sidePane || !mainPane || !host) {
     syncNativeSidebarResizeControl(null, null, { hidden: true });
+    syncNativeSidebarCollapseToggle(null, null, { hidden: true });
     return;
   }
   const sideBranch = findDirectChildBranch(host, sidePane);
@@ -4796,6 +4806,7 @@ function syncLayoutChrome() {
   drawer.classList.toggle("ravi-hidden", !overlayPanelVisible);
   document.getElementById(PANEL_RAIL_TOGGLE_ID)?.classList.toggle("ravi-hidden", overlayPanelVisible);
   syncNativeSidebarResizeControl(host, sideBranch, { hidden: fullWorkspace });
+  syncNativeSidebarCollapseToggle(host, sideBranch, { hidden: fullWorkspace });
 
   currentLayoutHost = host;
   currentLayoutMain = mainPane;
@@ -4812,10 +4823,6 @@ function syncNativeSidebarResizeControl(host, sideBranch, options = {}) {
   const resized =
     nativeSidebarWidth !== null &&
     nativeSidebarWidth !== undefined;
-  const hidden =
-    Boolean(options.hidden) ||
-    invalidTarget ||
-    window.innerWidth < 760;
 
   if (currentNativeSidebarBranch && currentNativeSidebarBranch !== sideBranch) {
     clearNativeSidebarWidthStyles(currentNativeSidebarBranch);
@@ -4826,7 +4833,25 @@ function syncNativeSidebarResizeControl(host, sideBranch, options = {}) {
       "data-ravi-native-sidebar-resized",
       resized ? "true" : "false",
     );
+    host.setAttribute(
+      "data-ravi-native-sidebar-collapsed",
+      nativeSidebarCollapsed ? "true" : "false",
+    );
   }
+
+  // Apply width/collapse styling whenever we have a valid target, even if the
+  // drag handle itself is hidden (e.g. while collapsed) so the 0-width state
+  // still materializes on the pane.
+  if (!invalidTarget) {
+    currentNativeSidebarBranch = sideBranch;
+    applyNativeSidebarWidth(sideBranch, host);
+  }
+
+  const hidden =
+    Boolean(options.hidden) ||
+    invalidTarget ||
+    nativeSidebarCollapsed ||
+    window.innerWidth < 760;
 
   if (hidden) {
     handle.classList.add("ravi-hidden");
@@ -4834,9 +4859,6 @@ function syncNativeSidebarResizeControl(host, sideBranch, options = {}) {
     handle.removeAttribute("aria-valuenow");
     return;
   }
-
-  currentNativeSidebarBranch = sideBranch;
-  applyNativeSidebarWidth(sideBranch, host);
 
   const sideRect = sideBranch.getBoundingClientRect();
   const bounds = resolveNativeSidebarWidthBounds(host);
@@ -4971,8 +4993,34 @@ function resetNativeSidebarWidth() {
 
 function applyNativeSidebarWidth(sideBranch, host) {
   if (!(sideBranch instanceof HTMLElement)) return;
+
+  // Glide on toggle/reset, but never during an active drag (must track cursor 1:1).
+  sideBranch.style.transition = nativeSidebarResizeState
+    ? "none"
+    : NATIVE_SIDEBAR_WIDTH_TRANSITION;
+
+  if (nativeSidebarCollapsed) {
+    const width = `${NATIVE_SIDEBAR_COLLAPSED_WIDTH}px`;
+    sideBranch.setAttribute("data-ravi-native-sidebar-collapsed", "true");
+    sideBranch.removeAttribute("data-ravi-native-sidebar-width");
+    sideBranch.style.flex = `0 0 ${width}`;
+    sideBranch.style.width = width;
+    sideBranch.style.minWidth = width;
+    sideBranch.style.maxWidth = width;
+    sideBranch.style.overflow = "hidden";
+    return;
+  }
+
+  sideBranch.removeAttribute("data-ravi-native-sidebar-collapsed");
+  sideBranch.style.removeProperty("overflow");
+
   if (nativeSidebarWidth === null || nativeSidebarWidth === undefined) {
-    clearNativeSidebarWidthStyles(sideBranch);
+    // Reset to natural width but keep the transition so the glide still plays.
+    sideBranch.removeAttribute("data-ravi-native-sidebar-width");
+    sideBranch.style.removeProperty("flex");
+    sideBranch.style.removeProperty("width");
+    sideBranch.style.removeProperty("min-width");
+    sideBranch.style.removeProperty("max-width");
     return;
   }
 
@@ -4988,10 +5036,78 @@ function applyNativeSidebarWidth(sideBranch, host) {
 function clearNativeSidebarWidthStyles(sideBranch) {
   if (!(sideBranch instanceof HTMLElement)) return;
   sideBranch.removeAttribute("data-ravi-native-sidebar-width");
+  sideBranch.removeAttribute("data-ravi-native-sidebar-collapsed");
   sideBranch.style.removeProperty("flex");
   sideBranch.style.removeProperty("width");
   sideBranch.style.removeProperty("min-width");
   sideBranch.style.removeProperty("max-width");
+  sideBranch.style.removeProperty("overflow");
+  sideBranch.style.removeProperty("transition");
+}
+
+function syncNativeSidebarCollapseToggle(host, sideBranch, options = {}) {
+  const toggle = ensureNativeSidebarCollapseToggle();
+  const invalidTarget =
+    !(host instanceof HTMLElement) ||
+    !(sideBranch instanceof HTMLElement);
+  const hidden =
+    Boolean(options.hidden) ||
+    invalidTarget ||
+    window.innerWidth < 760;
+
+  if (hidden) {
+    toggle.classList.add("ravi-hidden");
+    return;
+  }
+
+  toggle.classList.remove("ravi-hidden");
+  toggle.classList.toggle(
+    "ravi-wa-native-sidebar-collapse-toggle--collapsed",
+    nativeSidebarCollapsed,
+  );
+  toggle.setAttribute("aria-expanded", nativeSidebarCollapsed ? "false" : "true");
+  const label = nativeSidebarCollapsed
+    ? "Expandir lista de chats"
+    : "Estreitar lista de chats";
+  toggle.setAttribute("aria-label", label);
+  toggle.setAttribute("title", label);
+  const glyph = toggle.firstElementChild;
+  if (glyph) glyph.textContent = nativeSidebarCollapsed ? "»" : "«";
+
+  const sideRect = sideBranch.getBoundingClientRect();
+  const centerY = Math.round(sideRect.top + sideRect.height / 2);
+  toggle.style.top = `${centerY}px`;
+  toggle.style.left = `${Math.round(sideRect.right)}px`;
+}
+
+function ensureNativeSidebarCollapseToggle() {
+  let toggle = document.getElementById(NATIVE_SIDEBAR_COLLAPSE_TOGGLE_ID);
+  if (toggle instanceof HTMLElement) return toggle;
+
+  toggle = document.createElement("button");
+  toggle.id = NATIVE_SIDEBAR_COLLAPSE_TOGGLE_ID;
+  toggle.type = "button";
+  toggle.className = "ravi-wa-native-sidebar-collapse-toggle ravi-hidden";
+  toggle.setAttribute("aria-label", "Recolher lista de chats");
+  toggle.setAttribute("title", "Recolher lista de chats");
+  toggle.innerHTML = `<span aria-hidden="true">«</span>`;
+  toggle.addEventListener("click", handleNativeSidebarCollapseToggleClick);
+  document.body.appendChild(toggle);
+  return toggle;
+}
+
+function handleNativeSidebarCollapseToggleClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  toggleNativeSidebarCollapsed();
+}
+
+function toggleNativeSidebarCollapsed(force) {
+  const next = typeof force === "boolean" ? force : !nativeSidebarCollapsed;
+  if (next === nativeSidebarCollapsed) return;
+  nativeSidebarCollapsed = next;
+  persistNativeSidebarCollapsed(next);
+  syncLayoutChrome();
 }
 
 function resolveNativeSidebarResizeDirection(sideBranch) {
@@ -15965,6 +16081,14 @@ function loadNativeSidebarWidth() {
   }
 }
 
+function loadNativeSidebarCollapsed() {
+  try {
+    return window.localStorage.getItem(NATIVE_SIDEBAR_COLLAPSED_KEY_STORAGE) === "true";
+  } catch {
+    return false;
+  }
+}
+
 function loadV3PlaceholdersEnabled() {
   try {
     return window.localStorage.getItem(V3_PLACEHOLDERS_KEY_STORAGE) === "true";
@@ -16006,6 +16130,18 @@ function persistNativeSidebarWidth(value) {
       );
     } else {
       window.localStorage.removeItem(NATIVE_SIDEBAR_WIDTH_KEY_STORAGE);
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function persistNativeSidebarCollapsed(value) {
+  try {
+    if (value) {
+      window.localStorage.setItem(NATIVE_SIDEBAR_COLLAPSED_KEY_STORAGE, "true");
+    } else {
+      window.localStorage.removeItem(NATIVE_SIDEBAR_COLLAPSED_KEY_STORAGE);
     }
   } catch {
     // ignore localStorage failures inside WhatsApp Web
