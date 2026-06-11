@@ -105,6 +105,35 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(true);
   });
 
+  it("uses role-expanded agent grants as the delegated executor ceiling", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    grantRelation("agent", agent.id, "member", "role", "audit-agent");
+    grantRelation("role", "audit-agent", "execute", "group", "sessions_info");
+    grantRelation("contact", "luis", "execute", "group", "sessions_info");
+
+    const prompt = promptForContact("luis", "audit");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/rebac-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "delegated",
+      actorPrincipal: "contact:luis",
+      actorCapabilityCount: 1,
+      effectiveCapabilityCount: 1,
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(true);
+  });
+
   it("stores observation permission grants as turn capabilities for live delegated rechecks", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

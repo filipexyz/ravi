@@ -14,7 +14,7 @@ import {
   type RevokeContextResult,
 } from "../router/router-db.js";
 import { canWithCapabilityContext } from "../permissions/capability-context.js";
-import { listRelations } from "../permissions/relations.js";
+import { snapshotSubjectCapabilities } from "../permissions/delegation.js";
 
 export const RAVI_CONTEXT_KEY_ENV = "RAVI_CONTEXT_KEY";
 export const DEFAULT_CONTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -143,14 +143,7 @@ export function revokeAgentRuntimeContextsForSession(
 }
 
 export function snapshotAgentCapabilities(agentId: string): ContextCapability[] {
-  return dedupeCapabilities(
-    listRelations({ subjectType: "agent", subjectId: agentId }).map((relation) => ({
-      permission: relation.relation,
-      objectType: relation.objectType,
-      objectId: relation.objectId,
-      source: relation.source,
-    })),
-  );
+  return dedupeCapabilities(snapshotSubjectCapabilities("agent", agentId));
 }
 
 export function resolveRuntimeContext(
