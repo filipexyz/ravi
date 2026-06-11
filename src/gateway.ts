@@ -21,7 +21,7 @@
 import { nats } from "./nats.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
-import { recordDeliveryTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
+import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
 import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
@@ -89,7 +89,14 @@ export interface GatewayOptions {
   emitEvent?: typeof nats.emit;
 }
 
-type PresenceTarget = { channel: string; accountId: string; instanceId?: string; chatId: string; threadId?: string };
+type PresenceTarget = {
+  channel: string;
+  accountId: string;
+  instanceId?: string;
+  chatId: string;
+  threadId?: string;
+  suppressPresence?: boolean;
+};
 type MessageDeleteRequest = {
   channel?: string;
   accountId: string;
@@ -160,16 +167,98 @@ export class Gateway {
     log.info("Gateway stopped");
   }
 
-  private async sendTypingIfChanged(sessionName: string, target: PresenceTarget, active: boolean): Promise<void> {
+  private async sendTypingIfChanged(
+    sessionName: string,
+    target: PresenceTarget,
+    active: boolean,
+    reason = "state-change",
+  ): Promise<void> {
+    if (active && this.isPresenceSuppressed(target)) return;
     if (!this.typingTracker.shouldEmit(sessionName, active)) return;
-    await this.sendTyping(target, active);
+    await this.sendTyping(target, active, { sessionName, reason });
   }
 
-  private async sendTyping(target: PresenceTarget, active: boolean): Promise<void> {
+  private async sendTyping(
+    target: PresenceTarget,
+    active: boolean,
+    metadata?: { sessionName?: string; reason?: string },
+  ): Promise<void> {
+    if (active && this.isPresenceSuppressed(target)) return;
     const iid = configStore.resolveInstanceId(target.accountId);
-    if (iid) {
-      await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
+    const sessionName = metadata?.sessionName;
+    const reason = metadata?.reason ?? "direct-send";
+    if (!iid) {
+      if (sessionName) {
+        await this.emitPresenceDiagnostic(sessionName, {
+          active,
+          status: "skipped",
+          reason: `${reason}:missing-instance`,
+          target,
+        });
+      }
+      return;
     }
+    try {
+      await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
+      if (sessionName) {
+        await this.emitPresenceDiagnostic(sessionName, {
+          active,
+          status: active ? "active" : "inactive",
+          reason,
+          target: { ...target, instanceId: target.instanceId ?? iid },
+        });
+      }
+    } catch (error) {
+      if (sessionName) {
+        await this.emitPresenceDiagnostic(sessionName, {
+          active,
+          status: "failed",
+          reason,
+          target: { ...target, instanceId: target.instanceId ?? iid },
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      throw error;
+    }
+  }
+
+  private async emitPresenceDiagnostic(
+    sessionName: string,
+    input: {
+      active: boolean;
+      status: "active" | "inactive" | "skipped" | "failed";
+      reason: string;
+      target: PresenceTarget;
+      error?: string;
+    },
+  ): Promise<void> {
+    const payload = {
+      sessionName,
+      active: input.active,
+      status: input.status,
+      reason: input.reason,
+      source: "gateway.presence",
+      target: input.target,
+      timestamp: Date.now(),
+      ...(input.error ? { error: input.error } : {}),
+    };
+
+    try {
+      recordPresenceTrace({
+        sessionName,
+        status: input.status,
+        reason: input.reason,
+        target: input.target,
+        error: input.error,
+        payloadJson: payload,
+      });
+    } catch (error) {
+      log.debug("Failed to record gateway presence trace", { sessionName, error });
+    }
+
+    await this.emitEvent("ravi.presence.typing", payload).catch((error) => {
+      log.debug("Failed to emit gateway presence event", { sessionName, error });
+    });
   }
 
   private async prepareOutboundMentionMessage(input: {
@@ -258,7 +347,7 @@ export class Gateway {
     if (this.terminalRuntimeSessions.has(sessionName)) return;
     const renewed = await this.renewActiveTargetIfCurrent(sessionName, target);
     if (!renewed) {
-      await this.sendTyping(target, true);
+      await this.sendTyping(target, true, { sessionName, reason: "fallback-renew" });
     }
     this.presenceRenewedAt.set(sessionName, Date.now());
   }
@@ -313,19 +402,26 @@ export class Gateway {
 
     const localTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
     if (localTarget) {
-      this.omniConsumer.clearActiveTarget(sessionName);
+      await this.emitPresenceDiagnostic(sessionName, {
+        active: false,
+        status: "inactive",
+        reason: "terminal-clear-active-target",
+        target: localTarget,
+      });
+      await this.omniConsumer.clearActiveTarget(sessionName);
       if (target && !this.targetsMatch(localTarget, target)) {
-        await this.sendTyping(target, false);
+        await this.sendTyping(target, false, { sessionName, reason: "terminal-fallback-stop" });
       }
       return;
     }
 
     if (target) {
-      await this.sendTypingIfChanged(sessionName, target, false);
+      await this.sendTypingIfChanged(sessionName, target, false, "terminal-stop");
     }
   }
 
   private schedulePostDeliveryPresenceRenewal(sessionName: string, target: PresenceTarget): void {
+    if (this.isPresenceSuppressed(target)) return;
     if (!this.activeRuntimeSessions.has(sessionName)) return;
     if (this.terminalRuntimeSessions.has(sessionName)) return;
     this.clearPostDeliveryRenewal(sessionName);
@@ -341,7 +437,11 @@ export class Gateway {
     this.postDeliveryRenewals.set(sessionName, timer);
   }
 
-  private async renewTypingForRuntimeActivity(sessionName: string, data: { _source?: PresenceTarget }): Promise<void> {
+  private async renewTypingForRuntimeActivity(
+    sessionName: string,
+    data: { type?: string; _source?: PresenceTarget },
+  ): Promise<void> {
+    if (this.isPresenceSuppressed(data._source)) return;
     if (this.terminalRuntimeSessions.has(sessionName)) return;
     const now = Date.now();
     const lastRenewedAt = this.presenceRenewedAt.get(sessionName) ?? 0;
@@ -351,7 +451,7 @@ export class Gateway {
       ? await this.renewActiveTargetIfCurrent(sessionName, data._source)
       : await this.omniConsumer.renewActiveTarget(sessionName);
     if (!renewed && data._source) {
-      await this.sendTyping(data._source, true);
+      await this.sendTyping(data._source, true, { sessionName, reason: `runtime-${data.type ?? "activity"}` });
     }
 
     if (renewed || data._source) {
@@ -359,20 +459,27 @@ export class Gateway {
     }
   }
 
-  private isTerminalRuntimeEvent(type: string | undefined): boolean {
+  private isTerminalRuntimeEvent(type: string | undefined, status?: string, nativeEvent?: string): boolean {
     return (
       type === "result" ||
       type === "silent" ||
       type === "turn.complete" ||
       type === "turn.completed" ||
       type === "turn.failed" ||
-      type === "session.timeout"
+      type === "session.timeout" ||
+      (type === "status" && status === "idle") ||
+      nativeEvent === "turn.complete" ||
+      nativeEvent === "turn.completed" ||
+      nativeEvent === "turn.failed" ||
+      nativeEvent === "turn/completed" ||
+      nativeEvent === "turn/failed"
     );
   }
 
-  private isPresenceActivityEvent(type: string | undefined, status?: string): boolean {
-    if (!type || this.isTerminalRuntimeEvent(type)) return false;
-    if (type === "status" && status === "idle") return false;
+  private isPresenceActivityEvent(type: string | undefined, status?: string, nativeEvent?: string): boolean {
+    if (!type || this.isTerminalRuntimeEvent(type, status, nativeEvent)) return false;
+    if (type === "provider.raw") return false;
+    if (type === "status") return status === "queued" || status === "thinking" || status === "compacting";
     return true;
   }
 
@@ -380,6 +487,10 @@ export class Gateway {
     if (type === "turn.started" || type === "thread.started") return true;
     if (nativeEvent === "turn.started" || nativeEvent === "thread.started") return true;
     return false;
+  }
+
+  private isPresenceSuppressed(target: PresenceTarget | undefined): boolean {
+    return target?.suppressPresence === true;
   }
 
   private recordResponseTrace(sessionName: string, response: ResponseMessage): void {
@@ -693,6 +804,10 @@ export class Gateway {
   ): Promise<void> {
     if (data.type === "turn.interrupted") {
       if (this.terminalRuntimeSessions.has(sessionName)) return;
+      if (this.isPresenceSuppressed(data._source)) {
+        await this.stopPresenceForSession(sessionName, data._source);
+        return;
+      }
       if (data._source) {
         await this.forceRenewTyping(sessionName, data._source);
       } else {
@@ -702,12 +817,18 @@ export class Gateway {
       return;
     }
 
-    if (this.isTerminalRuntimeEvent(data.type)) {
+    if (this.isTerminalRuntimeEvent(data.type, data.status, data.nativeEvent)) {
       await this.stopPresenceForSession(sessionName, data._source);
       return;
     }
 
-    if (!this.isPresenceActivityEvent(data.type, data.status)) return;
+    if (!this.isPresenceActivityEvent(data.type, data.status, data.nativeEvent)) return;
+
+    if (this.isPresenceSuppressed(data._source)) {
+      this.activeRuntimeSessions.delete(sessionName);
+      this.presenceRenewedAt.delete(sessionName);
+      return;
+    }
 
     if (this.terminalRuntimeSessions.has(sessionName)) {
       if (!this.isPresenceStartEvent(data.type, data.nativeEvent)) return;

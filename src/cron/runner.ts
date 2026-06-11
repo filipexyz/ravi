@@ -22,6 +22,7 @@ import {
 import { getAgent } from "../router/config.js";
 import { dbGetDueJobs, dbGetNextDueJob, dbUpdateJobState, dbDeleteCronJob, dbGetCronJob } from "./cron-db.js";
 import { calculateNextRun } from "./schedule.js";
+import { markCronSourceAsBackground, type CronPromptSource } from "./source.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "./shell-executor.js";
 import type { CronJob } from "./types.js";
 
@@ -407,7 +408,7 @@ export class CronRunner {
     const agentId = job.agentId ?? getDefaultAgentId();
 
     let sessionName: string;
-    let source: { channel: string; accountId: string; chatId: string } | undefined;
+    let source: CronPromptSource | undefined;
 
     if (job.replySession) {
       const resolved = this.resolveReplySessionName(job.replySession);
@@ -439,7 +440,7 @@ export class CronRunner {
 
     await publishSessionPrompt(sessionName, {
       prompt,
-      source,
+      source: markCronSourceAsBackground(source),
       deliveryBarrier: "after_response",
       deliveryBarrierSource: "default",
       _cron: true,
@@ -474,7 +475,7 @@ export class CronRunner {
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
     // Derive source from replySession if set, so responses route correctly
-    let source: { channel: string; accountId: string; chatId: string } | undefined;
+    let source: CronPromptSource | undefined;
     if (job.replySession) {
       const replyResolved = resolveSession(job.replySession);
       if (replyResolved?.lastChannel && replyResolved.lastTo) {
@@ -495,7 +496,7 @@ export class CronRunner {
 
     await publishSessionPrompt(sessionName, {
       prompt,
-      source,
+      source: markCronSourceAsBackground(source),
       deliveryBarrier: "after_response",
       deliveryBarrierSource: "default",
       _cron: true,

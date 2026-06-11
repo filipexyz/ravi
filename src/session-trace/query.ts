@@ -156,6 +156,7 @@ const EVENT_GROUP_ALIASES: Record<string, string> = {
   dispatch: "dispatch",
   prompts: "prompt",
   prompt: "prompt",
+  presence: "presence",
   response: "response",
   responses: "response",
   routing: "routing",

@@ -20,6 +20,11 @@ export interface RuntimeMessageTarget extends MessageActorMetadata {
   threadId?: string;
   /** Original inbound channel message ID, used for session trace correlation. */
   sourceMessageId?: string;
+  /**
+   * Internal routing hint: deliver responses to this target, but do not expose
+   * typing/presence while background automation is working.
+   */
+  suppressPresence?: boolean;
 }
 
 export interface RuntimeUserMessage extends RuntimePromptMessage {

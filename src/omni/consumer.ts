@@ -61,6 +61,7 @@ import {
 import { resetSession } from "../router/sessions.js";
 import {
   recordChannelMessageReceivedTrace,
+  recordPresenceTrace,
   recordRouteRejectedTrace,
   recordRouteResolvedTrace,
   type NormalizedSessionTraceSource,
@@ -85,7 +86,7 @@ import type { AgentConfig } from "../router/types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
 import { extractInboundMentionTargets, normalizeInboundMentionText } from "./mentions.js";
-import { TypingPresenceHeartbeat } from "./typing-presence.js";
+import { TypingPresenceHeartbeat, type TypingPresenceEvent } from "./typing-presence.js";
 import { runTagRulesForContact } from "../tag-rules/index.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { firstProviderTimestampMs, timestampLikeToMs } from "../utils/provider-timestamp.js";
@@ -376,6 +377,7 @@ export class OmniConsumer {
       undefined,
       undefined,
       this.options.isRuntimeSessionActive,
+      (event) => this.observeTypingPresence(event),
     );
   }
 
@@ -1673,7 +1675,7 @@ export class OmniConsumer {
       });
     } catch (err) {
       log.error("Failed to publish prompt", err);
-      this.clearActiveTarget(sessionName);
+      await this.clearActiveTarget(sessionName);
     }
   }
 
@@ -2133,6 +2135,53 @@ export class OmniConsumer {
     return this.typingPresence.renew(sessionName);
   }
 
+  private observeTypingPresence(event: TypingPresenceEvent): void {
+    const activeTarget =
+      this.activeTargets.get(event.sessionName) ??
+      ({
+        channel: "whatsapp",
+        accountId: event.target.instanceId,
+        instanceId: event.target.instanceId,
+        chatId: event.target.to,
+      } satisfies MessageTarget);
+    const status = event.status === "failed" ? "failed" : event.active ? "active" : "inactive";
+    const payload = {
+      sessionName: event.sessionName,
+      active: event.active,
+      status,
+      reason: event.reason,
+      source: "omni.consumer.typing-heartbeat",
+      target: {
+        channel: activeTarget.channel,
+        accountId: activeTarget.accountId,
+        instanceId: activeTarget.instanceId ?? event.target.instanceId,
+        chatId: activeTarget.chatId,
+        threadId: activeTarget.threadId,
+      },
+      transportTarget: event.target,
+      timestamp: event.timestamp,
+      ...(event.error ? { error: event.error } : {}),
+    };
+
+    nats.emit("ravi.presence.typing", payload).catch((error) => {
+      log.debug("Failed to emit typing presence event", { sessionName: event.sessionName, error });
+    });
+
+    try {
+      recordPresenceTrace({
+        sessionName: event.sessionName,
+        status,
+        reason: event.reason,
+        target: activeTarget,
+        timestamp: event.timestamp,
+        error: event.error,
+        payloadJson: payload,
+      });
+    } catch (error) {
+      log.debug("Failed to record typing presence trace", { sessionName: event.sessionName, error });
+    }
+  }
+
   private async activateTarget(
     sessionName: string,
     source: MessageTarget,
@@ -2146,9 +2195,9 @@ export class OmniConsumer {
   /**
    * Clear active target (called when response is sent).
    */
-  clearActiveTarget(sessionName: string): void {
+  async clearActiveTarget(sessionName: string): Promise<void> {
     this.activeTargets.delete(sessionName);
-    void this.typingPresence.stop(sessionName);
+    await this.typingPresence.stop(sessionName);
   }
 
   // ============================================================================

@@ -81,7 +81,7 @@ function makeGateway(
   send: GatewaySend,
   overrides: {
     getActiveTarget?: () => ResponseMessage["target"] | undefined;
-    clearActiveTarget?: () => void;
+    clearActiveTarget?: () => void | Promise<void>;
     renewActiveTarget?: () => Promise<boolean>;
     sendTyping?: (instanceId: string, chatId: string, active?: boolean) => Promise<void>;
     deleteMessage?: (instanceId: string, chatId: string, messageId: string) => Promise<void>;
@@ -667,7 +667,30 @@ describe("Gateway session trace instrumentation", () => {
     );
   });
 
-  it("does not renew presence from idle runtime status", async () => {
+  it("stops active presence from idle runtime status", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const clearActiveTarget = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "status", status: "idle", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("does not renew presence from raw provider events", async () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});
     const renewActiveTarget = mock(async () => true);
@@ -681,10 +704,54 @@ describe("Gateway session trace instrumentation", () => {
       },
     );
 
-    await handleRuntimePresence(gateway, sessionName, { type: "status", status: "idle", _source: target });
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "provider.raw",
+      nativeEvent: "item.completed",
+      _source: target,
+    });
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("does not expose typing for suppressed background runtime sources", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const target = { ...makeResponse().target!, suppressPresence: true };
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.started", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+  });
+
+  it("does not force typing when a suppressed background turn is interrupted", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => false);
+    const target = { ...makeResponse().target!, suppressPresence: true };
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
   });
 
   it("renews active presence on runtime activity before the final response", async () => {
@@ -783,6 +850,37 @@ describe("Gateway session trace instrumentation", () => {
     );
   });
 
+  it("records presence trace for fallback typing renewal", async () => {
+    const { sessionKey, sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: makeResponse().target });
+
+    const presenceEvents = listSessionEvents(sessionKey).filter((event) => event.eventGroup === "presence");
+    expect(presenceEvents).toHaveLength(1);
+    expect(presenceEvents[0]).toMatchObject({
+      eventType: "presence.typing",
+      status: "active",
+      preview: "runtime-stream.chunk active",
+    });
+    expect(emitted).toContainEqual([
+      "ravi.presence.typing",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        status: "active",
+        reason: "runtime-stream.chunk",
+      }),
+    ]);
+  });
+
   it("throttles repeated runtime activity presence renewals", async () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});
@@ -818,6 +916,30 @@ describe("Gateway session trace instrumentation", () => {
     await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
 
     expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it("records presence trace when terminal events clear an active target", async () => {
+    const { sessionKey, sessionName } = seedSession();
+    const clearActiveTarget = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        getActiveTarget: () => target,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    const presenceEvents = listSessionEvents(sessionKey).filter((event) => event.eventGroup === "presence");
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+    expect(presenceEvents).toHaveLength(1);
+    expect(presenceEvents[0]).toMatchObject({
+      eventType: "presence.typing",
+      status: "inactive",
+      preview: "terminal-clear-active-target inactive",
+    });
   });
 
   it("clears equivalent account-name and instance-id targets without duplicate fallback pauses", async () => {
