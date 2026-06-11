@@ -3,6 +3,7 @@ export type TagKind = (typeof TAG_KINDS)[number];
 
 export const TAG_ASSET_TYPES = [
   "agent",
+  "automation",
   "app",
   "session",
   "task",

@@ -56,6 +56,14 @@ describe("tag target registry", () => {
     });
   });
 
+  it("resolves virtual automation targets", () => {
+    expect(resolveTagTargetSelector({ target: "automation:session-followup" }, { operation: "attach" })).toMatchObject({
+      assetType: "automation",
+      assetId: "session-followup",
+      exists: true,
+    });
+  });
+
   it("keeps attach strict while detach can remove an existing orphan binding", () => {
     dbCreateTagDefinition({ slug: "orphan.cleanup", label: "Orphan Cleanup" });
 

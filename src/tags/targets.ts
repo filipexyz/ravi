@@ -130,6 +130,37 @@ function resolveAppTarget(value: string): ResolvedTagTarget | null {
   }
 }
 
+function resolveAutomationTarget(value: string): ResolvedTagTarget | null {
+  const input = value.trim();
+  if (!input) return null;
+
+  if (input === "session-followup" || input === "daemon-restart") {
+    return {
+      assetType: "automation",
+      assetId: input,
+      input: value,
+      exists: true,
+      label: input,
+    };
+  }
+
+  const separator = input.indexOf(":");
+  if (separator <= 0 || separator === input.length - 1) return null;
+  const kind = input.slice(0, separator);
+  const id = input.slice(separator + 1);
+  const table = kind === "cron" ? "cron_jobs" : kind === "trigger" ? "triggers" : null;
+  if (!table) return null;
+  const row = rowById<{ id: string; name?: string | null }>(table, "id", id);
+  if (!row) return null;
+  return {
+    assetType: "automation",
+    assetId: input,
+    input: value,
+    exists: true,
+    label: row.name ?? input,
+  };
+}
+
 function resolveProjectTarget(value: string): ResolvedTagTarget | null {
   const input = value.trim();
   if (!input) return null;
@@ -288,6 +319,14 @@ function unsupportedDescriptor(assetType: TagAssetType, flag: string, label: str
 
 export const TAG_TARGET_DESCRIPTORS: readonly TagTargetDescriptor[] = [
   makeTableDescriptor({ assetType: "agent", table: "agents", flag: "agent", label: "Agent" }),
+  {
+    assetType: "automation",
+    flag: "automation",
+    label: "Automation",
+    valueLabel: "principal-id",
+    allowOrphanLookup: true,
+    resolve: resolveAutomationTarget,
+  },
   {
     assetType: "app",
     flag: "app",
