@@ -328,8 +328,12 @@ function explainSubject(
   objectId: string,
   options: { includeRoles?: boolean } = {},
 ): SubjectExplainResult {
-  const allowed =
-    options.includeRoles === false
+  const matches = findMatchingRelations(principal, relation, objectType, objectId, new Set(), ["direct"], options);
+  const matchedRelations = matches.filter((match) => match.active);
+  const nearMissRelations = matches.filter((match) => !match.active);
+  const allowed = isSpecialRequestedRelation(relation)
+    ? matchedRelations.length > 0
+    : options.includeRoles === false
       ? canWithCapabilities(
           snapshotSubjectCapabilities(principal.subjectType, principal.subjectId, {
             includeRoles: false,
@@ -340,9 +344,6 @@ function explainSubject(
           objectId,
         )
       : can(principal.subjectType, principal.subjectId, relation, objectType, objectId);
-  const matches = findMatchingRelations(principal, relation, objectType, objectId, new Set(), ["direct"], options);
-  const matchedRelations = matches.filter((match) => match.active);
-  const nearMissRelations = matches.filter((match) => !match.active);
   return {
     principal: formatAuthorityPrincipal(principal),
     allowed,
@@ -648,10 +649,8 @@ function relationCoversRequest(
   requestedObjectType: string,
   requestedObjectId: string,
 ): boolean {
-  const isSpecialRequestedRelation =
-    requestedRelation.startsWith(DELEGATION_OVERRIDE_RELATION_PREFIX) || requestedRelation.startsWith("deny_");
   if (
-    !isSpecialRequestedRelation &&
+    !isSpecialRequestedRelation(requestedRelation) &&
     relation.relation === "admin" &&
     relation.objectType === "system" &&
     relation.objectId === "*"
@@ -679,6 +678,10 @@ function relationCoversRequest(
   return (
     requestedObjectId !== "*" && relation.objectId.includes("*") && matchPattern(relation.objectId, requestedObjectId)
   );
+}
+
+function isSpecialRequestedRelation(relation: string): boolean {
+  return relation.startsWith(DELEGATION_OVERRIDE_RELATION_PREFIX) || relation.startsWith("deny_");
 }
 
 function explainRelation(relation: Relation, provenance: string[]): ExplainedRelation {

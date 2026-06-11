@@ -301,7 +301,8 @@ export function grantRelationIfAbsentOrOwned(
       includeInactive: true,
     })[0] ?? null;
 
-  if (existing && existing.source !== source) {
+  const existingIsActive = existing ? isActiveRelation(existing) : false;
+  if (existing && existingIsActive && existing.source !== source) {
     return {
       status: "conflict",
       relation: existing,
@@ -311,7 +312,7 @@ export function grantRelationIfAbsentOrOwned(
 
   const granted = grantRelation(subjectType, subjectId, relation, objectType, objectId, source, options);
   return {
-    status: existing ? "refreshed" : "created",
+    status: existing && existingIsActive ? "refreshed" : "created",
     relation: granted,
   };
 }

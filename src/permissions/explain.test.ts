@@ -81,6 +81,29 @@ describe("permission explain", () => {
       grantState: "allowed",
     });
 
+    grantRelation("chat", "chat_group_1", "admin", "system", "*", "manual", { permanent: true });
+    const surfaceAdmin = explainPermissionDecision({
+      agentId: "reviewer",
+      actor: "contact:luis",
+      chat: "chat:chat_group_1",
+      relation: "execute",
+      objectType: "group",
+      objectId: "sessions_info",
+    });
+
+    expect(surfaceAdmin.final.allowed).toBe(true);
+    expect(surfaceAdmin.branches.find((branch) => branch.branch === "surface")).toMatchObject({
+      verdict: "allow",
+      grantState: "allowed",
+      matchedRelations: [
+        expect.objectContaining({
+          subject: "chat:chat_group_1",
+          relation: "admin",
+          object: "system:*",
+        }),
+      ],
+    });
+
     grantRelation("chat", "chat_group_1", "deny_execute", "group", "sessions_info", "manual", { permanent: true });
     const denied = explainPermissionDecision({
       agentId: "reviewer",

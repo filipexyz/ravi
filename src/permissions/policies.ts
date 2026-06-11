@@ -753,7 +753,6 @@ function findExistingRelation(action: PermissionPolicyAction): Relation | null {
       relation: action.relation,
       objectType: action.objectType,
       objectId: action.objectId,
-      includeInactive: true,
     })[0] ?? null
   );
 }

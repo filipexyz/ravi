@@ -13,7 +13,7 @@ import {
   reconcilePermissionPolicies,
   validatePermissionPolicies,
 } from "./policies.js";
-import { grantRelation, listRelations } from "./relations.js";
+import { grantRelation, listRelations, revokeRelation } from "./relations.js";
 
 let stateDir: string | null = null;
 let policyDir: string;
@@ -83,6 +83,48 @@ describe("permission policies", () => {
     expect(listRelations({ subjectType: "contact", subjectId: "luis", relation: "member" })).toEqual([]);
   });
 
+  it("plans automation role memberships from automation tags", () => {
+    writePolicy("automation", {
+      id: "automation-base-assignment",
+      selector: {
+        assetType: "automation",
+        tag: "policy.assign.automation-base",
+        acceptedBindingSources: ["manual"],
+      },
+      emits: [
+        {
+          subject: { fromAsset: true },
+          relation: "member",
+          object: { type: "role", id: "automation-base" },
+        },
+      ],
+      grant: {
+        mode: "permanent",
+      },
+    });
+    dbEnsureTagBinding({
+      slug: "policy.assign.automation-base",
+      label: "policy.assign.automation-base",
+      assetType: "automation",
+      assetId: "cron:job-1",
+      source: "manual",
+    });
+
+    const result = dryRunPermissionPolicies({ directory: policyDir });
+
+    expect(result.valid).toBe(true);
+    expect(result.actions).toHaveLength(1);
+    expect(result.actions[0]).toMatchObject({
+      status: "would_create",
+      subjectType: "automation",
+      subjectId: "cron:job-1",
+      relation: "member",
+      objectType: "role",
+      objectId: "automation-base",
+      grantMode: "permanent",
+    });
+  });
+
   it("applies policy-owned temporary grants and keeps role checks effective", () => {
     writePolicy("trusted", trustedContactPolicy());
     dbEnsureTagBinding({
@@ -134,6 +176,35 @@ describe("permission policies", () => {
     expect(result.summary.conflicts).toBe(1);
     expect(result.actions[0]?.conflictSource).toBe("manual");
     expect(relation.source).toBe("manual");
+  });
+
+  it("can materialize a policy grant after the same manual tuple was revoked", () => {
+    writePolicy("trusted", trustedContactPolicy());
+    dbEnsureTagBinding({
+      slug: TRUSTED_POLICY_TAG,
+      label: TRUSTED_POLICY_TAG,
+      assetType: "contact",
+      assetId: "luis",
+      source: "manual",
+    });
+    grantRelation("contact", "luis", "member", "role", "trusted-dev", "manual");
+    revokeRelation("contact", "luis", "member", "role", "trusted-dev");
+
+    const dryRun = dryRunPermissionPolicies({ directory: policyDir });
+    const apply = applyPermissionPolicies({ directory: policyDir });
+    const relation = listRelations({
+      subjectType: "contact",
+      subjectId: "luis",
+      relation: "member",
+      objectType: "role",
+      objectId: "trusted-dev",
+    })[0]!;
+
+    expect(dryRun.summary.conflicts).toBe(0);
+    expect(dryRun.actions[0]?.status).toBe("would_create");
+    expect(apply.summary.created).toBe(1);
+    expect(relation.source).toBe("policy:trusted-contacts-role");
+    expect(relation.revokedAt).toBeNull();
   });
 
   it("rejects membership into roles whose closure contains broad privileged outputs", () => {
