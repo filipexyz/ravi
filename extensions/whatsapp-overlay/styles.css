@@ -89,6 +89,8 @@
 }
 
 .ravi-wa-layout-host[data-ravi-native-sidebar-resized="true"]
+  [data-testid="drawer-middle"],
+.ravi-wa-layout-host[data-ravi-native-sidebar-collapsed="true"]
   [data-testid="drawer-middle"] {
   border-inline-start: 0 !important;
   border-inline-start-width: 0 !important;
@@ -158,6 +160,70 @@
 
 @media (max-width: 760px) {
   .ravi-wa-native-sidebar-resize-handle {
+    display: none !important;
+  }
+}
+
+.ravi-wa-native-sidebar-collapse-toggle {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 40px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 168, 132, 0.85);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  opacity: 0.78;
+  transition:
+    background 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease,
+    transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ravi-wa-native-sidebar-collapse-toggle span {
+  pointer-events: none;
+  display: block;
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ravi-wa-native-sidebar-collapse-toggle:hover,
+.ravi-wa-native-sidebar-collapse-toggle:focus-visible {
+  opacity: 1;
+  background: rgba(0, 168, 132, 1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.42);
+  transform: translate(-50%, -50%) scale(1.15);
+  outline: none;
+}
+
+/* Secondary action: the chevron leans toward the direction it will move the column. */
+.ravi-wa-native-sidebar-collapse-toggle:hover span,
+.ravi-wa-native-sidebar-collapse-toggle:focus-visible span {
+  transform: translateX(-1.5px);
+}
+
+.ravi-wa-native-sidebar-collapse-toggle--collapsed:hover span,
+.ravi-wa-native-sidebar-collapse-toggle--collapsed:focus-visible span {
+  transform: translateX(1.5px);
+}
+
+.ravi-wa-native-sidebar-collapse-toggle:active {
+  transform: translate(-50%, -50%) scale(0.9);
+}
+
+@media (max-width: 760px) {
+  .ravi-wa-native-sidebar-collapse-toggle {
     display: none !important;
   }
 }
