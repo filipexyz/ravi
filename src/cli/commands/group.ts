@@ -56,11 +56,16 @@ function emitConfigChanged() {
 }
 
 function resolveGroupAccount(account?: string): string {
-  return account ?? getFirstAccountName() ?? "";
+  return account ?? getContextAccountId() ?? getFirstAccountName() ?? "";
 }
 
 function resolveGroupSendAccount(account?: string): string {
-  return account ?? getContext()?.source?.accountId ?? getFirstAccountName() ?? "";
+  return resolveGroupAccount(account);
+}
+
+function getContextAccountId(): string | undefined {
+  const accountId = getContext()?.source?.accountId?.trim();
+  return accountId || undefined;
 }
 
 function normalizeGroupJid(groupId: string): string {

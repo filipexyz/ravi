@@ -47,6 +47,7 @@ let omniGroupParticipantUpdates: Array<{
 let omniGroupInvites: Array<{ op: string; instanceId: string; groupJid?: string; code?: string }> = [];
 let omniGroupMutations: Array<{ op: string; instanceId: string; groupJid: string; value?: string }> = [];
 let toolContext: Record<string, unknown> | undefined;
+let firstAccountName = "main";
 
 mock.module("../context.js", () => ({
   getContext: () => toolContext,
@@ -217,8 +218,8 @@ mock.module("../../router/router-db.js", () => ({
       run: () => undefined,
     }),
   }),
-  getFirstAccountName: () => "main",
-  dbGetInstance: () => ({ instanceId: "instance-main" }),
+  getFirstAccountName: () => firstAccountName,
+  dbGetInstance: (accountId: string) => ({ instanceId: `instance-${accountId}` }),
   dbFindChat: () => ({
     id: "chat-whatsapp-instance-main-group-120363",
     channel: "whatsapp",
@@ -318,6 +319,7 @@ mock.module("../../router/resolver.js", () => ({
 
 mock.module("../../runtime/agent-instructions.js", () => ({
   ensureAgentInstructionFiles: () => ({ createdAgents: true }),
+  loadAgentWorkspaceInstructions: async () => null,
 }));
 
 mock.module("../../nats.js", () => ({
@@ -391,6 +393,7 @@ describe("channel command --json output", () => {
     omniGroupInvites = [];
     omniGroupMutations = [];
     toolContext = undefined;
+    firstAccountName = "main";
     for (const key of actorEnvKeys) {
       delete process.env[key];
     }
@@ -544,6 +547,48 @@ describe("channel command --json output", () => {
       changedCount: 1,
     });
     expect(payload.session).toMatchObject({ status: "created", agent: "launch-agent" });
+  });
+
+  it("defaults WhatsApp group creation to the current context account before the first configured account", async () => {
+    firstAccountName = "hana-zap";
+    toolContext = {
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363424772797713@g.us",
+      },
+    };
+
+    const payload = await captureJson(() =>
+      new GroupCommands().create(
+        "Context Account",
+        "5511999999999",
+        undefined,
+        "main",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+
+    expect(omniGroupCreates.at(-1)).toEqual({
+      instanceId: "instance-main",
+      body: {
+        subject: "Context Account",
+        participants: ["5511999999999"],
+      },
+    });
+    expect(payload.accountId).toBe("main");
+    expect(routeCreates.at(-1)).toMatchObject({
+      accountId: "main",
+      pattern: "group:120363",
+      agent: "main",
+    });
   });
 
   it("creates a WhatsApp group with the current actor when participants are omitted", async () => {

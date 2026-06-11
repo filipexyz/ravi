@@ -33,6 +33,7 @@ Ravi MUST abstract Omni as a transport/gateway adapter. Product and agent-facing
 - Omni/raw channel identifiers MUST remain stored as provenance and debugging data, but they MUST NOT be the primary product model exposed to agents or operators.
 - Channel-specific behavior SHOULD be exposed to Ravi through typed capabilities and normalized events when a feature needs it, not through provider conditionals spread across features.
 - A dedicated channel capability registry MAY be deferred until a concrete feature needs it. The source of capability facts SHOULD be Omni.
+- Agent-executed channel CLIs MUST default to the current runtime source account when it is available. Falling back to the first configured account is only valid outside a sourced runtime context.
 
 ## Boundary
 
