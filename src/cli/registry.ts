@@ -150,9 +150,13 @@ function registerCommand(
   // Set up the action handler
   sub.action(async (...commanderArgs: unknown[]) => {
     // Commander passes: args..., options, command
-    const cmd = commanderArgs.pop(); // Command object (unused)
-    void cmd;
-    const options = commanderArgs.pop() as Record<string, unknown>;
+    const cmd = commanderArgs.pop() as CommanderCommand;
+    // Resolve options via optsWithGlobals so parent-level flags with the same
+    // name (e.g. --json declared on both `crm contact` and `crm contact show`)
+    // surface on nested subcommands. Without this, commander binds the flag
+    // to the ancestor that declared it first and the leaf action sees {}.
+    commanderArgs.pop();
+    const options = cmd.optsWithGlobals() as Record<string, unknown>;
     const positionalArgs = commanderArgs;
 
     // Build input map for the event
