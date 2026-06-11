@@ -310,7 +310,7 @@ function resolveAuthorityActorMetadata(
   | undefined {
   const source = resolvedSource ?? prompt.source;
   const context = prompt.context;
-  const automationPrincipal = resolveAutomationPromptPrincipal(prompt);
+  const automationPrincipal = resolveAutomationPromptPrincipal(prompt, source, context);
   if (!source && !context && !automationPrincipal) return undefined;
   return {
     ...(source ?? {}),
@@ -433,7 +433,11 @@ function buildRuntimeContextActorMetadata(
   return Object.keys(metadata).length > 0 ? metadata : null;
 }
 
-function resolveAutomationPromptPrincipal(prompt: RuntimeLaunchPrompt): AuthorityPrincipal | null {
+function resolveAutomationPromptPrincipal(
+  prompt: RuntimeLaunchPrompt,
+  source?: RuntimeMessageTarget,
+  context?: RuntimeLaunchPrompt["context"],
+): AuthorityPrincipal | null {
   if (prompt._cron && prompt._jobId) {
     return { subjectType: "automation", subjectId: `cron:${prompt._jobId}` };
   }
@@ -450,9 +454,16 @@ function resolveAutomationPromptPrincipal(prompt: RuntimeLaunchPrompt): Authorit
     };
   }
   if (prompt._daemonRestartResume) {
+    if (hasResolvedContactActor(source) || hasResolvedContactActor(context)) {
+      return null;
+    }
     return { subjectType: "automation", subjectId: "daemon-restart" };
   }
   return null;
+}
+
+function hasResolvedContactActor(metadata: { actorType?: string; contactId?: string } | undefined): boolean {
+  return metadata?.actorType === "contact" && Boolean(cleanStringValue(metadata.contactId));
 }
 
 function buildAutomationIdentityProvenance(prompt: RuntimeLaunchPrompt): Record<string, unknown> | undefined {

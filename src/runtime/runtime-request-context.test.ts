@@ -529,6 +529,50 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("preserves the contact principal for daemon restart resume prompts with a human snapshot source", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    grantRelation("agent", agent.id, "admin", "system", "*");
+    grantRelation("contact", "luis", "use", "tool", "Read");
+    grantRelation("chat", "chat_group_1", "use", "tool", "*");
+
+    const source = promptForContact("luis", "original user request").source;
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      source,
+      _daemonRestartResume: {
+        restartEpoch: "restart-test",
+        sessionKey,
+      },
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/rebac-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "delegated",
+      actorPrincipal: "contact:luis",
+      actorResolution: "resolved",
+      surfacePrincipal: "chat:chat_group_1",
+      actor: {
+        actorType: "contact",
+        contactId: "luis",
+        canonicalChatId: "chat_group_1",
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
   it("fails closed for automation prompts without automation grants", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
