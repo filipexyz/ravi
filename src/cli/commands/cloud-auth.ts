@@ -27,6 +27,8 @@ export interface CloudLoginOptions {
   console?: string;
   json?: boolean;
   open?: boolean;
+  org?: string;
+  organization?: string;
   poll?: boolean;
   timeoutSeconds?: string;
   intervalSeconds?: string;
@@ -61,6 +63,7 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
   const env = deps.env ?? process.env;
   const existing = read();
   const installationId = existing?.consoleUrl === consoleUrl ? existing.installationId : crypto.randomUUID();
+  const organizationRef = firstString(options.org, options.organization);
   const config = await client.getAuthConfig();
   const deviceAuth = await client.startDeviceAuthorization(config);
   const authUrl = deviceAuth.verificationUriComplete;
@@ -77,7 +80,7 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
   }
 
   if (!options.json) {
-    printLoginStart({ consoleUrl, authUrl, verificationUrl, userCode, openBrowser });
+    printLoginStart({ consoleUrl, authUrl, verificationUrl, userCode, openBrowser, organizationRef });
   }
 
   const credentials = await exchangeUntilComplete({
@@ -86,6 +89,7 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
     config,
     deviceCode: deviceAuth.deviceCode,
     existing,
+    organizationRef,
     poll: options.poll !== false,
     timeoutSeconds: parsePositiveNumber(options.timeoutSeconds, 300),
     intervalSeconds: parsePositiveNumber(
@@ -251,6 +255,7 @@ async function exchangeUntilComplete(input: {
   config: ConsoleAuthConfig;
   deviceCode: string;
   existing: CloudCredentials | null;
+  organizationRef?: string;
   poll: boolean;
   timeoutSeconds: number;
   intervalSeconds: number;
@@ -264,6 +269,7 @@ async function exchangeUntilComplete(input: {
       const providerToken = await input.client.pollDeviceToken(input.config, input.deviceCode);
       const credentials = await input.client.exchange({
         installationId: input.installationId,
+        ...(input.organizationRef ? { organizationRef: input.organizationRef } : {}),
         workosAccessToken: providerToken.accessToken,
         installation: input.installation,
       });
@@ -326,8 +332,10 @@ function printLoginStart(input: {
   verificationUrl?: string;
   userCode?: string;
   openBrowser: boolean;
+  organizationRef?: string;
 }): void {
   console.log(`Ravi Cloud login: ${input.consoleUrl}`);
+  if (input.organizationRef) console.log(`Organization: ${input.organizationRef}`);
   if (input.openBrowser && input.authUrl) console.log("Opening browser for authentication...");
   if (input.verificationUrl) console.log(`Verification URL: ${input.verificationUrl}`);
   if (input.userCode) console.log(`Code: ${input.userCode}`);

@@ -201,6 +201,7 @@ export class RuntimeSessionDispatcher {
           toolRunning: session.toolRunning,
           pendingAbort: session.pendingAbort,
           pendingWake: session.pendingWake,
+          currentSource: session.currentSource ? cloneRuntimeMessageTarget(session.currentSource) : null,
           currentToolName: session.currentToolName ?? null,
           currentTaskBarrierTaskId: session.currentTaskBarrierTaskId ?? null,
           currentTurnPendingIds: session.currentTurnPendingIds ?? [],
@@ -749,10 +750,6 @@ export class RuntimeSessionDispatcher {
           commands: prompt.commands,
         });
 
-        if (prompt.source) {
-          existing.currentSource = prompt.source;
-        }
-
         const barrier = getRuntimePromptDeliveryBarrier(prompt);
         const nativeSteer = await this.tryNativeRuntimeSteer(
           sessionName,
@@ -762,6 +759,9 @@ export class RuntimeSessionDispatcher {
           sessionEntry?.sessionKey,
         );
         if (nativeSteer === "accepted") {
+          if (prompt.source) {
+            existing.currentSource = prompt.source;
+          }
           updateRuntimeLiveState(sessionName, {
             activity: "thinking",
             summary: "runtime control accepted",
@@ -1692,7 +1692,7 @@ export function stashPromptForStartingSession(
   return queued;
 }
 
-function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {
+export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {
   if (messages.length === 0) {
     return null;
   }
@@ -1700,7 +1700,7 @@ function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunc
   const launchPrompts = messages
     .map((message) => message.launchPrompt)
     .filter((prompt): prompt is RuntimeLaunchPrompt => Boolean(prompt));
-  const newestLaunchPrompt = launchPrompts[launchPrompts.length - 1];
+  const newestLaunchPrompt = selectStashedRestartPromptEnvelope(launchPrompts);
   const first = messages[0];
   if (!first) {
     return null;
@@ -1734,6 +1734,33 @@ function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunc
         : messages.flatMap((message) => message.commands ?? []),
     _resumeStashedMessages: true,
   };
+}
+
+function selectStashedRestartPromptEnvelope(launchPrompts: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt | undefined {
+  const newest = launchPrompts[launchPrompts.length - 1];
+  if (!newest?._daemonRestartResume || hasResolvedActorPromptMetadata(newest)) {
+    return newest;
+  }
+  return [...launchPrompts].reverse().find(hasResolvedActorPromptMetadata) ?? newest;
+}
+
+function hasResolvedActorPromptMetadata(prompt: RuntimeLaunchPrompt): boolean {
+  return hasResolvedActorMetadata(prompt.source) || hasResolvedActorMetadata(prompt.context);
+}
+
+function hasResolvedActorMetadata(
+  metadata:
+    | {
+        actorType?: string;
+        contactId?: string;
+        automationId?: string;
+      }
+    | undefined,
+): boolean {
+  return Boolean(
+    (metadata?.actorType === "contact" && metadata.contactId) ||
+      (metadata?.actorType === "automation" && metadata.automationId),
+  );
 }
 
 function combineDeliveryBarrierMetadata(entries: Array<{ barrier: DeliveryBarrier; source?: DeliveryBarrierSource }>): {
@@ -1824,6 +1851,10 @@ function inferTaskIdFromDedicatedTaskSessionName(sessionName: string): string | 
 
 function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessage {
   return JSON.parse(JSON.stringify(message)) as RuntimeUserMessage;
+}
+
+function cloneRuntimeMessageTarget(target: RuntimeMessageTarget): RuntimeMessageTarget {
+  return JSON.parse(JSON.stringify(target)) as RuntimeMessageTarget;
 }
 
 function appendRestartPendingMessages(snapshot: RestartSnapshotAccumulator, messages: RuntimeUserMessage[]): void {

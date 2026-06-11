@@ -162,6 +162,32 @@ describe("tag-db", () => {
     expect(reattached.updatedBy).toBe("cli");
   });
 
+  it("does not allow policy tag binding source to be overwritten by reattach", () => {
+    const tag = dbCreateTagDefinition({
+      slug: "policy.profile.trusted-dev",
+      label: "Trusted Dev",
+    });
+    createdSlugs.push(tag.slug);
+
+    dbUpsertTagBinding({
+      slug: tag.slug,
+      assetType: "contact",
+      assetId: "luis",
+      source: "manual",
+      createdBy: "operator",
+    });
+
+    expect(() =>
+      dbUpsertTagBinding({
+        slug: tag.slug,
+        assetType: "contact",
+        assetId: "luis",
+        source: "tag_rules:auto",
+        updatedBy: "auto",
+      }),
+    ).toThrow(/Cannot change source for policy tag binding/);
+  });
+
   it("filters and paginates definitions with a stable cursor", () => {
     const tags = ["page-test-a", "page-test-b", "page-test-c"].map((slug) =>
       dbCreateTagDefinition({

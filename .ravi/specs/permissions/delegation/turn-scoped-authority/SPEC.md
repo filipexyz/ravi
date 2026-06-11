@@ -88,6 +88,10 @@ Rules:
 - `admin system:*` in `agent_caps` MUST NOT by itself allow a user-initiated invocation.
 - `admin system:*` in `actor_caps` MAY allow break-glass authority only when the actor is an approved owner/operator principal and the invocation trace marks the mode as break-glass or admin-delegated.
 - Surface policy MAY reduce capabilities. It MUST NOT grant a capability absent from both actor and agent ceilings.
+- If the surface has no explicit grant, `deny_<relation>`, or `constrain role:<id>` decision for the same capability, the surface branch inherits the actor's effective capability for that object.
+- `deny_<relation>` on the surface is an explicit veto and MUST deny the matching capability even when the actor and executor agent allow it.
+- Surface `constrain role:<id>` grants remain explicit surface boundaries; capabilities outside the constraint are denied unless a surface-level delegation override explicitly allows them.
+- Explicit `delegate_<relation>` overrides MAY satisfy a missing actor branch, but MUST NOT bypass the executor agent ceiling or turn approval ceiling.
 - `contact_policies.status=allowed` permits interaction, not tools. It MUST NOT imply `use tool:*`, `execute executable:*`, `execute group:*`, session access, or contact writes.
 
 ## Runtime Context Requirements
@@ -122,6 +126,27 @@ The context MUST include:
 - `created_at`, `expires_at`, `revoked_at`
 
 The context MUST be short-lived. A user-initiated invocation context SHOULD expire in minutes, not days. Child contexts MUST expire no later than their parent.
+
+## Capability Freshness
+
+Delegated contexts snapshot graph state at turn start. Snapshots are an audit
+and intersection artifact, not a second source of truth:
+
+- A grant created after a denial MUST take effect by the next turn of the
+  affected session without daemon restart or manual context surgery.
+- A revocation MUST stop authorizing by the next authority check (existing
+  superadmin-boundary rule); the same freshness applies to role membership
+  and constraint changes.
+- Capability counts persisted in context metadata
+  (`actorCapabilityCount`, `surfaceCapabilityCount`, ...) describe the moment
+  the context was built. Tooling, denial diagnosis, and operators MUST NOT
+  read them as live graph state; anything that reports them MUST be able to
+  re-resolve current state (see `permissions/explain`).
+- The long-term direction is to evaluate authority against the live graph at
+  check time and keep per-turn snapshots only for audit provenance. Any
+  caching layer MUST key on actor identity and an authority version, and a
+  graph mutation MUST invalidate affected cache entries before the next
+  check.
 
 ## No Cross-Actor Leakage
 
@@ -177,6 +202,39 @@ role:group-safe use toolgroup:read-only
 ```
 
 Role expansion MUST be deterministic and auditable. If two roles disagree, the more restrictive result wins after intersection with surface policy.
+
+## Explicit Delegation Overrides
+
+Some operations are intentionally allowed in a specific agent or chat even when
+the current contact does not have the corresponding capability directly. This
+MUST use an explicit override relation:
+
+```text
+agent:<agent-id> delegate_use tool:Bash
+chat:<chat-id> delegate_use tool:Bash
+chat:<chat-id> delegate_execute group:apps_run
+```
+
+Rules:
+
+- `delegate_<relation>` is not a normal capability and MUST NOT appear in
+  `actor_caps`, `surface_caps`, or `effective_capabilities`.
+- The override maps only to the underlying relation during delegated context
+  construction, e.g. `delegate_use tool:Bash` can satisfy `use tool:Bash`.
+- Agent-level overrides satisfy the actor branch only. The surface still needs
+  a normal surface grant or a surface override.
+- Surface-level overrides satisfy both the actor branch and the surface branch
+  for that surface.
+- Overrides apply only when the actor resolved to a concrete contact. Unknown
+  actors and automation principals MUST NOT receive human delegation overrides.
+- The executor agent MUST still have the requested capability through normal
+  grants. `delegate_use tool:Bash` cannot make an agent without `use tool:Bash`
+  run Bash.
+- `delegate_admin` MUST be rejected or ignored. Superadmin delegation requires
+  the separate break-glass/admin-delegated path.
+- Turn/observer approval grants remain an upper bound and MUST NOT be overridden.
+- Runtime metadata and denial audit MUST expose override counts and the
+  principals that supplied overrides.
 
 ## Automation And Observer Boundary
 

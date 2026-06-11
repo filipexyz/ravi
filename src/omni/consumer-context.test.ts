@@ -235,6 +235,7 @@ mock.module("../session-trace/channel-trace.js", () => ({
     channelMessageTraceCalls.push(input);
     return {};
   }),
+  recordPresenceTrace: mock(() => ({})),
   recordRouteRejectedTrace: mock(() => ({})),
   recordRouteResolvedTrace: mock(() => ({})),
 }));

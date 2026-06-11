@@ -5,6 +5,7 @@ kind: domain
 domain: sessions
 capabilities:
   - attach
+  - actions
   - visibility
   - rebac
 tags:
@@ -18,6 +19,7 @@ applies_to:
   - src/omni/consumer.ts
   - src/runtime/host-event-loop.ts
   - src/cli/commands/sessions.ts
+  - src/prompt-builder.ts
 owners:
   - ravi-dev
 status: draft
@@ -86,9 +88,35 @@ Sessions do NOT own:
   that session.
 - Hidden sessions SHOULD appear missing on direct lookup.
 
+## Session Actions
+
+`ravi sessions actions --json` is the canonical conversational action surface for a runtime session.
+
+It MUST expose:
+
+- the current session identity;
+- active chat surfaces/subscriptions needed to confirm the target chat;
+- recent own outbound message ids usable for own-message actions;
+- `promptHint` and `usage.tools` with command-specific constraints;
+- an `actions` list with stable action ids and status.
+
+The action catalog MUST include existing executable conversational/channel commands instead of relying only on system-prompt prose. At minimum, when the underlying CLIs exist, it SHOULD advertise:
+
+- `message.delete` via `ravi sessions delete-message`;
+- `message.edit` via `ravi sessions edit-message`;
+- `message.react` via `ravi react send`;
+- `sticker.send` via `ravi stickers send`;
+- `media.send` via `ravi media send`;
+- `session.read` via `ravi sessions read --json`.
+
+Actions that are conceptually useful but do not have an implemented command MUST be listed as `planned`, not documented as executable.
+
+Agents MUST consult `ravi sessions actions --json` before using a conversational action whose availability or target is uncertain. The system prompt MAY name examples, but MUST NOT be the only source of truth for available action commands.
+
 ## Validation
 
 - `bun test src/router/sessions.test.ts src/router/sessions.rename.test.ts src/router/commit-matched-route.test.ts`
+- `bun test src/cli/commands/sessions.test.ts src/prompt-builder.test.ts`
 - Scope tests SHOULD cover `sessions list/info/read/trace` filtering through
   `access session:<id>` and mutation through `modify session:<id>`.
 
@@ -98,4 +126,6 @@ Sessions do NOT own:
 - Treating `session_chat_bindings` as "the only chat" instead of "the primary chat" — blocks multi-input attach.
 - Reintroducing `focus` as a separate primitive instead of using `attach` as the output attachment.
 - Falling back to inbound source for output after attach lands — causes sessions to reply in the wrong chat.
+- Mentioning a conversational tool in the prompt without exposing it through `ravi sessions actions --json`.
+- Marking a not-yet-implemented action as available instead of `planned`.
 - Letting threads, observers, or knowledge collapse into the session concept.

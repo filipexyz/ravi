@@ -6,10 +6,24 @@ import "reflect-metadata";
 import { resolve, basename } from "node:path";
 import { Group, Command, Arg, Option, Returns } from "../decorators.js";
 import { getContext } from "../context.js";
-import { generateAudio } from "../../audio/generator.js";
+import { generateAudio, listElevenLabsVoices } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
 import { sendMediaWithOmniCli } from "../media-send.js";
-import { audioGenerateReturnSchema } from "./operational-return-schemas.js";
+import { nats } from "../../nats.js";
+import {
+  getTtsPlaybackItem,
+  listTtsPlaybackItems,
+  RAVI_TTS_TOPIC,
+  readTtsPlaybackAudio,
+  resolveTtsVoiceConfig,
+  type RaviTtsRequest,
+} from "../../audio/tts.js";
+import {
+  audioGenerateReturnSchema,
+  audioPendingReturnSchema,
+  audioTtsReturnSchema,
+  audioVoicesReturnSchema,
+} from "./operational-return-schemas.js";
 
 @Group({
   name: "audio",
@@ -160,4 +174,209 @@ export class AudioCommands {
 
     return payload;
   }
+
+  @Command({
+    name: "tts",
+    description: "Publish a ravi.tts request for ElevenLabs generation and extension playback",
+  })
+  @Returns(audioTtsReturnSchema)
+  async tts(
+    @Arg("text", { description: "Text to convert to speech" })
+    text: string,
+    @Option({ flags: "--id <id>", description: "Playback request id" })
+    id?: string,
+    @Option({ flags: "--agent <id>", description: "Agent ID used to resolve TTS defaults" })
+    agentId?: string,
+    @Option({ flags: "--session <name>", description: "Session name" })
+    sessionName?: string,
+    @Option({ flags: "--session-key <key>", description: "Session key" })
+    sessionKey?: string,
+    @Option({ flags: "--channel <channel>", description: "Target channel, e.g. whatsapp" })
+    channel?: string,
+    @Option({ flags: "--account <id>", description: "Target account/instance alias" })
+    accountId?: string,
+    @Option({ flags: "--chat <id>", description: "Target chat id" })
+    chatId?: string,
+    @Option({ flags: "--voice <id>", description: "ElevenLabs voice ID override" })
+    voice?: string,
+    @Option({ flags: "--model <model>", description: "ElevenLabs model ID override" })
+    model?: string,
+    @Option({ flags: "--speed <speed>", description: "Voice speed override" })
+    speed?: string,
+    @Option({ flags: "--lang <code>", description: "Language code override" })
+    lang?: string,
+    @Option({ flags: "--format <format>", description: "ElevenLabs output format override" })
+    format?: string,
+    @Option({ flags: "--voice-settings <json>", description: "ElevenLabs voiceSettings JSON" })
+    voiceSettingsJson?: string,
+    @Option({ flags: "--elevenlabs <json>", description: "Additional ElevenLabs request JSON" })
+    elevenlabsJson?: string,
+    @Option({ flags: "--client-id <id>", description: "Extension playback client id" })
+    clientId?: string,
+    @Option({ flags: "--no-autoplay", description: "Do not autoplay in extension clients" })
+    noAutoplay?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const contextAgentId = getContext()?.agentId;
+    const resolvedAgentId = agentId ?? contextAgentId;
+    const voiceSettings = parseJsonObjectOption(voiceSettingsJson, "voice-settings");
+    const elevenlabs = parseJsonObjectOption(elevenlabsJson, "elevenlabs");
+    const request: RaviTtsRequest = {
+      ...(id ? { id } : {}),
+      text,
+      ...(resolvedAgentId ? { agentId: resolvedAgentId } : {}),
+      ...(sessionName ? { sessionName } : {}),
+      ...(sessionKey ? { sessionKey } : {}),
+      ...(channel || accountId || chatId
+        ? {
+            target: {
+              ...(channel ? { channel } : {}),
+              ...(accountId ? { accountId } : {}),
+              ...(chatId ? { chatId } : {}),
+            },
+          }
+        : {}),
+      playback: {
+        target: "extension",
+        autoplay: !noAutoplay,
+        ...(clientId ? { clientId } : {}),
+      },
+      voice: resolveTtsVoiceConfig({
+        agentId: resolvedAgentId,
+        voice: {
+          ...(voice ? { voiceId: voice } : {}),
+          ...(model ? { modelId: model } : {}),
+          ...(speed ? { speed: Number.parseFloat(speed) } : {}),
+          ...(lang ? { lang } : {}),
+          ...(format ? { outputFormat: format } : {}),
+          ...(voiceSettings ? { voiceSettings } : {}),
+          ...(elevenlabs ? { elevenlabs } : {}),
+        },
+      }),
+      createdAt: Date.now(),
+      metadata: { origin: "cli.audio.tts" },
+    };
+    await nats.emit(RAVI_TTS_TOPIC, request as unknown as Record<string, unknown>);
+    const payload = { ok: true, topic: RAVI_TTS_TOPIC, request };
+    if (asJson) console.log(JSON.stringify(payload, null, 2));
+    return payload;
+  }
+
+  @Command({
+    name: "voices",
+    description: "List available ElevenLabs voices for picker UIs",
+  })
+  @Returns(audioVoicesReturnSchema)
+  async voices(
+    @Option({ flags: "--search <text>", description: "Search by voice name, description or labels" })
+    search?: string,
+    @Option({ flags: "--limit <n>", description: "Maximum voices to return" })
+    limit?: string,
+    @Option({ flags: "--category <category>", description: "Voice category filter" })
+    category?: string,
+    @Option({ flags: "--voice-type <type>", description: "Voice type filter" })
+    voiceType?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const result = await listElevenLabsVoices({
+      search,
+      limit: limit ? Number.parseInt(limit, 10) : undefined,
+      category,
+      voiceType,
+    });
+    const payload = {
+      ok: true as const,
+      provider: "elevenlabs" as const,
+      generatedAt: Date.now(),
+      ...result,
+    };
+    if (asJson) console.log(JSON.stringify(payload, null, 2));
+    return payload;
+  }
+
+  @Command({
+    name: "pending",
+    description: "List generated ravi.tts playback items waiting for extension playback",
+  })
+  @Returns(audioPendingReturnSchema)
+  pending(
+    @Option({ flags: "--id <id>", description: "Filter by playback item id" })
+    id?: string,
+    @Option({ flags: "--request-id <id>", description: "Filter by playback request id" })
+    requestId?: string,
+    @Option({ flags: "--since <ms>", description: "Only return TTS items after this Unix ms timestamp" })
+    since?: string,
+    @Option({ flags: "--session <name>", description: "Filter by session name" })
+    sessionName?: string,
+    @Option({ flags: "--session-key <key>", description: "Filter by session key" })
+    sessionKey?: string,
+    @Option({ flags: "--chat <id>", description: "Filter by target chat id" })
+    chatId?: string,
+    @Option({ flags: "--agent <id>", description: "Filter by agent id" })
+    agentId?: string,
+    @Option({ flags: "--client-id <id>", description: "Filter by extension playback client id" })
+    clientId?: string,
+    @Option({ flags: "--limit <n>", description: "Maximum items to return" })
+    limit?: string,
+    @Option({ flags: "--include-failed", description: "Include failed TTS requests" })
+    includeFailed?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const payload = {
+      ok: true,
+      generatedAt: Date.now(),
+      items: listTtsPlaybackItems({
+        id,
+        requestId,
+        since: since ? Number.parseFloat(since) : undefined,
+        sessionName,
+        sessionKey,
+        chatId,
+        agentId,
+        clientId,
+        limit: limit ? Number.parseInt(limit, 10) : undefined,
+        includeFailed,
+      }),
+    };
+    if (asJson) console.log(JSON.stringify(payload, null, 2));
+    return payload;
+  }
+
+  @Command({
+    name: "blob",
+    description: "Return generated TTS audio bytes",
+  })
+  @Returns.binary()
+  blob(
+    @Arg("id", { description: "TTS playback item id" })
+    id: string,
+  ): Response {
+    const audio = readTtsPlaybackAudio(id);
+    if (!audio) {
+      const known = getTtsPlaybackItem(id);
+      return new Response(JSON.stringify({ error: "NotFound", id, status: known?.status ?? "missing" }), {
+        status: 404,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+    return new Response(audio.bytes, {
+      headers: {
+        "content-type": audio.mimeType,
+        "content-length": String(audio.bytes.byteLength),
+        "cache-control": "no-store",
+      },
+    });
+  }
+}
+
+function parseJsonObjectOption(value: string | undefined, label: string): Record<string, unknown> | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = JSON.parse(value) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
 }

@@ -63,7 +63,7 @@ import {
   type ContactSessionSummary,
 } from "../../session-trace/session-trace-db.js";
 import type { SessionEventRecord } from "../../session-trace/types.js";
-import { getScopeContext, isScopeEnforced, canAccessContact } from "../../permissions/scope.js";
+import { getScopeContext, isScopeEnforced, canAccessContact, canWriteContacts } from "../../permissions/scope.js";
 import { printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
 const CONTACT_DB_META = { source: "contact-db", freshness: "persisted" } as const;
@@ -310,23 +310,64 @@ function summarizeContacts(contacts: Contact[]) {
   };
 }
 
-function assertCanReadContactTimeline(contactRef: string): void {
+function canReadContactRecord(scopeCtx: ReturnType<typeof getScopeContext>, contact: Contact): boolean {
+  const contactAgent = getRouteAgent(contact);
+  const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
+  return canAccessContact(scopeCtx, contact, null, contactSessions);
+}
+
+function canReadCanonicalContact(
+  scopeCtx: ReturnType<typeof getScopeContext>,
+  contactId: string,
+  tags: string[] = [],
+): boolean {
+  const contact = getContact(contactId);
+  if (contact) return canReadContactRecord(scopeCtx, contact);
+  return canAccessContact(scopeCtx, { id: contactId, tags }, null, []);
+}
+
+function canReadContactDetails(scopeCtx: ReturnType<typeof getScopeContext>, details: ContactDetails): boolean {
+  return canReadCanonicalContact(scopeCtx, details.contact.id, details.policy?.tags ?? []);
+}
+
+function filterVisibleContacts<T extends Contact>(contacts: T[]): T[] {
   const scopeCtx = getScopeContext();
-  if (!isScopeEnforced(scopeCtx)) return;
+  if (!isScopeEnforced(scopeCtx)) return contacts;
+  return contacts.filter((contact) => canReadContactRecord(scopeCtx, contact));
+}
 
+function getVisibleContactDetails(
+  contactRef: string,
+  options: { includeDuplicateCandidates?: boolean } = {},
+): { contact: Contact | null; details: ContactDetails | null } {
+  const details = getContactDetails(contactRef, options);
   const contact = getContact(contactRef);
-  if (contact) {
-    const contactAgent = getRouteAgent(contact);
-    const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
-    if (canAccessContact(scopeCtx, contact, null, contactSessions)) return;
-    fail(`Permission denied: agent:${scopeCtx.agentId} cannot read contact timeline for ${contact.id}`);
-  }
+  if (!contact && !details) return { contact: null, details: null };
 
-  const details = getContactDetails(contactRef);
-  if (!details) fail(`Contact not found: ${contactRef}`);
-  const tags = details.policy?.tags ?? [];
-  if (canAccessContact(scopeCtx, { id: details.contact.id, tags }, null, [])) return;
-  fail(`Permission denied: agent:${scopeCtx.agentId} cannot read contact timeline for ${details.contact.id}`);
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return { contact, details };
+
+  if (contact && canReadContactRecord(scopeCtx, contact)) return { contact, details };
+  if (details && canReadContactDetails(scopeCtx, details)) return { contact, details };
+  return { contact: null, details: null };
+}
+
+function assertCanReadContact(contactRef: string): void {
+  const visible = getVisibleContactDetails(contactRef);
+  if (visible.contact || visible.details) return;
+  fail(`Contact not found: ${contactRef}`);
+}
+
+function assertCanReadContactTimeline(contactRef: string): void {
+  assertCanReadContact(contactRef);
+}
+
+function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string }): boolean {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return true;
+  if (entry.pendingKind === "chat") return canWriteContacts(scopeCtx);
+  const contact = getContact(entry.phone);
+  return contact ? canReadContactRecord(scopeCtx, contact) : canWriteContacts(scopeCtx);
 }
 
 @Group({
@@ -343,17 +384,7 @@ export class ContactsCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching contacts to skip (default: 0)" }) offset?: string,
   ) {
     let contacts = filterStatus ? getAllContacts().filter((c) => c.status === filterStatus) : getAllContacts();
-
-    // Scope isolation: filter contacts by agent scope (via REBAC)
-    const scopeCtx = getScopeContext();
-    if (isScopeEnforced(scopeCtx)) {
-      contacts = contacts.filter((c) => {
-        // Find the agent that owns this contact's session (via route)
-        const contactAgent = getRouteAgent(c);
-        const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
-        return canAccessContact(scopeCtx, c, null, contactSessions);
-      });
-    }
+    contacts = filterVisibleContacts(contacts);
 
     const page = paginateCliItems(contacts, { limit, offset });
     const pageContacts = page.items;
@@ -420,10 +451,10 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     // Global pending contacts
-    const contacts = getPendingContacts();
-    const accountPendingContacts = listAccountPendingContacts(account);
-    const pendingChats = listAccountPendingChats(account);
-    const accountPending = listAccountPending(account);
+    const contacts = filterVisibleContacts(getPendingContacts());
+    const accountPendingContacts = listAccountPendingContacts(account).filter(canViewPendingAccountEntry);
+    const pendingChats = listAccountPendingChats(account).filter(canViewPendingAccountEntry);
+    const accountPending = listAccountPending(account).filter(canViewPendingAccountEntry);
 
     const payload = {
       filter: { account: account ?? null },
@@ -896,8 +927,7 @@ export class ContactsCommands {
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const details = getContactDetails(contactRef);
-    const contact = getContact(contactRef);
+    const { details, contact } = getVisibleContactDetails(contactRef, { includeDuplicateCandidates: true });
 
     if (!contact && !details) {
       const payload = { found: false as const, target: contactRef, contact: null };
@@ -1411,7 +1441,7 @@ export class ContactsCommands {
     @Option({ flags: "--tag", description: "Search by tag" }) byTag?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const contacts = byTag ? findContactsByTag(query) : searchContacts(query);
+    const contacts = filterVisibleContacts(byTag ? findContactsByTag(query) : searchContacts(query));
     const payload = {
       query,
       byTag: Boolean(byTag),
@@ -1574,7 +1604,16 @@ export class ContactsCommands {
   @Scope("open")
   @Command({ name: "duplicates", description: "Find likely duplicate contacts" })
   duplicates(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const duplicateContacts = listDuplicateContacts();
+    const scopeCtx = getScopeContext();
+    const duplicateContacts = listDuplicateContacts()
+      .filter((entry) => !isScopeEnforced(scopeCtx) || canReadCanonicalContact(scopeCtx, entry.contact.id))
+      .map((entry) => ({
+        ...entry,
+        duplicateCandidates: isScopeEnforced(scopeCtx)
+          ? entry.duplicateCandidates.filter((candidate) => canReadCanonicalContact(scopeCtx, candidate.contact.id))
+          : entry.duplicateCandidates,
+      }))
+      .filter((entry) => entry.duplicateCandidates.length > 0);
     const payload = {
       total: duplicateContacts.length,
       duplicateContacts,

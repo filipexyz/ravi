@@ -3,4 +3,5 @@ export * from "./service.js";
 export * from "./scaffold.js";
 export * from "./import-cli.js";
 export * from "./guide.js";
+export * from "./permissions.js";
 export * from "./router.js";

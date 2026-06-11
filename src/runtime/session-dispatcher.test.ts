@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
   RuntimeSessionDispatcher,
+  buildStashedRestartPrompt,
   canUseNativeRuntimeSteer,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
@@ -400,6 +401,17 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         createActiveSession({
           turnActive: true,
           lastActivity: now - 1_000,
+          currentSource: {
+            channel: "whatsapp",
+            accountId: "main",
+            chatId: "120363424772797713@g.us",
+            canonicalChatId: "chat_dev",
+            sourceMessageId: "wamid-active",
+            actorType: "contact",
+            contactId: "contact_luis",
+            rawSenderId: "178035101794451",
+            normalizedSenderId: "5511947879044",
+          },
           pendingMessages: [
             createQueuedRuntimeUserMessage({
               prompt: "queued user work",
@@ -431,9 +443,146 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
       expect(eligible.map((snapshot) => snapshot.sessionName)).toEqual(["restart-active"]);
       expect(eligible[0]?.pendingMessageCount).toBe(1);
+      expect(eligible[0]?.metadata?.currentSource).toMatchObject({
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363424772797713@g.us",
+        canonicalChatId: "chat_dev",
+        sourceMessageId: "wamid-active",
+        actorType: "contact",
+        contactId: "contact_luis",
+      });
 
       const pending = dbGetDaemonRestartPendingMessages("epoch-active", "agent:dev:test:restart-active");
       expect((pending[0] as RuntimeUserMessage | undefined)?.message.content).toBe("queued user work");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("preserves actor metadata when a daemon restart resume envelope is appended to persisted work", () => {
+    const original = createQueuedRuntimeUserMessage({
+      prompt: "continue the user work",
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363424772797713@g.us",
+        canonicalChatId: "chat_dev",
+        sourceMessageId: "wamid-original",
+        actorType: "contact",
+        contactId: "contact_luis",
+      },
+      context: {
+        channelId: "whatsapp",
+        channelName: "WhatsApp",
+        accountId: "main",
+        chatId: "120363424772797713@g.us",
+        canonicalChatId: "chat_dev",
+        messageId: "wamid-original",
+        senderId: "178035101794451",
+        senderName: "Luís Filipe",
+        isGroup: true,
+        groupName: "ravi - dev",
+        timestamp: Date.now(),
+        actorType: "contact",
+        contactId: "contact_luis",
+      },
+    });
+    const resume = createQueuedRuntimeUserMessage({
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _daemonRestartResume: {
+        restartEpoch: "restart-test",
+        sessionKey: "agent:dev:whatsapp:main:group:120363424772797713",
+      },
+    });
+
+    const restartPrompt = buildStashedRestartPrompt([original, resume]);
+
+    expect(restartPrompt?.source).toMatchObject({
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "120363424772797713@g.us",
+      canonicalChatId: "chat_dev",
+      actorType: "contact",
+      contactId: "contact_luis",
+    });
+    expect(restartPrompt?.context).toMatchObject({
+      actorType: "contact",
+      contactId: "contact_luis",
+      senderName: "Luís Filipe",
+    });
+    expect(restartPrompt?._resumeStashedMessages).toBe(true);
+    expect(restartPrompt?.prompt).toContain("continue the user work");
+    expect(restartPrompt?.prompt).toContain("Daemon reiniciou");
+  });
+
+  it("does not replace the active turn source when an after_response session followup is queued", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-followup-source-");
+    try {
+      getOrCreateSession("agent:main:test:followup-source", "main", stateDir, { name: "followup-source" });
+      const activeSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363424239734858@g.us",
+        canonicalChatId: "chat_audit",
+        sourceMessageId: "wamid-active",
+        actorType: "contact",
+        contactId: "contact_luis",
+        rawSenderId: "178035101794451",
+        normalizedSenderId: "5511947879044",
+      };
+      const followupSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363424239734858@g.us",
+        canonicalChatId: "chat_audit",
+        actorType: "automation",
+        automationId: "session-followup:sfup_source_probe",
+        identityProvenance: { source: "session-followup" },
+      };
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        currentEffort: "xhigh",
+        currentSource: activeSource,
+      });
+      dispatcher.streamingSessions.set("followup-source", activeSession);
+
+      await dispatcher.handlePromptImmediate("followup-source", {
+        prompt: "[Session Followup: source probe] Respond exactly @@SILENT@@.",
+        _agentId: "main",
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
+        _sessionFollowup: true,
+        _sessionFollowupCadenceId: "sfup_source_probe",
+        _sessionFollowupRunId: "sfr_source_probe",
+        source: followupSource,
+        context: {
+          channelId: "whatsapp",
+          channelName: "WhatsApp",
+          accountId: "main",
+          chatId: "120363424239734858@g.us",
+          canonicalChatId: "chat_audit",
+          messageId: "session-followup:sfup_source_probe",
+          senderId: "session-followup:sfup_source_probe",
+          senderName: "Session Followup",
+          isGroup: true,
+          groupName: "Ravi - Audit",
+          timestamp: Date.now(),
+          actorType: "automation",
+          automationId: "session-followup:sfup_source_probe",
+          identityProvenance: { source: "session-followup" },
+        },
+      });
+
+      expect(activeSession.currentSource).toEqual(activeSource);
+      expect(activeSession.pendingMessages).toHaveLength(1);
+      expect(activeSession.pendingMessages[0]?.deliveryBarrier).toBe("after_response");
+      expect(activeSession.pendingMessages[0]?.launchPrompt?.source).toEqual(followupSource);
+      expect(activeSession.pendingMessages[0]?.launchPrompt?._sessionFollowup).toBe(true);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

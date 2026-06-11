@@ -5,6 +5,7 @@ import {
   DELEGATED_AUTHORITY_MODE,
   hasAnyCapability,
   snapshotSubjectCapabilities,
+  snapshotSubjectDelegationOverrides,
   TURN_SCOPED_AUTHORITY_KIND,
   type AuthorityPrincipal,
 } from "../permissions/delegation.js";
@@ -222,20 +223,40 @@ function buildDelegatedRuntimeContextInput(options: {
   const actorMetadata = resolveAuthorityActorMetadata(options.prompt, options.resolvedSource);
   const actorPrincipal = resolveActorPrincipal(actorMetadata);
   const surfacePrincipal = resolveSurfacePrincipal(actorMetadata);
+  const actorDisplayName = cleanStringValue(actorMetadata?.senderName);
+  const surfaceDisplayName = cleanStringValue(actorMetadata?.groupName);
   const actorCapabilities = actorPrincipal
     ? snapshotSubjectCapabilities(actorPrincipal.subjectType, actorPrincipal.subjectId)
     : [];
   const surfaceCapabilities = surfacePrincipal
     ? snapshotSubjectCapabilities(surfacePrincipal.subjectType, surfacePrincipal.subjectId, { includeRoles: false })
     : [];
+  const allowDelegationOverrides = shouldApplyDelegationOverrides(actorPrincipal);
+  const agentDelegationOverrides = allowDelegationOverrides
+    ? snapshotSubjectDelegationOverrides("agent", options.agentId, { includeRoles: false })
+    : [];
+  const surfaceDelegationOverrides =
+    allowDelegationOverrides && surfacePrincipal
+      ? snapshotSubjectDelegationOverrides(surfacePrincipal.subjectType, surfacePrincipal.subjectId, {
+          includeRoles: false,
+        })
+      : [];
+  const actorOverrideCapabilities = [...agentDelegationOverrides, ...surfaceDelegationOverrides];
+  const surfaceOverrideCapabilities = surfaceDelegationOverrides;
   const includeSurfaceConstraint = Boolean(surfacePrincipal) || actorPrincipal?.subjectType !== "automation";
   const observationCapabilities = parseObservationPermissionGrants(options.prompt._observation?.permissionGrants);
   const effectiveCapabilities = buildEffectiveCapabilities({
     agentCapabilities: options.capabilities,
     actorCapabilities,
     ...(includeSurfaceConstraint ? { surfaceCapabilities } : {}),
+    actorOverrideCapabilities,
+    surfaceOverrideCapabilities,
     turnCapabilities: hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined,
   });
+  const delegationOverridePrincipals = [
+    ...(agentDelegationOverrides.length > 0 ? [`agent:${options.agentId}`] : []),
+    ...(surfacePrincipal && surfaceDelegationOverrides.length > 0 ? [formatPrincipal(surfacePrincipal)] : []),
+  ];
 
   return {
     capabilities: effectiveCapabilities,
@@ -245,10 +266,16 @@ function buildDelegatedRuntimeContextInput(options: {
       executorAgentId: options.agentId,
       actorPrincipal: actorPrincipal ? formatPrincipal(actorPrincipal) : "unknown",
       actorResolution: actorPrincipal ? "resolved" : "missing_contact",
+      ...(actorDisplayName ? { actorDisplayName } : {}),
       ...(surfacePrincipal ? { surfacePrincipal: formatPrincipal(surfacePrincipal) } : {}),
+      ...(surfaceDisplayName ? { surfaceDisplayName } : {}),
       actorCapabilityCount: actorCapabilities.length,
       surfaceCapabilityCount: surfaceCapabilities.length,
+      actorOverrideCapabilityCount: actorOverrideCapabilities.length,
+      surfaceOverrideCapabilityCount: surfaceOverrideCapabilities.length,
+      ...(delegationOverridePrincipals.length > 0 ? { delegationOverridePrincipals } : {}),
       turnCapabilityCount: observationCapabilities.length,
+      ...(observationCapabilities.length > 0 ? { turnCapabilities: observationCapabilities } : {}),
       effectiveCapabilityCount: effectiveCapabilities.length,
     },
   };
@@ -277,6 +304,8 @@ function resolveAuthorityActorMetadata(
       threadId?: string;
       sourceMessageId?: string;
       automationId?: string;
+      senderName?: string;
+      groupName?: string;
     })
   | undefined {
   const source = resolvedSource ?? prompt.source;
@@ -291,6 +320,8 @@ function resolveAuthorityActorMetadata(
     contactId: automationPrincipal ? undefined : (context?.contactId ?? source?.contactId),
     actorAgentId: automationPrincipal ? undefined : (context?.actorAgentId ?? source?.actorAgentId),
     automationId: automationPrincipal?.subjectId,
+    identityProvenance:
+      context?.identityProvenance ?? source?.identityProvenance ?? buildAutomationIdentityProvenance(prompt),
     platformIdentityId: context?.platformIdentityId ?? source?.platformIdentityId,
     rawSenderId: context?.rawSenderId ?? source?.rawSenderId,
     normalizedSenderId: context?.normalizedSenderId ?? source?.normalizedSenderId,
@@ -298,6 +329,8 @@ function resolveAuthorityActorMetadata(
     chatId: context?.chatId ?? source?.chatId,
     threadId: source?.threadId,
     sourceMessageId: source?.sourceMessageId,
+    senderName: context?.senderName,
+    groupName: context?.groupName,
   };
 }
 
@@ -337,6 +370,10 @@ function resolveSurfacePrincipal(actorMetadata: MessageActorMetadata | undefined
   const chatId = actorMetadata?.canonicalChatId ?? (typeof rawChatId === "string" ? rawChatId : undefined);
   if (!chatId) return null;
   return { subjectType: "chat", subjectId: chatId };
+}
+
+function shouldApplyDelegationOverrides(actorPrincipal: AuthorityPrincipal | null): boolean {
+  return actorPrincipal?.subjectType === "contact";
 }
 
 function formatPrincipal(principal: AuthorityPrincipal): string {
@@ -388,7 +425,9 @@ function buildRuntimeContextActorMetadata(
   copyStringField(metadata, "rawSenderId", actor?.rawSenderId);
   copyStringField(metadata, "normalizedSenderId", actor?.normalizedSenderId);
   copyStringField(metadata, "senderId", context?.senderId);
+  copyStringField(metadata, "senderName", context?.senderName);
   copyStringField(metadata, "senderPhone", context?.senderPhone);
+  copyStringField(metadata, "groupName", context?.groupName);
   if (typeof actor?.identityConfidence === "number") metadata.identityConfidence = actor.identityConfidence;
   if (actor?.identityProvenance) metadata.identityProvenance = actor.identityProvenance;
   return Object.keys(metadata).length > 0 ? metadata : null;
@@ -404,13 +443,34 @@ function resolveAutomationPromptPrincipal(prompt: RuntimeLaunchPrompt): Authorit
       subjectId: `trigger:${prompt._triggerId}`,
     };
   }
+  if (prompt._sessionFollowup) {
+    return {
+      subjectType: "automation",
+      subjectId: "session-followup",
+    };
+  }
+  if (prompt._daemonRestartResume) {
+    return { subjectType: "automation", subjectId: "daemon-restart" };
+  }
   return null;
 }
 
+function buildAutomationIdentityProvenance(prompt: RuntimeLaunchPrompt): Record<string, unknown> | undefined {
+  if (prompt._cron && prompt._jobId) {
+    return { source: "cron", jobId: prompt._jobId };
+  }
+  return undefined;
+}
+
 function copyStringField(target: Record<string, unknown>, key: string, value: unknown): void {
+  const trimmed = cleanStringValue(value);
+  if (trimmed) target[key] = trimmed;
+}
+
+function cleanStringValue(value: unknown): string | undefined {
   if (typeof value !== "string") return;
   const trimmed = value.trim();
-  if (trimmed) target[key] = trimmed;
+  return trimmed || undefined;
 }
 
 function buildContextSource(resolvedSource?: RuntimeMessageTarget) {

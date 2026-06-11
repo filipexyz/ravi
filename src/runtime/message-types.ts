@@ -141,6 +141,12 @@ export interface PromptMessage {
   _trigger?: boolean;
   /** Trigger id when `_trigger` is true. */
   _triggerId?: string;
+  /** Session followup runner prompt marker. */
+  _sessionFollowup?: boolean;
+  /** Session followup cadence id when `_sessionFollowup` is true. */
+  _sessionFollowupCadenceId?: string;
+  /** Session followup run id when `_sessionFollowup` is true. */
+  _sessionFollowupRunId?: string;
   /** Ravi thread metadata. Distinct from provider-native thread/topic IDs. */
   _thread?: ThreadHandoffPromptMetadata;
   /**

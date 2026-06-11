@@ -73,6 +73,9 @@ export function resolveRuntimePromptSource(
   session: SessionEntry,
 ): RuntimeMessageTarget | undefined {
   let resolvedSource = prompt.source;
+  if (resolvedSource) {
+    resolvedSource = enrichSourceFromSessionChatBinding(resolvedSource, session);
+  }
   if (!resolvedSource) {
     resolvedSource = resolveSourceFromSessionChatBinding(session);
   }
@@ -110,6 +113,34 @@ function resolveSourceFromSessionChatBinding(session: SessionEntry): RuntimeMess
     canonicalChatId: chat.id,
     ...target,
   };
+}
+
+function enrichSourceFromSessionChatBinding(source: RuntimeMessageTarget, session: SessionEntry): RuntimeMessageTarget {
+  if (source.canonicalChatId) return source;
+  const binding = dbGetSessionChatBinding(session.sessionKey);
+  if (!binding) return source;
+  const chat = dbGetChat(binding.chatId);
+  if (!chat || !isSourceForChat(source, chat)) return source;
+  return {
+    ...source,
+    instanceId: source.instanceId ?? chat.instanceId,
+    canonicalChatId: chat.id,
+  };
+}
+
+function isSourceForChat(source: RuntimeMessageTarget, chat: NonNullable<ReturnType<typeof dbGetChat>>): boolean {
+  if (source.channel && source.channel !== chat.channel) return false;
+  const sourceChatId = source.chatId?.trim();
+  if (!sourceChatId) return false;
+  const platformTarget = splitCanonicalPlatformChat(chat.platformChatId);
+  const candidates = new Set(
+    [chat.id, chat.platformChatId, chat.normalizedChatId, platformTarget.chatId].filter((value): value is string =>
+      Boolean(value?.trim()),
+    ),
+  );
+  if (!candidates.has(sourceChatId)) return false;
+  if (source.threadId && platformTarget.threadId && source.threadId !== platformTarget.threadId) return false;
+  return true;
 }
 
 export async function buildRuntimeStartRequest(
@@ -301,6 +332,9 @@ export async function buildRuntimeStartRequest(
     beforeTurnStart: (input) => {
       const turnPrompt = resolveRuntimeTurnPrompt(input.deliverableMessages, prompt);
       const turnSource = turnPrompt.source ?? resolvedSource;
+      if (turnSource) {
+        streamingSession.currentSource = turnSource;
+      }
       refreshRuntimeRequestContextForTurn({
         runtimeContext,
         toolContext,

@@ -113,6 +113,7 @@ export type AgentsCreateInput = {
   allowRuntimeMismatch?: boolean;
   cwd: string;
   id: string;
+  model?: string;
   provider?: string;
 };
 
@@ -939,6 +940,14 @@ export type ArtifactsVersionsReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `audio.blob`. */
+export type AudioBlobInput = {
+  id: string;
+};
+
+/** Return shape for `audio.blob`. (binary — raw HTTP Response) */
+export type AudioBlobReturn = Response;
+
 /** Input shape for `audio.generate`. */
 export type AudioGenerateInput = {
   caption?: string;
@@ -978,6 +987,207 @@ export type AudioGenerateReturn = {
   };
   success: true;
   [k: string]: unknown;
+};
+
+/** Input shape for `audio.pending`. */
+export type AudioPendingInput = {
+  agent?: string;
+  chat?: string;
+  clientId?: string;
+  id?: string;
+  includeFailed?: boolean;
+  limit?: string;
+  requestId?: string;
+  session?: string;
+  sessionKey?: string;
+  since?: string;
+};
+
+/** Return shape for `audio.pending`. */
+export type AudioPendingReturn = {
+  generatedAt: number;
+  items: Array<{
+    agentId?: string;
+    audio?: {
+      filePath: string;
+      filename: string;
+      id: string;
+      mimeType: string;
+      modelId: string;
+      outputFormat: string;
+      provider: "elevenlabs";
+      sizeBytes: number;
+      voiceId: string;
+    };
+    createdAt: number;
+    emitId?: string;
+    error?: string;
+    failedAt?: number;
+    id: string;
+    metadata?: Record<string, unknown>;
+    playback: {
+      autoplay: boolean;
+      clientId?: string;
+      target: "extension" | "channel" | "none";
+    };
+    readyAt?: number;
+    requestId: string;
+    sessionKey?: string;
+    sessionName?: string;
+    status: "ready" | "failed";
+    target?: {
+      accountId?: string;
+      canonicalChatId?: string;
+      channel?: string;
+      chatId?: string;
+      instanceId?: string;
+      threadId?: string;
+    };
+    text: string;
+    textPreview: string;
+    voice: {
+      elevenlabs?: {
+        applyLanguageTextNormalization?: boolean;
+        applyTextNormalization?: "auto" | "on" | "off";
+        enableLogging?: boolean;
+        nextRequestIds?: string[];
+        nextText?: string;
+        optimizeStreamingLatency?: number;
+        previousRequestIds?: string[];
+        previousText?: string;
+        pronunciationDictionaryLocators?: unknown[];
+        seed?: number;
+        usePvcAsIvc?: boolean;
+      };
+      lang: string;
+      modelId: string;
+      outputFormat: string;
+      provider: "elevenlabs";
+      voiceId?: string;
+      voiceSettings?: {
+        similarityBoost?: number;
+        speed?: number;
+        stability?: number;
+        style?: number;
+        useSpeakerBoost?: boolean;
+      };
+    };
+  }>;
+  ok: true;
+};
+
+/** Input shape for `audio.tts`. */
+export type AudioTtsInput = {
+  account?: string;
+  agent?: string;
+  channel?: string;
+  chat?: string;
+  clientId?: string;
+  elevenlabs?: string;
+  format?: string;
+  id?: string;
+  lang?: string;
+  model?: string;
+  noAutoplay?: boolean;
+  session?: string;
+  sessionKey?: string;
+  speed?: string;
+  text: string;
+  voice?: string;
+  voiceSettings?: string;
+};
+
+/** Return shape for `audio.tts`. */
+export type AudioTtsReturn = {
+  ok: true;
+  request: {
+    agentId?: string;
+    createdAt?: number;
+    emitId?: string;
+    id?: string;
+    metadata?: Record<string, unknown>;
+    playback?: {
+      autoplay: boolean;
+      clientId?: string;
+      target: "extension" | "channel" | "none";
+    };
+    requestId?: string;
+    sessionKey?: string;
+    sessionName?: string;
+    source?: Record<string, unknown>;
+    target?: {
+      accountId?: string;
+      canonicalChatId?: string;
+      channel?: string;
+      chatId?: string;
+      instanceId?: string;
+      threadId?: string;
+    };
+    text: string;
+    voice?: {
+      elevenlabs?: {
+        applyLanguageTextNormalization?: boolean;
+        applyTextNormalization?: "auto" | "on" | "off";
+        enableLogging?: boolean;
+        nextRequestIds?: string[];
+        nextText?: string;
+        optimizeStreamingLatency?: number;
+        previousRequestIds?: string[];
+        previousText?: string;
+        pronunciationDictionaryLocators?: unknown[];
+        seed?: number;
+        usePvcAsIvc?: boolean;
+      };
+      lang: string;
+      modelId: string;
+      outputFormat: string;
+      provider: "elevenlabs";
+      voiceId?: string;
+      voiceSettings?: {
+        similarityBoost?: number;
+        speed?: number;
+        stability?: number;
+        style?: number;
+        useSpeakerBoost?: boolean;
+      };
+    };
+  };
+  topic: "ravi.tts";
+};
+
+/** Input shape for `audio.voices`. */
+export type AudioVoicesInput = {
+  category?: string;
+  limit?: string;
+  search?: string;
+  voiceType?: string;
+};
+
+/** Return shape for `audio.voices`. */
+export type AudioVoicesReturn = {
+  generatedAt: number;
+  hasMore: boolean;
+  nextPageToken?: string;
+  ok: true;
+  provider: "elevenlabs";
+  totalCount?: number;
+  voices: Array<{
+    category?: string;
+    description?: string;
+    highQualityBaseModelIds?: string[];
+    isLegacy?: boolean;
+    isOwner?: boolean;
+    labels?: Record<string, string>;
+    name: string;
+    previewUrl?: string;
+    verifiedLanguages?: Array<{
+      accent?: string;
+      language?: string;
+      locale?: string;
+      previewUrl?: string;
+    }>;
+    voiceId: string;
+  }>;
 };
 
 /** Input shape for `bridges.create`. */
@@ -6708,6 +6918,59 @@ export type PermissionsListReturn = {
   total: number;
 };
 
+/** Input shape for `permissions.policies.apply`. */
+export type PermissionsPoliciesApplyInput = {
+  dir?: string;
+  policy?: string;
+};
+
+/** Return shape for `permissions.policies.apply`. */
+export type PermissionsPoliciesApplyReturn = Record<string, unknown>;
+
+/** Input shape for `permissions.policies.dry-run`. */
+export type PermissionsPoliciesDryRunInput = {
+  dir?: string;
+  policy?: string;
+};
+
+/** Return shape for `permissions.policies.dry-run`. */
+export type PermissionsPoliciesDryRunReturn = Record<string, unknown>;
+
+/** Input shape for `permissions.policies.list`. */
+export type PermissionsPoliciesListInput = {
+  dir?: string;
+};
+
+/** Return shape for `permissions.policies.list`. */
+export type PermissionsPoliciesListReturn = Record<string, unknown>;
+
+/** Input shape for `permissions.policies.reconcile`. */
+export type PermissionsPoliciesReconcileInput = {
+  dir?: string;
+  policy?: string;
+};
+
+/** Return shape for `permissions.policies.reconcile`. */
+export type PermissionsPoliciesReconcileReturn = Record<string, unknown>;
+
+/** Input shape for `permissions.policies.show`. */
+export type PermissionsPoliciesShowInput = {
+  dir?: string;
+  policy: string;
+};
+
+/** Return shape for `permissions.policies.show`. */
+export type PermissionsPoliciesShowReturn = Record<string, unknown>;
+
+/** Input shape for `permissions.policies.validate`. */
+export type PermissionsPoliciesValidateInput = {
+  dir?: string;
+  policy?: string;
+};
+
+/** Return shape for `permissions.policies.validate`. */
+export type PermissionsPoliciesValidateReturn = Record<string, unknown>;
+
 /** Input shape for `permissions.revoke`. */
 export type PermissionsRevokeInput = {
   object: string;
@@ -10830,6 +11093,7 @@ export type WhatsappGroupCreateInput = {
   admins?: string[];
   agent?: string;
   agentCwd?: string;
+  agentModel?: string;
   agentProvider?: string;
   createAgent?: boolean;
   name: string;

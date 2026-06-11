@@ -13,6 +13,9 @@ import {
   scaffoldApp,
   printAppRunResult,
   runAppOperation,
+  assertCanUseApp,
+  filterVisibleAppChecks,
+  filterVisibleAppManifests,
   type RaviAppManifestRecord,
 } from "../../apps/index.js";
 
@@ -226,7 +229,9 @@ export class AppsCommands {
   ) {
     try {
       const normalizedSource = normalizeAppSource(source);
-      const records = discoverAppManifests({ ...(normalizedSource ? { source: normalizedSource } : {}) });
+      const records = filterVisibleAppManifests(
+        discoverAppManifests({ ...(normalizedSource ? { source: normalizedSource } : {}) }),
+      );
       const page = paginateCliItems(records.map(toSummary), { limit, offset });
       const pagination = buildCliOffsetPagination({
         baseCommand: ["ravi", "apps", "list"],
@@ -268,6 +273,7 @@ export class AppsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
+      assertCanUseApp(id);
       const app = toDetail(getAppManifest(id));
       const payload = { app };
 
@@ -303,7 +309,8 @@ export class AppsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      const results = checkAppManifests(id);
+      if (id?.trim()) assertCanUseApp(id);
+      const results = filterVisibleAppChecks(checkAppManifests(id));
       const payload = {
         ok: results.every((result) => result.ok),
         checked: results.length,

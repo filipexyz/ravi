@@ -122,6 +122,8 @@ program
   .option("--console <url>", "Console base URL", "https://console.ravi.bot")
   .option("--json", "Print raw JSON result")
   .option("--no-open", "Do not open a browser")
+  .option("--org <slug-or-id>", "Ravi organization slug or id")
+  .option("--organization <slug-or-id>", "Ravi organization slug or id")
   .option("--no-poll", "Do not poll the exchange endpoint when auth is pending")
   .option("--timeout-seconds <seconds>", "Maximum login polling time", "300")
   .option("--interval-seconds <seconds>", "Login polling interval")
@@ -130,6 +132,8 @@ program
       console?: string;
       json?: boolean;
       open?: boolean;
+      org?: string;
+      organization?: string;
       poll?: boolean;
       timeoutSeconds?: string;
       intervalSeconds?: string;

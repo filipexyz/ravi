@@ -192,6 +192,48 @@ ravi permissions check agent:dev use tool:Bash
 
 SDK tools disponíveis: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, `TaskOutput`, `TaskStop`, `TodoWrite`, `NotebookEdit`, `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `EnterWorktree`, `Skill`, `TeamCreate`, `TeamDelete`, `SendMessage`, `LSP`, `ToolSearch`.
 
+### Overrides de delegação (`delegate_*`)
+
+Em turn-scoped authority, o contexto efetivo é limitado por agent, ator e
+superfície. Para liberar uma capability específica num grupo ou agent mesmo
+quando o contato atual não tem o grant direto, use `delegate_<relação>`:
+
+```bash
+# O agent ainda precisa ter a capability normal
+ravi permissions grant agent:dev use tool:Bash
+
+# Exceção no grupo: satisfaz ator e superfície para esse chat
+ravi permissions grant chat:chat_group_1 delegate_use tool:Bash
+
+# Exceção no agent: satisfaz só a perna do ator; o chat ainda precisa permitir
+ravi permissions grant agent:dev delegate_use tool:Bash
+```
+
+Regras:
+
+- `delegate_use tool:Bash` não é `use tool:Bash`; ele só conta durante a
+  materialização de contexto delegado.
+- Override de chat satisfaz ator e superfície naquele chat.
+- Override de agent satisfaz só o ator, e não ignora a política do chat.
+- O teto do executor continua valendo: se o agent não tem `use tool:Bash`, o
+  override não libera Bash.
+- `delegate_admin` é rejeitado/ignorado; superadmin continua sendo fluxo de
+  break-glass separado.
+- Ator desconhecido e automação não recebem override humano; automações precisam
+  de grants `automation:<id>`.
+
+Diagnóstico:
+
+```bash
+ravi permissions explain use tool:Bash --agent dev --actor contact:luis --chat chat:chat_group_1 --json
+```
+
+O `explain` deve mostrar `delegate_use` como provenance quando um override
+autoriza a decisão. Se a decisão final for `allowed=true`, os branches
+`actor`, `surface` e `effective` não devem aparecer como `deny` para a mesma
+capability. Em constraints de superfície, `constrain role:<id>` prevalece sobre
+allows diretos da surface; só capabilities presentes no role constraint passam.
+
 ### Tool Groups (use toolgroup:\*)
 
 Em vez de dar grant tool por tool, use **tool groups** pra conceder acesso a um conjunto de tools de uma vez:

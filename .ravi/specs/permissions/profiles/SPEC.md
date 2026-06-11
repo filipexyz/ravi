@@ -9,6 +9,7 @@ capabilities:
   - roles
   - delegated-authority
   - capability-materialization
+  - tag-policy
 tags:
   - permissions
   - profiles
@@ -40,6 +41,11 @@ canonical graph primitive is `role:<id>`. A role/profile grants capabilities
 to no one by itself. A principal receives those capabilities only through an
 explicit membership or scoped delegation relation.
 
+Tags MAY be used to manage profile membership at scale, but only through
+explicit permission policy materialization. A tag such as
+`policy.profile.trusted-dev` MUST materialize `member role:trusted-dev` before
+it has any authorization effect.
+
 ## Invariants
 
 - Profiles MUST be fail-closed allow lists.
@@ -49,6 +55,10 @@ explicit membership or scoped delegation relation.
   linked to it by an explicit relation.
 - Profile expansion MUST preserve provenance for every materialized
   capability.
+- Profile expansion MUST be implemented consistently for direct permission
+  checks and runtime context materialization. A `can()` check and an equivalent
+  turn-scoped capability context MUST not disagree about role-derived
+  authority.
 - Profile grants SHOULD be temporary by default unless marked permanent.
 - Revoked or expired profile grants and memberships MUST stop authorizing.
 - Profile expansion MUST happen before turn-scoped capability intersection.
@@ -84,6 +94,9 @@ Semantics:
 - `<surface> constrain role:<id>` restricts what can happen on that surface.
 - Surface constraints MUST NOT create authority absent from actor and executor
   ceilings.
+- `constrain` is a first-class relation for surface-to-role constraints. The
+  permissions CLI and relation validator MUST accept it before any
+  tag-managed surface profile tests are considered implemented.
 
 ## Materialization
 
@@ -128,6 +141,36 @@ Rules:
 - `execute app:<id>` is required for mutating operations.
 - A profile that allows mutating app operation SHOULD also include
   `use app:<id>` so the app is discoverable and inspectable.
+
+## Tag-Managed Profiles
+
+For human-scale management, policy tags SHOULD assign principals or surfaces to
+profiles rather than duplicating large grant sets.
+
+Example:
+
+```text
+tag contact:<contact-id> policy.profile.trusted-dev
+policy:trusted-dev-contact-profile materializes:
+  contact:<contact-id> member role:trusted-dev
+
+role:trusted-dev use tool:Bash
+role:trusted-dev execute executable:git
+```
+
+Rules:
+
+- Tag-managed membership MUST be materialized into `relations`.
+- Tag-managed membership MUST default to temporary grants unless the policy
+  rule explicitly marks it permanent.
+- Removing the tag and reconciling the policy MUST remove only membership
+  owned by that policy, not manual memberships.
+- Tag-managed membership MUST compute the target role closure before
+  materialization. Membership into roles containing forbidden or undeclared
+  sensitive capabilities MUST fail validation or require explicit break-glass
+  approval with short TTL.
+- Explain output MUST show the tag, policy rule, membership relation, and role
+  grants that expanded from it.
 
 ## Relationship To Tool Groups
 

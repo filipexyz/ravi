@@ -185,9 +185,22 @@ Examples of policy consumers:
 
 - Observer Rules using `scope=tag`.
 - Contact permissions using `read_tagged_contacts`.
+- Permission policy materializers that turn explicit `policy.*` tag matches
+  into REBAC `relations`.
 - Future route policies using chat/contact/session tags.
 - Future automations firing only for tagged tasks/projects.
 - Future retention jobs pruning assets by retention tags.
+
+Permission policy consumers MUST NOT check tags as ambient runtime authority.
+They MUST materialize explicit permission graph edges before behavior changes.
+Non-permission consumers MAY expose another documented, auditable policy object
+when their domain does not grant tool, executable, app, CLI, session, contact,
+or gateway authority.
+
+`policy.*` tag bindings require stronger provenance than ordinary
+classification tags. A policy binding MUST preserve trusted source, creator,
+created context, binding id/version, and trust class. Re-attaching a policy tag
+MUST NOT overwrite trust provenance silently.
 
 ## Inheritance
 
@@ -346,6 +359,10 @@ Migration SHOULD happen domain by domain:
 - A dotted slug is treated as hierarchy in one domain and exact text in another.
 - Contact tags affect permissions while using a different storage layer from
   generic tags.
+- A `policy.*` tag grants authority without a stored permission policy rule,
+  dry-run, materialized relation, and explain output.
+- Auto-tagging applies a policy tag that is consumed for authority without an
+  explicit policy-rule opt-in to that auto-generated source.
 - Provider tags and Ravi tags are mixed without provenance.
 - A project tag accidentally applies to every task/session without explicit
   inheritance.

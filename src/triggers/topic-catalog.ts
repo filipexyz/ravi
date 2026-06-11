@@ -231,7 +231,8 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     pattern: "ravi.audit.denied",
     title: "Permission denied",
     description: "Permission or policy denial event.",
-    payload: "{ type, agentId, denied, reason, dedupeKey, command?, detail?, denialId?, context?, timestamp }",
+    payload:
+      "{ type, agentId, denied, reason, dedupeKey, command?, detail?, blockType?, missingPrincipals?, missingPrincipalDetails?, recommendedGrantSubjects?, denialId?, context?, timestamp }",
     schema: {
       version: 1,
       fields: [
@@ -246,13 +247,38 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
           description: "Stable semantic key for repeated equivalent denials. It must not include denialId.",
         },
         { path: "command", type: "string", description: "CLI command or Bash command that triggered the denial." },
-        { path: "detail", type: "string", description: "Optional safe details." },
+        {
+          path: "detail",
+          type: "string",
+          description:
+            "Optional safe semantic diagnosis. Scope denials describe the missing delegated branch when available.",
+        },
+        {
+          path: "blockType",
+          type: "string",
+          description: "Optional normalized denial category, e.g. delegated_actor_surface_capabilities_empty.",
+        },
+        {
+          path: "missingPrincipals",
+          type: "array",
+          description: "Optional machine principals that had no effective capabilities for the denied scope.",
+        },
+        {
+          path: "missingPrincipalDetails",
+          type: "array",
+          description: "Optional branch/principal/displayName records for human-readable audit explanations.",
+        },
+        {
+          path: "recommendedGrantSubjects",
+          type: "array",
+          description: "Optional subjects that should receive the denied grant when the denial is approved.",
+        },
         { path: "denialId", type: "number", description: "Optional permission_denials ledger id." },
         {
           path: "context",
           type: "object",
           description:
-            "Safe runtime provenance: contextId, kind, session, actorPrincipal, surfacePrincipal and capability counts. Never includes contextKey.",
+            "Safe runtime provenance: contextId, kind, session, actorPrincipal, actorDisplayName, surfacePrincipal, surfaceDisplayName and capability counts. Never includes contextKey.",
         },
         { path: "timestamp", type: "string", description: "Event timestamp." },
       ],
@@ -325,6 +351,49 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
       ],
     },
     examples: ['ravi triggers add "Unknown instance" --topic "ravi.instances.unregistered" --message "..."'],
+  },
+  {
+    id: "tts.request",
+    category: "delivery",
+    pattern: "ravi.tts",
+    title: "Text-to-speech request",
+    description: "ElevenLabs TTS request for extension playback.",
+    payload: "{ id?, text, agentId?, sessionName?, sessionKey?, target?, playback?, voice?, metadata?, createdAt? }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "id", type: "string", description: "Optional request id; generated when omitted." },
+        { path: "text", type: "string", required: true, description: "Text to synthesize." },
+        { path: "agentId", type: "string", description: "Agent whose voice defaults should be used." },
+        { path: "sessionName", type: "string", description: "Runtime session name associated with the audio." },
+        { path: "sessionKey", type: "string", description: "Runtime session key associated with the audio." },
+        {
+          path: "target",
+          type: "object",
+          description: "Channel target metadata such as channel, accountId and chatId.",
+        },
+        {
+          path: "playback",
+          type: "object",
+          description: "Playback target metadata; extension playback uses { target: 'extension', autoplay: true }.",
+        },
+        {
+          path: "voice",
+          type: "object",
+          description:
+            "ElevenLabs voice config: voiceId, modelId, lang, outputFormat, voiceSettings and full API options.",
+        },
+        { path: "metadata", type: "object", description: "Optional safe request provenance." },
+        { path: "createdAt", type: "number", description: "Unix timestamp in milliseconds." },
+      ],
+    },
+    examples: [
+      'ravi triggers add "TTS requested" --topic "ravi.tts" --filter \'data.agentId == "main"\' --message "..."',
+    ],
+    notes: [
+      "The gateway consumes this topic in a queue group, generates audio through ElevenLabs and emits ravi.tts.started, ravi.tts.ready or ravi.tts.failed.",
+      "The WhatsApp overlay polls generated playback items and plays ravi.tts.ready audio in the browser.",
+    ],
   },
   {
     id: "inbox.mail.received",

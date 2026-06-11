@@ -8,6 +8,7 @@
 import { getContext } from "../cli/context.js";
 import { agentCan } from "./engine.js";
 import { recordPermissionDenial } from "./denials.js";
+import { explainPermissionDecision, summarizePermissionGrantState, type ExplainGrantState } from "./explain.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "./audit-provenance.js";
 import { publish, closeNats } from "../nats.js";
 import type { ContextRecord, ContextSource } from "../router/router-db.js";
@@ -37,6 +38,11 @@ function emitAudit(event: {
   agentId: string;
   denied: string;
   reason: string;
+  detail?: string;
+  blockType?: string;
+  missingPrincipals?: string[];
+  missingPrincipalDetails?: MissingPrincipalDetail[];
+  recommendedGrantSubjects?: string[];
   command?: string;
   denialId?: number;
   dedupeKey?: string;
@@ -61,6 +67,25 @@ function normalizeDedupePart(value: string): string {
   return value.trim().replace(/\s+/g, " ").slice(0, 240);
 }
 
+interface ScopeDenialDiagnosis {
+  blockType: string;
+  detail: string;
+  missingPrincipals: string[];
+  missingPrincipalDetails: MissingPrincipalDetail[];
+  recommendedGrantSubjects: string[];
+  grantState?: ExplainGrantState;
+  branchStates?: Array<{ branch: string; principal: string | null; state: ExplainGrantState; verdict: string }>;
+  nearMissRelations?: unknown[];
+  revocationEvents?: unknown[];
+}
+
+interface MissingPrincipalDetail {
+  branch: "actor" | "surface" | "agent";
+  principal: string;
+  displayName?: string;
+  resolution?: string;
+}
+
 function recordScopeDenial(input: {
   ctx: ScopeContext;
   relation: string;
@@ -70,6 +95,7 @@ function recordScopeDenial(input: {
   command?: string;
 }) {
   const provenance = buildAuditContextProvenance(input.ctx);
+  const diagnosis = buildScopeDenialDiagnosis(input, provenance);
   return recordPermissionDenial({
     subjectType: "agent",
     subjectId: input.ctx.agentId,
@@ -82,16 +108,177 @@ function recordScopeDenial(input: {
     objectId: input.objectId,
     reason: input.reason,
     command: input.command,
-    detail: provenance ? { context: provenance } : undefined,
+    detail: {
+      ...(provenance ? { context: provenance } : {}),
+      diagnosis,
+    },
   });
 }
 
-function scopeAuditMetadata(ctx: ScopeContext, denial?: { id: number } | null) {
+function scopeAuditMetadata(
+  ctx: ScopeContext,
+  denial: { id: number } | null | undefined,
+  requested: { relation: string; objectType: string; objectId: string },
+) {
   const provenance = buildAuditContextProvenance(ctx);
+  const diagnosis = buildScopeDenialDiagnosis({ ctx, ...requested }, provenance);
   return {
     ...(denial?.id ? { denialId: denial.id } : {}),
     ...(provenance ? { context: provenance } : {}),
+    detail: diagnosis.detail,
+    blockType: diagnosis.blockType,
+    missingPrincipals: diagnosis.missingPrincipals,
+    missingPrincipalDetails: diagnosis.missingPrincipalDetails,
+    recommendedGrantSubjects: diagnosis.recommendedGrantSubjects,
   };
+}
+
+function buildScopeDenialDiagnosis(
+  input: {
+    ctx: ScopeContext;
+    relation: string;
+    objectType: string;
+    objectId: string;
+  },
+  provenance = buildAuditContextProvenance(input.ctx),
+): ScopeDenialDiagnosis {
+  const target = `${input.objectType}:${input.objectId}`;
+  const grant = `${input.relation} ${target}`;
+  const missingPrincipals: string[] = [];
+  const missingPrincipalDetails: MissingPrincipalDetail[] = [];
+  const missingBranches: string[] = [];
+  const missingBranchTypes: string[] = [];
+  const resolutionHints: string[] = [];
+  const grantSummary = buildGrantStateSummary(input, provenance);
+
+  if (provenance?.authorityMode === "delegated") {
+    if (provenance.actorCapabilityCount === 0) {
+      const principal = provenance.actorPrincipal ?? "actor:<unknown>";
+      const displayName = provenance.actorDisplayName;
+      const grantSubject = isActionableGrantSubject(principal, provenance.actorResolution) ? principal : null;
+      missingPrincipals.push(principal);
+      missingPrincipalDetails.push({
+        branch: "actor",
+        principal,
+        ...(displayName ? { displayName } : {}),
+        ...(provenance.actorResolution ? { resolution: provenance.actorResolution } : {}),
+      });
+      missingBranchTypes.push("actor");
+      const resolution = provenance.actorResolution === "missing_contact" ? " without a resolved contact" : "";
+      missingBranches.push(`actor ${formatPrincipalLabel(principal, displayName)}${resolution} has 0 capabilities`);
+      if (!grantSubject && provenance.actorResolution === "missing_contact") {
+        resolutionHints.push(`Resolve the actor contact before granting ${grant}`);
+      } else if (!grantSubject) {
+        resolutionHints.push(`Resolve the actor principal before granting ${grant}`);
+      }
+    }
+
+    if (missingBranches.length > 0) {
+      const uniquePrincipals = uniqueNonEmpty(missingPrincipals);
+      const branchLabel = uniqueNonEmpty(missingBranchTypes).sort().join("_");
+      const uniqueResolutionHints = uniqueNonEmpty(resolutionHints);
+      const grantSubjects = uniquePrincipals.filter((principal) => isActionableGrantSubject(principal));
+      const detailParts = [`Delegated scope denied for ${grant}: ${missingBranches.join("; ")}`];
+      if (uniqueResolutionHints.length > 0) {
+        detailParts.push(uniqueResolutionHints.join(". "));
+      }
+      if (grantSubjects.length > 0) {
+        detailParts.push(`Grant ${grant} to ${grantSubjects.join(", ")}`);
+      }
+      return {
+        blockType: branchLabel ? `delegated_${branchLabel}_capabilities_empty` : "delegated_capabilities_empty",
+        detail: `${detailParts.join(". ")}.`,
+        missingPrincipals: uniquePrincipals,
+        missingPrincipalDetails: dedupeMissingPrincipalDetails(missingPrincipalDetails),
+        recommendedGrantSubjects: grantSubjects,
+        ...grantSummary,
+      };
+    }
+
+    if (provenance.effectiveCapabilityCount === 0) {
+      return {
+        blockType: "delegated_effective_capabilities_empty",
+        detail: `Delegated scope denied for ${grant}: effective capability snapshot is empty, but actor/surface counts did not identify a zero branch.`,
+        missingPrincipals: [],
+        missingPrincipalDetails: [],
+        recommendedGrantSubjects: [],
+        ...grantSummary,
+      };
+    }
+  }
+
+  const agentPrincipal = input.ctx.agentId ? `agent:${input.ctx.agentId}` : "agent:<unknown>";
+  return {
+    blockType: "agent_scope_missing_grant",
+    detail: `Scope denied for ${grant}: ${agentPrincipal} lacks the required grant.`,
+    missingPrincipals: [agentPrincipal],
+    missingPrincipalDetails: [{ branch: "agent", principal: agentPrincipal }],
+    recommendedGrantSubjects: [agentPrincipal],
+    ...grantSummary,
+  };
+}
+
+function buildGrantStateSummary(
+  input: {
+    ctx: ScopeContext;
+    relation: string;
+    objectType: string;
+    objectId: string;
+  },
+  provenance?: AuditContextProvenance,
+): Pick<ScopeDenialDiagnosis, "grantState" | "branchStates" | "nearMissRelations" | "revocationEvents"> {
+  if (!input.ctx.agentId) return {};
+  try {
+    const decision = explainPermissionDecision({
+      relation: input.relation,
+      objectType: input.objectType,
+      objectId: input.objectId,
+      agentId: input.ctx.agentId,
+      actor: provenance?.actorPrincipal ?? null,
+      chat: provenance?.surfacePrincipal ?? null,
+      sessionKey: input.ctx.sessionKey,
+    });
+    const summary = summarizePermissionGrantState(decision);
+    return {
+      grantState: summary.state,
+      branchStates: summary.branchStates,
+      nearMissRelations: summary.nearMissRelations.slice(0, 10),
+      revocationEvents: summary.revocationEvents,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function uniqueNonEmpty(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
+}
+
+function formatPrincipalLabel(principal: string, displayName?: string): string {
+  const cleanName = displayName?.trim();
+  return cleanName ? `${cleanName} (${principal})` : principal;
+}
+
+function isActionableGrantSubject(principal: string | undefined, resolution?: string): principal is string {
+  if (!principal) return false;
+  if (resolution === "missing_contact") return false;
+  const normalized = principal.trim().toLowerCase();
+  return (
+    normalized !== "unknown" &&
+    normalized !== "actor:<unknown>" &&
+    normalized !== "surface:<unknown>" &&
+    normalized !== "agent:<unknown>"
+  );
+}
+
+function dedupeMissingPrincipalDetails(details: MissingPrincipalDetail[]): MissingPrincipalDetail[] {
+  const seen = new Set<string>();
+  return details.filter((detail) => {
+    const key = `${detail.branch}:${detail.principal}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // ============================================================================
@@ -331,7 +518,7 @@ export function enforceScopeCheck(
       agentId: ctx.agentId,
       denied: target,
       reason,
-      ...scopeAuditMetadata(ctx, denial),
+      ...scopeAuditMetadata(ctx, denial, { relation: "execute", objectType: "group", objectId }),
       command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
     });
     return { allowed: false, errorMessage: reason };
@@ -355,7 +542,7 @@ export function enforceScopeCheck(
           agentId: ctx.agentId!,
           denied: "system:*",
           reason,
-          ...scopeAuditMetadata(ctx, denial),
+          ...scopeAuditMetadata(ctx, denial, { relation: "admin", objectType: "system", objectId: "*" }),
           command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
       }
@@ -391,7 +578,7 @@ export function enforceScopeCheck(
         agentId: ctx.agentId!,
         denied: target,
         reason,
-        ...scopeAuditMetadata(ctx, denial),
+        ...scopeAuditMetadata(ctx, denial, { relation: "execute", objectType: "group", objectId }),
         command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
       });
       return {
@@ -416,7 +603,7 @@ export function enforceScopeCheck(
           agentId: ctx.agentId!,
           denied: "write_contacts",
           reason,
-          ...scopeAuditMetadata(ctx, denial),
+          ...scopeAuditMetadata(ctx, denial, { relation: "write_contacts", objectType: "system", objectId: "*" }),
           command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
       }

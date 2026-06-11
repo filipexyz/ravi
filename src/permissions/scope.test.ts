@@ -188,6 +188,50 @@ describe("Scope Isolation", () => {
       );
     });
 
+    it("allows delegated command scopes inherited from the actor when the surface has no override, including repeated context ids", () => {
+      grant("agent", "audit", "execute", "group", "context_codex-bash-hook");
+      grant("agent", "audit", "execute", "group", "sessions_info");
+      grant("contact", "luis", "execute", "group", "context_codex-bash-hook");
+      grant("contact", "luis", "execute", "group", "sessions_info");
+      const context = {
+        contextId: "ctx_repeated_delegated",
+        agentId: "audit",
+        sessionKey: "agent:audit:whatsapp:main:group:120363424239734858",
+        sessionName: "audit-2",
+        context: {
+          contextId: "ctx_repeated_delegated",
+          contextKey: "rctx_repeated_delegated",
+          kind: "turn-runtime",
+          agentId: "audit",
+          sessionKey: "agent:audit:whatsapp:main:group:120363424239734858",
+          sessionName: "audit-2",
+          capabilities: [
+            { permission: "execute", objectType: "group", objectId: "context_codex-bash-hook" },
+            { permission: "execute", objectType: "group", objectId: "sessions_info" },
+          ],
+          metadata: {
+            authorityMode: "delegated",
+            executorAgentId: "audit",
+            actorPrincipal: "contact:luis",
+            actorCapabilityCount: 2,
+            surfacePrincipal: "chat:chat_a6a497c4e546c5eb62c51f25",
+            surfaceCapabilityCount: 0,
+            effectiveCapabilityCount: 2,
+          },
+          createdAt: 0,
+        },
+      } satisfies ToolContext;
+
+      const bashHook = runWithContext(context, () => enforceScopeCheck("open", "context", "codex-bash-hook"));
+      const sessionsInfo = runWithContext(context, () => enforceScopeCheck("open", "sessions", "info"));
+      const repeatedBashHook = runWithContext(context, () => enforceScopeCheck("open", "context", "codex-bash-hook"));
+
+      expect(bashHook.allowed).toBe(true);
+      expect(sessionsInfo.allowed).toBe(true);
+      expect(repeatedBashHook.allowed).toBe(true);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "audit", resolved: false })).toEqual([]);
+    });
+
     it("records safe runtime context provenance for denied CLI group scope", () => {
       const context = {
         contextId: "ctx_turn",
@@ -205,7 +249,11 @@ describe("Scope Isolation", () => {
           metadata: {
             authorityMode: "delegated",
             actorPrincipal: "automation:cron:7db11046",
+            actorDisplayName: "Pattern Reviewer Delta Sweep",
             surfacePrincipal: "chat:178035101794451@lid",
+            surfaceDisplayName: "Sistemas e Workstreams",
+            actorCapabilityCount: 0,
+            surfaceCapabilityCount: 0,
             effectiveCapabilityCount: 0,
             runtimeProvider: "codex",
           },
@@ -229,14 +277,104 @@ describe("Scope Isolation", () => {
             contextId: "ctx_turn",
             kind: "turn-runtime",
             actorPrincipal: "automation:cron:7db11046",
+            actorDisplayName: "Pattern Reviewer Delta Sweep",
             surfacePrincipal: "chat:178035101794451@lid",
+            surfaceDisplayName: "Sistemas e Workstreams",
+            actorCapabilityCount: 0,
+            surfaceCapabilityCount: 0,
             effectiveCapabilityCount: 0,
             capabilitiesCount: 0,
+          },
+          diagnosis: {
+            blockType: "delegated_actor_capabilities_empty",
+            detail:
+              "Delegated scope denied for execute group:chats_lists_members: actor Pattern Reviewer Delta Sweep (automation:cron:7db11046) has 0 capabilities. Grant execute group:chats_lists_members to automation:cron:7db11046.",
+            missingPrincipals: ["automation:cron:7db11046"],
+            missingPrincipalDetails: [
+              {
+                branch: "actor",
+                principal: "automation:cron:7db11046",
+                displayName: "Pattern Reviewer Delta Sweep",
+              },
+            ],
+            recommendedGrantSubjects: ["automation:cron:7db11046"],
           },
         },
       });
       expect(JSON.stringify(denials[0].detail)).not.toContain("rctx_secret");
       expect(JSON.stringify(denials[0].detail)).not.toContain("runtimeProvider");
+    });
+
+    it("does not recommend granting delegated access to an unresolved actor principal", () => {
+      const context = {
+        contextId: "ctx_unknown_actor",
+        agentId: "audit",
+        sessionKey: "agent:audit:whatsapp:main:group:120363424239734858",
+        sessionName: "audit-2",
+        context: {
+          contextId: "ctx_unknown_actor",
+          contextKey: "rctx_unknown_actor",
+          kind: "turn-runtime",
+          agentId: "audit",
+          sessionKey: "agent:audit:whatsapp:main:group:120363424239734858",
+          sessionName: "audit-2",
+          capabilities: [],
+          metadata: {
+            authorityMode: "delegated",
+            authorityResolver: "turn-scoped-v1",
+            actorPrincipal: "unknown",
+            actorResolution: "missing_contact",
+            surfacePrincipal: "chat:chat_a6a497c4e546c5eb62c51f25",
+            surfaceDisplayName: "Ravi - Audit",
+            actorCapabilityCount: 0,
+            surfaceCapabilityCount: 45,
+            effectiveCapabilityCount: 0,
+            runtimeProvider: "codex",
+          },
+          createdAt: 0,
+        },
+      } satisfies ToolContext;
+
+      const result = runWithContext(context, () => enforceScopeCheck("open", "context", "codex-bash-hook"));
+
+      expect(result.allowed).toBe(false);
+      const denials = listPermissionDenials({
+        subjectType: "agent",
+        subjectId: "audit",
+        resolved: false,
+      });
+      expect(denials).toHaveLength(1);
+      expect(denials[0]).toMatchObject({
+        detail: {
+          context: {
+            contextId: "ctx_unknown_actor",
+            kind: "turn-runtime",
+            actorPrincipal: "unknown",
+            actorResolution: "missing_contact",
+            surfacePrincipal: "chat:chat_a6a497c4e546c5eb62c51f25",
+            surfaceDisplayName: "Ravi - Audit",
+            actorCapabilityCount: 0,
+            surfaceCapabilityCount: 45,
+            effectiveCapabilityCount: 0,
+            capabilitiesCount: 0,
+          },
+          diagnosis: {
+            blockType: "delegated_actor_capabilities_empty",
+            detail:
+              "Delegated scope denied for execute group:context_codex-bash-hook: actor unknown without a resolved contact has 0 capabilities. Resolve the actor contact before granting execute group:context_codex-bash-hook.",
+            missingPrincipals: ["unknown"],
+            missingPrincipalDetails: [
+              {
+                branch: "actor",
+                principal: "unknown",
+                resolution: "missing_contact",
+              },
+            ],
+            recommendedGrantSubjects: [],
+          },
+        },
+      });
+      expect(JSON.stringify(denials[0].detail)).not.toContain("Grant execute group:context_codex-bash-hook to unknown");
     });
   });
 

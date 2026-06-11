@@ -99,6 +99,7 @@ export interface ConsoleMeResponse {
 
 export interface CredentialExchangeInput {
   installationId: string;
+  organizationRef?: string;
   workosAccessToken?: string;
   providerAccessToken?: string;
   deviceCode?: string;

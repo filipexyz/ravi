@@ -39,7 +39,19 @@ afterEach(async () => {
 
 describe("session followup service", () => {
   it("publishes direct session followups with after_response delivery", async () => {
-    getOrCreateSession("agent:dev:followup-direct", "dev", "/tmp/dev", { name: "dev-followup-direct" });
+    dbUpsertInstance({ name: "main", channel: "whatsapp" });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "direct-followup@g.us",
+      chatType: "group",
+      title: "Direct Followup",
+      seenAt: 1_000,
+    });
+    const session = getOrCreateSession("agent:dev:followup-direct", "dev", "/tmp/dev", {
+      name: "dev-followup-direct",
+    });
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id, attachedByType: "system" });
     const cadence = createSessionFollowupCadence({
       name: "Direct check",
       targetType: "session",
@@ -60,6 +72,14 @@ describe("session followup service", () => {
         deliveryBarrierSource: "default",
         _sessionFollowup: true,
         _sessionFollowupCadenceId: cadence.id,
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "direct-followup@g.us",
+          canonicalChatId: chat.id,
+          actorType: "automation",
+          automationId: `session-followup:${cadence.id}`,
+        },
       },
     });
     expect(String(prompts[0]?.payload.prompt)).toStartWith(
@@ -68,6 +88,36 @@ describe("session followup service", () => {
     expect(String(prompts[0]?.payload.prompt)).not.toContain("\nEvent: ravi.sessions.followup.due");
     expect(String(prompts[0]?.payload.prompt)).not.toContain("\nCadence:");
     expect(events.map((event) => event.topic)).toEqual(["ravi.sessions.followup.due", "ravi.sessions.followup.sent"]);
+  });
+
+  it("falls back to session routing metadata for direct session followup source", async () => {
+    getOrCreateSession("agent:dev:followup-last-route", "dev", "/tmp/dev", {
+      name: "dev-followup-last-route",
+      lastChannel: "whatsapp-baileys",
+      lastAccountId: "main",
+      lastTo: "last-route@g.us",
+      lastThreadId: "thread-1",
+    });
+    const cadence = createSessionFollowupCadence({
+      name: "Last route check",
+      targetType: "session",
+      targetRef: "dev-followup-last-route",
+      schedule: { type: "at", at: 60_000 },
+      messageTemplate: "Review last route.",
+      now: 1_000,
+    });
+
+    const result = await runDueSessionFollowups({ now: 61_000 });
+
+    expect(result.sent).toBe(1);
+    expect(prompts[0]?.payload.source).toMatchObject({
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "last-route@g.us",
+      threadId: "thread-1",
+      actorType: "automation",
+      automationId: `session-followup:${cadence.id}`,
+    });
   });
 
   it("expands reading lists to the active attached session for each chat", async () => {

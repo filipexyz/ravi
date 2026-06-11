@@ -2,9 +2,13 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runWithContext } from "../context.js";
+import { grantRelation } from "../../permissions/relations.js";
+import { cleanupIsolatedRaviState } from "../../test/ravi-state.js";
 import { AppsCommands } from "./apps.js";
 
 const tempRoots: string[] = [];
+const tempStateDirs: string[] = [];
 const originalCwd = process.cwd();
 const originalHome = process.env.HOME;
 const originalStateDir = process.env.RAVI_STATE_DIR;
@@ -20,6 +24,7 @@ function makeRepo(): string {
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "test-repo" }));
   process.env.HOME = join(root, ".home");
   process.env.RAVI_STATE_DIR = join(root, ".state");
+  tempStateDirs.push(process.env.RAVI_STATE_DIR);
   for (const key of contextEnvKeys) {
     delete process.env[key];
   }
@@ -86,8 +91,11 @@ async function captureJsonAsync(fn: () => Promise<unknown>): Promise<unknown> {
   }
 }
 
-afterEach(() => {
+afterEach(async () => {
   process.chdir(originalCwd);
+  while (tempStateDirs.length > 0) {
+    await cleanupIsolatedRaviState(tempStateDirs.pop());
+  }
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   if (originalStateDir === undefined) delete process.env.RAVI_STATE_DIR;
@@ -129,6 +137,44 @@ describe("AppsCommands", () => {
     };
     expect(check).toMatchObject({ ok: true, checked: 1 });
     expect(check.results[0]).toMatchObject({ id: "apps", ok: true });
+  });
+
+  it("filters app discovery by app use permission in agent context", () => {
+    makeRepo();
+    const commands = new AppsCommands();
+
+    const hiddenList = runWithContext({ agentId: "app-agent" }, () =>
+      captureJson(() => commands.list(undefined, true)),
+    ) as {
+      total: number;
+      apps: Array<{ id: string }>;
+    };
+    expect(hiddenList.total).toBe(0);
+    expect(hiddenList.apps).toEqual([]);
+
+    expect(() =>
+      runWithContext({ agentId: "app-agent" }, () => captureJson(() => commands.show("apps", true))),
+    ).toThrow(/App not found: apps/);
+
+    grantRelation("agent", "app-agent", "use", "app", "apps", "test");
+
+    const visibleList = runWithContext({ agentId: "app-agent" }, () =>
+      captureJson(() => commands.list(undefined, true)),
+    ) as {
+      total: number;
+      apps: Array<{ id: string }>;
+    };
+    expect(visibleList.total).toBe(1);
+    expect(visibleList.apps.map((app) => app.id)).toEqual(["apps"]);
+
+    const visibleCheck = runWithContext({ agentId: "app-agent" }, () =>
+      captureJson(() => commands.check(undefined, true)),
+    ) as {
+      checked: number;
+      results: Array<{ id: string }>;
+    };
+    expect(visibleCheck.checked).toBe(1);
+    expect(visibleCheck.results.map((result) => result.id)).toEqual(["apps"]);
   });
 
   it("prints guide and app-specific prompts as JSON", () => {

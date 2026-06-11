@@ -26,6 +26,7 @@ import {
   createCrmPipelineStageTopic,
   createCrmTask,
   getCrmAccount,
+  getContactDetails,
   getCrmContactProfile,
   getCrmOpportunity,
   getCrmPipeline,
@@ -54,6 +55,8 @@ import {
   type CrmTask,
   type CrmOwnerType,
 } from "../../contacts.js";
+import { dbListRoutes } from "../../router/router-db.js";
+import { canAccessContact, getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -147,6 +150,7 @@ function renderNextAction(action: {
   priority: string;
   dueAt: string | null;
   title: string;
+  contactId?: string | null;
   contactName: string | null;
   accountName: string | null;
 }) {
@@ -154,7 +158,86 @@ function renderNextAction(action: {
   console.log(`- ${action.priority.padEnd(7)} ${action.dueAt ?? "-"} ${action.taskId} ${target}: ${action.title}`);
 }
 
+let cachedRoutes: ReturnType<typeof dbListRoutes> | null = null;
+
+function routeAgentForCrmContact(contactRef: string): string | null {
+  const details = getContactDetails(contactRef);
+  if (!details) return null;
+  if (!cachedRoutes) cachedRoutes = dbListRoutes();
+  for (const identity of details.platformIdentities) {
+    const value = identity.normalizedPlatformUserId.toLowerCase();
+    const match = cachedRoutes.find((route) => route.pattern === value);
+    if (match) return match.agent;
+  }
+  return null;
+}
+
+function canReadCrmContact(contactRef: string): boolean {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return true;
+  const details = getContactDetails(contactRef);
+  if (!details) return false;
+  const contactAgent = routeAgentForCrmContact(details.contact.id);
+  const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
+  return canAccessContact(
+    scopeCtx,
+    { id: details.contact.id, tags: details.policy?.tags ?? [] },
+    null,
+    contactSessions,
+  );
+}
+
+function assertCanReadCrmContact(contactRef: string): void {
+  if (canReadCrmContact(contactRef)) return;
+  fail(`Contact not found: ${contactRef}`);
+}
+
+function contactIdsFromCrmRecord(record: object): string[] {
+  const data = record as Record<string, unknown>;
+  const ids = new Set<string>();
+  const direct = data.contactId ?? data.contact_id;
+  if (typeof direct === "string" && direct.length > 0) ids.add(direct);
+  if (data.entityType === "contact" && typeof data.entityId === "string" && data.entityId.length > 0) {
+    ids.add(data.entityId);
+  }
+  if (data.entity_type === "contact" && typeof data.entity_id === "string" && data.entity_id.length > 0) {
+    ids.add(data.entity_id);
+  }
+  const nestedContact = data.contact;
+  if (
+    nestedContact &&
+    typeof nestedContact === "object" &&
+    "id" in nestedContact &&
+    typeof nestedContact.id === "string" &&
+    nestedContact.id.length > 0
+  ) {
+    ids.add(nestedContact.id);
+  }
+  return [...ids];
+}
+
+function filterCrmRecordsByContact<T extends object>(records: T[]): T[] {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return records;
+  return records.filter((record) => {
+    const contactIds = contactIdsFromCrmRecord(record);
+    if (contactIds.length === 0) return true;
+    return contactIds.some((contactId) => canReadCrmContact(contactId));
+  });
+}
+
+function visiblePage<T extends object>(page: { total: number; limit: number; offset: number; items: T[] }) {
+  if (!isScopeEnforced(getScopeContext())) return page;
+  const items = filterCrmRecordsByContact(page.items);
+  return {
+    ...page,
+    total: items.length,
+    items,
+  };
+}
+
 function showCrmContactProfile(contactRef: string, asJson?: boolean) {
+  assertCanReadCrmContact(contactRef);
   const profile = getCrmContactProfile(contactRef);
   if (!profile) fail(`Contact not found: ${contactRef}`);
   const payload = { target: contactRef, crm: profile };
@@ -428,14 +511,15 @@ function formatMoney(cents: number, currency: string): string {
 function showCrmAccount(accountRef: string, asJson?: boolean) {
   const account = getCrmAccount(accountRef);
   if (!account) fail(`CRM account not found: ${accountRef}`);
-  const payload = { target: accountRef, crm: account };
+  const visibleContacts = filterCrmRecordsByContact(account.contacts ?? []);
+  const payload = { target: accountRef, crm: { ...account, contacts: visibleContacts } };
   if (asJson) {
     printJson(payload);
     return payload;
   }
   console.log(`\nCRM account: ${account.account.name}`);
   console.log(`  id: ${account.account.id}`);
-  console.log(`  contacts: ${account.contacts.length}`);
+  console.log(`  contacts: ${visibleContacts.length}`);
   console.log(`  opportunities: ${account.opportunities.length}`);
   console.log(`  tasks: ${account.tasks.length}`);
   return payload;
@@ -479,18 +563,21 @@ export class ACrmCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ownerFilter = parseOwner(owner);
-    const page = listCrmNextActions({
-      ...ownerFilter,
-      contactRef: contact,
-      accountId: account,
-      opportunityId: opportunity,
-      taskType,
-      dueToday: Boolean(dueToday),
-      dueBefore,
-      dueAfter,
-      limit,
-      offset,
-    });
+    if (contact) assertCanReadCrmContact(contact);
+    const page = visiblePage(
+      listCrmNextActions({
+        ...ownerFilter,
+        contactRef: contact,
+        accountId: account,
+        opportunityId: opportunity,
+        taskType,
+        dueToday: Boolean(dueToday),
+        dueBefore,
+        dueAfter,
+        limit,
+        offset,
+      }),
+    );
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "crm", "next"],
       limit: page.limit,
@@ -571,7 +658,7 @@ export class ACrmCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ownerFilter = parseOwner(owner);
-    const page = listCrmContactCards({ ...ownerFilter, lifecycle, limit, offset });
+    const page = visiblePage(listCrmContactCards({ ...ownerFilter, lifecycle, limit, offset }));
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "crm", "contacts"],
       limit: page.limit,
@@ -608,8 +695,13 @@ export class ACrmCommands {
     @Option({ flags: "--include-empty-stages", description: "Include configured stages with no opportunities" })
     includeEmptyStages?: boolean,
   ) {
-    const board = listCrmOpportunityBoard({ pipelineRef: pipeline });
-    const stages = includeEmptyStages ? listCrmOpportunityBoardStages(pipeline) : undefined;
+    const board = filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline }));
+    const stages = includeEmptyStages
+      ? listCrmOpportunityBoardStages(pipeline).map((stage) => ({
+          ...stage,
+          opportunities: filterCrmRecordsByContact(stage.opportunities),
+        }))
+      : undefined;
     const payload = stages
       ? { total: board.length, stages, opportunities: board }
       : { total: board.length, opportunities: board };
@@ -1346,7 +1438,7 @@ export class CrmOpportunityCommands {
     @Arg("opportunity", { description: "CRM opportunity ID" }) opportunityId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const contacts = listCrmOpportunityContacts(opportunityId);
+    const contacts = filterCrmRecordsByContact(listCrmOpportunityContacts(opportunityId));
     const payload = { total: contacts.length, contacts };
     if (asJson) {
       printJson(payload);
@@ -1412,17 +1504,20 @@ export class CrmFactCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching facts to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const page = listCrmFacts({
-      entityType,
-      entityId,
-      contactRef,
-      accountId,
-      opportunityId,
-      status,
-      key,
-      limit,
-      offset,
-    });
+    if (contactRef) assertCanReadCrmContact(contactRef);
+    const page = visiblePage(
+      listCrmFacts({
+        entityType,
+        entityId,
+        contactRef,
+        accountId,
+        opportunityId,
+        status,
+        key,
+        limit,
+        offset,
+      }),
+    );
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "crm", "fact", "list"],
       limit: page.limit,
@@ -1551,6 +1646,7 @@ export class CrmTaskCommands {
   ) {
     const task = getCrmTask(taskId);
     if (!task) fail(`CRM task not found: ${taskId}`);
+    if (task.contactId && !canReadCrmContact(task.contactId)) fail(`CRM task not found: ${taskId}`);
     const payload = { target: taskId, task: formatCrmTaskForJson(task) };
     if (asJson) {
       printJson(payload);
@@ -1696,19 +1792,22 @@ export class CrmTaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ownerFilter = parseOwner(owner);
-    const page = listCrmTasks({
-      ...ownerFilter,
-      contactRef: contact,
-      accountId: account,
-      opportunityId: opportunity,
-      taskType,
-      status,
-      dueToday: Boolean(dueToday),
-      dueBefore,
-      dueAfter,
-      limit,
-      offset,
-    });
+    if (contact) assertCanReadCrmContact(contact);
+    const page = visiblePage(
+      listCrmTasks({
+        ...ownerFilter,
+        contactRef: contact,
+        accountId: account,
+        opportunityId: opportunity,
+        taskType,
+        status,
+        dueToday: Boolean(dueToday),
+        dueBefore,
+        dueAfter,
+        limit,
+        offset,
+      }),
+    );
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "crm", "task", "list"],
       limit: page.limit,

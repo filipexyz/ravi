@@ -105,6 +105,7 @@ Para timeline completa de sessão, use `RAVI_EVENTS` junto de `MESSAGE`/`REACTIO
 | Tópico | Payload |
 |--------|---------|
 | `ravi.media.send` | `{ channel, accountId, chatId, filePath, mimetype, type: "image"\|"video"\|"audio"\|"document", filename, caption? }` |
+| `ravi.tts` | `{ text, agentId?, sessionName?, sessionKey?, target?, playback?, voice?, metadata? }` — solicita TTS ElevenLabs; o gateway publica `ravi.tts.started`, `ravi.tts.ready` ou `ravi.tts.failed` |
 | `ravi.stickers.send` | `{ channel: "whatsapp", accountId, chatId, stickerId, label, filePath, mimeType, filename }` — envia sticker WhatsApp via omni; canais sem capability de sticker são rejeitados |
 
 ### Contatos e Aprovações
@@ -128,7 +129,7 @@ Para timeline completa de sessão, use `RAVI_EVENTS` junto de `MESSAGE`/`REACTIO
 
 | Tópico | Payload |
 |--------|---------|
-| `ravi.audit.denied` | `{ type: "env_spoofing"\|"executable"\|"session_scope"\|"tool"\|"scope", agentId, denied, reason, dedupeKey, command?, detail?, denialId?, context? }` — `dedupeKey` é semântico e não inclui `denialId`; `context` é provenance segura (`contextId`, `kind`, sessão, `actorPrincipal`, `surfacePrincipal`, contadores de capabilities); nunca inclui `contextKey`. |
+| `ravi.audit.denied` | `{ type: "env_spoofing"\|"executable"\|"session_scope"\|"tool"\|"scope", agentId, denied, reason, dedupeKey, command?, detail?, blockType?, missingPrincipals?, missingPrincipalDetails?, recommendedGrantSubjects?, denialId?, context? }` — `dedupeKey` é semântico e não inclui `denialId`; `detail` traz diagnóstico seguro quando disponível; `blockType` classifica o tipo de bloqueio; `missingPrincipals`/`recommendedGrantSubjects` ajudam automação de liberação; `missingPrincipalDetails` traz branch/principal/displayName para explicação humana; `context` é provenance segura (`contextId`, `kind`, sessão, `actorPrincipal`, `actorDisplayName`, `surfacePrincipal`, `surfaceDisplayName`, contadores de capabilities); nunca inclui `contextKey`. |
 
 ### Sistema e Config
 

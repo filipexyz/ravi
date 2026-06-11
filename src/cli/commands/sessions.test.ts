@@ -26,6 +26,14 @@ let chatHistory: Array<Record<string, unknown>> = [];
 let chatHistoryByChat: Array<Record<string, unknown>> = [];
 let messageMetadataRows: Array<Record<string, unknown>> = [];
 const chatRecords = new Map<string, Record<string, unknown>>();
+let sessionSubscriptions: Array<Record<string, unknown>> = [];
+const sessionChatBindings = new Map<string, Record<string, unknown>>();
+let agentChatMessagesPage: {
+  total: number;
+  limit: number;
+  offset: number;
+  items: Array<Record<string, unknown>>;
+} = { total: 0, limit: 10, offset: 0, items: [] };
 let displayNameUpdates: Array<{ sessionKey: string; displayName: string }> = [];
 let deletedSessionKeys: string[] = [];
 let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
@@ -103,6 +111,8 @@ mock.module("../../router/sessions.js", () => ({
   },
   resetSession: () => {},
   resolveSession: () => resolvedSession,
+  listSessionSubscriptions: (sessionKey: string) =>
+    sessionSubscriptions.filter((subscription) => subscription.sessionKey === sessionKey),
   getOrCreateSession: () => null,
   findSessionByChatId: () => null,
   updateSessionDisplayName: (sessionKey: string, displayName: string) => {
@@ -149,6 +159,8 @@ mock.module("../../router/index.js", () => ({
 mock.module("../../router/router-db.js", () => ({
   ...actualRouterDbModule,
   dbGetChat: (chatId: string) => chatRecords.get(chatId) ?? actualRouterDbModule.dbGetChat(chatId),
+  dbGetSessionChatBinding: (sessionKey: string) => sessionChatBindings.get(sessionKey) ?? null,
+  dbListAgentChatMessagesPage: () => agentChatMessagesPage,
   dbListContexts: (options?: { sessionKey?: string }) =>
     listedContexts.filter((context) => {
       if (!options?.sessionKey) return true;
@@ -225,7 +237,10 @@ const {
   buildCurrentSessionActionsCommand,
   buildCurrentSessionDeleteMessageCommand,
   buildCurrentSessionEditMessageCommand,
+  buildCurrentSessionMediaSendCommand,
+  buildCurrentSessionReactionCommand,
   buildCurrentSessionReadCommand,
+  buildCurrentSessionStickerSendCommand,
   buildSessionActionsPromptHint,
   buildSessionActionsCommand,
   buildSessionDeleteMessageCommand,
@@ -273,6 +288,9 @@ beforeEach(() => {
   chatHistoryByChat = [];
   messageMetadataRows = [];
   chatRecords.clear();
+  sessionSubscriptions = [];
+  sessionChatBindings.clear();
+  agentChatMessagesPage = { total: 0, limit: 10, offset: 0, items: [] };
   displayNameUpdates = [];
   deletedSessionKeys = [];
   renameSessionNameCalls = [];
@@ -564,6 +582,9 @@ describe("SessionCommands attach hints", () => {
     expect(buildCurrentSessionActionsCommand()).toBe("ravi sessions actions --json");
     expect(buildCurrentSessionDeleteMessageCommand("cm_123")).toBe("ravi sessions delete-message cm_123");
     expect(buildCurrentSessionEditMessageCommand("cm_123")).toBe('ravi sessions edit-message cm_123 "<new-text>"');
+    expect(buildCurrentSessionReactionCommand("cm_123", "<emoji>")).toBe("ravi react send cm_123 <emoji>");
+    expect(buildCurrentSessionStickerSendCommand("wave")).toBe("ravi stickers send wave");
+    expect(buildCurrentSessionMediaSendCommand("/tmp/card.png")).toBe('ravi media send "/tmp/card.png"');
     expect(buildCurrentSessionReadCommand()).toBe("ravi sessions read --json");
     expect(buildSessionActionsCommand("dev")).toBe("ravi sessions actions dev --json");
     expect(buildSessionDeleteMessageCommand("dev", "cm_123")).toBe("ravi sessions delete-message dev cm_123");
@@ -579,7 +600,105 @@ describe("SessionCommands attach hints", () => {
     expect(hint).toContain("chatTitle");
     expect(hint).toContain("ravi sessions delete-message <message-id>");
     expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(hint).toContain('ravi media send "<file-path>"');
+    expect(hint).toContain("usage.tools");
     expect(hint).toContain("Only delete or edit messages authored by this session's agent");
+  });
+
+  it("lists executable conversational tools including media sends", () => {
+    const sessionKey = "agent:dev:whatsapp:main:chat_ae70f8bc7ec999d2e2048219";
+    resolvedSession = {
+      sessionKey,
+      name: "dev",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    sessionSubscriptions = [
+      {
+        id: "sub_1",
+        sessionKey,
+        chatId: "chat_ae70f8bc7ec999d2e2048219",
+        role: "primary",
+        speechMode: "speak",
+        outputAttachedAt: 1,
+      },
+    ];
+    chatRecords.set("chat_ae70f8bc7ec999d2e2048219", {
+      id: "chat_ae70f8bc7ec999d2e2048219",
+      title: "ravi - dev",
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "120363424772797713@g.us",
+    });
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().actions("dev", undefined, true);
+      }),
+    );
+
+    expect(payload.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "message.react",
+          status: "available",
+          command: "ravi react send <message-id> <emoji>",
+        }),
+        expect.objectContaining({
+          id: "sticker.send",
+          status: "available",
+          command: "ravi stickers send <sticker-id>",
+        }),
+        expect.objectContaining({
+          id: "media.send",
+          status: "available",
+          command: 'ravi media send "<file-path>"',
+        }),
+      ]),
+    );
+    expect(payload.usage.tools.sendMedia).toMatchObject({
+      id: "media.send",
+      tool: "ravi media send",
+      command: 'ravi media send "<file-path>"',
+    });
+    expect(payload.surfaces.subscriptions[0]).toMatchObject({
+      chatId: "chat_ae70f8bc7ec999d2e2048219",
+      speechMode: "speak",
+      defaultOutput: true,
+    });
+  });
+
+  it("marks channel actions unavailable when the session has no chat surface", () => {
+    resolvedSession = {
+      sessionKey: "session_without_chat",
+      name: "headless",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().actions("headless", undefined, true);
+      }),
+    );
+
+    expect(payload.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "message.react",
+          status: "unavailable",
+          unavailableReason: expect.stringContaining("No current, attached, or recent chat surface"),
+        }),
+        expect.objectContaining({
+          id: "sticker.send",
+          status: "unavailable",
+        }),
+        expect.objectContaining({
+          id: "media.send",
+          status: "unavailable",
+        }),
+      ]),
+    );
   });
 
   it("includes chat identity on recent own action messages", () => {

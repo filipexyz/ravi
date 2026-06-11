@@ -22,11 +22,17 @@ export interface AuditContextProvenance {
   authorityResolver?: string;
   actorPrincipal?: string;
   actorResolution?: string;
+  actorDisplayName?: string;
   surfacePrincipal?: string;
+  surfaceDisplayName?: string;
   executorAgentId?: string;
   actorCapabilityCount?: number;
   surfaceCapabilityCount?: number;
+  actorOverrideCapabilityCount?: number;
+  surfaceOverrideCapabilityCount?: number;
+  delegationOverridePrincipals?: string[];
   turnCapabilityCount?: number;
+  turnCapabilities?: ContextCapability[];
   effectiveCapabilityCount?: number;
   capabilitiesCount?: number;
   source?: {
@@ -42,13 +48,17 @@ const STRING_METADATA_KEYS = [
   "authorityResolver",
   "actorPrincipal",
   "actorResolution",
+  "actorDisplayName",
   "surfacePrincipal",
+  "surfaceDisplayName",
   "executorAgentId",
 ] as const;
 
 const NUMBER_METADATA_KEYS = [
   "actorCapabilityCount",
   "surfaceCapabilityCount",
+  "actorOverrideCapabilityCount",
+  "surfaceOverrideCapabilityCount",
   "turnCapabilityCount",
   "effectiveCapabilityCount",
 ] as const;
@@ -74,6 +84,8 @@ export function buildAuditContextProvenance(input?: AuditProvenanceInput | null)
   for (const key of NUMBER_METADATA_KEYS) {
     assignNumber(context, key, metadata?.[key]);
   }
+  assignStringArray(context, "delegationOverridePrincipals", metadata?.delegationOverridePrincipals);
+  assignCapabilityArray(context, "turnCapabilities", metadata?.turnCapabilities);
 
   if (Array.isArray(capabilities)) {
     context.capabilitiesCount = capabilities.length;
@@ -95,6 +107,43 @@ function assignNumber(target: object, key: string, value: unknown): void {
   if (typeof value === "number" && Number.isFinite(value)) {
     (target as Record<string, unknown>)[key] = value;
   }
+}
+
+function assignStringArray(target: object, key: string, value: unknown): void {
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((entry): entry is string => typeof entry === "string" && entry.length > 0)
+  ) {
+    (target as Record<string, unknown>)[key] = value;
+  }
+}
+
+function assignCapabilityArray(target: object, key: string, value: unknown): void {
+  if (!Array.isArray(value) || value.length === 0) return;
+  const capabilities: ContextCapability[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    const permission = stringField(record.permission);
+    const objectType = stringField(record.objectType);
+    const objectId = stringField(record.objectId);
+    if (!permission || !objectType || !objectId) continue;
+    const source = stringField(record.source);
+    capabilities.push({
+      permission,
+      objectType,
+      objectId,
+      ...(source ? { source } : {}),
+    });
+  }
+  if (capabilities.length > 0) {
+    (target as Record<string, unknown>)[key] = capabilities;
+  }
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function buildSafeSource(source?: ContextSource | null): AuditContextProvenance["source"] | undefined {

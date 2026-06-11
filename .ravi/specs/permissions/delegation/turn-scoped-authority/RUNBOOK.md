@@ -60,6 +60,26 @@ Preferred flow:
 
 Avoid granting directly to broad agents as a fix for a user denial. That widens every actor using the agent.
 
+## Grant A Narrow Delegation Override
+
+Use an override when a specific group/agent is allowed to delegate one
+capability even though the current contact lacks it directly.
+
+1. Confirm the executor agent already has the normal capability, for example
+   `agent:<agent-id> use tool:Bash`.
+2. Prefer a surface override when the exception belongs to a group/chat:
+   `chat:<chat-id> delegate_use tool:Bash`.
+3. Use an agent override only when the exception belongs to that executor agent:
+   `agent:<agent-id> delegate_use tool:Bash`.
+4. For agent overrides, confirm the chat/surface still has a normal grant or
+   surface override for the capability.
+5. Trigger a new turn and inspect metadata:
+   `actorOverrideCapabilityCount`, `surfaceOverrideCapabilityCount`, and
+   `delegationOverridePrincipals`.
+
+Do not use overrides for unknown actors or automations. Give automations their
+own explicit `automation:<id>` grants.
+
 ## Revoke A Critical Capability
 
 1. Revoke the role/direct relation.
@@ -99,4 +119,3 @@ select owner_type, count(*) as participants
 from session_participants
 group by owner_type;
 ```
-

@@ -2,9 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { buildEffectiveCapabilities, snapshotSubjectCapabilities } from "./delegation.js";
+import {
+  buildEffectiveCapabilities,
+  snapshotSubjectCapabilities,
+  snapshotSubjectDelegationOverrides,
+} from "./delegation.js";
 import { can, agentCan, canWithCapabilityContext, canWithCapabilities } from "./engine.js";
-import { grantRelation } from "./relations.js";
+import { grantRelation, revokeRelation } from "./relations.js";
 
 let stateDir: string | null = null;
 
@@ -151,6 +155,103 @@ describe("REBAC Engine", () => {
       expect(canWithCapabilityContext(context, "execute", "executable", "rg")).toBe(false);
     });
 
+    it("re-resolves delegated authority from the live graph when provenance is present", () => {
+      grant("agent", "dev", "use", "tool", "Bash");
+      grant("contact", "luis", "use", "tool", "Bash");
+      const context = {
+        kind: "turn-runtime",
+        agentId: "dev",
+        metadata: {
+          authorityMode: "delegated",
+          executorAgentId: "dev",
+          actorPrincipal: "contact:luis",
+          surfacePrincipal: "chat:chat_group_1",
+        },
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+      };
+
+      expect(canWithCapabilityContext(context, "use", "tool", "Bash")).toBe(true);
+
+      revokeRelation("contact", "luis", "use", "tool", "Bash");
+
+      expect(canWithCapabilityContext(context, "use", "tool", "Bash")).toBe(false);
+    });
+
+    it("allows delegated grants that are present in the live graph even when the snapshot is stale", () => {
+      grant("agent", "dev", "execute", "group", "sessions_info");
+      grant("contact", "luis", "execute", "group", "sessions_info");
+      const context = {
+        kind: "turn-runtime",
+        agentId: "dev",
+        metadata: {
+          authorityMode: "delegated",
+          executorAgentId: "dev",
+          actorPrincipal: "contact:luis",
+          surfacePrincipal: "chat:chat_group_1",
+        },
+        capabilities: [],
+      };
+
+      expect(canWithCapabilityContext(context, "execute", "group", "sessions_info")).toBe(true);
+    });
+
+    it("preserves turn-scoped grants while rechecking delegated authority against the live graph", () => {
+      grant("contact", "luis", "execute", "group", "observer_report");
+      const turnGrant = {
+        permission: "execute",
+        objectType: "group",
+        objectId: "observer_report",
+        source: "observer-rule",
+      };
+      const context = {
+        kind: "turn-runtime",
+        agentId: "dev",
+        metadata: {
+          authorityMode: "delegated",
+          executorAgentId: "dev",
+          actorPrincipal: "contact:luis",
+          surfacePrincipal: "chat:chat_group_1",
+          turnCapabilityCount: 1,
+          turnCapabilities: [turnGrant],
+        },
+        capabilities: [{ ...turnGrant, source: "effective" }],
+      };
+
+      expect(canWithCapabilityContext(context, "execute", "group", "observer_report")).toBe(true);
+
+      revokeRelation("contact", "luis", "execute", "group", "observer_report");
+
+      expect(canWithCapabilityContext(context, "execute", "group", "observer_report")).toBe(false);
+    });
+
+    it("allows a repeated delegated context after a live actor grant when turn capabilities are serialized", () => {
+      const turnGrant = {
+        permission: "execute",
+        objectType: "group",
+        objectId: "observer_report",
+        source: "observer-rule",
+      };
+      const context = {
+        kind: "turn-runtime",
+        agentId: "dev",
+        metadata: {
+          authorityMode: "delegated",
+          executorAgentId: "dev",
+          actorPrincipal: "contact:luis",
+          surfacePrincipal: "chat:chat_group_1",
+          turnCapabilityCount: 1,
+          turnCapabilities: [turnGrant],
+        },
+        capabilities: [],
+      };
+
+      expect(canWithCapabilityContext(context, "execute", "group", "observer_report")).toBe(false);
+
+      grant("contact", "luis", "execute", "group", "observer_report");
+
+      expect(canWithCapabilityContext(context, "execute", "group", "observer_report")).toBe(true);
+    });
+
     it("lets live grants augment stale agent runtime context capabilities", () => {
       const context = makeToolContext({
         agentId: "dev",
@@ -201,6 +302,53 @@ describe("REBAC Engine", () => {
       expect(effective).toEqual([{ permission: "use", objectType: "tool", objectId: "Bash", source: "effective" }]);
     });
 
+    it("inherits actor capabilities when the delegated surface has no explicit decision", () => {
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "execute", objectType: "group", objectId: "*" }],
+        actorCapabilities: [{ permission: "execute", objectType: "group", objectId: "sessions_info" }],
+        surfaceCapabilities: [],
+      });
+
+      expect(canWithCapabilities(effective, "execute", "group", "sessions_info")).toBe(true);
+      expect(effective).toEqual([
+        { permission: "execute", objectType: "group", objectId: "sessions_info", source: "effective" },
+      ]);
+    });
+
+    it("keeps explicit delegated surface deny above actor inheritance", () => {
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "execute", objectType: "group", objectId: "*" }],
+        actorCapabilities: [{ permission: "execute", objectType: "group", objectId: "sessions_info" }],
+        surfaceCapabilities: [{ permission: "deny_execute", objectType: "group", objectId: "sessions_info" }],
+      });
+
+      expect(canWithCapabilities(effective, "execute", "group", "sessions_info")).toBe(false);
+      expect(effective).toEqual([]);
+    });
+
+    it("does not inherit from the executor when the actor branch lacks the grant", () => {
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "execute", objectType: "group", objectId: "sessions_info" }],
+        actorCapabilities: [],
+        surfaceCapabilities: [],
+      });
+
+      expect(canWithCapabilities(effective, "execute", "group", "sessions_info")).toBe(false);
+      expect(effective).toEqual([]);
+    });
+
+    it("does not let actor wildcards bypass an explicit delegated surface deny", () => {
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "execute", objectType: "group", objectId: "*" }],
+        actorCapabilities: [{ permission: "execute", objectType: "group", objectId: "*" }],
+        surfaceCapabilities: [{ permission: "deny_execute", objectType: "group", objectId: "sessions_info" }],
+      });
+
+      expect(canWithCapabilities(effective, "execute", "group", "sessions_info")).toBe(false);
+      expect(canWithCapabilities(effective, "execute", "group", "context_codex-bash-hook")).toBe(false);
+      expect(effective).toEqual([]);
+    });
+
     it("keeps role-expanded toolgroups inside a delegated effective context", () => {
       const effective = buildEffectiveCapabilities({
         agentCapabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
@@ -210,6 +358,57 @@ describe("REBAC Engine", () => {
 
       expect(canWithCapabilities(effective, "use", "tool", "Read")).toBe(true);
       expect(canWithCapabilities(effective, "use", "tool", "Bash")).toBe(false);
+    });
+
+    it("lets explicit delegation overrides satisfy a missing actor branch without exceeding the agent", () => {
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+        actorCapabilities: [],
+        surfaceCapabilities: [{ permission: "use", objectType: "tool", objectId: "*" }],
+        actorOverrideCapabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+      });
+
+      expect(canWithCapabilities(effective, "use", "tool", "Bash")).toBe(true);
+      expect(canWithCapabilities(effective, "use", "tool", "Read")).toBe(false);
+      expect(effective).toEqual([{ permission: "use", objectType: "tool", objectId: "Bash", source: "effective" }]);
+    });
+
+    it("does not let delegation overrides grant beyond the executor agent ceiling", () => {
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+        actorCapabilities: [],
+        surfaceCapabilities: [{ permission: "use", objectType: "tool", objectId: "*" }],
+        actorOverrideCapabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+      });
+
+      expect(canWithCapabilities(effective, "use", "tool", "Bash")).toBe(false);
+      expect(canWithCapabilities(effective, "use", "tool", "Read")).toBe(false);
+      expect(effective).toEqual([]);
+    });
+
+    it("lets a surface delegation override satisfy both actor and surface branches", () => {
+      const chatOverride = [{ permission: "use", objectType: "tool", objectId: "Bash" }];
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+        actorCapabilities: [],
+        surfaceCapabilities: [],
+        actorOverrideCapabilities: chatOverride,
+        surfaceOverrideCapabilities: chatOverride,
+      });
+
+      expect(canWithCapabilities(effective, "use", "tool", "Bash")).toBe(true);
+    });
+
+    it("does not let an agent delegation override bypass a missing surface branch", () => {
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+        actorCapabilities: [],
+        surfaceCapabilities: [],
+        actorOverrideCapabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+      });
+
+      expect(canWithCapabilities(effective, "use", "tool", "Bash")).toBe(false);
+      expect(effective).toEqual([]);
     });
 
     it("expands contact role membership into actor capabilities", () => {
@@ -232,6 +431,46 @@ describe("REBAC Engine", () => {
         source: "role:operators/manual",
       });
       expect(capabilities.some((capability) => capability.permission === "member")).toBe(false);
+    });
+
+    it("keeps delegation override grants out of normal subject capabilities", () => {
+      grant("chat", "chat_group_1", "delegate_use", "tool", "Bash");
+
+      const capabilities = snapshotSubjectCapabilities("chat", "chat_group_1");
+      const overrides = snapshotSubjectDelegationOverrides("chat", "chat_group_1");
+
+      expect(capabilities).toEqual([]);
+      expect(overrides).toEqual([
+        { permission: "use", objectType: "tool", objectId: "Bash", source: "delegate:manual" },
+      ]);
+    });
+
+    it("ignores delegated superadmin overrides even if they exist in relation storage", () => {
+      grant("chat", "chat_group_1", "delegate_admin", "system", "*");
+
+      expect(snapshotSubjectCapabilities("chat", "chat_group_1")).toEqual([]);
+      expect(snapshotSubjectDelegationOverrides("chat", "chat_group_1")).toEqual([]);
+    });
+
+    it("expands surface constrain role grants into surface capabilities", () => {
+      grant("chat", "chat_group_1", "constrain", "role", "public-chat");
+      grant("role", "public-chat", "use", "tool", "Read");
+
+      const surfaceCapabilities = snapshotSubjectCapabilities("chat", "chat_group_1", { includeRoles: false });
+      const effective = buildEffectiveCapabilities({
+        agentCapabilities: [{ permission: "use", objectType: "tool", objectId: "*" }],
+        actorCapabilities: [{ permission: "use", objectType: "tool", objectId: "*" }],
+        surfaceCapabilities,
+      });
+
+      expect(surfaceCapabilities).toContainEqual({
+        permission: "use",
+        objectType: "tool",
+        objectId: "Read",
+        source: "constraint:public-chat/manual",
+      });
+      expect(canWithCapabilities(effective, "use", "tool", "Read")).toBe(true);
+      expect(canWithCapabilities(effective, "use", "tool", "Bash")).toBe(false);
     });
   });
 
@@ -278,6 +517,14 @@ describe("REBAC Engine", () => {
     it("does not match different subject", () => {
       grant("agent", "dev", "use", "tool", "Bash");
       expect(can("agent", "other", "use", "tool", "Bash")).toBe(false);
+    });
+
+    it("expands role membership for direct permission checks", () => {
+      grant("contact", "luis", "member", "role", "trusted-dev");
+      grant("role", "trusted-dev", "use", "tool", "Bash");
+
+      expect(can("contact", "luis", "use", "tool", "Bash")).toBe(true);
+      expect(can("contact", "luis", "use", "tool", "Read")).toBe(false);
     });
   });
 

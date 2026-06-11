@@ -45,6 +45,15 @@ This capability extends `tags` and complements:
 ## Boundaries
 
 - Auto-tagging MUST NOT change `contact_policies.status`, `crm_contact_profiles.lifecycle`, or any access policy directly. It MAY only mutate tag attachments.
+- Auto-tagging MUST NOT grant permissions directly. If it applies a `policy.*`
+  tag, that tag MUST NOT be consumed by permission policy unless the permission
+  policy rule explicitly opts in to the auto-generated tag source or source
+  rule id.
+- Auto-tagging that writes `policy.*` tags MUST preserve canonical provenance
+  for every asset type: `source=tag_rules:<rule-id>` or equivalent, plus
+  metadata containing `ruleId`, rule version, evaluation cause, and target
+  asset. If a target path cannot preserve that provenance, permission policy
+  MUST reject that binding as untrusted.
 - Auto-tagging MUST NOT mutate raw `chats`, `chat_messages`, `chat_participants`, or CRM source rows. It MAY only emit tag attachments and the corresponding audit events.
 - Auto-tagging MUST NOT replace `contacts/identity-graph/inbound-contact-intake` default tags. Default tags fire at creation; auto-tagging fires on subsequent state.
 - Auto-tagging MUST NOT replace observer rules. Observer rules consume tags; auto-tagging produces them.

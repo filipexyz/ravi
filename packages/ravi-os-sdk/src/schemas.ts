@@ -627,6 +627,10 @@ export const AgentsCreateInputSchema = {
       "description": "Agent ID",
       "type": "string"
     },
+    "model": {
+      "description": "Runtime model selector",
+      "type": "string"
+    },
     "provider": {
       "description": "Runtime provider id",
       "type": "string"
@@ -4223,6 +4227,21 @@ export const ArtifactsVersionsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `audio.blob`. */
+export const AudioBlobInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "TTS playback item id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `audio.generate`. */
 export const AudioGenerateInputSchema = {
   "additionalProperties": false,
@@ -4361,6 +4380,845 @@ export const AudioGenerateReturnSchema = {
     "success",
     "audio",
     "options"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `audio.pending`. */
+export const AudioPendingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Filter by agent id",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Filter by target chat id",
+      "type": "string"
+    },
+    "clientId": {
+      "description": "Filter by extension playback client id",
+      "type": "string"
+    },
+    "id": {
+      "description": "Filter by playback item id",
+      "type": "string"
+    },
+    "includeFailed": {
+      "description": "Include failed TTS requests",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum items to return",
+      "type": "string"
+    },
+    "requestId": {
+      "description": "Filter by playback request id",
+      "type": "string"
+    },
+    "session": {
+      "description": "Filter by session name",
+      "type": "string"
+    },
+    "sessionKey": {
+      "description": "Filter by session key",
+      "type": "string"
+    },
+    "since": {
+      "description": "Only return TTS items after this Unix ms timestamp",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `audio.pending`. */
+export const AudioPendingReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "generatedAt": {
+      "type": "number"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "audio": {
+            "additionalProperties": false,
+            "properties": {
+              "filePath": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "modelId": {
+                "type": "string"
+              },
+              "outputFormat": {
+                "type": "string"
+              },
+              "provider": {
+                "const": "elevenlabs",
+                "type": "string"
+              },
+              "sizeBytes": {
+                "type": "number"
+              },
+              "voiceId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "filePath",
+              "filename",
+              "mimeType",
+              "sizeBytes",
+              "provider",
+              "voiceId",
+              "modelId",
+              "outputFormat"
+            ],
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "emitId": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "failedAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "playback": {
+            "additionalProperties": false,
+            "properties": {
+              "autoplay": {
+                "type": "boolean"
+              },
+              "clientId": {
+                "type": "string"
+              },
+              "target": {
+                "enum": [
+                  "extension",
+                  "channel",
+                  "none"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "target",
+              "autoplay"
+            ],
+            "type": "object"
+          },
+          "readyAt": {
+            "type": "number"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "canonicalChatId": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "chatId": {
+                "type": "string"
+              },
+              "instanceId": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "text": {
+            "type": "string"
+          },
+          "textPreview": {
+            "type": "string"
+          },
+          "voice": {
+            "additionalProperties": false,
+            "properties": {
+              "elevenlabs": {
+                "additionalProperties": false,
+                "properties": {
+                  "applyLanguageTextNormalization": {
+                    "type": "boolean"
+                  },
+                  "applyTextNormalization": {
+                    "enum": [
+                      "auto",
+                      "on",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "enableLogging": {
+                    "type": "boolean"
+                  },
+                  "nextRequestIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "nextText": {
+                    "type": "string"
+                  },
+                  "optimizeStreamingLatency": {
+                    "type": "number"
+                  },
+                  "previousRequestIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "previousText": {
+                    "type": "string"
+                  },
+                  "pronunciationDictionaryLocators": {
+                    "items": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "type": "array"
+                  },
+                  "seed": {
+                    "type": "number"
+                  },
+                  "usePvcAsIvc": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "lang": {
+                "type": "string"
+              },
+              "modelId": {
+                "type": "string"
+              },
+              "outputFormat": {
+                "type": "string"
+              },
+              "provider": {
+                "const": "elevenlabs",
+                "type": "string"
+              },
+              "voiceId": {
+                "type": "string"
+              },
+              "voiceSettings": {
+                "additionalProperties": false,
+                "properties": {
+                  "similarityBoost": {
+                    "type": "number"
+                  },
+                  "speed": {
+                    "type": "number"
+                  },
+                  "stability": {
+                    "type": "number"
+                  },
+                  "style": {
+                    "type": "number"
+                  },
+                  "useSpeakerBoost": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "provider",
+              "modelId",
+              "lang",
+              "outputFormat"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "requestId",
+          "status",
+          "createdAt",
+          "text",
+          "textPreview",
+          "playback",
+          "voice"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "generatedAt",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `audio.tts`. */
+export const AudioTtsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Target account/instance alias",
+      "type": "string"
+    },
+    "agent": {
+      "description": "Agent ID used to resolve TTS defaults",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Target channel, e.g. whatsapp",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Target chat id",
+      "type": "string"
+    },
+    "clientId": {
+      "description": "Extension playback client id",
+      "type": "string"
+    },
+    "elevenlabs": {
+      "description": "Additional ElevenLabs request JSON",
+      "type": "string"
+    },
+    "format": {
+      "description": "ElevenLabs output format override",
+      "type": "string"
+    },
+    "id": {
+      "description": "Playback request id",
+      "type": "string"
+    },
+    "lang": {
+      "description": "Language code override",
+      "type": "string"
+    },
+    "model": {
+      "description": "ElevenLabs model ID override",
+      "type": "string"
+    },
+    "noAutoplay": {
+      "default": true,
+      "description": "Do not autoplay in extension clients",
+      "type": "boolean"
+    },
+    "session": {
+      "description": "Session name",
+      "type": "string"
+    },
+    "sessionKey": {
+      "description": "Session key",
+      "type": "string"
+    },
+    "speed": {
+      "description": "Voice speed override",
+      "type": "string"
+    },
+    "text": {
+      "description": "Text to convert to speech",
+      "type": "string"
+    },
+    "voice": {
+      "description": "ElevenLabs voice ID override",
+      "type": "string"
+    },
+    "voiceSettings": {
+      "description": "ElevenLabs voiceSettings JSON",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `audio.tts`. */
+export const AudioTtsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "emitId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "playback": {
+          "additionalProperties": false,
+          "properties": {
+            "autoplay": {
+              "type": "boolean"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "target": {
+              "enum": [
+                "extension",
+                "channel",
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "autoplay"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "source": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "canonicalChatId": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "chatId": {
+              "type": "string"
+            },
+            "instanceId": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "text": {
+          "type": "string"
+        },
+        "voice": {
+          "additionalProperties": false,
+          "properties": {
+            "elevenlabs": {
+              "additionalProperties": false,
+              "properties": {
+                "applyLanguageTextNormalization": {
+                  "type": "boolean"
+                },
+                "applyTextNormalization": {
+                  "enum": [
+                    "auto",
+                    "on",
+                    "off"
+                  ],
+                  "type": "string"
+                },
+                "enableLogging": {
+                  "type": "boolean"
+                },
+                "nextRequestIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "nextText": {
+                  "type": "string"
+                },
+                "optimizeStreamingLatency": {
+                  "type": "number"
+                },
+                "previousRequestIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "previousText": {
+                  "type": "string"
+                },
+                "pronunciationDictionaryLocators": {
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "type": "array"
+                },
+                "seed": {
+                  "type": "number"
+                },
+                "usePvcAsIvc": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "lang": {
+              "type": "string"
+            },
+            "modelId": {
+              "type": "string"
+            },
+            "outputFormat": {
+              "type": "string"
+            },
+            "provider": {
+              "const": "elevenlabs",
+              "type": "string"
+            },
+            "voiceId": {
+              "type": "string"
+            },
+            "voiceSettings": {
+              "additionalProperties": false,
+              "properties": {
+                "similarityBoost": {
+                  "type": "number"
+                },
+                "speed": {
+                  "type": "number"
+                },
+                "stability": {
+                  "type": "number"
+                },
+                "style": {
+                  "type": "number"
+                },
+                "useSpeakerBoost": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "provider",
+            "modelId",
+            "lang",
+            "outputFormat"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "topic": {
+      "const": "ravi.tts",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "topic",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `audio.voices`. */
+export const AudioVoicesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "description": "Voice category filter",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum voices to return",
+      "type": "string"
+    },
+    "search": {
+      "description": "Search by voice name, description or labels",
+      "type": "string"
+    },
+    "voiceType": {
+      "description": "Voice type filter",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `audio.voices`. */
+export const AudioVoicesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "generatedAt": {
+      "type": "number"
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
+    "nextPageToken": {
+      "type": "string"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "elevenlabs",
+      "type": "string"
+    },
+    "totalCount": {
+      "type": "number"
+    },
+    "voices": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "highQualityBaseModelIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "isLegacy": {
+            "type": "boolean"
+          },
+          "isOwner": {
+            "type": "boolean"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "previewUrl": {
+            "type": "string"
+          },
+          "verifiedLanguages": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "accent": {
+                  "type": "string"
+                },
+                "language": {
+                  "type": "string"
+                },
+                "locale": {
+                  "type": "string"
+                },
+                "previewUrl": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "voiceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "voiceId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "generatedAt",
+    "hasMore",
+    "voices"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -32793,6 +33651,143 @@ export const PermissionsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `permissions.policies.apply`. */
+export const PermissionsPoliciesApplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+      "type": "string"
+    },
+    "policy": {
+      "description": "Optional policy id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.policies.apply`. */
+export const PermissionsPoliciesApplyReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.policies.dry-run`. */
+export const PermissionsPoliciesDryRunInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+      "type": "string"
+    },
+    "policy": {
+      "description": "Optional policy id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.policies.dry-run`. */
+export const PermissionsPoliciesDryRunReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.policies.list`. */
+export const PermissionsPoliciesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.policies.list`. */
+export const PermissionsPoliciesListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.policies.reconcile`. */
+export const PermissionsPoliciesReconcileInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+      "type": "string"
+    },
+    "policy": {
+      "description": "Optional policy id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.policies.reconcile`. */
+export const PermissionsPoliciesReconcileReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.policies.show`. */
+export const PermissionsPoliciesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+      "type": "string"
+    },
+    "policy": {
+      "description": "Policy id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "policy"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.policies.show`. */
+export const PermissionsPoliciesShowReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.policies.validate`. */
+export const PermissionsPoliciesValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+      "type": "string"
+    },
+    "policy": {
+      "description": "Optional policy id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.policies.validate`. */
+export const PermissionsPoliciesValidateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.revoke`. */
 export const PermissionsRevokeInputSchema = {
   "additionalProperties": false,
@@ -48527,6 +49522,10 @@ export const WhatsappGroupCreateInputSchema = {
     },
     "agentCwd": {
       "description": "CWD for --create-agent (default: ~/ravi/<agent>)",
+      "type": "string"
+    },
+    "agentModel": {
+      "description": "Runtime model selector for --create-agent",
       "type": "string"
     },
     "agentProvider": {

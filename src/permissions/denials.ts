@@ -277,7 +277,7 @@ function resolveDenialSessionName(denial: PermissionDenial): string | null {
   return getSession(denial.sessionKey)?.name ?? denial.sessionKey;
 }
 
-function getPermissionDenial(id: number): PermissionDenial | null {
+export function getPermissionDenial(id: number): PermissionDenial | null {
   const row = getDb().prepare("SELECT * FROM permission_denials WHERE id = ?").get(id) as PermissionDenialRow | null;
   return row ? rowToPermissionDenial(row) : null;
 }

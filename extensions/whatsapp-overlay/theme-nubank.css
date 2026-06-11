@@ -85,6 +85,7 @@
 }
 
 .ravi-wa-vibes-toggle,
+.ravi-wa-header-search-toggle,
 .ravi-wa-profile-toggle,
 .ravi-wa-panel-toggle,
 .ravi-wa-panel-rail-toggle,
@@ -95,8 +96,10 @@
 }
 
 .ravi-wa-vibes-toggle:hover,
+.ravi-wa-header-search-toggle:hover,
 .ravi-wa-profile-toggle:hover,
 .ravi-wa-profile-toggle--open,
+.ravi-wa-header-search-toggle--active,
 .ravi-wa-panel-toggle:hover,
 .ravi-wa-panel-rail-toggle:hover {
   border-color: rgba(130, 10, 209, 0.42) !important;
@@ -132,6 +135,7 @@
 }
 
 .ravi-wa-sidebar-search input,
+.ravi-wa-header-search input,
 .ravi-wa-crm-search,
 .ravi-wa-artifacts-search,
 .ravi-wa-artifact-kind-select select {
@@ -151,6 +155,7 @@
 }
 
 .ravi-wa-sidebar-search input:focus,
+.ravi-wa-header-search input:focus,
 .ravi-wa-crm-search:focus,
 .ravi-wa-artifacts-search:focus,
 .ravi-wa-artifact-kind-select select:focus {
@@ -181,7 +186,15 @@
     inset 3px 0 0 var(--ravi-nu-accent-2);
 }
 
+.ravi-wa-session-list-card .ravi-wa-nav-row--selected {
+  background: rgba(130, 10, 209, 0.12);
+}
+
 .ravi-wa-nav-row--selected:hover {
+  background: rgba(130, 10, 209, 0.16);
+}
+
+.ravi-wa-session-list-card .ravi-wa-nav-row--selected:hover {
   background: rgba(130, 10, 209, 0.16);
 }
 

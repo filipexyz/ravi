@@ -7,7 +7,9 @@
     "storage"
   ],
   "host_permissions": [
-    "https://web.whatsapp.com/*"
+    "https://web.whatsapp.com/*",
+    "https://storage.googleapis.com/*",
+    "https://*.elevenlabs.io/*"
   ],
   "optional_host_permissions": [
     "http://*/*",

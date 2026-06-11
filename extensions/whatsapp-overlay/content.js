@@ -1,5 +1,9 @@
 const SNAPSHOT_POLL_INTERVAL_MS = 2500;
 const SESSION_WORKSPACE_POLL_INTERVAL_MS = 2500;
+const SESSION_FOCUS_TRACE_POLL_INTERVAL_MS = 5000;
+const TTS_PLAYBACK_POLL_INTERVAL_MS = 1800;
+const TTS_PREVIEW_PRIME_SRC =
+  "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA==";
 const VIEW_STATE_POLL_INTERVAL_MS = 1000;
 const CHAT_LIST_RESOLVE_INTERVAL_MS = 2500;
 const MESSAGE_CHIP_REFRESH_INTERVAL_MS = 2500;
@@ -13,6 +17,9 @@ const PROFILE_BUTTON_ID = "ravi-wa-profile-toggle";
 const PROFILE_MENU_ID = "ravi-wa-profile-menu";
 const VIBES_BUTTON_ID = "ravi-wa-vibes-toggle";
 const VIBES_MENU_ID = "ravi-wa-vibes-menu";
+const SESSION_SEARCH_BUTTON_ID = "ravi-wa-session-search-toggle";
+const SESSION_SEARCH_FORM_ID = "ravi-wa-session-search";
+const SESSION_SEARCH_INPUT_ID = "ravi-wa-session-search-input";
 const VIBES_COMPOSER_DRAFT_MIN_INTERVAL_MS = 120;
 const PANEL_TOGGLE_ID = "ravi-wa-panel-toggle";
 const PANEL_RAIL_TOGGLE_ID = "ravi-wa-panel-rail-toggle";
@@ -57,6 +64,11 @@ const INSIGHTS_POLL_INTERVAL_MS = 10000;
 const ARTIFACTS_POLL_INTERVAL_MS = 10000;
 const CRM_POLL_INTERVAL_MS = 10000;
 const TASKS_EVENTS_LIMIT = 20;
+const SESSION_FOCUS_TRACE_EVENT_LIMIT = 16;
+const SESSION_FOCUS_TRACE_SINCE = "30m";
+const SESSION_FOCUS_EVENT_STAGGER_MS = 85;
+const TTS_VOICE_LIST_TTL_MS = 10 * 60 * 1000;
+const TTS_PREVIEW_POLL_DELAYS_MS = [450, 900, 1400, 2200, 3400, 5200, 7600];
 const TASK_SESSION_CREATION_WINDOW_MS = 30 * 60 * 1000;
 const WORKSPACE_NAV_ID = "ravi-wa-workspace-launcher";
 const V3_PLACEHOLDER_LAYER_ID = "ravi-wa-v3-placeholder-layer";
@@ -122,6 +134,7 @@ const SELECTOR_PROBE_DEFS = [
 
 let latestSnapshot = null;
 let latestSessionWorkspace = null;
+const sessionFocusTraceCache = new Map();
 let latestTasksSnapshot = null;
 let latestViewState = null;
 let latestTimelineDebug = null;
@@ -140,6 +153,10 @@ const taskSelectionCache = new Map();
 const taskSelectionInFlight = new Set();
 const taskDispatchDraftByTaskId = new Map();
 const PINNED_SESSION_KEY_STORAGE = "ravi-wa-overlay-pinned-session";
+const SESSION_FOCUS_DEBUG_OPEN_STORAGE =
+  "ravi-wa-overlay-session-focus-debug-open";
+const TTS_LAST_SEEN_STORAGE = "ravi-wa-overlay-tts-last-seen-at";
+const TTS_SEEN_IDS_STORAGE = "ravi-wa-overlay-tts-seen-ids";
 let lastPublishedAt = 0;
 const detectionLogs = [];
 let bridgeError = null;
@@ -147,12 +164,15 @@ let pollingStopped = false;
 let domCommandInFlight = false;
 let snapshotRefreshInFlight = false;
 let sessionWorkspaceRefreshInFlight = false;
+let sessionFocusTraceRefreshInFlight = false;
 let chatListRefreshInFlight = false;
 let openMessageChip = null;
 let openMessageId = null;
 let openMessageData = null;
 let openArtifactModalData = null;
 let sidebarFilter = "";
+let sidebarSearchOpen = false;
+let sessionFocusDebugOpen = loadSessionFocusDebugOpen();
 let insightsFilter = "";
 let artifactsFilter = "";
 let artifactsLifecycleFilter = "all";
@@ -171,6 +191,8 @@ let sidebarNoticeTimer = null;
 let pinnedSessionKey = loadPinnedSessionKey();
 let activeWorkspace = loadActiveWorkspace();
 let selectedWorkspaceSessionKey = loadWorkspaceSessionKey();
+let sessionWorkspaceMainVisible = Boolean(selectedWorkspaceSessionKey);
+let selectedWorkspaceChatFocusKey = null;
 let selectedTaskId = loadSelectedTaskId();
 let taskDetailDrawerOpen = false;
 let taskDetailDrawerShouldAnimate = false;
@@ -208,8 +230,29 @@ let sessionWorkspaceSubmitting = false;
 let sessionWorkspaceShouldScrollToEnd = false;
 let lastSessionWorkspaceRenderSessionKey = null;
 let pendingHumanChatListIntent = null;
+let pendingDetectedChatFocus = null;
+let lastSnapshotChatFocusKey = null;
 const intervalIds = [];
 const clientId = getOrCreateClientId();
+let ttsLastSeenAt = loadTtsLastSeenAt();
+let ttsPollInFlight = false;
+let ttsSettingsSaving = false;
+let ttsPreviewInFlight = false;
+let ttsPreviewAudio = null;
+let ttsPreviewAudioContext = null;
+let ttsPreviewAudioSource = null;
+const ttsSeenIds = loadTtsSeenIds();
+const ttsQueuedIds = new Set();
+const ttsBlockedItems = new Map();
+let ttsPlaybackChain = Promise.resolve();
+let ttsVoiceList = [];
+let ttsVoiceListLoadedAt = 0;
+let ttsVoiceListLoading = false;
+let ttsVoiceListError = null;
+let ttsVoiceQuery = "";
+let ttsConfigOpen = false;
+let ttsVoiceListScrollTop = 0;
+const ttsDraftsByAgentId = new Map();
 let omniPanelInFlight = false;
 let omniRouteActionInFlight = false;
 let v3PlaceholderInFlight = false;
@@ -221,6 +264,7 @@ let taskDispatchInFlightTaskId = null;
 let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
 const renderSignatures = new Map();
+const sessionFocusAnimatedEventSignatures = new Map();
 const taskDetailPaneScrollTopByTaskId = new Map();
 const TASK_WORKSPACE_DEFAULT_SECTION_STATE = Object.freeze({
   instructions: true,
@@ -237,6 +281,8 @@ let lastTaskHierarchyState = {
   parentByTaskId: new Map(),
 };
 let shellKeydownListenerAttached = false;
+let focusedSessionTraceKey = null;
+let lastSessionFocusTraceRequestAt = 0;
 
 const ARTIFACT_LIFECYCLE_OPTIONS = [
   { id: "all", label: "all" },
@@ -279,6 +325,7 @@ function boot() {
   document.addEventListener("keydown", handleVibesMenuKeydown, true);
   document.addEventListener("pointerdown", handleProfileMenuOutsidePointerDown, true);
   document.addEventListener("keydown", handleProfileMenuKeydown, true);
+  document.addEventListener("pointerdown", retryBlockedTtsPlayback, true);
   ensureShell();
   initVibesControls();
   initVibesComposerBridge();
@@ -290,6 +337,10 @@ function boot() {
   intervalIds.push(
     setInterval(refreshSessionWorkspace, SESSION_WORKSPACE_POLL_INTERVAL_MS),
   );
+  intervalIds.push(
+    setInterval(refreshCurrentSessionFocusTrace, SESSION_FOCUS_TRACE_POLL_INTERVAL_MS),
+  );
+  intervalIds.push(setInterval(pollTtsPlayback, TTS_PLAYBACK_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshViewState, VIEW_STATE_POLL_INTERVAL_MS));
   intervalIds.push(
     setInterval(refreshChatListOverlay, CHAT_LIST_RESOLVE_INTERVAL_MS),
@@ -433,10 +484,11 @@ async function refreshSnapshot() {
     }
     bridgeError = null;
     latestSnapshot = snapshot;
+    const didApplyDetectedChatFocus = applyDetectedChatFocus(snapshot);
     syncVibesFromSnapshot(snapshot, context);
     if (
       activeWorkspace === "ravi" &&
-      shouldRenderSnapshot("snapshot:ravi", snapshot)
+      shouldRenderSnapshot("snapshot:ravi", snapshot, didApplyDetectedChatFocus)
     ) {
       requestRender(snapshot, context);
     }
@@ -483,6 +535,438 @@ async function refreshSessionWorkspace(force = false) {
     handleRuntimeError(error);
   } finally {
     sessionWorkspaceRefreshInFlight = false;
+  }
+}
+
+function refreshCurrentSessionFocusTrace(force = false) {
+  if (!focusedSessionTraceKey) return;
+  void refreshSessionFocusTrace(focusedSessionTraceKey, force);
+}
+
+async function pollTtsPlayback() {
+  if (pollingStopped || ttsPollInFlight) return;
+  const session = latestSnapshot?.session || null;
+  const chatContext = detectChatContext();
+  const chatId = chatContext?.chatId || session?.chatId || session?.lastTo || null;
+  if (!session?.sessionKey && !chatId) return;
+
+  ttsPollInFlight = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-poll",
+      payload: {
+        since: ttsLastSeenAt,
+        sessionKey: session?.sessionKey || undefined,
+        sessionName: session?.sessionName || session?.name || undefined,
+        chatId: chatId || undefined,
+        agentId: session?.agentId || undefined,
+        limit: 6,
+      },
+    });
+    if (!response?.ok || !Array.isArray(response.items)) return;
+    for (const item of response.items) {
+      const eventTime = Number(item?.readyAt || item?.failedAt || item?.createdAt || 0);
+      if (Number.isFinite(eventTime) && eventTime > ttsLastSeenAt) {
+        ttsLastSeenAt = eventTime;
+      }
+      if (!item?.id || item.status !== "ready" || !item.dataUri) continue;
+      if (item.playback?.autoplay === false) {
+        markTtsSeen(item.id);
+        continue;
+      }
+      if (ttsSeenIds.has(item.id)) continue;
+      queueTtsPlayback(item);
+    }
+    persistTtsLastSeenAt(ttsLastSeenAt);
+  } catch (error) {
+    // TTS playback should never destabilize the overlay polling loop.
+    console.debug("[ravi-wa-overlay] tts poll failed", error);
+  } finally {
+    ttsPollInFlight = false;
+  }
+}
+
+async function refreshTtsVoices(force = false) {
+  if (ttsVoiceListLoading) return;
+  if (!force && ttsVoiceList.length && Date.now() - ttsVoiceListLoadedAt < TTS_VOICE_LIST_TTL_MS) return;
+  ttsVoiceListLoading = true;
+  ttsVoiceListError = null;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-voices",
+      payload: { limit: 60 },
+    });
+    if (!response?.ok || !Array.isArray(response.voices)) {
+      ttsVoiceListError = response?.error || "não consegui listar vozes";
+      return;
+    }
+    ttsVoiceList = response.voices
+      .filter((voice) => voice?.voiceId)
+      .sort((left, right) => String(left.name || left.voiceId).localeCompare(String(right.name || right.voiceId)));
+    ttsVoiceListLoadedAt = Date.now();
+  } catch (error) {
+    ttsVoiceListError = error?.message || String(error);
+  } finally {
+    ttsVoiceListLoading = false;
+    requestRender();
+  }
+}
+
+function queueTtsPlayback(item, options = {}) {
+  if (!item?.id) return;
+  if (!options.force) {
+    if (ttsSeenIds.has(item.id) || ttsQueuedIds.has(item.id) || ttsBlockedItems.has(item.id)) return;
+  }
+  ttsQueuedIds.add(item.id);
+  ttsPlaybackChain = ttsPlaybackChain
+    .catch(() => {})
+    .then(async () => {
+      try {
+        const status = await playTtsItem(item);
+        if (status === "blocked") {
+          ttsBlockedItems.set(item.id, item);
+          setSidebarNotice("warning", "o navegador bloqueou a voz; clica no WhatsApp para tocar.", 4200);
+          return;
+        }
+        ttsBlockedItems.delete(item.id);
+        markTtsSeen(item.id);
+      } catch (error) {
+        markTtsSeen(item.id);
+        console.debug("[ravi-wa-overlay] tts playback failed", error);
+      } finally {
+        ttsQueuedIds.delete(item.id);
+      }
+    });
+}
+
+function scheduleTtsPlaybackPollBurst() {
+  [450, 1200, 2400, 4200, 7000].forEach((delay) => {
+    window.setTimeout(() => {
+      void pollTtsPlayback();
+    }, delay);
+  });
+}
+
+async function waitForGeneratedTtsPreviewItem(input) {
+  for (const delay of TTS_PREVIEW_POLL_DELAYS_MS) {
+    await sleep(delay);
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-poll",
+      payload: {
+        id: input.id,
+        clientId,
+        since: input.since,
+        agentId: input.agentId || undefined,
+        sessionKey: input.sessionKey || undefined,
+        sessionName: input.sessionName || undefined,
+        chatId: input.chatId || undefined,
+        includeFailed: true,
+        limit: 4,
+      },
+    });
+    if (!response?.ok) {
+      setBridgeErrorFromResponse(response, "não consegui buscar o preview gerado");
+      return { status: "failed", response };
+    }
+    const items = Array.isArray(response.items) ? response.items : [];
+    const item = items.find((candidate) => candidate?.id === input.id) || items[0] || null;
+    if (!item) continue;
+    if (item.status === "failed") {
+      return { status: "failed", item };
+    }
+    if (item.status === "ready" && item.dataUri) {
+      const status = await playTtsPreviewItem(item);
+      return { status, item };
+    }
+  }
+  return { status: "timeout" };
+}
+
+async function playTtsPreviewItem(item) {
+  if (!item?.id || !item.dataUri) return "missing";
+  if (ttsPreviewAudioContext && ttsPreviewAudioContext.state !== "closed") {
+    const status = await playTtsAudioContextSource(item.dataUri, ttsPreviewAudioContext);
+    if (status === "playing") {
+      markTtsSeen(item.id);
+      return "playing";
+    }
+    if (status === "blocked") return "blocked";
+  }
+  const status = await playTtsAudioSource(item.dataUri);
+  if (status === "playing") {
+    markTtsSeen(item.id);
+  }
+  return status;
+}
+
+function createTtsPreviewRequestId() {
+  const random =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 12)
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  return `tts_preview_${random}`;
+}
+
+async function playTtsPreviewUrl(url) {
+  const primedContext = primeTtsPreviewAudioContext();
+  const primedAudio = primeTtsPreviewAudioElement();
+  let source = url;
+  if (/^https:\/\//i.test(url || "")) {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-preview-url",
+      payload: { url },
+    });
+    if (!response?.ok || !response.dataUri) {
+      console.debug("[ravi-wa-overlay] preview proxy failed", response);
+      return "failed";
+    }
+    source = response.dataUri;
+  }
+  if (/^data:audio\//i.test(source || "") && primedContext) {
+    const status = await playTtsAudioContextSource(source, primedContext);
+    if (status === "playing") return status;
+  }
+  return await playTtsAudioSource(source, primedAudio);
+}
+
+function primeTtsPreviewAudioContext() {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  try {
+    if (!ttsPreviewAudioContext || ttsPreviewAudioContext.state === "closed") {
+      ttsPreviewAudioContext = new AudioContextCtor();
+    }
+    ttsPreviewAudioContext.resume().catch(() => {});
+    return ttsPreviewAudioContext;
+  } catch (error) {
+    console.debug("[ravi-wa-overlay] tts preview AudioContext unavailable", error);
+    return null;
+  }
+}
+
+function primeTtsPreviewAudioElement() {
+  try {
+    if (ttsPreviewAudio) {
+      ttsPreviewAudio.pause();
+      ttsPreviewAudio.removeAttribute("src");
+      ttsPreviewAudio.load();
+    }
+  } catch {}
+  const audio = new Audio(TTS_PREVIEW_PRIME_SRC);
+  audio.preload = "auto";
+  audio.volume = 0;
+  ttsPreviewAudio = audio;
+  audio.play().catch(() => {});
+  return audio;
+}
+
+async function playTtsAudioContextSource(source, audioContext) {
+  if (!audioContext) return "failed";
+  let buffer;
+  try {
+    buffer = decodeAudioDataUri(source);
+  } catch (error) {
+    console.debug("[ravi-wa-overlay] tts preview data URI decode failed", error);
+    return "failed";
+  }
+  try {
+    stopTtsPreviewAudioSource();
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+    if (audioContext.state !== "running") {
+      return "blocked";
+    }
+    const audioBuffer = await audioContext.decodeAudioData(buffer);
+    const sourceNode = audioContext.createBufferSource();
+    sourceNode.buffer = audioBuffer;
+    sourceNode.connect(audioContext.destination);
+    ttsPreviewAudioSource = sourceNode;
+    sourceNode.onended = () => {
+      if (ttsPreviewAudioSource === sourceNode) ttsPreviewAudioSource = null;
+    };
+    sourceNode.start(0);
+    if (ttsPreviewAudio) {
+      ttsPreviewAudio.pause();
+      ttsPreviewAudio.removeAttribute("src");
+      ttsPreviewAudio.load();
+      ttsPreviewAudio = null;
+    }
+    return "playing";
+  } catch (error) {
+    console.debug("[ravi-wa-overlay] tts preview AudioContext playback failed", error);
+    return error?.name === "NotAllowedError" ? "blocked" : "failed";
+  }
+}
+
+function stopTtsPreviewAudioSource() {
+  if (!ttsPreviewAudioSource) return;
+  try {
+    ttsPreviewAudioSource.stop(0);
+  } catch {}
+  try {
+    ttsPreviewAudioSource.disconnect();
+  } catch {}
+  ttsPreviewAudioSource = null;
+}
+
+function decodeAudioDataUri(source) {
+  const match = /^data:audio\/[^;,]+(?:;[^,]*)?;base64,(.+)$/i.exec(source || "");
+  if (!match) throw new Error("invalid audio data URI");
+  const binary = atob(match[1]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes.buffer;
+}
+
+function playTtsAudioSource(source, audioElement = null) {
+  return new Promise((resolve) => {
+    if (!source) {
+      resolve("missing");
+      return;
+    }
+    const audio = audioElement || new Audio();
+    if (ttsPreviewAudio !== audio) {
+      try {
+        if (ttsPreviewAudio) {
+          ttsPreviewAudio.pause();
+          ttsPreviewAudio.removeAttribute("src");
+          ttsPreviewAudio.load();
+        }
+      } catch {}
+      ttsPreviewAudio = audio;
+    }
+    audio.pause();
+    audio.src = source;
+    audio.volume = 1;
+    audio.preload = "auto";
+    let settled = false;
+    const finish = (status) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("error", onError);
+      resolve(status);
+    };
+    const onPlaying = () => finish("playing");
+    const onError = () => {
+      if (ttsPreviewAudio === audio) ttsPreviewAudio = null;
+      finish("failed");
+    };
+    const timeout = window.setTimeout(() => {
+      if (ttsPreviewAudio === audio) ttsPreviewAudio = null;
+      finish("timeout");
+    }, 9000);
+    audio.addEventListener("playing", onPlaying, { once: true });
+    audio.addEventListener("error", onError, { once: true });
+    audio.addEventListener(
+      "ended",
+      () => {
+        if (ttsPreviewAudio === audio) ttsPreviewAudio = null;
+      },
+      { once: true },
+    );
+    audio.load();
+    audio.play().catch((error) => {
+      if (ttsPreviewAudio === audio) ttsPreviewAudio = null;
+      finish(error?.name === "NotAllowedError" ? "blocked" : "failed");
+    });
+  });
+}
+
+function playTtsItem(item) {
+  return new Promise((resolve) => {
+    const audio = new Audio(item.dataUri);
+    audio.preload = "auto";
+    let started = false;
+    let settled = false;
+    const finish = (status) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(status);
+    };
+    const timeout = setTimeout(() => finish(started ? "played" : "failed"), 60_000);
+    const cleanup = () => clearTimeout(timeout);
+    audio.onended = () => {
+      finish(started ? "played" : "failed");
+    };
+    audio.onerror = () => {
+      finish(started ? "played" : "failed");
+    };
+    audio
+      .play()
+      .then(() => {
+        started = true;
+        markTtsSeen(item.id);
+        ttsBlockedItems.delete(item.id);
+      })
+      .catch((error) => {
+        finish(error?.name === "NotAllowedError" ? "blocked" : "failed");
+      });
+  });
+}
+
+function retryBlockedTtsPlayback() {
+  if (!ttsBlockedItems.size) return;
+  const [item] = ttsBlockedItems.values();
+  if (!item?.id) return;
+  ttsBlockedItems.delete(item.id);
+  queueTtsPlayback(item, { force: true });
+}
+
+async function refreshSessionFocusTrace(sessionKey, force = false) {
+  if (pollingStopped) return;
+  if (!sessionKey) return;
+  if (sessionFocusTraceRefreshInFlight) return;
+  if (!force && activeWorkspace !== "ravi") return;
+
+  const now = Date.now();
+  if (
+    !force &&
+    sessionKey === focusedSessionTraceKey &&
+    now - lastSessionFocusTraceRequestAt < SESSION_FOCUS_TRACE_POLL_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  const requestedSessionKey = sessionKey;
+  focusedSessionTraceKey = requestedSessionKey;
+  lastSessionFocusTraceRequestAt = now;
+  sessionFocusTraceRefreshInFlight = true;
+
+  try {
+    const trace = await chrome.runtime.sendMessage({
+      type: "ravi:get-session-trace-summary",
+      payload: {
+        session: requestedSessionKey,
+        since: SESSION_FOCUS_TRACE_SINCE,
+        limit: SESSION_FOCUS_TRACE_EVENT_LIMIT,
+      },
+    });
+    if (focusedSessionTraceKey !== requestedSessionKey) return;
+    if (!trace?.ok) return;
+
+    sessionFocusTraceCache.set(requestedSessionKey, trace);
+    if (
+      shouldRenderSnapshot(
+        `session-focus-trace:${requestedSessionKey}`,
+        {
+          sessionKey: trace.sessionKey || requestedSessionKey,
+          events: trace.events || [],
+        },
+        force,
+      )
+    ) {
+      requestRender();
+    }
+  } catch (error) {
+    console.warn("[RaviOverlay] session focus trace unavailable", error);
+  } finally {
+    sessionFocusTraceRefreshInFlight = false;
   }
 }
 
@@ -755,8 +1239,10 @@ function refreshAll() {
 function refreshViewState() {
   if (pollingStopped) return;
   requestPageChatInfo();
+  const previousNavigationKey = readViewNavigationKey(latestViewState);
   const next = detectViewState();
   reconcileHumanChatListIntent(next);
+  const nextNavigationKey = readViewNavigationKey(next);
   if (!hasViewChanged(latestViewState, next)) {
     if (Date.now() - lastPublishedAt >= VIEW_STATE_REPUBLISH_MS) {
       publishViewState(next).catch(handleRuntimeError);
@@ -775,6 +1261,9 @@ function refreshViewState() {
   console.log("[RaviOverlay] view-state", next);
   publishViewState(next).catch(handleRuntimeError);
   renderTimelineProbe();
+  if (previousNavigationKey !== nextNavigationKey) {
+    void refreshSnapshot();
+  }
   requestRender();
 }
 
@@ -1285,7 +1774,7 @@ function handleHumanChatListKeydown(event) {
 }
 
 function rememberHumanChatListIntent(target) {
-  if (!selectedWorkspaceSessionKey) return;
+  if (!selectedWorkspaceSessionKey && !pinnedSessionKey) return;
   const element = resolveEventElement(target);
   if (!(element instanceof Element)) return;
   if (element.closest(`[${CHAT_ROW_BADGE_ATTR}], #${CHAT_SESSION_EDITOR_ID}`)) return;
@@ -1341,10 +1830,29 @@ function readActiveChatNavigationState(view = latestViewState) {
   };
 }
 
+function readViewNavigationKey(view) {
+  if (!view) return null;
+  const selectedRow = Array.isArray(view.chatRows)
+    ? view.chatRows.find((row) => row?.selected) || null
+    : null;
+  const chatId = normalizeLookupToken(view.chatIdCandidate);
+  const selectedRowKey = normalizeLookupToken(
+    selectedRow?.chatIdCandidate || selectedRow?.title,
+  );
+  const title = normalizeLookupToken(view.selectedChat || view.title);
+  return chatId
+    ? `chat:${chatId}`
+    : selectedRowKey
+      ? `selected:${selectedRowKey}`
+      : title
+        ? `title:${title}`
+        : null;
+}
+
 function reconcileHumanChatListIntent(view = latestViewState) {
   const pending = pendingHumanChatListIntent;
   if (!pending) return;
-  if (!selectedWorkspaceSessionKey) {
+  if (!selectedWorkspaceSessionKey && !pinnedSessionKey) {
     pendingHumanChatListIntent = null;
     return;
   }
@@ -1361,7 +1869,128 @@ function reconcileHumanChatListIntent(view = latestViewState) {
   if (!previousKey && !current.key) return;
 
   pendingHumanChatListIntent = null;
-  clearSessionWorkspace();
+  queueDetectedChatFocus(current);
+}
+
+function queueDetectedChatFocus(current) {
+  pendingDetectedChatFocus = {
+    key: current.key || null,
+    chatId: current.chatId || null,
+    selectedRowKey: current.selectedRowKey || null,
+    title: current.title || null,
+    startedAt: Date.now(),
+  };
+  sessionWorkspaceMainVisible = false;
+  sessionWorkspaceShouldScrollToEnd = false;
+  hideSessionWorkspaceMain();
+  setTimeout(() => {
+    void refreshSnapshot();
+  }, 0);
+}
+
+function applyDetectedChatFocus(snapshot) {
+  const snapshotFocusKey = buildSnapshotChatFocusKey(snapshot);
+  const previousSnapshotFocusKey = lastSnapshotChatFocusKey;
+  if (snapshotFocusKey) {
+    lastSnapshotChatFocusKey = snapshotFocusKey;
+  }
+
+  const pending = pendingDetectedChatFocus;
+  const pendingExpired =
+    pending && Date.now() - pending.startedAt > HUMAN_CHAT_NAV_INTENT_TTL_MS;
+  if (pendingExpired) {
+    pendingDetectedChatFocus = null;
+  }
+
+  const detectedSession = snapshot?.session || null;
+  if (!detectedSession?.sessionKey) return false;
+  const pendingMatches =
+    pending &&
+    !pendingExpired &&
+    snapshotMatchesPendingDetectedChatFocus(snapshot, pending);
+  const chatChanged =
+    Boolean(
+      snapshotFocusKey &&
+        previousSnapshotFocusKey &&
+        previousSnapshotFocusKey !== snapshotFocusKey,
+    ) ||
+    Boolean(
+      snapshotFocusKey &&
+        !previousSnapshotFocusKey &&
+        (selectedWorkspaceSessionKey || pinnedSessionKey),
+    );
+
+  if (!pendingMatches && !chatChanged) return false;
+
+  pendingDetectedChatFocus = null;
+  selectedWorkspaceSessionKey = null;
+  persistWorkspaceSessionKey(null);
+  pinnedSessionKey = null;
+  persistPinnedSessionKey(null);
+  sessionWorkspaceMainVisible = false;
+  selectedWorkspaceChatFocusKey = null;
+  latestSessionWorkspace = null;
+  pendingHumanChatListIntent = null;
+  expandedSessionWorkspaceTools.clear();
+  swNodeMap.clear();
+  sessionWorkspaceDraft = "";
+  sessionWorkspaceSubmitting = false;
+  sessionWorkspaceShouldScrollToEnd = false;
+  hideSessionWorkspaceMain();
+  return true;
+}
+
+function buildSnapshotChatFocusKey(snapshot) {
+  const chatId = normalizeLookupToken(snapshot?.query?.chatId);
+  if (chatId) return `chat:${canonicalChatNavigationToken(chatId)}`;
+
+  const title = normalizeLookupToken(snapshot?.query?.title);
+  return title ? `title:${title}` : null;
+}
+
+function canonicalChatNavigationToken(value) {
+  const variants = buildChatIdVariants(value);
+  if (!variants.length) return normalizeLookupToken(value);
+  return (
+    variants.find((variant) => variant.endsWith("@g.us")) ||
+    variants.find((variant) => variant.endsWith("@s.whatsapp.net")) ||
+    variants[0]
+  );
+}
+
+function snapshotMatchesPendingDetectedChatFocus(snapshot, pending) {
+  const queryChatId = normalizeLookupToken(snapshot?.query?.chatId);
+  const queryTitle = normalizeLookupToken(snapshot?.query?.title);
+  const pendingChatId = normalizeLookupToken(pending?.chatId);
+  const pendingSelectedRowKey = normalizeLookupToken(pending?.selectedRowKey);
+  const pendingTitle = normalizeLookupToken(pending?.title);
+
+  if (pendingChatId) {
+    return (
+      chatNavigationTokenMatches(queryChatId, pendingChatId) ||
+      Boolean(!queryChatId && queryTitle && queryTitle === pendingTitle)
+    );
+  }
+
+  if (pendingSelectedRowKey) {
+    return (
+      chatNavigationTokenMatches(queryChatId, pendingSelectedRowKey) ||
+      queryTitle === pendingSelectedRowKey ||
+      Boolean(pendingTitle && queryTitle === pendingTitle)
+    );
+  }
+
+  return Boolean(!pendingTitle || queryTitle === pendingTitle);
+}
+
+function chatNavigationTokenMatches(left, right) {
+  const leftToken = normalizeLookupToken(left);
+  const rightToken = normalizeLookupToken(right);
+  if (!leftToken || !rightToken) return false;
+  if (leftToken === rightToken) return true;
+
+  const leftVariants = new Set(buildChatIdVariants(leftToken));
+  return buildChatIdVariants(rightToken).some((variant) => leftVariants.has(variant));
 }
 
 function resolveChatRowChatIdCandidate(row, { selected }) {
@@ -4066,7 +4695,9 @@ function ensureShell() {
     existingRoot?.querySelector?.(`#${PANEL_RAIL_TOGGLE_ID}`) &&
     existingRoot?.querySelector?.(`#${PROFILE_BUTTON_ID}`) &&
     existingRoot?.querySelector?.(`#${VIBES_BUTTON_ID}`) &&
-    existingRoot?.querySelector?.(`#${VIBES_MENU_ID}`);
+    existingRoot?.querySelector?.(`#${VIBES_MENU_ID}`) &&
+    existingRoot?.querySelector?.(`#${SESSION_SEARCH_BUTTON_ID}`) &&
+    existingRoot?.querySelector?.(`#${SESSION_SEARCH_INPUT_ID}`);
   if (shellReady) return;
   existingRoot?.remove();
 
@@ -4088,8 +4719,30 @@ function ensureShell() {
         <div class="ravi-wa-drawer-heading">
           <strong id="ravi-wa-overlay-panel-title">Sessões</strong>
           <span id="ravi-wa-overlay-panel-subtitle">cockpit</span>
+          <label id="${SESSION_SEARCH_FORM_ID}" class="ravi-wa-header-search ravi-hidden">
+            <span class="ravi-wa-visually-hidden">Buscar sessões</span>
+            <input
+              id="${SESSION_SEARCH_INPUT_ID}"
+              type="text"
+              placeholder="buscar sessões, agents ou chats"
+              autocomplete="off"
+            />
+          </label>
         </div>
         <div class="ravi-wa-drawer-actions">
+          <button
+            id="${SESSION_SEARCH_BUTTON_ID}"
+            class="ravi-wa-header-search-toggle ravi-hidden"
+            type="button"
+            aria-expanded="false"
+            aria-label="Buscar sessões"
+            title="Buscar sessões"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+              <circle cx="8.5" cy="8.5" r="5.25"></circle>
+              <path d="M12.5 12.5 L16 16"></path>
+            </svg>
+          </button>
           <button
             id="${VIBES_BUTTON_ID}"
             class="ravi-wa-vibes-toggle"
@@ -4158,6 +4811,44 @@ function ensureShell() {
   document.getElementById(PANEL_RAIL_TOGGLE_ID)?.addEventListener("click", () => {
     setOverlayPanelVisible(true);
   });
+  document.getElementById(SESSION_SEARCH_BUTTON_ID)?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (sidebarSearchOpen || sidebarFilter) {
+      sidebarFilter = "";
+      sidebarSearchOpen = false;
+      render(latestSnapshot, detectChatContext());
+      return;
+    }
+    sidebarSearchOpen = true;
+    syncSessionSearchControls();
+    requestAnimationFrame(() => {
+      const input = document.getElementById(SESSION_SEARCH_INPUT_ID);
+      if (input instanceof HTMLInputElement) {
+        input.focus();
+        input.select();
+      }
+    });
+  });
+  document.getElementById(SESSION_SEARCH_INPUT_ID)?.addEventListener("input", (event) => {
+    sidebarFilter = event.target?.value || "";
+    sidebarSearchOpen = true;
+    render(latestSnapshot, detectChatContext());
+    requestAnimationFrame(() => {
+      const input = document.getElementById(SESSION_SEARCH_INPUT_ID);
+      if (!(input instanceof HTMLInputElement)) return;
+      input.focus();
+      input.setSelectionRange(sidebarFilter.length, sidebarFilter.length);
+    });
+  });
+  document.getElementById(SESSION_SEARCH_INPUT_ID)?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    sidebarFilter = "";
+    sidebarSearchOpen = false;
+    render(latestSnapshot, detectChatContext());
+    document.getElementById(SESSION_SEARCH_BUTTON_ID)?.focus();
+  });
   document.getElementById(VIBES_BUTTON_ID)?.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -4216,10 +4907,36 @@ function closeVibesMenu() {
 
 function syncHeaderConfigControls() {
   syncOverlayPanelChrome();
+  syncSessionSearchControls();
   syncHeaderVibesButton();
   syncHeaderProfileButton();
   renderVibesMenu();
   renderProfileMenu();
+}
+
+function syncSessionSearchControls() {
+  const button = document.getElementById(SESSION_SEARCH_BUTTON_ID);
+  const form = document.getElementById(SESSION_SEARCH_FORM_ID);
+  const input = document.getElementById(SESSION_SEARCH_INPUT_ID);
+  const enabled = activeWorkspace === "ravi";
+  const open = enabled && (sidebarSearchOpen || Boolean(sidebarFilter));
+
+  button?.classList.toggle("ravi-hidden", !enabled);
+  button?.classList.toggle("ravi-wa-header-search-toggle--active", open);
+  button?.setAttribute("aria-expanded", open ? "true" : "false");
+  button?.setAttribute(
+    "title",
+    open ? "Limpar busca de sessões" : "Buscar sessões",
+  );
+  button?.setAttribute(
+    "aria-label",
+    open ? "Limpar busca de sessões" : "Buscar sessões",
+  );
+
+  form?.classList.toggle("ravi-hidden", !open);
+  if (input instanceof HTMLInputElement && input.value !== sidebarFilter) {
+    input.value = sidebarFilter;
+  }
 }
 
 function getVibesApi() {
@@ -5349,16 +6066,28 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   panelTitle.textContent = "Sessões";
   panelSubtitle.textContent = title;
 
-  const recentSessions = filterCockpitSessions(
-    snapshot?.recentSessions || snapshot?.recentChats || [],
-  );
-  const activeSessions = filterCockpitSessions(
-    snapshot?.activeSessions || snapshot?.hotSessions || [],
-  );
+  const rawRecentSessions = snapshot?.recentSessions || snapshot?.recentChats || [];
+  const rawActiveSessions = snapshot?.activeSessions || snapshot?.hotSessions || [];
+  const filteredRecentSessions = filterCockpitSessions(rawRecentSessions);
+  const filteredActiveSessions = filterCockpitSessions(rawActiveSessions);
+  const selectedWorkspaceSession =
+    getSelectedWorkspaceSession(snapshot) ||
+    (selectedWorkspaceSessionKey
+      ? {
+          sessionKey: selectedWorkspaceSessionKey,
+          sessionName: selectedWorkspaceSessionKey,
+        }
+      : null);
   const navTargets = dedupeSessionsByKey(
-    [session, ...activeSessions, ...recentSessions].filter(Boolean),
+    [
+      session,
+      selectedWorkspaceSession,
+      ...rawActiveSessions,
+      ...rawRecentSessions,
+    ].filter(Boolean),
   );
   const followedSession = session || null;
+  const snapshotChatFocusKey = buildSnapshotChatFocusKey(snapshot);
   const pinnedSession = pinnedSessionKey
     ? navTargets.find((item) => item.sessionKey === pinnedSessionKey) || null
     : null;
@@ -5366,8 +6095,33 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     pinnedSessionKey = null;
     persistPinnedSessionKey(null);
   }
+  const manualFocusMatchesChat =
+    !followedSession ||
+    !snapshotChatFocusKey ||
+    Boolean(
+      selectedWorkspaceChatFocusKey &&
+        selectedWorkspaceChatFocusKey === snapshotChatFocusKey,
+    );
+  const manualPinnedSession = manualFocusMatchesChat ? pinnedSession : null;
+  const manualSelectedSession = manualFocusMatchesChat
+    ? selectedWorkspaceSession
+    : null;
   const focusedSession =
-    pinnedSession || followedSession || navTargets[0] || null;
+    manualPinnedSession ||
+    manualSelectedSession ||
+    followedSession ||
+    pinnedSession ||
+    selectedWorkspaceSession ||
+    navTargets[0] ||
+    null;
+  const nextFocusedSessionTraceKey = focusedSession?.sessionKey || null;
+  if (focusedSessionTraceKey !== nextFocusedSessionTraceKey) {
+    focusedSessionTraceKey = nextFocusedSessionTraceKey;
+    lastSessionFocusTraceRequestAt = 0;
+  }
+  if (nextFocusedSessionTraceKey) {
+    void refreshSessionFocusTrace(nextFocusedSessionTraceKey);
+  }
   const focusedTaskMatch = focusedSession
     ? resolveTaskSessionMatch(focusedSession)
     : null;
@@ -5375,18 +6129,22 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     primeTaskSessionDetails([focusedTaskMatch]);
   }
   const focusedTask = focusedTaskMatch?.task || null;
-  const isPinned = Boolean(
-    pinnedSession && focusedSession?.sessionKey === pinnedSession.sessionKey,
-  );
   const focusedLive = focusedSession?.live;
+  const focusedTraceEvents = getSessionFocusTraceEvents(focusedSession);
+  const focusedTraceSummary = formatSessionFocusEventSummary(focusedTraceEvents[0]);
   const focusedActivity = focusedLive?.activity || "idle";
   const focusedActivityLabel = chipActivityLabel(focusedActivity);
   const focusedActivityClass = chipActivityClass(focusedActivity);
-  const listedRecentSessions = focusedSession
-    ? recentSessions.filter(
-        (item) => item.sessionKey !== focusedSession.sessionKey,
-      )
-    : recentSessions;
+  const focusedInActiveList = hasSessionWithKey(rawActiveSessions, focusedSession);
+  const focusedInRecentList = hasSessionWithKey(rawRecentSessions, focusedSession);
+  const activeSessions =
+    focusedSession && (focusedInActiveList || !focusedInRecentList)
+      ? ensureSessionInList(filteredActiveSessions, focusedSession)
+      : filteredActiveSessions;
+  const listedRecentSessions =
+    focusedSession && focusedInRecentList
+      ? ensureSessionInList(filteredRecentSessions, focusedSession)
+      : filteredRecentSessions;
 
   const debugCard = `
     <details class="ravi-wa-disclosure">
@@ -5439,13 +6197,13 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     : "";
 
   const heroSummary = focusedTaskMatch
-    ? escapeHtml(shorten(focusedTaskMatch.note.text, 160))
+    ? shorten(focusedTaskMatch.note.text, 160)
     : focusedSession
-      ? escapeHtml(focusedLive?.summary || "sem evento vivo")
-      : escapeHtml(formatWarningsText(
+      ? focusedLive?.summary || focusedTraceSummary || "sem evento vivo"
+      : formatWarningsText(
           snapshot?.warnings,
           "Nenhuma sessão do Ravi em foco agora.",
-        ));
+        );
   const heroStateClass = focusedTask
     ? taskStatusClass(focusedTask.status)
     : focusedSession
@@ -5456,10 +6214,11 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     : focusedSession
       ? focusedActivityLabel
       : "unbound";
+  const focusedSessionTitle = getSessionDisplayName(focusedSession);
   const heroTitle = focusedTask
-    ? focusedTask.title || focusedSession?.sessionName || "task"
+    ? focusedTask.title || focusedSessionTitle || "task"
     : focusedSession
-      ? focusedSession.sessionName
+      ? focusedSessionTitle
       : "nenhuma sessão";
   const heroLinkedChat = focusedSession
     ? getLinkedChatLabel(focusedSession)
@@ -5470,67 +6229,94 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
       ? formatSessionElapsedCompact(focusedSession) || "agora"
       : "-";
   const heroElapsedLabel = focusedTask ? "duration" : "updated";
-  const heroModeLabel = isPinned
-    ? "pinada"
-    : followedSession
-      ? "seguindo chat"
-      : "sem vínculo";
-  const canFollowCurrent = Boolean(isPinned && followedSession);
-  const canPinFocused = Boolean(focusedSession && !isPinned);
-  const liveEventsCard = focusedSession
-    ? renderLiveEventsCard(focusedSession)
+  const focusedRuntimeLabel = focusedSession
+    ? formatSessionRuntimeLabel(resolveSessionProviderProfile(focusedSession)) ||
+      "runtime default"
     : "";
+  const focusActivityText = focusedSession
+    ? focusedLive?.summary || focusedTraceSummary || focusedActivityLabel
+    : heroSummary;
+  const focusActivityMeta = focusedSession
+    ? `${heroElapsedLabel} ${heroElapsed}`
+    : "sem vínculo";
+  const focusMappingLabel = focusedSession
+    ? [focusedSession.agentId, focusedRuntimeLabel].filter(Boolean).join(" · ")
+    : "sem sessão";
+  const debugMeta = focusedSession
+    ? [
+        focusedSession.chatId || heroLinkedChat ? "route ok" : "sem route",
+        heroLinkedChat ? `chat ${shorten(heroLinkedChat, 28)}` : null,
+        focusedSession.accountId ? `instance ${shorten(focusedSession.accountId, 18)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : formatWarningsText(snapshot?.warnings, "Nenhuma sessão do Ravi em foco agora.", " · ");
   body.innerHTML = `
     ${errorCard}
-    <section class="ravi-wa-card ravi-wa-hero-card">
-      <div class="ravi-wa-hero-top">
+    <section class="session-card ravi-wa-session-focus-card${sessionFocusDebugOpen ? " is-debug-open" : ""}" data-ravi-session-focus-card>
+      <div class="card-top">
         <div>
-          <h3>${escapeHtml(heroTitle)}</h3>
-          <p>${heroSummary}</p>
+          ${
+            focusedSession
+              ? `<button
+                  type="button"
+                  class="title-button"
+                  data-ravi-focus-session="${escapeAttribute(focusedSession.sessionKey)}"
+                  ${focusedTask ? `data-ravi-focus-task="${escapeAttribute(focusedTask.id)}"` : ""}
+                >${escapeHtml(heroTitle)}</button>`
+              : `<h3 class="title-button">${escapeHtml(heroTitle)}</h3>`
+          }
+          <div class="activity-line">
+            <strong class="live-event">${escapeHtml(focusActivityText)}</strong>
+            <span>${escapeHtml(focusActivityMeta)}</span>
+          </div>
         </div>
-        <span class="ravi-wa-state-pill ravi-wa-state-pill--${heroStateClass}">${escapeHtml(heroStateLabel)}</span>
+        <span class="state-pill">${escapeHtml(heroStateLabel)}</span>
       </div>
-      <div class="ravi-wa-chip-row">
-        <span class="ravi-wa-meta-chip">modo ${escapeHtml(heroModeLabel)}</span>
+      <div class="chip-row">
         ${
           focusedSession
-            ? `<span class="ravi-wa-meta-chip">agent ${escapeHtml(focusedSession.agentId)}</span>
-               <span class="ravi-wa-meta-chip">${escapeHtml(heroElapsedLabel)} ${escapeHtml(heroElapsed)}</span>
-               ${
-                 focusedTask
-                   ? `<span class="ravi-wa-meta-chip">task ${escapeHtml(formatTaskShortId(focusedTask.id))}</span>
-                      <span class="ravi-wa-meta-chip">progress ${escapeHtml(String(getTaskDisplayProgress(focusedTask, resolveTaskHierarchyNode(focusedTask.id))))}%</span>
-                      <span class="ravi-wa-meta-chip">session ${escapeHtml(focusedSession.sessionName)}</span>`
-                   : ""
-               }
-               ${heroLinkedChat ? `<span class="ravi-wa-meta-chip">chat ${escapeHtml(shorten(heroLinkedChat, 22))}</span>` : ""}
-               ${focusedSession.channel ? `<span class="ravi-wa-meta-chip">channel ${escapeHtml(focusedSession.channel)}</span>` : ""}
-               ${focusedSession.accountId ? `<span class="ravi-wa-meta-chip">instance ${escapeHtml(shorten(focusedSession.accountId, 18))}</span>` : ""}`
-            : ""
+	            ? `<button
+	                 type="button"
+	                 class="chip-button primary"
+	                 data-ravi-focus-session="${escapeAttribute(focusedSession.sessionKey)}"
+	                 ${focusedTask ? `data-ravi-focus-task="${escapeAttribute(focusedTask.id)}"` : ""}
+	               >${escapeHtml(focusMappingLabel)}</button>
+	               ${
+	                 focusedTask
+	                   ? `<span class="chip">task ${escapeHtml(formatTaskShortId(focusedTask.id))}</span>
+	                      <span class="chip">progress ${escapeHtml(String(getTaskDisplayProgress(focusedTask, resolveTaskHierarchyNode(focusedTask.id))))}%</span>`
+	                   : ""
+               }`
+            : `<span class="chip">sem vínculo</span>`
         }
+        <button
+          type="button"
+          class="chip-button${sessionFocusDebugOpen ? " is-active" : ""}"
+          data-ravi-session-focus-debug="true"
+          aria-pressed="${sessionFocusDebugOpen ? "true" : "false"}"
+        >detalhes</button>
       </div>
+      <div class="debug-panel">
+        ${renderSessionFocusLifeEvents(focusedSession, focusedTraceEvents)}
+        <div class="debug-meta">${escapeHtml(debugMeta)}</div>
+      </div>
+      ${renderSessionFocusTtsPanel(focusedSession)}
     </section>
-    <section class="ravi-wa-card">
-      <label class="ravi-wa-sidebar-search">
-        <span>buscar sessões, agents ou chats vinculados</span>
-        <input id="ravi-wa-sidebar-search" type="text" placeholder="dev, main, 5511..." value="${escapeAttribute(sidebarFilter)}" />
-      </label>
-    </section>
-    <section class="ravi-wa-card">
+    <section class="ravi-wa-card ravi-wa-session-list-card">
       <div class="ravi-wa-section-head">
         <h3>sessões ativas</h3>
         <span>${activeSessions.length}</span>
       </div>
       ${renderCockpitRows(activeSessions, focusedSession, "Nenhuma sessão ativa agora.")}
     </section>
-    <section class="ravi-wa-card">
+    <section class="ravi-wa-card ravi-wa-session-list-card">
       <div class="ravi-wa-section-head">
         <h3>sessões recentes</h3>
         <span>${listedRecentSessions.length}</span>
       </div>
       ${renderCockpitRows(listedRecentSessions, focusedSession, "Nenhuma sessão recente do Ravi.")}
     </section>
-    ${liveEventsCard}
     ${
       sidebarNotice
         ? `
@@ -5540,51 +6326,66 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     `
         : ""
     }
-    ${
-      focusedSession
-        ? `
-      <section class="ravi-wa-card">
-        <dl class="ravi-wa-grid">
-            <div><dt>Sessão</dt><dd>${escapeHtml(focusedSession.sessionName)}</dd></div>
-            <div><dt>Agent</dt><dd>${escapeHtml(focusedSession.agentId)}</dd></div>
-            <div><dt>Live</dt><dd>${escapeHtml(focusedActivityLabel)}</dd></div>
-            <div><dt>Atualizado</dt><dd>${escapeHtml(formatTimestamp(focusedLive?.updatedAt))}</dd></div>
-            <div><dt>Thinking</dt><dd>${escapeHtml(focusedSession.thinkingLevel || "-")}</dd></div>
-            <div><dt>Modelo</dt><dd>${escapeHtml(formatSessionRuntimeLabel(resolveSessionProviderProfile(focusedSession)) || "-")}</dd></div>
-            <div><dt>Queue</dt><dd>${escapeHtml(focusedSession.queueMode || "-")}</dd></div>
-          <div><dt>Heartbeat</dt><dd>${escapeHtml(focusedSession.lastHeartbeatText || "-")}</dd></div>
-          <div><dt>Canal</dt><dd>${escapeHtml(focusedSession.channel || "-")}</dd></div>
-          <div><dt>Instância</dt><dd>${escapeHtml(focusedSession.accountId || "-")}</dd></div>
-        </dl>
-      </section>
-      <section class="ravi-wa-card">
-        <div class="ravi-wa-actions">
-          ${focusedSession.chatId ? `<button data-ravi-open-chat="${escapeAttribute(focusedSession.sessionKey)}">Abrir chat</button>` : ""}
-          ${canFollowCurrent ? `<button data-ravi-follow-current="true">Seguir chat</button>` : ""}
-          ${canPinFocused ? `<button data-ravi-pin-session="${escapeAttribute(focusedSession.sessionKey)}">Pinar sessão</button>` : ""}
-          <button data-action="abort">Abortar</button>
-          <button data-action="reset">Resetar</button>
-          <button data-action="set-thinking" data-value="normal">Thinking normal</button>
-          <button data-action="set-thinking" data-value="verbose">Thinking verbose</button>
-        </div>
-      </section>
-    `
-        : ""
-    }
     ${debugCard}
     ${logsCard}
   `;
 
-  const searchInput = body.querySelector("#ravi-wa-sidebar-search");
-  searchInput?.addEventListener("input", (event) => {
-    const nextValue = event.target.value || "";
-    sidebarFilter = nextValue;
-    render(snapshot, context);
-    requestAnimationFrame(() => {
-      const nextInput = document.getElementById("ravi-wa-sidebar-search");
-      if (!(nextInput instanceof HTMLInputElement)) return;
-      nextInput.focus();
-      nextInput.setSelectionRange(nextValue.length, nextValue.length);
+		  body
+		    .querySelector("[data-ravi-session-focus-debug]")
+		    ?.addEventListener("click", () => {
+		      sessionFocusDebugOpen = !sessionFocusDebugOpen;
+		      persistSessionFocusDebugOpen(sessionFocusDebugOpen);
+		      render(snapshot, context);
+		    });
+
+  body.querySelector("[data-ravi-tts-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void saveFocusedAgentTtsSettings(event.currentTarget);
+  });
+  body.querySelector("[data-ravi-tts-voice-refresh]")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    void refreshTtsVoices(true);
+  });
+  body.querySelector("[data-ravi-tts-voice-search]")?.addEventListener("input", (event) => {
+    filterTtsVoiceCards(event.currentTarget.value || "");
+  });
+  body.querySelector("[data-ravi-tts-config]")?.addEventListener("toggle", (event) => {
+    ttsConfigOpen = Boolean(event.currentTarget.open);
+    if (ttsConfigOpen) void refreshTtsVoices(false);
+  });
+  const ttsVoiceListElement = body.querySelector("[data-ravi-tts-voice-list]");
+  if (ttsVoiceListElement) {
+    ttsVoiceListElement.scrollTop = ttsVoiceListScrollTop;
+    ttsVoiceListElement.addEventListener("scroll", () => {
+      ttsVoiceListScrollTop = ttsVoiceListElement.scrollTop;
+    });
+  }
+  body.querySelectorAll("[data-ravi-tts-voice-play-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const form = event.currentTarget.closest("[data-ravi-tts-form]");
+      const voiceId = event.currentTarget.getAttribute("data-ravi-tts-voice-play-id");
+      const voice = findTtsVoice(voiceId);
+      if (!form || !voice?.voiceId) return;
+      void testFocusedAgentTts(form, buildTtsVoicePatch(voice));
+    });
+  });
+  body.querySelectorAll("[data-ravi-tts-voice-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget.closest("[data-ravi-tts-form]");
+      const agentId = form?.dataset?.raviTtsAgentId;
+      const voiceId = event.currentTarget.getAttribute("data-ravi-tts-voice-id");
+      selectTtsVoice(agentId, voiceId, event.currentTarget);
+    });
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      const form = event.currentTarget.closest("[data-ravi-tts-form]");
+      const agentId = form?.dataset?.raviTtsAgentId;
+      const voiceId = event.currentTarget.getAttribute("data-ravi-tts-voice-id");
+      selectTtsVoice(agentId, voiceId, event.currentTarget);
     });
   });
 
@@ -6721,6 +7522,845 @@ function renderLiveEventsCard(session) {
   `;
 }
 
+const SESSION_TRACE_EVENT_PRESENTERS = {
+  "channel.message.received": {
+    kind: "message.in",
+    category: "msg",
+    activity: "thinking",
+    label: "mensagem recebida",
+    detail: (event) => tracePreview(event, "entrada do chat"),
+  },
+  "route.resolved": {
+    kind: "route.resolved",
+    category: "route",
+    activity: "thinking",
+    label: "rota resolvida",
+    detail: (event) => traceStatusDetail(event, "sessão escolhida"),
+  },
+  "route.rejected": {
+    kind: "route.rejected",
+    category: "route",
+    activity: "blocked",
+    label: "rota rejeitada",
+    detail: (event) => tracePreview(event, "sem rota válida"),
+  },
+  "prompt.published": {
+    kind: "prompt.published",
+    category: "tool",
+    activity: "thinking",
+    label: "prompt publicado",
+    detail: (event) => tracePreview(event, "turno enviado ao runtime"),
+  },
+  "dispatch.push_existing": {
+    kind: "dispatch.push",
+    category: "tool",
+    activity: "thinking",
+    label: "runtime acordado",
+    detail: (event) => traceStatusDetail(event, "sessão viva recebeu o turno"),
+  },
+  "dispatch.queued": {
+    kind: "dispatch.queued",
+    category: "tool",
+    activity: "thinking",
+    label: "turno enfileirado",
+    detail: (event) => traceStatusDetail(event, "aguardando runtime"),
+  },
+  "dispatch.interrupt_requested": {
+    kind: "dispatch.interrupt",
+    category: "tool",
+    activity: "blocked",
+    label: "interrupção solicitada",
+    detail: (event) => tracePreview(event, "turno interrompido"),
+  },
+  "runtime.status": {
+    kind: "runtime.status",
+    category: "runtime",
+    activity: "thinking",
+    label: "runtime atualizado",
+    detail: (event) => traceStatusDetail(event, "estado do runtime"),
+  },
+  "runtime.start": {
+    kind: "runtime.start",
+    category: "runtime",
+    activity: "thinking",
+    label: "runtime iniciou",
+    detail: (event) => traceStatusDetail(event, "preparando provider"),
+  },
+  "adapter.request": {
+    kind: "adapter.request",
+    category: "tool",
+    activity: "thinking",
+    label: "request ao provider",
+    detail: (event) => traceProviderDetail(event, "handoff para o modelo"),
+  },
+  "tool.start": {
+    kind: "tool.start",
+    category: "tool",
+    activity: "thinking",
+    label: "tool iniciou",
+    detail: (event) => tracePreview(event, "execução de ferramenta"),
+  },
+  "tool.end": {
+    kind: "tool.end",
+    category: "tool",
+    activity: "streaming",
+    label: "tool concluiu",
+    detail: (event) => traceDurationDetail(event, "ferramenta finalizada"),
+  },
+  "assistant.message": {
+    kind: "assistant.message",
+    category: "out",
+    activity: "streaming",
+    label: "assistant gerou texto",
+    detail: (event) => tracePreview(event, "resposta em construção"),
+  },
+  "response.emitted": {
+    kind: "response.emitted",
+    category: "out",
+    activity: "streaming",
+    label: "resposta emitida",
+    detail: (event) => tracePreview(event, "saída enviada ao gateway"),
+  },
+  "delivery.delivered": {
+    kind: "delivery.delivered",
+    category: "delivery",
+    activity: "streaming",
+    label: "entrega confirmada",
+    detail: (event) => traceStatusDetail(event, "mensagem entregue"),
+  },
+  "delivery.failed": {
+    kind: "delivery.failed",
+    category: "delivery",
+    activity: "blocked",
+    label: "entrega falhou",
+    detail: (event) => tracePreview(event, "falha no envio"),
+  },
+  "delivery.dropped": {
+    kind: "delivery.dropped",
+    category: "delivery",
+    activity: "blocked",
+    label: "entrega descartada",
+    detail: (event) => tracePreview(event, "gateway descartou a saída"),
+  },
+  "turn.complete": {
+    kind: "turn.complete",
+    category: "runtime",
+    activity: "streaming",
+    label: "turno concluído",
+    detail: (event) => traceDurationDetail(event, "runtime finalizou"),
+  },
+  "turn.failed": {
+    kind: "turn.failed",
+    category: "runtime",
+    activity: "blocked",
+    label: "turno falhou",
+    detail: (event) => tracePreview(event, "runtime falhou"),
+  },
+  "turn.interrupted": {
+    kind: "turn.interrupted",
+    category: "runtime",
+    activity: "blocked",
+    label: "turno interrompido",
+    detail: (event) => tracePreview(event, "runtime interrompido"),
+  },
+};
+
+const SESSION_TRACE_GROUP_PRESENTERS = {
+  channel: { category: "msg", activity: "thinking", label: "evento do chat" },
+  routing: { category: "route", activity: "thinking", label: "evento de rota" },
+  prompt: { category: "tool", activity: "thinking", label: "evento de prompt" },
+  dispatch: { category: "tool", activity: "thinking", label: "evento de dispatch" },
+  runtime: { category: "runtime", activity: "thinking", label: "evento de runtime" },
+  adapter: { category: "tool", activity: "thinking", label: "evento do provider" },
+  tool: { category: "tool", activity: "thinking", label: "evento de tool" },
+  response: { category: "out", activity: "streaming", label: "evento de resposta" },
+  delivery: { category: "delivery", activity: "streaming", label: "evento de entrega" },
+};
+
+const SESSION_TRACE_IGNORED_EVENT_TYPES = new Set(["presence.typing"]);
+const SESSION_TRACE_IGNORED_GROUPS = new Set(["presence"]);
+
+function renderSessionFocusLifeEvents(session, traceEvents = []) {
+  const events = getSessionFocusLifeEvents(session, traceEvents).slice(0, 5);
+  if (!events.length) {
+    return `
+      <div class="life-events">
+        <div class="life-event is-primary" data-category="runtime">
+          <span class="life-node"></span>
+          <span class="life-copy">
+            <span class="life-code">runtime.idle</span>
+            <span class="life-label">sem eventos vivos dessa sessão ainda</span>
+          </span>
+          <span class="life-meta">agora</span>
+        </div>
+      </div>
+    `;
+  }
+
+  const animationDelays = buildSessionFocusEventAnimationDelays(
+    session?.sessionKey,
+    events,
+  );
+  return `
+    <div class="life-events">
+      ${events
+        .map((event, index) => {
+          const kind = chipActivityClass(event.activity || eventKindToActivity(event.kind));
+          const category = resolveSessionFocusEventCategory(event);
+          const signature = buildSessionFocusEventSignature(event);
+          const animationDelay = animationDelays.get(signature);
+          const isNew = Number.isFinite(animationDelay);
+          const stateClass =
+            index === 0
+              ? ` is-primary${isNew ? " is-new" : ""}`
+              : isNew
+                ? " is-new"
+                : "";
+          const styleAttribute = isNew
+            ? ` style="--event-delay: ${Math.max(0, Math.round(animationDelay))}ms"`
+            : "";
+          return `
+            <div class="life-event life-event--${kind}${stateClass}" data-category="${escapeAttribute(category)}"${styleAttribute}>
+              <span class="life-node"></span>
+              <span class="life-copy">
+                <span class="life-code">${escapeHtml(event.kind || event.label || "event")}</span>
+                <span class="life-label">${escapeHtml(event.detail || event.label || event.kind)}</span>
+              </span>
+              <span class="life-meta">${escapeHtml(formatElapsedCompact(event.timestamp) || "agora")}</span>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderSessionFocusTtsPanel(session) {
+  if (!session?.agentId) return "";
+  if (ttsConfigOpen) void refreshTtsVoices(false);
+  const agent = findSnapshotAgent(session.agentId);
+  const defaults = agent?.defaults && typeof agent.defaults === "object" ? agent.defaults : {};
+  const voiceSettings = readTtsObject(defaults.tts_voice_settings || defaults.ttsVoiceSettings);
+  const elevenlabs = readTtsObject(defaults.tts_elevenlabs || defaults.ttsElevenLabs || defaults.tts_full_api);
+  const draft = ttsDraftsByAgentId.get(session.agentId) || {};
+  const enabled = isTtsDefaultEnabled(defaults);
+  const voiceId = draft.voiceId ?? defaults.tts_voice ?? defaults.tts_voice_id ?? "";
+  const selectedVoice = findTtsVoice(voiceId);
+  const voiceName = draft.voiceName || defaults.tts_voice_name || selectedVoice?.name || (voiceId ? "voz selecionada" : "escolher voz");
+  const voiceDescription =
+    draft.voiceDescription || defaults.tts_voice_description || selectedVoice?.description || "";
+  const voiceCategory = draft.voiceCategory || defaults.tts_voice_category || selectedVoice?.category || "";
+  const voicePreviewUrl = draft.voicePreviewUrl || defaults.tts_voice_preview_url || selectedVoice?.previewUrl || "";
+  const modelId = draft.modelId ?? defaults.tts_model ?? defaults.tts_model_id ?? "eleven_multilingual_v2";
+  const lang = draft.lang ?? defaults.tts_lang ?? "pt-br";
+  const outputFormat = draft.outputFormat ?? defaults.tts_format ?? defaults.tts_output_format ?? "mp3_44100_128";
+  const speed = draft.speed ?? defaults.tts_speed ?? voiceSettings?.speed ?? 1;
+  const voices = getTtsVoiceOptions(voiceId);
+  const visibleVoiceCount = voices.filter((voice) => isTtsVoiceVisibleForQuery(voice, ttsVoiceQuery)).length;
+  const statusText = ttsVoiceListLoading
+    ? "carregando vozes"
+    : ttsVoiceListError
+      ? "falha ao listar vozes"
+      : `${ttsVoiceList.length} vozes`;
+  return `
+    <details class="ravi-wa-tts-shell" data-ravi-tts-config${ttsConfigOpen ? " open" : ""}>
+      <summary class="ravi-wa-tts-summary">
+        <span>voz do agent</span>
+        <strong>${escapeHtml(voiceName)}</strong>
+        <em>${enabled ? "auto" : "manual"}</em>
+      </summary>
+    <form class="ravi-wa-tts-panel" data-ravi-tts-form data-ravi-tts-agent-id="${escapeAttribute(session.agentId)}" data-ravi-tts-session-key="${escapeAttribute(session.sessionKey || "")}" data-ravi-tts-session-name="${escapeAttribute(session.sessionName || session.name || "")}" data-ravi-tts-chat-id="${escapeAttribute(session.chatId || session.lastTo || "")}">
+      <input type="hidden" name="voiceId" value="${escapeAttribute(voiceId)}">
+      <input type="hidden" name="voiceName" value="${escapeAttribute(voiceName)}">
+      <input type="hidden" name="voiceDescription" value="${escapeAttribute(voiceDescription)}">
+      <input type="hidden" name="voiceCategory" value="${escapeAttribute(voiceCategory)}">
+      <input type="hidden" name="voicePreviewUrl" value="${escapeAttribute(voicePreviewUrl)}">
+      <div class="ravi-wa-tts-panel__head">
+        <span>voz</span>
+        <label class="ravi-wa-tts-toggle">
+          <input type="checkbox" name="enabled"${enabled ? " checked" : ""}>
+          <span>auto</span>
+        </label>
+      </div>
+
+      <div class="ravi-wa-tts-current">
+        <div class="ravi-wa-tts-current__mark" aria-hidden="true">${renderTtsWaveGlyph()}</div>
+        <div class="ravi-wa-tts-current__copy">
+          <strong>${escapeHtml(voiceName)}</strong>
+          <span>${escapeHtml(formatTtsVoiceDetail({ description: voiceDescription, category: voiceCategory }))}</span>
+        </div>
+      </div>
+
+      <div class="ravi-wa-tts-voice-tools">
+        <input data-ravi-tts-voice-search value="${escapeAttribute(ttsVoiceQuery)}" placeholder="buscar voz">
+        <button type="button" class="chip-button" data-ravi-tts-voice-refresh="true">${ttsVoiceListLoading ? "..." : "atualizar"}</button>
+      </div>
+
+      <div class="ravi-wa-tts-voice-list" data-ravi-tts-voice-list>
+        ${voices.length
+          ? `${voices.map((voice) => renderTtsVoiceCard(voice, voiceId, ttsVoiceQuery)).join("")}<div class="ravi-wa-tts-empty" data-ravi-tts-filter-empty${visibleVoiceCount ? " hidden" : ""}>nenhuma voz encontrada</div>`
+          : `<div class="ravi-wa-tts-empty">${escapeHtml(ttsVoiceListError || "nenhuma voz encontrada")}</div>`}
+      </div>
+      <div class="ravi-wa-tts-status">${escapeHtml(statusText)}</div>
+
+      <label class="ravi-wa-tts-range">
+        <span>ritmo <b>${escapeHtml(formatTtsSpeed(speed))}</b></span>
+        <input type="range" name="speed" min="0.75" max="1.25" step="0.05" value="${escapeAttribute(speed)}">
+      </label>
+
+      <details class="ravi-wa-tts-advanced">
+        <summary>avançado</summary>
+        <div class="ravi-wa-tts-grid">
+          <label>
+            <span>model</span>
+            <input name="modelId" value="${escapeAttribute(modelId)}" placeholder="eleven_multilingual_v2">
+          </label>
+          <label>
+            <span>lang</span>
+            <input name="lang" value="${escapeAttribute(lang)}" placeholder="pt-br">
+          </label>
+        </div>
+        <label class="ravi-wa-tts-output">
+          <span>format</span>
+          <input name="outputFormat" value="${escapeAttribute(outputFormat)}" placeholder="mp3_44100_128">
+        </label>
+        <label>
+          <span>voiceSettings</span>
+          <textarea name="voiceSettings" spellcheck="false">${escapeHtml(formatTtsJson(voiceSettings))}</textarea>
+        </label>
+        <label>
+          <span>elevenlabs request</span>
+          <textarea name="elevenlabs" spellcheck="false">${escapeHtml(formatTtsJson(elevenlabs))}</textarea>
+        </label>
+      </details>
+      <div class="ravi-wa-tts-actions">
+        <button type="submit" class="chip-button primary"${ttsSettingsSaving ? " disabled" : ""}>salvar voz</button>
+      </div>
+    </form>
+    </details>
+  `;
+}
+
+function renderTtsWaveGlyph() {
+  return `<span></span><span></span><span></span><span></span>`;
+}
+
+function renderTtsVoiceCard(voice, selectedVoiceId, query = "") {
+  const labels = voice.labels && typeof voice.labels === "object" ? voice.labels : {};
+  const labelText = [labels.accent, labels.gender, labels.age].filter(Boolean).slice(0, 2).join(" · ");
+  const detail = formatTtsVoiceDetail({
+    description: labelText || voice.description,
+    category: voice.category,
+  });
+  const selected = voice.voiceId === selectedVoiceId;
+  const hidden = isTtsVoiceVisibleForQuery(voice, query) ? "" : " hidden";
+  return `
+    <div
+      role="button"
+      tabindex="0"
+      class="ravi-wa-tts-voice${selected ? " is-selected" : ""}"
+      data-ravi-tts-voice-id="${escapeAttribute(voice.voiceId)}"
+      data-ravi-tts-voice-name="${escapeAttribute(voice.name || "")}"
+      data-ravi-tts-voice-search="${escapeAttribute(buildTtsVoiceSearchText(voice))}"
+      aria-pressed="${selected ? "true" : "false"}"
+      ${hidden}
+    >
+      <span class="ravi-wa-tts-voice__copy">
+        <span class="ravi-wa-tts-voice__name">${escapeHtml(voice.name || "voz")}</span>
+        <span class="ravi-wa-tts-voice__meta">${escapeHtml(detail)}</span>
+      </span>
+      <button
+        type="button"
+        class="ravi-wa-tts-voice__play"
+        data-ravi-tts-voice-play-id="${escapeAttribute(voice.voiceId)}"
+        aria-label="ouvir ${escapeAttribute(voice.name || "voz")}"
+        ${ttsPreviewInFlight ? " disabled" : ""}
+      ><span aria-hidden="true"></span></button>
+    </div>
+  `;
+}
+
+function getTtsVoiceOptions(selectedVoiceId) {
+  const selected = selectedVoiceId ? findTtsVoice(selectedVoiceId) : null;
+  const voices = ttsVoiceList;
+  const withSelected = selected && !voices.some((voice) => voice.voiceId === selected.voiceId) ? [selected, ...voices] : voices;
+  return withSelected.slice(0, 60);
+}
+
+function isTtsVoiceVisibleForQuery(voice, query) {
+  const normalized = normalizeLookupToken(query);
+  return !normalized || buildTtsVoiceSearchText(voice).includes(normalized);
+}
+
+function filterTtsVoiceCards(query) {
+  ttsVoiceQuery = query;
+  const normalized = normalizeLookupToken(query);
+  const list = document.querySelector("[data-ravi-tts-voice-list]");
+  if (!list) return;
+  let visibleCount = 0;
+  list.querySelectorAll("[data-ravi-tts-voice-id]").forEach((button) => {
+    const haystack = button.getAttribute("data-ravi-tts-voice-search") || "";
+    const visible = !normalized || haystack.includes(normalized);
+    button.hidden = !visible;
+    if (visible) visibleCount += 1;
+  });
+  const empty = list.querySelector("[data-ravi-tts-filter-empty]");
+  if (empty) empty.hidden = visibleCount > 0;
+}
+
+function findTtsVoice(voiceId) {
+  if (!voiceId) return null;
+  return ttsVoiceList.find((voice) => voice.voiceId === voiceId) || null;
+}
+
+function updateTtsDraft(agentId, patch) {
+  const current = ttsDraftsByAgentId.get(agentId) || {};
+  ttsDraftsByAgentId.set(agentId, { ...current, ...patch });
+}
+
+function selectTtsVoice(agentId, voiceId, sourceElement = null) {
+  if (!agentId || !voiceId) return;
+  const list = sourceElement?.closest?.("[data-ravi-tts-voice-list]");
+  if (list) ttsVoiceListScrollTop = list.scrollTop;
+  const voice = findTtsVoice(voiceId);
+  updateTtsDraft(agentId, buildTtsVoicePatch(voice) || {
+    voiceId,
+    voiceName: sourceElement?.getAttribute?.("data-ravi-tts-voice-name") || "",
+    voiceDescription: "",
+    voiceCategory: "",
+    voicePreviewUrl: "",
+  });
+  requestRender();
+}
+
+function buildTtsVoicePatch(voice) {
+  if (!voice?.voiceId) return null;
+  return {
+    voiceId: voice.voiceId,
+    voiceName: voice.name || "",
+    voiceDescription: voice.description || "",
+    voiceCategory: voice.category || "",
+    voicePreviewUrl: voice.previewUrl || "",
+  };
+}
+
+function buildTtsVoiceSearchText(voice) {
+  const labels = voice?.labels && typeof voice.labels === "object" ? Object.values(voice.labels) : [];
+  return normalizeLookupToken([voice?.name, voice?.category, voice?.description, ...labels].filter(Boolean).join(" "));
+}
+
+function formatTtsVoiceDetail(input) {
+  const parts = [input?.category, input?.description].filter((item) => typeof item === "string" && item.trim());
+  return parts.length ? parts.join(" · ") : "preview de voz";
+}
+
+function formatTtsSpeed(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(2).replace(/\.00$/, "") : "1";
+}
+
+function findSnapshotAgent(agentId) {
+  const id = normalizeTaskAgentId(agentId);
+  if (!id) return null;
+  const agents = Array.isArray(latestSnapshot?.agents) ? latestSnapshot.agents : [];
+  return agents.find((agent) => normalizeTaskAgentId(agent?.id || agent?.agentId || agent?.name) === id) || null;
+}
+
+function isTtsDefaultEnabled(defaults) {
+  const value = defaults?.tts_auto ?? defaults?.ttsAuto ?? defaults?.tts_enabled;
+  if (value === true) return true;
+  if (typeof value === "string") return ["on", "true", "1", "yes", "enabled"].includes(value.trim().toLowerCase());
+  return false;
+}
+
+function readTtsObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function formatTtsJson(value) {
+  return value ? JSON.stringify(value, null, 2) : "";
+}
+
+async function saveFocusedAgentTtsSettings(form) {
+  if (ttsSettingsSaving) return;
+  const agentId = form?.dataset?.raviTtsAgentId;
+  if (!agentId) return;
+  let settings;
+  try {
+    settings = readTtsSettingsForm(form);
+  } catch (error) {
+    setSidebarNotice("warning", error?.message || String(error), 4200);
+    return;
+  }
+  ttsSettingsSaving = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:set-agent-tts",
+      payload: { agentId, settings },
+    });
+    if (!response?.ok) {
+      setBridgeErrorFromResponse(response, "não consegui salvar a voz do agent");
+      if (isContextKeyBridgeResponse(response)) {
+        setSidebarNotice("warning", "context key inválido; atualize a chave nas opções da extensão", 5200);
+      }
+      return;
+    }
+    ttsDraftsByAgentId.delete(agentId);
+    setSidebarNotice("success", "voz do agent salva", 2200);
+    void refreshSnapshot();
+  } catch (error) {
+    handleRuntimeError(error);
+  } finally {
+    ttsSettingsSaving = false;
+    requestRender();
+  }
+}
+
+async function testFocusedAgentTts(form, settingsPatch = null) {
+  if (ttsPreviewInFlight) return;
+  const agentId = form?.dataset?.raviTtsAgentId;
+  if (!agentId) return;
+  let settings;
+  try {
+    settings = {
+      ...readTtsSettingsForm(form),
+      ...(settingsPatch && typeof settingsPatch === "object" ? settingsPatch : {}),
+    };
+  } catch (error) {
+    setSidebarNotice("warning", error?.message || String(error), 4200);
+    return;
+  }
+  ttsPreviewInFlight = true;
+  setSidebarNotice("info", "carregando preview de voz", 1800);
+  requestRender();
+  try {
+    primeTtsPreviewAudioContext();
+    if (settings.voicePreviewUrl) {
+      const previewStatus = await playTtsPreviewUrl(settings.voicePreviewUrl);
+      if (previewStatus === "playing") {
+        setSidebarNotice("success", "preview de voz", 1600);
+        return;
+      }
+      if (previewStatus === "blocked") {
+        setSidebarNotice("warning", "o navegador bloqueou o preview; clica no WhatsApp e tenta de novo.", 4200);
+        return;
+      }
+      setSidebarNotice("warning", "preview direto falhou; tentando gerar pelo Ravi", 2600);
+      console.debug("[ravi-wa-overlay] voice preview URL failed; falling back to generated TTS", previewStatus);
+    }
+
+    const previewId = createTtsPreviewRequestId();
+    const requestedAt = Date.now();
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-say",
+      payload: {
+        id: previewId,
+        clientId,
+        text: "Teste de voz do Ravi.",
+        agentId,
+        sessionKey: form.dataset.raviTtsSessionKey || undefined,
+        sessionName: form.dataset.raviTtsSessionName || undefined,
+        chatId: form.dataset.raviTtsChatId || undefined,
+        ...settings,
+      },
+    });
+    if (!response?.ok) {
+      setBridgeErrorFromResponse(response, "não consegui disparar o teste de voz");
+      setSidebarNotice(
+        "warning",
+        isContextKeyBridgeResponse(response)
+          ? "context key inválido; preview gerado pelo Ravi não pode rodar"
+          : "não consegui gerar preview pelo Ravi",
+        4200,
+      );
+      return;
+    }
+    setSidebarNotice("info", "gerando preview de voz", 2600);
+    const generated = await waitForGeneratedTtsPreviewItem({
+      id: previewId,
+      since: requestedAt - 1000,
+      agentId,
+      sessionKey: form.dataset.raviTtsSessionKey || "",
+      sessionName: form.dataset.raviTtsSessionName || "",
+      chatId: form.dataset.raviTtsChatId || "",
+    });
+    if (generated.status === "playing") {
+      setSidebarNotice("success", "preview de voz", 1600);
+      return;
+    }
+    if (generated.status === "blocked") {
+      setSidebarNotice("warning", "o navegador bloqueou o áudio; clica no WhatsApp e tenta de novo.", 5200);
+      return;
+    }
+    if (generated.status === "timeout") {
+      scheduleTtsPlaybackPollBurst();
+      setSidebarNotice("warning", "preview gerado demorou; vou tentar tocar pela fila", 5200);
+      return;
+    }
+    setSidebarNotice(
+      "warning",
+      generated.item?.error ? `preview falhou: ${generated.item.error}` : "não consegui tocar o preview gerado",
+      5200,
+    );
+  } catch (error) {
+    handleRuntimeError(error);
+  } finally {
+    ttsPreviewInFlight = false;
+    requestRender();
+  }
+}
+
+function readTtsSettingsForm(form) {
+  const data = new FormData(form);
+  return {
+    enabled: data.get("enabled") === "on",
+    voiceId: readFormString(data, "voiceId"),
+    voiceName: readFormString(data, "voiceName"),
+    voiceDescription: readFormString(data, "voiceDescription"),
+    voiceCategory: readFormString(data, "voiceCategory"),
+    voicePreviewUrl: readFormString(data, "voicePreviewUrl"),
+    modelId: readFormString(data, "modelId"),
+    speed: readFormNumber(data, "speed"),
+    lang: readFormString(data, "lang"),
+    outputFormat: readFormString(data, "outputFormat"),
+    voiceSettings: readJsonTextarea(data, "voiceSettings", "voiceSettings"),
+    elevenlabs: readJsonTextarea(data, "elevenlabs", "elevenlabs request"),
+  };
+}
+
+function isContextKeyBridgeResponse(response) {
+  const code = typeof response?.code === "string" ? response.code : "";
+  const error = typeof response?.error === "string" ? response.error : "";
+  return (
+    code === "invalid_context_key" ||
+    code === "no_active_server" ||
+    /unknown context key|context key|rctx_/i.test(error)
+  );
+}
+
+function readFormString(data, key) {
+  const value = data.get(key);
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readFormNumber(data, key) {
+  const value = readFormString(data, key);
+  if (!value) return undefined;
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${key} precisa ser número`);
+  return parsed;
+}
+
+function readJsonTextarea(data, key, label) {
+  const value = readFormString(data, key);
+  if (!value) return undefined;
+  const parsed = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} precisa ser JSON object`);
+  }
+  return parsed;
+}
+
+function buildSessionFocusEventAnimationDelays(sessionKey, events) {
+  const delays = new Map();
+  if (!sessionKey || !Array.isArray(events) || !events.length) return delays;
+
+  let state = sessionFocusAnimatedEventSignatures.get(sessionKey);
+  if (!state || !(state.seen instanceof Set) || !Array.isArray(state.order)) {
+    state = { seen: new Set(), order: [] };
+    sessionFocusAnimatedEventSignatures.set(sessionKey, state);
+  }
+
+  const newSignatures = [];
+  events.forEach((event) => {
+    const signature = buildSessionFocusEventSignature(event);
+    if (!signature || state.seen.has(signature)) return;
+    state.seen.add(signature);
+    state.order.push(signature);
+    newSignatures.push(signature);
+  });
+
+  newSignatures
+    .slice()
+    .reverse()
+    .forEach((signature, index) => {
+      delays.set(signature, index * SESSION_FOCUS_EVENT_STAGGER_MS);
+    });
+
+  while (state.order.length > 120) {
+    const expired = state.order.shift();
+    state.seen.delete(expired);
+  }
+
+  return delays;
+}
+
+function buildSessionFocusEventSignature(event) {
+  return [
+    event.id,
+    event.turnId,
+    event.runId,
+    event.messageId,
+    event.kind,
+    event.timestamp,
+    event.label,
+    event.detail,
+  ]
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .join("|");
+}
+
+function getSessionFocusLifeEvents(session, traceEvents = []) {
+  const liveEvents = Array.isArray(session?.live?.events)
+    ? session.live.events.map(normalizeLiveSessionFocusEvent).filter(Boolean)
+    : [];
+  if (liveEvents.length) return liveEvents;
+
+  const fallbackEvents = Array.isArray(traceEvents)
+    ? traceEvents
+    : getSessionFocusTraceEvents(session);
+  return fallbackEvents.map(normalizeTraceSessionFocusEvent).filter(Boolean);
+}
+
+function getSessionFocusTraceEvents(session) {
+  const sessionKey = session?.sessionKey;
+  if (!sessionKey) return [];
+  const cached = sessionFocusTraceCache.get(sessionKey);
+  return Array.isArray(cached?.events) ? cached.events : [];
+}
+
+function normalizeLiveSessionFocusEvent(event) {
+  if (!event || typeof event !== "object") return null;
+  const kind = event.kind || event.label || "event";
+  return {
+    ...event,
+    kind,
+    category: resolveSessionFocusEventCategory(event),
+    label: event.label || kind,
+    detail: event.detail || event.label || kind,
+    timestamp: normalizeSessionFocusTimestamp(event.timestamp),
+  };
+}
+
+function normalizeTraceSessionFocusEvent(event) {
+  if (!event || typeof event !== "object") return null;
+  const presenter = resolveSessionTraceEventPresenter(event);
+  if (!presenter) return null;
+  const rawKind = event.eventType || event.kind || event.type || "event";
+  const kind = presenter.kind || rawKind;
+  const label =
+    typeof presenter.label === "function"
+      ? presenter.label(event)
+      : presenter.label || rawKind;
+  const detail =
+    typeof presenter.detail === "function"
+      ? presenter.detail(event)
+      : presenter.detail || buildSessionTraceEventDetail(event, label);
+  return {
+    id: event.id ?? null,
+    turnId: event.turnId ?? null,
+    runId: event.runId ?? null,
+    messageId: event.messageId ?? null,
+    kind,
+    category: presenter.category || resolveSessionFocusEventCategory({ category: event.eventGroup, kind }),
+    activity: presenter.activity || eventKindToActivity(rawKind),
+    label,
+    detail,
+    timestamp: normalizeSessionFocusTimestamp(event.timestamp ?? event.createdAt),
+  };
+}
+
+function resolveSessionTraceEventPresenter(event) {
+  const eventType = String(event?.eventType || event?.kind || event?.type || "").toLowerCase();
+  const eventGroup = String(event?.eventGroup || "").toLowerCase();
+  if (!eventType) return null;
+  if (SESSION_TRACE_IGNORED_EVENT_TYPES.has(eventType)) return null;
+  if (SESSION_TRACE_IGNORED_GROUPS.has(eventGroup)) return null;
+
+  if (SESSION_TRACE_EVENT_PRESENTERS[eventType]) {
+    return SESSION_TRACE_EVENT_PRESENTERS[eventType];
+  }
+  const grouped = SESSION_TRACE_GROUP_PRESENTERS[eventGroup] || null;
+  if (!grouped) {
+    return {
+      kind: eventType,
+      category: resolveSessionFocusEventCategory({ category: eventGroup, kind: eventType }),
+      activity: eventKindToActivity(eventType),
+      label: eventType,
+      detail: (entry) => buildSessionTraceEventDetail(entry, eventType),
+    };
+  }
+
+  const terminalFailure = /fail|dropped|blocked|timeout|interrupt|rejected/.test(eventType);
+  return {
+    ...grouped,
+    kind: eventType,
+    activity: terminalFailure ? "blocked" : grouped.activity,
+    label: grouped.label,
+    detail: (entry) => buildSessionTraceEventDetail(entry, eventType),
+  };
+}
+
+function buildSessionTraceEventDetail(event, fallback) {
+  if (event?.error) return event.error;
+  if (event?.preview) return event.preview;
+
+  const parts = [
+    event?.status,
+    event?.provider,
+    event?.model,
+    typeof event?.durationMs === "number" && Number.isFinite(event.durationMs)
+      ? formatDurationCompactMs(event.durationMs)
+      : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : fallback;
+}
+
+function tracePreview(event, fallback) {
+  return shorten(event?.preview || event?.status || fallback, 96);
+}
+
+function traceStatusDetail(event, fallback) {
+  return shorten(event?.status || event?.preview || fallback, 96);
+}
+
+function traceDurationDetail(event, fallback) {
+  const duration =
+    typeof event?.durationMs === "number" && Number.isFinite(event.durationMs)
+      ? formatDurationCompactMs(event.durationMs)
+      : "";
+  return [duration, event?.status].filter(Boolean).join(" · ") || tracePreview(event, fallback);
+}
+
+function traceProviderDetail(event, fallback) {
+  return (
+    [event?.provider, event?.model, traceDurationDetail(event, "")]
+      .filter(Boolean)
+      .join(" · ") || tracePreview(event, fallback)
+  );
+}
+
+function normalizeSessionFocusTimestamp(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return null;
+}
+
+function formatSessionFocusEventSummary(event) {
+  const normalized = normalizeTraceSessionFocusEvent(event);
+  if (!normalized) return "";
+  return normalized.detail || normalized.label || normalized.kind || "";
+}
+
+function resolveSessionFocusEventCategory(event) {
+  const raw = String(event?.category || event?.kind || "").toLowerCase();
+  if (/channel|message|msg/.test(raw)) return "msg";
+  if (/deliver/.test(raw)) return "delivery";
+  if (/tool|command|exec|adapter|dispatch|prompt/.test(raw)) return "tool";
+  if (/route/.test(raw)) return "route";
+  if (/response|assistant|outbound|emit/.test(raw)) return "out";
+  return "runtime";
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    SESSION WORKSPACE v2 — reconciliation-based renderer
    ═══════════════════════════════════════════════════════════════════
@@ -6982,7 +8622,7 @@ function swBindHostDelegation(host) {
 
     const closeBtn = e.target.closest("[data-ravi-session-workspace-close]");
     if (closeBtn) {
-      clearSessionWorkspace();
+      hideSelectedSessionWorkspaceChat();
       return;
     }
 
@@ -6996,7 +8636,7 @@ function swBindHostDelegation(host) {
       const target = session || workspace?.session || null;
       if (!target || target.sessionKey !== key) return;
       openCockpitChat(target).then((opened) => {
-        if (opened) clearSessionWorkspace();
+        if (opened) hideSelectedSessionWorkspaceChat();
       });
       return;
     }
@@ -7418,7 +9058,11 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
   const host = ensureSessionWorkspaceMainHost();
   if (!(host instanceof HTMLElement)) return;
 
-  if (activeWorkspace !== "ravi" || !selectedWorkspaceSessionKey) {
+  if (
+    activeWorkspace !== "ravi" ||
+    !selectedWorkspaceSessionKey ||
+    !sessionWorkspaceMainVisible
+  ) {
     hideSessionWorkspaceMain();
     return;
   }
@@ -7490,6 +9134,8 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
 function clearSessionWorkspace() {
   selectedWorkspaceSessionKey = null;
   persistWorkspaceSessionKey(null);
+  sessionWorkspaceMainVisible = false;
+  selectedWorkspaceChatFocusKey = null;
   latestSessionWorkspace = null;
   pendingHumanChatListIntent = null;
   expandedSessionWorkspaceTools.clear();
@@ -7542,18 +9188,47 @@ async function submitSessionWorkspacePrompt() {
 
 function openSessionWorkspace(session) {
   if (!session?.sessionKey) return;
+  const sameSession = selectedWorkspaceSessionKey === session.sessionKey;
+  pendingDetectedChatFocus = null;
+
   selectedWorkspaceSessionKey = session.sessionKey;
   persistWorkspaceSessionKey(selectedWorkspaceSessionKey);
+  selectedWorkspaceChatFocusKey =
+    buildSnapshotChatFocusKey(latestSnapshot) || lastSnapshotChatFocusKey;
+  pinnedSessionKey = session.sessionKey;
+  persistPinnedSessionKey(session.sessionKey);
+
+  if (sameSession) {
+    sessionWorkspaceMainVisible = !sessionWorkspaceMainVisible;
+    if (!sessionWorkspaceMainVisible) {
+      sessionWorkspaceShouldScrollToEnd = false;
+      hideSessionWorkspaceMain();
+      render();
+      return;
+    }
+    sessionWorkspaceShouldScrollToEnd = true;
+    setActiveWorkspace("ravi");
+    refreshSessionWorkspace(true);
+    return;
+  }
+
   latestSessionWorkspace = null;
   pendingHumanChatListIntent = null;
   expandedSessionWorkspaceTools.clear();
   swNodeMap.clear();
   sessionWorkspaceDraft = "";
-  pinnedSessionKey = session.sessionKey;
-  persistPinnedSessionKey(session.sessionKey);
+  sessionWorkspaceMainVisible = true;
   sessionWorkspaceShouldScrollToEnd = true;
   setActiveWorkspace("ravi");
   refreshSessionWorkspace(true);
+}
+
+function hideSelectedSessionWorkspaceChat() {
+  if (!selectedWorkspaceSessionKey) return;
+  sessionWorkspaceMainVisible = false;
+  sessionWorkspaceShouldScrollToEnd = false;
+  hideSessionWorkspaceMain();
+  render();
 }
 
 function rememberTaskSelection(selection) {
@@ -15223,6 +16898,23 @@ function renderTaskDetailCard(selectedTask) {
 }
 
 function eventKindToActivity(kind) {
+  const raw = String(kind || "").toLowerCase();
+  if (/fail|error|dropped|blocked|timeout|interrupt/.test(raw)) {
+    return "blocked";
+  }
+  if (/approval/.test(raw)) {
+    return "awaiting_approval";
+  }
+  if (/compact/.test(raw)) {
+    return "compacting";
+  }
+  if (/response|assistant|delivery|emit|outbound/.test(raw)) {
+    return "streaming";
+  }
+  if (/channel|message|route|prompt|dispatch|runtime|adapter|tool|command|exec|presence/.test(raw)) {
+    return "thinking";
+  }
+
   switch (kind) {
     case "stream":
       return "streaming";
@@ -15268,6 +16960,17 @@ function filterCockpitSessions(items) {
       .map(normalizeLookupToken)
       .some((value) => value && value.includes(needle));
   });
+}
+
+function hasSessionWithKey(items, session) {
+  if (!session?.sessionKey || !Array.isArray(items)) return false;
+  return items.some((item) => item?.sessionKey === session.sessionKey);
+}
+
+function ensureSessionInList(items, session) {
+  const list = Array.isArray(items) ? items : [];
+  if (!session?.sessionKey || hasSessionWithKey(list, session)) return list;
+  return [session, ...list];
 }
 
 function filterOmniInstances(items) {
@@ -15711,7 +17414,18 @@ function getCockpitChatTitle(session) {
     session.displayName ||
     session.subject ||
     session.chatId ||
-    session.sessionName
+    getSessionDisplayName(session)
+  );
+}
+
+function getSessionDisplayName(session) {
+  return (
+    session?.sessionName ||
+    session?.name ||
+    session?.label ||
+    session?.displayName ||
+    session?.sessionKey ||
+    "sessão"
   );
 }
 
@@ -15997,6 +17711,33 @@ function loadPinnedSessionKey() {
   }
 }
 
+function loadSessionFocusDebugOpen() {
+  try {
+    return window.localStorage.getItem(SESSION_FOCUS_DEBUG_OPEN_STORAGE) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function loadTtsLastSeenAt() {
+  try {
+    const value = Number(window.localStorage.getItem(TTS_LAST_SEEN_STORAGE));
+    return Number.isFinite(value) && value > 0 ? value : Date.now();
+  } catch {
+    return Date.now();
+  }
+}
+
+function loadTtsSeenIds() {
+  try {
+    const raw = window.localStorage.getItem(TTS_SEEN_IDS_STORAGE);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
 function loadActiveWorkspace() {
   try {
     const stored = window.localStorage.getItem(ACTIVE_WORKSPACE_KEY_STORAGE);
@@ -16192,6 +17933,40 @@ function persistPinnedSessionKey(value) {
     } else {
       window.localStorage.removeItem(PINNED_SESSION_KEY_STORAGE);
     }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function persistSessionFocusDebugOpen(value) {
+  try {
+    window.localStorage.setItem(
+      SESSION_FOCUS_DEBUG_OPEN_STORAGE,
+      value ? "true" : "false",
+    );
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function persistTtsLastSeenAt(value) {
+  try {
+    window.localStorage.setItem(TTS_LAST_SEEN_STORAGE, String(Math.floor(value)));
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function markTtsSeen(id) {
+  if (!id) return;
+  ttsSeenIds.add(id);
+  while (ttsSeenIds.size > 80) {
+    const first = ttsSeenIds.values().next().value;
+    if (!first) break;
+    ttsSeenIds.delete(first);
+  }
+  try {
+    window.localStorage.setItem(TTS_SEEN_IDS_STORAGE, JSON.stringify([...ttsSeenIds]));
   } catch {
     // ignore localStorage failures inside WhatsApp Web
   }

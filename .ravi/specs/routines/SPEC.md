@@ -15,6 +15,7 @@ tags:
   - automation
   - hermes-pattern
 applies_to:
+  - src/prompt-builder.ts
   - src/cron
   - src/triggers
   - src/tasks
@@ -42,7 +43,9 @@ This domain exists because a cron prompt is too weak as the source of truth for 
 - Routine is the durable contract that may use cron, triggers, tasks, sessions, skills, and quality modes.
 - Cron MAY execute deterministic shell jobs directly when the work requires no agent judgment. Shell cron jobs MUST preserve the same lifecycle/status tracking as agent cron jobs and MUST NOT invoke an agent on successful runs.
 - Shell cron jobs MAY notify a session on failure, but the notification MUST be an explicit `on-error` policy.
+- Agents MAY create background cron jobs silently for concrete time-based next steps when the task has enough context, permission, and operational value. This is a follow-through aid, not a replacement for explicit routine design.
 - Background cron jobs that route replies through a chat/session MUST suppress interactive presence while they work; only an actual final response should appear in the target chat.
+- Inactivity-based follow-up belongs to the sessions followups domain, not cron.
 
 ## Routine Shape
 
@@ -83,6 +86,8 @@ quality:
 - A routine SHOULD define quality failure modes that monitor it.
 - A routine MUST NOT perform irreversible external action unless the routine policy explicitly allows it and approvals are satisfied.
 - A routine SHOULD write durable state when it is expected to remember prior runs.
+- An agent-created background cron MUST be inspected after creation with `ravi cron show <id>` and MUST verify agent, account, session/reply-session, schedule, and one-shot deletion policy when applicable.
+- Agents MUST NOT create cron jobs for every task, vague reminders, duplicate existing jobs, or noisy checks.
 
 ## Acceptance Criteria
 

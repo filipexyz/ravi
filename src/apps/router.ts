@@ -8,8 +8,7 @@ import type {
   RaviAppRunResult,
 } from "./types.js";
 import { emitCliAuditEvent } from "../cli/audit.js";
-import { getContext } from "../cli/context.js";
-import { agentCan, canWithCapabilityContext } from "../permissions/engine.js";
+import { assertCanRunAppOperation, assertCanUseApp, filterVisibleAppManifests } from "./permissions.js";
 
 interface ResolvedOperation {
   id: string;
@@ -24,6 +23,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
   let result: RaviAppRunResult;
 
   try {
+    assertCanUseApp(options.appId);
     const app = getAppManifest(options.appId, options);
     if (!app.valid) {
       throw new Error(`App manifest is invalid: ${app.errors.join("; ")}`);
@@ -89,7 +89,7 @@ export function resolveAppAliasInvocation(
   if (mergeStaticRootCommands(options.staticRootCommands).has(first)) return null;
 
   const appIds = new Set(
-    discoverAppManifests({ cwd: options.cwd, env: options.env })
+    filterVisibleAppManifests(discoverAppManifests({ cwd: options.cwd, env: options.env }))
       .map((record) => record.manifest?.id ?? record.id)
       .filter((id): id is string => typeof id === "string" && id.length > 0),
   );
@@ -212,7 +212,7 @@ async function dispatchResolvedOperation(
   if (mutating && !hasDeclaredOperationPermission(operation)) {
     throw new Error(`Mutating operation ${resolved.id} must declare permission or permissions.`);
   }
-  enforceAppPermission(appId, resolved.id, mutating);
+  assertCanRunAppOperation(appId, resolved.id, mutating);
 
   if (interfaceName === "builtin") {
     const handler = operation.handler?.trim();
@@ -389,19 +389,6 @@ function hasDeclaredOperationPermission(operation: RaviAppOperationDeclaration):
     (typeof operation.permission === "string" && operation.permission.trim().length > 0) ||
     (Array.isArray(operation.permissions) && operation.permissions.length > 0)
   );
-}
-
-function enforceAppPermission(appId: string, operationId: string, mutating: boolean): void {
-  const ctx = getContext();
-  if (!ctx?.agentId) return;
-
-  const relation = mutating ? "execute" : "use";
-  const allowed = ctx.context
-    ? canWithCapabilityContext({ ...ctx.context, agentId: ctx.context.agentId ?? ctx.agentId }, relation, "app", appId)
-    : agentCan(ctx.agentId, relation, "app", appId);
-  if (allowed) return;
-
-  throw new Error(`Permission denied: agent:${ctx.agentId} requires ${relation} on app:${appId} for ${operationId}`);
 }
 
 function toSummary(record: RaviAppManifestRecord): Record<string, unknown> {

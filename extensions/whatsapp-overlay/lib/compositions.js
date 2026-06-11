@@ -62,6 +62,7 @@ export async function buildSnapshot(client, query) {
     resolved: Boolean(resolved.session),
     session: resolved.session ? toSessionSnapshot(resolved.session, binding) : null,
     candidates: resolved.candidates.map(toListEntry),
+    agents,
     activeSessions,
     recentSessions,
     hotSessions: activeSessions,

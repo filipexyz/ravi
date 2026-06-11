@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { grantRelation, hasRelation, listRelations, revokeRelation } from "./relations.js";
+import {
+  grantRelation,
+  hasRelation,
+  listRelations,
+  restoreRelationsRevocationBatch,
+  restoreRelationsRevokedAt,
+  revokeRelation,
+} from "./relations.js";
 
 let stateDir: string | null = null;
 
@@ -70,5 +77,48 @@ describe("REBAC relation lifetime", () => {
     });
     expect(inactive).toHaveLength(1);
     expect(inactive[0].revokedAt).toBeNumber();
+  });
+
+  it("restores relations revoked in the same timestamp batch", () => {
+    grantRelation("agent", "dev", "execute", "group", "contacts", "manual");
+    grantRelation("agent", "dev", "use", "tool", "Read", "manual");
+    const revokedAt = 123_456;
+
+    expect(revokeRelation("agent", "dev", "execute", "group", "contacts", { revokedAt })).toBe(true);
+    expect(revokeRelation("agent", "dev", "use", "tool", "Read", { revokedAt })).toBe(true);
+
+    const planned = restoreRelationsRevokedAt(revokedAt);
+    expect(planned).toMatchObject({ matched: 2, restored: 0 });
+    expect(hasRelation("agent", "dev", "execute", "group", "contacts")).toBe(false);
+
+    const restored = restoreRelationsRevokedAt(revokedAt, { apply: true });
+    expect(restored).toMatchObject({ matched: 2, restored: 2 });
+    expect(hasRelation("agent", "dev", "execute", "group", "contacts")).toBe(true);
+    expect(hasRelation("agent", "dev", "use", "tool", "Read")).toBe(true);
+  });
+
+  it("restores only the requested revocation batch id even when timestamps collide", () => {
+    const revokedAt = 123_456;
+    grantRelation("agent", "dev", "execute", "group", "contacts", "manual");
+    grantRelation("agent", "ops", "use", "tool", "Read", "manual");
+
+    expect(
+      revokeRelation("agent", "dev", "execute", "group", "contacts", {
+        revokedAt,
+        revocationBatchId: "batch-a",
+      }),
+    ).toBe(true);
+    expect(
+      revokeRelation("agent", "ops", "use", "tool", "Read", {
+        revokedAt,
+        revocationBatchId: "batch-b",
+      }),
+    ).toBe(true);
+
+    const restored = restoreRelationsRevocationBatch("batch-a", { apply: true });
+
+    expect(restored).toMatchObject({ matched: 1, restored: 1 });
+    expect(hasRelation("agent", "dev", "execute", "group", "contacts")).toBe(true);
+    expect(hasRelation("agent", "ops", "use", "tool", "Read")).toBe(false);
   });
 });

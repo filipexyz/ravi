@@ -183,6 +183,18 @@ export function buildSessionEditMessageCommand(sessionRef: string, messageRef: s
   return `ravi sessions edit-message ${sessionRef} ${messageRef} ${quoteCliArg(text)}`;
 }
 
+export function buildCurrentSessionReactionCommand(messageRef = "<message-id>", emoji = "<emoji>"): string {
+  return `ravi react send ${messageRef} ${emoji}`;
+}
+
+export function buildCurrentSessionStickerSendCommand(stickerId = "<sticker-id>"): string {
+  return `ravi stickers send ${stickerId}`;
+}
+
+export function buildCurrentSessionMediaSendCommand(filePath = "<file-path>"): string {
+  return `ravi media send ${quoteCliArg(filePath)}`;
+}
+
 export function buildCurrentSessionReadCommand(): string {
   return "ravi sessions read --json";
 }
@@ -195,6 +207,8 @@ export function buildSessionActionsPromptHint(): string {
     "Use each recent message's `chatId` and `chatTitle` to confirm which group/chat the action targets.",
     `To delete an own outbound message, run \`${buildCurrentSessionDeleteMessageCommand("<message-id>")}\`.`,
     `To edit an own outbound text message, run \`${buildCurrentSessionEditMessageCommand("<message-id>", "novo texto")}\`.`,
+    `When \`media.send\` is listed as available, send a local file with \`${buildCurrentSessionMediaSendCommand("<file-path>")}\`.`,
+    "For reactions, stickers, media, and transcript reads, follow the command-specific `usage.tools` constraints.",
     "Only delete or edit messages authored by this session's agent; do not use these tools on user messages.",
   ].join("\n");
 }
@@ -231,6 +245,61 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
       ],
       promptHint:
         'After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions edit-message <message-id> "novo texto"`.',
+    },
+    reactMessage: {
+      id: "message.react",
+      tool: "ravi react send",
+      command: buildCurrentSessionReactionCommand(),
+      idSource: "Inbound message mid from the visible message header, or a stored providerMessageId when available.",
+      emojiSource: "One emoji that matches the acknowledgement or sentiment.",
+      useWhen: "React to a channel message instead of sending a text acknowledgement.",
+      constraints: [
+        "Use only when the current channel supports reactions.",
+        "Do not react and send a redundant text acknowledgement for the same intent.",
+        "Do not expose message IDs to users unless debugging requires it.",
+      ],
+      promptHint:
+        "Use `ravi react send <message-id> <emoji>` when a lightweight acknowledgement is enough and reactions are supported.",
+    },
+    sendSticker: {
+      id: "sticker.send",
+      tool: "ravi stickers send",
+      command: buildCurrentSessionStickerSendCommand(),
+      idSource: "Sticker id from the prompt sticker section or `ravi stickers list --json`.",
+      useWhen: "Send an enabled sticker that is appropriate for the current channel and agent.",
+      constraints: [
+        "Use only when the current channel supports stickers.",
+        "Choose a sticker id from the catalog; do not invent ids.",
+        "Respect each sticker's description, avoid guidance, channel allowlist, and agent allowlist.",
+      ],
+      promptHint:
+        "Use `ravi stickers send <sticker-id>` after choosing an enabled catalog sticker for the current conversation.",
+    },
+    sendMedia: {
+      id: "media.send",
+      tool: "ravi media send",
+      command: buildCurrentSessionMediaSendCommand(),
+      fileSource: "A local image, video, audio, or document path produced or found during the turn.",
+      useWhen: "Send a local media file to the current chat context.",
+      constraints: [
+        "The file must exist on the local filesystem.",
+        "Use `--caption` when the media needs visible context.",
+        "Use `--ptt` only for audio that should be sent as a voice note.",
+        "When not running from the desired chat context, pass an explicit `--account` and `--to` target after confirming it.",
+      ],
+      promptHint:
+        'Use `ravi media send "<file-path>"` to send an existing local file; add `--caption "..."` when useful.',
+    },
+    readSession: {
+      id: "session.read",
+      tool: "ravi sessions read",
+      command: buildCurrentSessionReadCommand(),
+      useWhen: "Inspect the current session transcript before deciding whether an action is still needed.",
+      constraints: [
+        "Use `--json` for structured inspection.",
+        "Do not expose raw internal transcript details unless needed.",
+      ],
+      promptHint: "Use `ravi sessions read --json` to inspect recent session context.",
     },
   };
 }
@@ -313,6 +382,18 @@ export function serializeSessionActionMessage(
   };
 }
 
+function hasSessionActionChatSurface(
+  session: SessionEntry,
+  subscriptions: Array<Record<string, unknown>>,
+  chatIds: string[],
+): boolean {
+  return (
+    chatIds.length > 0 ||
+    subscriptions.length > 0 ||
+    Boolean(session.channel || session.lastChannel || session.lastTo || session.accountId)
+  );
+}
+
 function buildSessionActionsPayload(session: SessionEntry, options: { limit?: number } = {}): Record<string, unknown> {
   const ref = sessionActionRef(session);
   const limit = options.limit ?? 10;
@@ -343,6 +424,11 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
     limit,
     order: "desc",
   });
+  const hasChatSurface = hasSessionActionChatSurface(session, subscriptions, chatIds);
+  const channelActionStatus = hasChatSurface ? "available" : "unavailable";
+  const channelActionUnavailableReason = hasChatSurface
+    ? null
+    : "No current, attached, or recent chat surface was found for this session.";
 
   return {
     session: {
@@ -383,21 +469,41 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
       },
       {
         id: "message.react",
-        status: "available",
+        status: channelActionStatus,
         description: "React to a channel message when the channel supports reactions.",
-        command: "ravi react send <message-id> <emoji>",
+        command: buildCurrentSessionReactionCommand(),
+        promptHint: toolHints.reactMessage.promptHint,
+        idSource: toolHints.reactMessage.idSource,
+        constraints: toolHints.reactMessage.constraints,
+        ...(channelActionUnavailableReason ? { unavailableReason: channelActionUnavailableReason } : {}),
       },
       {
         id: "sticker.send",
-        status: "available",
+        status: channelActionStatus,
         description: "Send a sticker when the channel supports stickers.",
-        command: "ravi stickers send <sticker-id>",
+        command: buildCurrentSessionStickerSendCommand(),
+        promptHint: toolHints.sendSticker.promptHint,
+        idSource: toolHints.sendSticker.idSource,
+        constraints: toolHints.sendSticker.constraints,
+        ...(channelActionUnavailableReason ? { unavailableReason: channelActionUnavailableReason } : {}),
+      },
+      {
+        id: "media.send",
+        status: channelActionStatus,
+        description: "Send a local image, video, audio, or document through the current chat context.",
+        command: buildCurrentSessionMediaSendCommand(),
+        promptHint: toolHints.sendMedia.promptHint,
+        fileSource: toolHints.sendMedia.fileSource,
+        constraints: toolHints.sendMedia.constraints,
+        ...(channelActionUnavailableReason ? { unavailableReason: channelActionUnavailableReason } : {}),
       },
       {
         id: "session.read",
         status: "available",
         description: "Read this session's recent transcript.",
         command: buildCurrentSessionReadCommand(),
+        promptHint: toolHints.readSession.promptHint,
+        constraints: toolHints.readSession.constraints,
       },
       {
         id: "message.reply",

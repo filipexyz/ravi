@@ -21,6 +21,7 @@ export const RAVI_EVENTS_SUBJECTS = [
   "ravi.session.delete.completed",
   "ravi.session.model.changed",
   "ravi.session.runtime.control",
+  "ravi.presence.>",
   "ravi.approval.>",
   "ravi.audit.>",
   "ravi.inbound.>",

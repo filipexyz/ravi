@@ -1459,6 +1459,7 @@ function getDb(): Database {
       grant_mode TEXT NOT NULL DEFAULT 'permanent',
       expires_at INTEGER,
       revoked_at INTEGER,
+      revocation_batch_id TEXT,
       reason TEXT,
       issued_by TEXT,
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
@@ -1495,6 +1496,48 @@ function getDb(): Database {
       ON permission_denials(subject_type, subject_id, relation, object_type, object_id, resolved_at);
     CREATE INDEX IF NOT EXISTS idx_permission_denials_session
       ON permission_denials(session_key, session_name, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS permission_policy_rules (
+      id TEXT PRIMARY KEY,
+      version TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      source_path TEXT,
+      rule_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      disabled_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS permission_policy_materializations (
+      id TEXT PRIMARY KEY,
+      policy_id TEXT NOT NULL,
+      policy_version TEXT NOT NULL,
+      selector_asset_type TEXT NOT NULL,
+      selector_asset_id TEXT NOT NULL,
+      tag_slug TEXT NOT NULL,
+      tag_binding_id TEXT,
+      tag_binding_source TEXT,
+      subject_type TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      relation TEXT NOT NULL,
+      object_type TEXT NOT NULL,
+      object_id TEXT NOT NULL,
+      desired_hash TEXT NOT NULL,
+      relation_id INTEGER,
+      status TEXT NOT NULL,
+      conflict_source TEXT,
+      reason TEXT,
+      expires_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      revoked_at INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_permission_policy_materializations_policy_hash
+      ON permission_policy_materializations(policy_id, desired_hash);
+    CREATE INDEX IF NOT EXISTS idx_permission_policy_materializations_relation
+      ON permission_policy_materializations(subject_type, subject_id, relation, object_type, object_id, status);
+    CREATE INDEX IF NOT EXISTS idx_permission_policy_materializations_selector
+      ON permission_policy_materializations(selector_asset_type, selector_asset_id, tag_slug, status);
 
     -- Message metadata (transcriptions, media paths — for reply reinjection)
     CREATE TABLE IF NOT EXISTS message_metadata (
@@ -2519,8 +2562,12 @@ function ensureRelationMigrations(database: Database): void {
   ensureColumn(database, "relations", "grant_mode", "TEXT NOT NULL DEFAULT 'permanent'");
   ensureColumn(database, "relations", "expires_at", "INTEGER");
   ensureColumn(database, "relations", "revoked_at", "INTEGER");
+  ensureColumn(database, "relations", "revocation_batch_id", "TEXT");
   ensureColumn(database, "relations", "reason", "TEXT");
   ensureColumn(database, "relations", "issued_by", "TEXT");
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS idx_relations_revocation_batch ON relations(revocation_batch_id) WHERE revocation_batch_id IS NOT NULL",
+  );
 }
 
 function ensureCostEventMigrations(database: Database): void {

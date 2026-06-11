@@ -190,6 +190,32 @@ describe("Ravi app router", () => {
     });
   });
 
+  it("hides dynamic root aliases without app use permission", () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+
+    const denied = runWithContext({ agentId: "app-agent" }, () =>
+      resolveAppAliasInvocation(["khal-tasks", "check", "--json"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    );
+    expect(denied).toBe(null);
+
+    grantRelation("agent", "app-agent", "use", "app", "khal-tasks", "test");
+
+    const allowed = runWithContext({ agentId: "app-agent" }, () =>
+      resolveAppAliasInvocation(["khal-tasks", "check", "--json"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    );
+    expect(allowed).toEqual({
+      appId: "khal-tasks",
+      operation: "check",
+      args: [],
+      json: true,
+    });
+  });
+
   it("requires app use permission in agent context", async () => {
     const root = makeRepo();
     writeManifest(root, "khal-tasks", manifest("khal-tasks"));
@@ -206,7 +232,7 @@ describe("Ravi app router", () => {
       ok: false,
       appId: "khal-tasks",
     });
-    expect(denied.error).toContain("requires use on app:khal-tasks");
+    expect(denied.error).toBe("App not found: khal-tasks");
 
     grantRelation("agent", "app-agent", "use", "app", "khal-tasks", "test");
 
@@ -219,6 +245,34 @@ describe("Ravi app router", () => {
     );
 
     expect(allowed.ok).toBe(true);
+  });
+
+  it("does not leak invalid hidden app manifests before app use permission", async () => {
+    const root = makeRepo();
+    writeManifest(root, "hidden-invalid", {
+      schema: "ravi.app/v1",
+      id: "hidden-invalid",
+      name: "Hidden Invalid",
+      version: "0.1.0",
+      description: "Invalid app that should stay hidden.",
+      interfaces: {},
+      operations: {},
+    });
+
+    const denied = await runWithContext({ agentId: "app-agent" }, () =>
+      runAppOperation({
+        appId: "hidden-invalid",
+        operation: "check",
+        json: true,
+      }),
+    );
+
+    expect(denied).toMatchObject({
+      ok: false,
+      appId: "hidden-invalid",
+    });
+    expect(denied.error).toBe("App not found: hidden-invalid");
+    expect(denied.error).not.toContain("App manifest is invalid");
   });
 
   it("requires app execute permission for mutating app operations", async () => {

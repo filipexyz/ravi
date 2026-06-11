@@ -85,7 +85,7 @@ describe("cloud auth root command handlers", () => {
 
     const { output } = await captureConsole(() =>
       runLogin(
-        { console: "https://console.example", json: true, open: false, poll: false },
+        { console: "https://console.example", json: true, open: false, org: "rbbt", poll: false },
         {
           client,
           readCredentials: () => null,
@@ -106,6 +106,7 @@ describe("cloud auth root command handlers", () => {
       scopes: ["artifacts:publish"],
     });
     expect(exchange.mock.calls[0]?.[0]).toMatchObject({
+      organizationRef: "rbbt",
       workosAccessToken: "provider-secret",
       installation: {
         name: "Test CLI",

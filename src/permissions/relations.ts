@@ -35,6 +35,7 @@ export interface Relation {
   grantMode: GrantMode;
   expiresAt: number | null;
   revokedAt: number | null;
+  revocationBatchId: string | null;
   reason: string | null;
   issuedBy: string | null;
   createdAt: number;
@@ -51,6 +52,7 @@ interface RelationRow {
   grant_mode?: string | null;
   expires_at?: number | null;
   revoked_at?: number | null;
+  revocation_batch_id?: string | null;
   reason?: string | null;
   issued_by?: string | null;
   created_at: number;
@@ -63,6 +65,7 @@ export interface RelationFilter {
   objectType?: string;
   objectId?: string;
   source?: string;
+  revocationBatchId?: string;
   includeInactive?: boolean;
 }
 
@@ -72,6 +75,25 @@ export interface GrantRelationOptions {
   permanent?: boolean;
   reason?: string | null;
   issuedBy?: string | null;
+}
+
+export interface RevokeRelationOptions {
+  revokedAt?: number;
+  revocationBatchId?: string | null;
+}
+
+export interface RestoreRelationsResult {
+  matched: number;
+  restored: number;
+  relations: Relation[];
+}
+
+export type OwnedGrantStatus = "created" | "refreshed" | "conflict";
+
+export interface GrantRelationIfAbsentOrOwnedResult {
+  status: OwnedGrantStatus;
+  relation: Relation | null;
+  conflictSource?: string;
 }
 
 // ============================================================================
@@ -91,6 +113,7 @@ function rowToRelation(row: RelationRow): Relation {
     grantMode,
     expiresAt: typeof row.expires_at === "number" ? row.expires_at : null,
     revokedAt: typeof row.revoked_at === "number" ? row.revoked_at : null,
+    revocationBatchId: row.revocation_batch_id ?? null,
     reason: row.reason ?? null,
     issuedBy: row.issued_by ?? null,
     createdAt: row.created_at,
@@ -216,6 +239,7 @@ export function grantRelation(
       grant_mode = excluded.grant_mode,
       expires_at = excluded.expires_at,
       revoked_at = NULL,
+      revocation_batch_id = NULL,
       reason = excluded.reason,
       issued_by = excluded.issued_by,
       created_at = excluded.created_at
@@ -252,6 +276,74 @@ export function grantRelation(
 }
 
 /**
+ * Grant a relation only when the tuple is absent or already owned by the same source.
+ *
+ * Policy materializers use this to avoid turning a declarative policy into an
+ * implicit takeover of manual/config grants, since `grantRelation()` is an
+ * upsert and intentionally overwrites tuple metadata for operator commands.
+ */
+export function grantRelationIfAbsentOrOwned(
+  subjectType: string,
+  subjectId: string,
+  relation: string,
+  objectType: string,
+  objectId: string,
+  source: string,
+  options: GrantRelationOptions = {},
+): GrantRelationIfAbsentOrOwnedResult {
+  const existing =
+    listRelations({
+      subjectType,
+      subjectId,
+      relation,
+      objectType,
+      objectId,
+      includeInactive: true,
+    })[0] ?? null;
+
+  if (existing && existing.source !== source) {
+    return {
+      status: "conflict",
+      relation: existing,
+      conflictSource: existing.source,
+    };
+  }
+
+  const granted = grantRelation(subjectType, subjectId, relation, objectType, objectId, source, options);
+  return {
+    status: existing ? "refreshed" : "created",
+    relation: granted,
+  };
+}
+
+/**
+ * Revoke a relation only if the tuple is still owned by the expected source.
+ */
+export function revokeRelationIfSource(
+  subjectType: string,
+  subjectId: string,
+  relation: string,
+  objectType: string,
+  objectId: string,
+  source: string,
+  options: RevokeRelationOptions = {},
+): boolean {
+  const db = getDb();
+  const now = options.revokedAt ?? Math.floor(Date.now() / 1000);
+  const revocationBatchId = normalizeOptionalString(options.revocationBatchId);
+  const result = db
+    .prepare(
+      `
+    UPDATE relations
+    SET revoked_at = ?, revocation_batch_id = ?
+    WHERE subject_type = ? AND subject_id = ? AND relation = ? AND object_type = ? AND object_id = ? AND source = ?
+  `,
+    )
+    .run(now, revocationBatchId, subjectType, subjectId, relation, objectType, objectId, source);
+  return result.changes > 0;
+}
+
+/**
  * Revoke a specific relation.
  */
 export function revokeRelation(
@@ -260,19 +352,75 @@ export function revokeRelation(
   relation: string,
   objectType: string,
   objectId: string,
+  options: RevokeRelationOptions = {},
 ): boolean {
   const db = getDb();
-  const now = Math.floor(Date.now() / 1000);
+  const now = options.revokedAt ?? Math.floor(Date.now() / 1000);
+  const revocationBatchId = normalizeOptionalString(options.revocationBatchId);
   const result = db
     .prepare(
       `
     UPDATE relations
-    SET revoked_at = ?
+    SET revoked_at = ?, revocation_batch_id = ?
     WHERE subject_type = ? AND subject_id = ? AND relation = ? AND object_type = ? AND object_id = ?
   `,
     )
-    .run(now, subjectType, subjectId, relation, objectType, objectId);
+    .run(now, revocationBatchId, subjectType, subjectId, relation, objectType, objectId);
   return result.changes > 0;
+}
+
+export function restoreRelationsRevocationBatch(
+  revocationBatchId: string,
+  options: { apply?: boolean } = {},
+): RestoreRelationsResult {
+  const batchId = normalizeOptionalString(revocationBatchId);
+  if (!batchId) {
+    return { matched: 0, restored: 0, relations: [] };
+  }
+  const matched = listRelations({ includeInactive: true, revocationBatchId: batchId });
+  if (matched.length === 0) {
+    return { matched: 0, restored: 0, relations: [] };
+  }
+
+  if (options.apply === true) {
+    getDb()
+      .prepare("UPDATE relations SET revoked_at = NULL, revocation_batch_id = NULL WHERE revocation_batch_id = ?")
+      .run(batchId);
+  }
+
+  const relations = options.apply
+    ? listRelations({ includeInactive: true }).filter((relation) => matched.some((item) => item.id === relation.id))
+    : matched;
+  return {
+    matched: matched.length,
+    restored: options.apply === true ? matched.length : 0,
+    relations,
+  };
+}
+
+export function restoreRelationsRevokedAt(
+  revokedAt: number,
+  options: { apply?: boolean } = {},
+): RestoreRelationsResult {
+  const matched = listRelations({ includeInactive: true }).filter((relation) => relation.revokedAt === revokedAt);
+  if (matched.length === 0) {
+    return { matched: 0, restored: 0, relations: [] };
+  }
+
+  if (options.apply === true) {
+    getDb()
+      .prepare("UPDATE relations SET revoked_at = NULL, revocation_batch_id = NULL WHERE revoked_at = ?")
+      .run(revokedAt);
+  }
+
+  const relations = options.apply
+    ? listRelations({ includeInactive: true }).filter((relation) => matched.some((item) => item.id === relation.id))
+    : matched;
+  return {
+    matched: matched.length,
+    restored: options.apply === true ? matched.length : 0,
+    relations,
+  };
 }
 
 /**
@@ -333,6 +481,10 @@ export function listRelations(filter?: RelationFilter): Relation[] {
   if (filter?.source) {
     conditions.push("source = ?");
     params.push(filter.source);
+  }
+  if (filter?.revocationBatchId) {
+    conditions.push("revocation_batch_id = ?");
+    params.push(filter.revocationBatchId);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

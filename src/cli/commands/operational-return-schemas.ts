@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ZodTypeAny } from "zod";
 import { Returns } from "../decorators.js";
+import { jsonValueSchema } from "../return-schemas.js";
 
 export const looseObjectSchema = z.object({}).passthrough();
 export const looseObjectOrNullSchema = looseObjectSchema.nullable();
@@ -383,6 +384,148 @@ export const audioGenerateReturnSchema = z
     sent: mediaDeliveryReturnSchema.extend({ voiceNote: z.literal(true) }).optional(),
   })
   .passthrough();
+
+const ttsJsonObjectSchema = z.record(z.string(), jsonValueSchema);
+
+const ttsTargetSchema = z.object({
+  channel: z.string().optional(),
+  accountId: z.string().optional(),
+  instanceId: z.string().optional(),
+  chatId: z.string().optional(),
+  threadId: z.string().optional(),
+  canonicalChatId: z.string().optional(),
+});
+
+const ttsVoiceSettingsSchema = z.object({
+  stability: z.number().optional(),
+  similarityBoost: z.number().optional(),
+  style: z.number().optional(),
+  useSpeakerBoost: z.boolean().optional(),
+  speed: z.number().optional(),
+});
+
+const ttsElevenLabsOptionsSchema = z.object({
+  enableLogging: z.boolean().optional(),
+  optimizeStreamingLatency: z.number().optional(),
+  pronunciationDictionaryLocators: z.array(jsonValueSchema).optional(),
+  seed: z.number().optional(),
+  previousText: z.string().optional(),
+  nextText: z.string().optional(),
+  previousRequestIds: z.array(z.string()).optional(),
+  nextRequestIds: z.array(z.string()).optional(),
+  usePvcAsIvc: z.boolean().optional(),
+  applyTextNormalization: z.enum(["auto", "on", "off"]).optional(),
+  applyLanguageTextNormalization: z.boolean().optional(),
+});
+
+const ttsVoiceConfigSchema = z.object({
+  provider: z.literal("elevenlabs"),
+  voiceId: z.string().optional(),
+  modelId: z.string(),
+  lang: z.string(),
+  outputFormat: z.string(),
+  voiceSettings: ttsVoiceSettingsSchema.optional(),
+  elevenlabs: ttsElevenLabsOptionsSchema.optional(),
+});
+
+const ttsPlaybackSchema = z.object({
+  target: z.enum(["extension", "channel", "none"]),
+  autoplay: z.boolean(),
+  clientId: z.string().optional(),
+});
+
+const ttsRequestSchema = z.object({
+  id: z.string().optional(),
+  requestId: z.string().optional(),
+  text: z.string(),
+  agentId: z.string().optional(),
+  sessionName: z.string().optional(),
+  sessionKey: z.string().optional(),
+  emitId: z.string().optional(),
+  target: ttsTargetSchema.optional(),
+  playback: ttsPlaybackSchema.optional(),
+  voice: ttsVoiceConfigSchema.optional(),
+  metadata: ttsJsonObjectSchema.optional(),
+  createdAt: z.number().optional(),
+  source: ttsJsonObjectSchema.optional(),
+});
+
+const ttsPlaybackItemSchema = z.object({
+  id: z.string(),
+  requestId: z.string(),
+  status: z.enum(["ready", "failed"]),
+  createdAt: z.number(),
+  readyAt: z.number().optional(),
+  failedAt: z.number().optional(),
+  text: z.string(),
+  textPreview: z.string(),
+  agentId: z.string().optional(),
+  sessionName: z.string().optional(),
+  sessionKey: z.string().optional(),
+  emitId: z.string().optional(),
+  target: ttsTargetSchema.optional(),
+  playback: ttsPlaybackSchema,
+  voice: ttsVoiceConfigSchema,
+  audio: z
+    .object({
+      id: z.string(),
+      filePath: z.string(),
+      filename: z.string(),
+      mimeType: z.string(),
+      sizeBytes: z.number(),
+      provider: z.literal("elevenlabs"),
+      voiceId: z.string(),
+      modelId: z.string(),
+      outputFormat: z.string(),
+    })
+    .optional(),
+  error: z.string().optional(),
+  metadata: ttsJsonObjectSchema.optional(),
+});
+
+export const audioTtsReturnSchema = z.object({
+  ok: z.literal(true),
+  topic: z.literal("ravi.tts"),
+  request: ttsRequestSchema,
+});
+
+export const audioPendingReturnSchema = z.object({
+  ok: z.literal(true),
+  generatedAt: z.number(),
+  items: z.array(ttsPlaybackItemSchema),
+});
+
+export const audioVoicesReturnSchema = z.object({
+  ok: z.literal(true),
+  provider: z.literal("elevenlabs"),
+  generatedAt: z.number(),
+  hasMore: z.boolean(),
+  totalCount: z.number().optional(),
+  nextPageToken: z.string().optional(),
+  voices: z.array(
+    z.object({
+      voiceId: z.string(),
+      name: z.string(),
+      category: z.string().optional(),
+      description: z.string().optional(),
+      previewUrl: z.string().optional(),
+      labels: z.record(z.string(), z.string()).optional(),
+      isOwner: z.boolean().optional(),
+      isLegacy: z.boolean().optional(),
+      highQualityBaseModelIds: z.array(z.string()).optional(),
+      verifiedLanguages: z
+        .array(
+          z.object({
+            language: z.string().optional(),
+            locale: z.string().optional(),
+            accent: z.string().optional(),
+            previewUrl: z.string().optional(),
+          }),
+        )
+        .optional(),
+    }),
+  ),
+});
 
 export const imageGenerateReturnSchema = z.union([
   z

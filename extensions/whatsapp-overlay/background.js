@@ -13,11 +13,17 @@ import {
 const HANDLERS = {
   "ravi:get-snapshot": fetchSnapshot,
   "ravi:get-session-workspace": fetchSessionWorkspace,
+  "ravi:get-session-trace-summary": fetchSessionTraceSummary,
   "ravi:get-tasks": fetchTasks,
   "ravi:get-crm": fetchCrm,
   "ravi:get-insights": fetchInsights,
   "ravi:get-artifacts": fetchArtifacts,
   "ravi:get-artifact-blob": fetchArtifactBlob,
+  "ravi:tts-voices": fetchTtsVoices,
+  "ravi:tts-preview-url": fetchTtsPreviewUrl,
+  "ravi:tts-poll": fetchTtsPending,
+  "ravi:tts-say": postTtsSay,
+  "ravi:set-agent-tts": postAgentTtsSettings,
   "ravi:dispatch-task": postTaskDispatch,
   "ravi:session-prompt": postSessionPrompt,
   "ravi:publish-view-state": publishViewState,
@@ -35,6 +41,7 @@ const HANDLERS = {
 const GUARDED_HANDLER_POLICIES = {
   "ravi:get-snapshot": { ttlMs: 1500, staleMs: 8000, slowMs: 3500, backoffMs: 2000, maxBackoffMs: 15000 },
   "ravi:get-session-workspace": { ttlMs: 2500, staleMs: 10000, slowMs: 4000, backoffMs: 2500, maxBackoffMs: 20000 },
+  "ravi:get-session-trace-summary": { ttlMs: 4000, staleMs: 15000, slowMs: 4000, backoffMs: 2500, maxBackoffMs: 20000 },
   "ravi:get-tasks": { ttlMs: 4000, staleMs: 15000, slowMs: 4500, backoffMs: 3000, maxBackoffMs: 25000 },
   "ravi:get-crm": { ttlMs: 12000, staleMs: 30000, slowMs: 5000, backoffMs: 5000, maxBackoffMs: 30000 },
   "ravi:get-insights": { ttlMs: 10000, staleMs: 30000, slowMs: 5000, backoffMs: 5000, maxBackoffMs: 30000 },
@@ -202,6 +209,95 @@ async function fetchSessionWorkspace(payload = {}) {
   };
 }
 
+async function fetchSessionTraceSummary(payload = {}) {
+  const session = clean(payload.session) ?? clean(payload.nameOrKey);
+  if (!session) return { ok: false, error: "Missing session" };
+
+  const limit = normalizeTraceSummaryLimit(payload.limit, 16);
+  const queryLimit = Math.min(120, Math.max(limit, limit * 6));
+  const since = clean(payload.since) || "30m";
+  const { client } = await getClient();
+  const result = await client.sessions.trace(session, {
+    since,
+    limit: String(queryLimit),
+  });
+  const trace = result?.trace ?? result ?? {};
+  const rawEvents = Array.isArray(trace.events) ? trace.events : [];
+  const visibleEvents = rawEvents.filter(isVisibleSessionTraceEvent);
+  const events = visibleEvents
+    .slice(-limit)
+    .map(sanitizeSessionTraceEvent)
+    .filter(Boolean)
+    .reverse();
+
+  return {
+    ok: true,
+    session,
+    sessionKey: trace.sessionKey ?? null,
+    sessionName: trace.sessionName ?? null,
+    counts: {
+      events: rawEvents.length,
+      visible: visibleEvents.length,
+      returned: events.length,
+    },
+    filters: trace.filters ?? null,
+    events,
+    generatedAt: Date.now(),
+  };
+}
+
+function isVisibleSessionTraceEvent(event) {
+  if (!event || typeof event !== "object") return false;
+  const eventType = String(event.eventType || event.kind || event.type || "").toLowerCase();
+  const eventGroup = String(event.eventGroup || "").toLowerCase();
+  if (!eventType) return false;
+  if (eventGroup === "presence") return false;
+  if (eventType === "presence.typing") return false;
+  return true;
+}
+
+function normalizeTraceSummaryLimit(value, fallback) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : Number.parseInt(typeof value === "string" ? value : "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(40, Math.max(1, Math.floor(parsed)));
+}
+
+function normalizeTraceSummaryTimestamp(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function sanitizeSessionTraceEvent(event) {
+  if (!event || typeof event !== "object") return null;
+  const eventType = clean(event.eventType) || clean(event.kind) || clean(event.type) || "event";
+  return {
+    id: event.id ?? null,
+    eventType,
+    eventGroup: clean(event.eventGroup) || null,
+    status: clean(event.status) || null,
+    timestamp: normalizeTraceSummaryTimestamp(event.timestamp),
+    createdAt: normalizeTraceSummaryTimestamp(event.createdAt),
+    preview: clean(event.preview) || null,
+    error: clean(event.error) || null,
+    durationMs: Number.isFinite(event.durationMs) ? event.durationMs : null,
+    turnId: clean(event.turnId) || null,
+    runId: clean(event.runId) || null,
+    messageId: clean(event.messageId) || null,
+    agentId: clean(event.agentId) || null,
+    provider: clean(event.provider) || null,
+    model: clean(event.model) || null,
+    sourceChannel: clean(event.sourceChannel) || null,
+    sourceChatId: clean(event.sourceChatId) || null,
+  };
+}
+
 function extractSessionSystemPrompt(result) {
   const trace = result?.trace ?? result;
   const snapshot = trace?.systemPrompt ?? null;
@@ -290,6 +386,210 @@ function arrayBufferToBase64(buffer) {
     binary += String.fromCharCode.apply(null, chunk);
   }
   return btoa(binary);
+}
+
+async function fetchTtsPending(payload = {}) {
+  const { client } = await getClient();
+  const body = {};
+  if (clean(payload.id)) body.id = clean(payload.id);
+  if (clean(payload.requestId)) body.requestId = clean(payload.requestId);
+  if (typeof payload.since === "number" && Number.isFinite(payload.since)) body.since = String(Math.floor(payload.since));
+  if (clean(payload.sessionName) || clean(payload.session)) body.session = clean(payload.sessionName) ?? clean(payload.session);
+  if (clean(payload.sessionKey)) body.sessionKey = clean(payload.sessionKey);
+  if (clean(payload.chatId)) body.chat = clean(payload.chatId);
+  if (clean(payload.agentId)) body.agent = clean(payload.agentId);
+  if (clean(payload.clientId)) body.clientId = clean(payload.clientId);
+  if (typeof payload.limit === "number" && Number.isFinite(payload.limit)) body.limit = String(Math.floor(payload.limit));
+  if (payload.includeFailed === true) body.includeFailed = true;
+
+  const pending = await client.transport.call({
+    groupSegments: ["audio"],
+    command: "pending",
+    body,
+  });
+  const items = Array.isArray(pending?.items) ? pending.items : [];
+  if (payload.withAudio === false) return { ...pending, items };
+
+  const hydrated = [];
+  for (const item of items) {
+    if (!clean(item?.id) || item?.status !== "ready") {
+      hydrated.push(item);
+      continue;
+    }
+    try {
+      const result = await callBinary({
+        groupSegments: ["audio"],
+        command: "blob",
+        body: { id: item.id },
+      });
+      const contentType = result?.contentType || item.audio?.mimeType || "audio/mpeg";
+      const buffer = result?.body instanceof ArrayBuffer ? result.body : null;
+      hydrated.push({
+        ...item,
+        dataUri: buffer ? `data:${contentType};base64,${arrayBufferToBase64(buffer)}` : null,
+        contentType,
+        sizeBytes: buffer?.byteLength ?? item.audio?.sizeBytes ?? null,
+      });
+    } catch (error) {
+      hydrated.push({ ...item, dataUri: null, blobError: error?.message || String(error) });
+    }
+  }
+  return { ...pending, items: hydrated };
+}
+
+async function fetchTtsVoices(payload = {}) {
+  const { client } = await getClient();
+  const body = {};
+  if (clean(payload.search)) body.search = clean(payload.search);
+  if (clean(payload.category)) body.category = clean(payload.category);
+  if (clean(payload.voiceType)) body.voiceType = clean(payload.voiceType);
+  if (typeof payload.limit === "number" && Number.isFinite(payload.limit)) body.limit = String(Math.floor(payload.limit));
+  return await client.transport.call({
+    groupSegments: ["audio"],
+    command: "voices",
+    body,
+  });
+}
+
+async function fetchTtsPreviewUrl(payload = {}) {
+  const url = clean(payload.url);
+  if (!url) return { ok: false, status: 400, code: "missing_url", error: "Missing preview URL" };
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, status: 400, code: "invalid_url", error: "Invalid preview URL" };
+  }
+
+  if (!isAllowedTtsPreviewUrl(parsed)) {
+    return { ok: false, status: 400, code: "unsupported_preview_url", error: "Unsupported preview URL" };
+  }
+
+  const response = await fetch(parsed.toString(), {
+    cache: "force-cache",
+    credentials: "omit",
+    redirect: "follow",
+  });
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      code: "preview_fetch_failed",
+      error: `Preview fetch failed with HTTP ${response.status}`,
+    };
+  }
+
+  const contentType = response.headers.get("content-type") || "audio/mpeg";
+  if (!contentType.toLowerCase().startsWith("audio/")) {
+    return { ok: false, status: 415, code: "unsupported_preview_type", error: "Preview is not audio" };
+  }
+
+  const contentLength = Number.parseInt(response.headers.get("content-length") || "", 10);
+  if (Number.isFinite(contentLength) && contentLength > 8 * 1024 * 1024) {
+    return { ok: false, status: 413, code: "preview_too_large", error: "Preview audio is too large" };
+  }
+
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > 8 * 1024 * 1024) {
+    return { ok: false, status: 413, code: "preview_too_large", error: "Preview audio is too large" };
+  }
+
+  return {
+    ok: true,
+    contentType,
+    sizeBytes: buffer.byteLength,
+    dataUri: `data:${contentType};base64,${arrayBufferToBase64(buffer)}`,
+  };
+}
+
+function isAllowedTtsPreviewUrl(url) {
+  if (url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase();
+  return host === "storage.googleapis.com" || host === "api.elevenlabs.io" || host.endsWith(".elevenlabs.io");
+}
+
+async function postTtsSay(payload = {}) {
+  const text = clean(payload.text);
+  if (!text) return { ok: false, status: 400, code: "missing_text", error: "Missing text" };
+  const { client } = await getClient();
+  const body = { text };
+  if (clean(payload.id)) body.id = clean(payload.id);
+  if (clean(payload.agentId)) body.agent = clean(payload.agentId);
+  if (clean(payload.sessionName)) body.session = clean(payload.sessionName);
+  if (clean(payload.sessionKey)) body.sessionKey = clean(payload.sessionKey);
+  if (clean(payload.channel)) body.channel = clean(payload.channel);
+  if (clean(payload.accountId)) body.account = clean(payload.accountId);
+  if (clean(payload.chatId)) body.chat = clean(payload.chatId);
+  if (clean(payload.voiceId)) body.voice = clean(payload.voiceId);
+  if (clean(payload.modelId)) body.model = clean(payload.modelId);
+  if (clean(payload.lang)) body.lang = clean(payload.lang);
+  if (clean(payload.outputFormat)) body.format = clean(payload.outputFormat);
+  if (typeof payload.speed === "number" && Number.isFinite(payload.speed)) body.speed = String(payload.speed);
+  if (clean(payload.clientId)) body.clientId = clean(payload.clientId);
+  if (payload.voiceSettings && typeof payload.voiceSettings === "object") body.voiceSettings = JSON.stringify(payload.voiceSettings);
+  if (payload.elevenlabs && typeof payload.elevenlabs === "object") body.elevenlabs = JSON.stringify(payload.elevenlabs);
+  return await client.transport.call({
+    groupSegments: ["audio"],
+    command: "tts",
+    body,
+  });
+}
+
+async function postAgentTtsSettings(payload = {}) {
+  const agentId = clean(payload.agentId);
+  if (!agentId) return { ok: false, status: 400, code: "missing_agent", error: "Missing agentId" };
+  const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
+  const { client } = await getClient();
+  const agentsResult = await client.agents.list({}).catch(() => ({ agents: [] }));
+  const agents = Array.isArray(agentsResult?.agents) ? agentsResult.agents : [];
+  const agent = agents.find((item) => clean(item?.id ?? item?.agentId ?? item?.name) === agentId) ?? null;
+  const currentDefaults =
+    agent?.defaults && typeof agent.defaults === "object" && !Array.isArray(agent.defaults) ? agent.defaults : {};
+  const nextDefaults = { ...currentDefaults, tts_provider: "elevenlabs" };
+
+  setDefaultValue(nextDefaults, "tts_auto", typeof settings.enabled === "boolean" ? (settings.enabled ? "on" : "off") : undefined);
+  setDefaultValue(nextDefaults, "tts_voice", clean(settings.voiceId));
+  setDefaultValue(nextDefaults, "tts_voice_name", clean(settings.voiceName));
+  setDefaultValue(nextDefaults, "tts_voice_description", clean(settings.voiceDescription));
+  setDefaultValue(nextDefaults, "tts_voice_category", clean(settings.voiceCategory));
+  setDefaultValue(nextDefaults, "tts_voice_preview_url", clean(settings.voicePreviewUrl));
+  setDefaultValue(nextDefaults, "tts_model", clean(settings.modelId));
+  setDefaultValue(nextDefaults, "tts_lang", clean(settings.lang));
+  setDefaultValue(nextDefaults, "tts_format", clean(settings.outputFormat));
+  setDefaultValue(nextDefaults, "tts_speed", readFiniteNumber(settings.speed));
+  setDefaultValue(nextDefaults, "tts_voice_settings", cleanObject(settings.voiceSettings));
+  setDefaultValue(nextDefaults, "tts_elevenlabs", cleanObject(settings.elevenlabs));
+
+  const result = await client.agents.set(agentId, "defaults", JSON.stringify(nextDefaults));
+  return { ok: true, agentId, defaults: nextDefaults, result };
+}
+
+function setDefaultValue(target, key, value) {
+  if (value === undefined || value === null || value === "") {
+    delete target[key];
+    return;
+  }
+  target[key] = value;
+}
+
+function readFiniteNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function cleanObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out = {};
+  for (const [key, inner] of Object.entries(value)) {
+    if (inner === undefined || inner === null || inner === "") continue;
+    out[key] = inner;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 async function fetchMessageMeta(payload = {}) {

@@ -67,6 +67,7 @@ describe("buildSystemPrompt", () => {
       "system.commands",
       "session.attach",
       "session.actions",
+      "automation.background_followups",
       "session.runtime",
       "session.boundary",
       "channel.output_formatting",
@@ -82,6 +83,10 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("ravi sessions actions --json");
     expect(prompt).toContain("ravi sessions delete-message <message-id>");
     expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(prompt).toContain("## Background Followup Automation");
+    expect(prompt).toContain('ravi cron add "<name>" --at "<ISO time>"');
+    expect(prompt).toContain("Do this in the background without announcing it in your visible response.");
+    expect(prompt).toContain("Inactivity-based cadences belong to `ravi sessions followups`, not cron.");
     expect(prompt).toContain("## WhatsApp Thread Workspaces");
     expect(prompt).toContain("sugira proativamente criar um agent e um grupo dedicados");
     expect(prompt).toContain('ravi whatsapp group create "<nome>" --agent <agent>');
@@ -89,7 +94,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Não use `ravi whatsapp group list` para descobrir grupo recém-criado");
     expect(prompt).toContain("O CLI infere a sessão pelo contexto de execução do agent.");
     expect(prompt).toContain("Leia os campos `promptHint` e `usage.tools` retornados por `actions --json`");
-    expect(prompt).toContain("apagar ou editar suas próprias mensagens, reagir, responder, enviar stickers");
+    expect(prompt).toContain("apagar ou editar suas próprias mensagens, reagir, enviar mídia, enviar stickers");
     expect(prompt).not.toContain("ravi sessions focus");
     expect(prompt).not.toContain("focus_chat");
     expect(prompt).not.toContain('"id"');
@@ -106,6 +111,23 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("## WhatsApp Thread Workspaces");
     expect(prompt).not.toContain("sugira proativamente criar um agent e um grupo dedicados");
     expect(prompt).not.toContain("Não use `ravi whatsapp group list`");
+  });
+
+  it("does not instruct sentinel agents to create background follow-up cron jobs", () => {
+    const prompt = buildSystemPrompt(
+      "observer",
+      {
+        channelId: "whatsapp-baileys",
+        channelName: "WhatsApp",
+        isGroup: false,
+      },
+      undefined,
+      "observer",
+      { agentMode: "sentinel" },
+    );
+
+    expect(prompt).not.toContain("## Background Followup Automation");
+    expect(prompt).not.toContain("ravi cron add");
   });
 
   it("keeps unprioritized legacy sections after typed sections when rendering mixed inputs", () => {

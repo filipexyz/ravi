@@ -153,7 +153,7 @@ function sessionActionsText(sessionName?: string): string {
   const sessionRef = sessionName ?? "<session>";
   return `Use \`ravi sessions actions --json\` para inspecionar as ações disponíveis nesta sessão, as superfícies atuais e os IDs recentes das mensagens que você mesmo enviou.
 
-Essa é a fonte canônica para descobrir operações conversacionais do chat, como apagar ou editar suas próprias mensagens, reagir, responder, enviar stickers e novas capacidades expostas pelo runtime. Não assuma que uma ação existe: consulte esta superfície quando precisar trabalhar sobre uma mensagem ou canal.
+Essa é a fonte canônica para descobrir operações conversacionais do chat, como apagar ou editar suas próprias mensagens, reagir, enviar mídia, enviar stickers e novas capacidades expostas pelo runtime. Não assuma que uma ação existe: consulte esta superfície quando precisar trabalhar sobre uma mensagem ou canal.
 
 Leia os campos \`promptHint\` e \`usage.tools\` retornados por \`actions --json\`; eles explicam quais ferramentas estão disponíveis, de onde tirar o ID da mensagem e quais restrições aplicar antes de apagar ou editar.
 
@@ -264,6 +264,27 @@ function sessionBoundaryText(sessionName?: string): string {
     `Never recover missing context from another DM/group/session or from unrelated filesystem notes.`,
     `If same-session durable history is unavailable, ask the user for the missing context instead of guessing.`,
   ].join("\n");
+}
+
+function backgroundFollowupAutomationText(): string {
+  return `When finishing work, silently check whether there is an important next step that benefits from scheduled follow-up.
+
+Create a background cron only when all of these are true:
+- the next step is time-based or recurring;
+- it can be expressed as a concrete check, reminder, report, or validation with a due time or cadence;
+- forgetting it would create operational risk, user-visible drift, or lost follow-through;
+- you have permission and enough context to schedule it safely.
+
+Use \`ravi cron add\` for fixed wall-clock schedules:
+- one-shot: \`ravi cron add "<name>" --at "<ISO time>" --message "<prompt>" --delete-after\`
+- interval: \`ravi cron add "<name>" --every <duration> --message "<prompt>"\`
+- calendar schedule: \`ravi cron add "<name>" --cron "<expr>" --message "<prompt>" --tz "<timezone>"\`
+
+After creating a cron, run \`ravi cron show <id>\` and verify agent, account, session/reply-session, schedule and delete-after before considering it done.
+
+Do this in the background without announcing it in your visible response. Do not say that you created, skipped, or plan to create a cron unless the user asks, the action needs a decision, or permission/context is missing.
+
+Do not create cron jobs for every task. Do not create vague reminders, duplicate existing jobs, or noise-generating checks. Inactivity-based cadences belong to \`ravi sessions followups\`, not cron. Deterministic recurring shell work should use cron \`--shell\` and notify an agent only on error. Recurring behavior with policy should have or reference a routine/spec instead of living only as a long cron prompt.`;
 }
 
 /**
@@ -392,6 +413,9 @@ export function buildSystemPromptSections(
   // multi-input primitive is discoverable. See sessions/attach spec.
   add("session.attach", "Session Attach", sessionAttachText(), 25);
   add("session.actions", "Session Actions", sessionActionsText(sessionName), 30);
+  if (!isSentinel) {
+    add("automation.background_followups", "Background Followup Automation", backgroundFollowupAutomationText(), 32);
+  }
 
   // Sentinel: add explicit channel messaging instructions
   if (isSentinel) {

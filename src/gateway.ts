@@ -14,6 +14,7 @@
  *   ravi.outbound.message.delete → delete own channel messages
  *   ravi.outbound.message.edit → edit own channel messages
  *   ravi.media.send            → media files
+ *   ravi.tts                   → generate extension-playback TTS audio
  *   ravi.stickers.send         → WhatsApp stickers
  *   ravi.config.changed        → reload router config + REBAC sync
  */
@@ -41,6 +42,7 @@ import {
 import { prepareOmniMentionMessage, type OmniUserMention } from "./omni/mentions.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
+import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -149,6 +151,7 @@ export class Gateway {
     this.subscribeToMessageDelete();
     this.subscribeToMessageEdit();
     this.subscribeToMediaSend();
+    this.subscribeToTts();
     this.subscribeToStickerSend();
     this.subscribeToConfigChanges();
 
@@ -604,6 +607,9 @@ export class Gateway {
         durationMs: Date.now() - t0,
         textLen: prepared.text.length,
       });
+      this.emitTtsForResponse(sessionName, response, prepared.text, target).catch((error) => {
+        log.warn("Failed to emit response TTS event", { sessionName, emitId: response._emitId, error });
+      });
       log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
     } catch (err) {
       log.error("Failed to send response", { instanceId, chatId, error: err });
@@ -618,6 +624,33 @@ export class Gateway {
         durationMs: Date.now() - t0,
       });
     }
+  }
+
+  private async emitTtsForResponse(
+    sessionName: string,
+    response: ResponseMessage,
+    text: string,
+    target: NonNullable<ResponseMessage["target"]>,
+  ): Promise<void> {
+    if (response.error) return;
+    const session = getSessionByName(sessionName);
+    const agentId = session?.agentId;
+    const agent = agentId ? configStore.getConfig().agents[agentId] : null;
+    if (!shouldAutoTtsForAgent(agent)) return;
+    const request = buildRaviTtsRequest({
+      text,
+      ...(agent ? { agent } : {}),
+      ...(agentId ? { agentId } : {}),
+      sessionName,
+      ...(session?.sessionKey ? { sessionKey: session.sessionKey } : {}),
+      ...(response._emitId ? { emitId: response._emitId } : {}),
+      target,
+      metadata: {
+        origin: "gateway.response",
+        ...(response.metadata ? { responseMetadata: response.metadata } : {}),
+      },
+    });
+    await this.emitEvent(RAVI_TTS_TOPIC, request as unknown as Record<string, unknown>);
   }
 
   private saveOutboundMessageActorMetadata(
@@ -1147,6 +1180,23 @@ export class Gateway {
         }
       },
       { queue: "ravi-gateway" },
+    );
+  }
+
+  /**
+   * Subscribe to extension-playback TTS requests.
+   * Queue group: only one gateway daemon should generate each audio file.
+   */
+  private subscribeToTts(): void {
+    this.subscribe(
+      "tts",
+      [RAVI_TTS_TOPIC],
+      async (event) => {
+        await handleRaviTtsRequest(event.data, (topic, payload) =>
+          this.emitEvent(topic, payload as Record<string, unknown>),
+        );
+      },
+      { queue: "ravi-tts" },
     );
   }
 
