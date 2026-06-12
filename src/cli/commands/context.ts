@@ -1056,6 +1056,7 @@ declareCommandReturns(ContextCommands, {
   issue: commandEnvelopeReturnSchema,
   lineage: commandEnvelopeReturnSchema,
   list: commandEnvelopeReturnSchema,
+  prune: commandEnvelopeReturnSchema,
   revoke: commandEnvelopeReturnSchema,
   visibility: commandEnvelopeReturnSchema,
   whoami: commandEnvelopeReturnSchema,
