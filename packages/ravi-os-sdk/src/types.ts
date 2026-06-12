@@ -3025,6 +3025,16 @@ export type ContextListInput = {
 /** Return shape for `context.list`. */
 export type ContextListReturn = Record<string, unknown>;
 
+/** Input shape for `context.prune`. */
+export type ContextPruneInput = {
+  apply?: boolean;
+  confirm?: string;
+  olderThan?: string;
+};
+
+/** Return shape for `context.prune`. (no @Returns declared) */
+export type ContextPruneReturn = unknown;
+
 /** Input shape for `context.revoke`. */
 export type ContextRevokeInput = {
   contextId: string;
@@ -6765,6 +6775,21 @@ export type PermissionsClearReturn = {
   };
 };
 
+/** Input shape for `permissions.explain`. */
+export type PermissionsExplainInput = {
+  actor?: string;
+  agent?: string;
+  broad?: boolean;
+  chat?: string;
+  denial?: string;
+  object?: string;
+  relation?: string;
+  session?: string;
+};
+
+/** Return shape for `permissions.explain`. */
+export type PermissionsExplainReturn = Record<string, unknown>;
+
 /** Input shape for `permissions.grant`. */
 export type PermissionsGrantInput = {
   expiresAt?: string;
@@ -6791,6 +6816,7 @@ export type PermissionsGrantReturn = {
     objectType: string;
     reason?: string | null;
     relation: string;
+    revocationBatchId?: string | null;
     revokedAt?: number | null;
     source?: string;
     subject: string;
@@ -6831,6 +6857,7 @@ export type PermissionsInitReturn = {
     objectType: string;
     reason?: string | null;
     relation: string;
+    revocationBatchId?: string | null;
     revokedAt?: number | null;
     source?: string;
     subject: string;
@@ -6844,6 +6871,20 @@ export type PermissionsInitReturn = {
     [k: string]: unknown;
   };
 };
+
+/** Input shape for `permissions.legacy`. */
+export type PermissionsLegacyInput = {
+  apply?: boolean;
+  breakGlass?: boolean;
+  confirm?: string;
+  includeSpecific?: boolean;
+  limit?: string;
+  maxZeroSubjects?: string;
+  subject?: string;
+};
+
+/** Return shape for `permissions.legacy`. */
+export type PermissionsLegacyReturn = Record<string, unknown>;
 
 /** Input shape for `permissions.list`. */
 export type PermissionsListInput = {
@@ -6880,6 +6921,7 @@ export type PermissionsListReturn = {
     objectType: string;
     reason?: string | null;
     relation: string;
+    revocationBatchId?: string | null;
     revokedAt?: number | null;
     source?: string;
     subject: string;
@@ -6908,6 +6950,7 @@ export type PermissionsListReturn = {
     objectType: string;
     reason?: string | null;
     relation: string;
+    revocationBatchId?: string | null;
     revokedAt?: number | null;
     source?: string;
     subject: string;
@@ -6935,6 +6978,15 @@ export type PermissionsPoliciesDryRunInput = {
 
 /** Return shape for `permissions.policies.dry-run`. */
 export type PermissionsPoliciesDryRunReturn = Record<string, unknown>;
+
+/** Input shape for `permissions.policies.explain`. */
+export type PermissionsPoliciesExplainInput = {
+  asset: string;
+  dir?: string;
+};
+
+/** Return shape for `permissions.policies.explain`. */
+export type PermissionsPoliciesExplainReturn = Record<string, unknown>;
 
 /** Input shape for `permissions.policies.list`. */
 export type PermissionsPoliciesListInput = {
@@ -6971,6 +7023,28 @@ export type PermissionsPoliciesValidateInput = {
 /** Return shape for `permissions.policies.validate`. */
 export type PermissionsPoliciesValidateReturn = Record<string, unknown>;
 
+/** Input shape for `permissions.prune-revoked`. */
+export type PermissionsPruneRevokedInput = {
+  apply?: boolean;
+  confirm?: string;
+  olderThanDays?: string;
+};
+
+/** Return shape for `permissions.prune-revoked`. */
+export type PermissionsPruneRevokedReturn = Record<string, unknown>;
+
+/** Input shape for `permissions.restore-batch`. */
+export type PermissionsRestoreBatchInput = {
+  apply?: boolean;
+  batch: string;
+  confirm?: string;
+  revokedAt?: boolean;
+  subject?: string;
+};
+
+/** Return shape for `permissions.restore-batch`. */
+export type PermissionsRestoreBatchReturn = Record<string, unknown>;
+
 /** Input shape for `permissions.revoke`. */
 export type PermissionsRevokeInput = {
   object: string;
@@ -6993,6 +7067,7 @@ export type PermissionsRevokeReturn = {
     objectType: string;
     reason?: string | null;
     relation: string;
+    revocationBatchId?: string | null;
     revokedAt?: number | null;
     source?: string;
     subject: string;
@@ -7012,6 +7087,7 @@ export type PermissionsRevokeReturn = {
     objectType: string;
     reason?: string | null;
     relation: string;
+    revocationBatchId?: string | null;
     revokedAt?: number | null;
     source?: string;
     subject: string;
@@ -7044,6 +7120,7 @@ export type PermissionsSyncReturn = {
     objectType: string;
     reason?: string | null;
     relation: string;
+    revocationBatchId?: string | null;
     revokedAt?: number | null;
     source?: string;
     subject: string;

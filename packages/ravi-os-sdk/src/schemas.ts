@@ -15302,6 +15302,26 @@ export const ContextListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `context.prune`. */
+export const ContextPruneInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Delete the matched contexts. Requires --confirm prune-contexts.",
+      "type": "boolean"
+    },
+    "confirm": {
+      "description": "Required with --apply; must be exactly prune-contexts",
+      "type": "string"
+    },
+    "olderThan": {
+      "description": "Only delete contexts created at least this long ago (default: 7d)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.revoke`. */
 export const ContextRevokeInputSchema = {
   "additionalProperties": false,
@@ -32937,6 +32957,53 @@ export const PermissionsClearReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `permissions.explain`. */
+export const PermissionsExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "description": "Actor principal, e.g. contact:luis",
+      "type": "string"
+    },
+    "agent": {
+      "description": "Executor agent id or agent:<id>",
+      "type": "string"
+    },
+    "broad": {
+      "description": "Allow wildcard recommendations in output",
+      "type": "boolean"
+    },
+    "chat": {
+      "description": "Surface chat id or chat:<id>",
+      "type": "string"
+    },
+    "denial": {
+      "description": "Reconstruct and re-evaluate a recorded denial",
+      "type": "string"
+    },
+    "object": {
+      "description": "Object to explain (e.g., group:sessions_info)",
+      "type": "string"
+    },
+    "relation": {
+      "description": "Relation to explain (e.g., execute, use)",
+      "type": "string"
+    },
+    "session": {
+      "description": "Session key/name for context",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.explain`. */
+export const PermissionsExplainReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.grant`. */
 export const PermissionsGrantInputSchema = {
   "additionalProperties": false,
@@ -33055,6 +33122,16 @@ export const PermissionsGrantReturnSchema = {
         },
         "relation": {
           "type": "string"
+        },
+        "revocationBatchId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "revokedAt": {
           "anyOf": [
@@ -33242,6 +33319,16 @@ export const PermissionsInitReturnSchema = {
           "relation": {
             "type": "string"
           },
+          "revocationBatchId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "revokedAt": {
             "anyOf": [
               {
@@ -33301,6 +33388,49 @@ export const PermissionsInitReturnSchema = {
     "status",
     "relations"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.legacy`. */
+export const PermissionsLegacyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Revoke the selected legacy grants. Requires --confirm legacy-cleanup.",
+      "type": "boolean"
+    },
+    "breakGlass": {
+      "description": "Explicitly allow high-impact cleanup after reviewing blast radius",
+      "type": "boolean"
+    },
+    "confirm": {
+      "description": "Required with --apply; must be exactly legacy-cleanup",
+      "type": "string"
+    },
+    "includeSpecific": {
+      "description": "Also include object-specific manual permanent grants, not only wildcards/patterns",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum number of candidate grants to include/apply in this run",
+      "type": "string"
+    },
+    "maxZeroSubjects": {
+      "description": "Maximum subjects allowed to lose all active grants before requiring --break-glass (default: 5)",
+      "type": "string"
+    },
+    "subject": {
+      "description": "Limit cleanup to one subject, e.g. agent:dev or chat:chat_id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.legacy`. */
+export const PermissionsLegacyReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -33442,6 +33572,16 @@ export const PermissionsListReturnSchema = {
           },
           "relation": {
             "type": "string"
+          },
+          "revocationBatchId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "revokedAt": {
             "anyOf": [
@@ -33601,6 +33741,16 @@ export const PermissionsListReturnSchema = {
           "relation": {
             "type": "string"
           },
+          "revocationBatchId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "revokedAt": {
             "anyOf": [
               {
@@ -33697,6 +33847,32 @@ export const PermissionsPoliciesDryRunReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `permissions.policies.explain`. */
+export const PermissionsPoliciesExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "asset": {
+      "description": "Asset selector, e.g. contact:c1 or chat:chat_id",
+      "type": "string"
+    },
+    "dir": {
+      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.policies.explain`. */
+export const PermissionsPoliciesExplainReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.policies.list`. */
 export const PermissionsPoliciesListInputSchema = {
   "additionalProperties": false,
@@ -33783,6 +33959,71 @@ export const PermissionsPoliciesValidateInputSchema = {
 
 /** JSON Schema for the return shape of `permissions.policies.validate`. */
 export const PermissionsPoliciesValidateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.prune-revoked`. */
+export const PermissionsPruneRevokedInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Delete the matched revoked relations. Requires --confirm prune-revoked.",
+      "type": "boolean"
+    },
+    "confirm": {
+      "description": "Required with --apply; must be exactly prune-revoked",
+      "type": "string"
+    },
+    "olderThanDays": {
+      "description": "Only prune relations revoked at least N days ago (default: 90)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.prune-revoked`. */
+export const PermissionsPruneRevokedReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.restore-batch`. */
+export const PermissionsRestoreBatchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Restore the batch. Requires --confirm restore-revocation.",
+      "type": "boolean"
+    },
+    "batch": {
+      "description": "Revocation batch id. Use --revoked-at only for legacy timestamp fallback.",
+      "type": "string"
+    },
+    "confirm": {
+      "description": "Required with --apply; must be exactly restore-revocation",
+      "type": "string"
+    },
+    "revokedAt": {
+      "description": "Interpret the batch argument as a legacy revoked_at timestamp",
+      "type": "boolean"
+    },
+    "subject": {
+      "description": "Restore only this subject's revoked grants in the batch, e.g. agent:dev or chat:chat_id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "batch"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.restore-batch`. */
+export const PermissionsRestoreBatchReturnSchema = {
   "additionalProperties": {},
   "properties": {},
   "type": "object"
@@ -33891,6 +34132,16 @@ export const PermissionsRevokeReturnSchema = {
         "relation": {
           "type": "string"
         },
+        "revocationBatchId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "revokedAt": {
           "anyOf": [
             {
@@ -33996,6 +34247,16 @@ export const PermissionsRevokeReturnSchema = {
           },
           "relation": {
             "type": "string"
+          },
+          "revocationBatchId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "revokedAt": {
             "anyOf": [
@@ -34145,6 +34406,16 @@ export const PermissionsSyncReturnSchema = {
           },
           "relation": {
             "type": "string"
+          },
+          "revocationBatchId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "revokedAt": {
             "anyOf": [
