@@ -36,6 +36,7 @@ import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
+import { reconcileAutomationPrincipals } from "./permissions/automation-reconcile.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
@@ -314,6 +315,7 @@ export async function startDaemon() {
 
   // Step 5: Sync REBAC relations from agent configs
   syncRelationsFromConfig();
+  reconcileAutomationPrincipals();
 
   // Step 6: Start bot
   bot = new RaviBot({ config });

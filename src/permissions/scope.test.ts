@@ -136,6 +136,21 @@ describe("Scope Isolation", () => {
       expect(enforceScopeCheck("admin", "agents", "create").allowed).toBe(true);
     });
 
+    it("allows superadmin commands for a direct operator even when no agent holds admin", () => {
+      // Break-glass recovery: an incident that revokes every agent's admin must
+      // not lock out the operator CLI. With no agent principal, superadmin-scoped
+      // commands (permissions grant/init/restore-batch) stay allowed.
+      const result = enforceScopeCheck("superadmin", "permissions", "grant");
+      expect(result.allowed).toBe(true);
+    });
+
+    it("denies superadmin commands for a non-admin agent principal", () => {
+      process.env.RAVI_AGENT_ID = "dev";
+      const result = enforceScopeCheck("superadmin", "permissions", "grant");
+      expect(result.allowed).toBe(false);
+      expect(result.errorMessage).toContain("requires admin on system:*");
+    });
+
     it("allows CLI group grants added after a stale agent-runtime context was issued", () => {
       const context = {
         contextId: "ctx_stale",

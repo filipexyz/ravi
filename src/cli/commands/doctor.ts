@@ -406,6 +406,11 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildBroadPermissionGrantCheck(deps));
   addCheck(checks, () => buildPermanentGrantReasonCheck(deps));
   addCheck(checks, () => buildPermissionGrantOrphanCheck(deps));
+  addCheck(checks, () => buildRebacZeroCapabilitiesCheck(deps));
+  addCheck(checks, () => buildRebacRevokedBacklogCheck(deps));
+  addCheck(checks, () => buildRebacAdminContextCheck(deps));
+  addCheck(checks, () => buildRebacContextBacklogCheck(deps));
+  addCheck(checks, () => buildRebacAutomationCoverageCheck(deps));
 
   const filtered = filterChecksByDomain(checks, options.domain);
   return buildReport(filtered, {
@@ -1795,6 +1800,168 @@ function buildPermissionGrantOrphanCheck(deps: DoctorDeps): LegacyDoctorCheck {
     status: "ok",
     summary: "agent permission subjects and objects resolve",
     data: { total: 0 },
+  };
+}
+
+function buildRebacZeroCapabilitiesCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const activeSubjects = new Set(deps.listRelations().map((r) => `${r.subjectType}:${r.subjectId}`));
+  const zeroed = new Set<string>();
+  for (const relation of deps.listRelations({ includeInactive: true })) {
+    const subject = `${relation.subjectType}:${relation.subjectId}`;
+    if (!activeSubjects.has(subject)) zeroed.add(subject);
+  }
+  const subjects = [...zeroed].sort();
+
+  if (subjects.length > 0) {
+    return {
+      id: "permissions.rebac_zero_capabilities",
+      domain: "permissions",
+      title: "Subjects zeroed by revocation",
+      status: "warn",
+      summary: `${subjects.length} subject(s) have only inactive grants (zero active capabilities)`,
+      details: limitStrings(subjects, 12),
+      fixHint:
+        "likely a bulk revocation; inspect with 'ravi permissions explain' and restore via 'ravi permissions restore-batch --subject <s>' if unintended",
+      data: { zeroed: subjects.length },
+    };
+  }
+
+  return {
+    id: "permissions.rebac_zero_capabilities",
+    domain: "permissions",
+    title: "Subjects zeroed by revocation",
+    status: "ok",
+    summary: "every subject with grants has at least one active capability",
+    data: { zeroed: 0 },
+  };
+}
+
+function buildRebacRevokedBacklogCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const revoked = deps.listRelations({ includeInactive: true }).filter((r) => r.revokedAt !== null).length;
+  const status: LegacyDoctorCheckStatus = revoked > 10_000 ? "warn" : "ok";
+
+  return {
+    id: "permissions.rebac_revoked_backlog",
+    domain: "permissions",
+    title: "Revoked relation backlog",
+    status,
+    summary:
+      status === "warn"
+        ? `${revoked} revoked relation(s) retained; consider archival/compaction`
+        : `${revoked} revoked relation(s) retained`,
+    ...(status === "warn"
+      ? {
+          fixHint:
+            "compact with 'ravi permissions prune-revoked --apply --confirm prune-revoked' to shrink the hot relation table",
+        }
+      : {}),
+    data: { revoked },
+  };
+}
+
+function buildRebacAdminContextCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  // contexts.expires_at is epoch MILLIseconds (Date.now()), unlike relations
+  // which use epoch seconds. Compare against unixepoch()*1000 so expired
+  // contexts are excluded.
+  const rows = deps.queryRows<{ count: number }>(
+    `SELECT COUNT(*) as count FROM contexts
+       WHERE revoked_at IS NULL
+         AND (expires_at IS NULL OR expires_at > unixepoch() * 1000)
+         AND capabilities_json LIKE '%"permission":"admin"%'
+         AND capabilities_json LIKE '%"objectType":"system"%'
+         AND capabilities_json LIKE '%"objectId":"*"%'`,
+  );
+  const count = Number(rows[0]?.count ?? 0);
+
+  if (count > 0) {
+    return {
+      id: "permissions.rebac_admin_contexts",
+      domain: "permissions",
+      title: "Active contexts carrying admin system:*",
+      status: "ok",
+      severity: "info",
+      summary: `${count} active runtime context(s) carry admin system:* in their capability snapshot`,
+      fixHint: "verify these are internal/admin contexts; delegated turns must not carry ambient admin",
+      data: { adminContexts: count },
+    };
+  }
+
+  return {
+    id: "permissions.rebac_admin_contexts",
+    domain: "permissions",
+    title: "Active contexts carrying admin system:*",
+    status: "ok",
+    summary: "no active runtime context carries admin system:*",
+    data: { adminContexts: 0 },
+  };
+}
+
+function buildRebacContextBacklogCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  // contexts use epoch milliseconds; inactive = revoked or past expiry.
+  const rows = deps.queryRows<{ count: number }>(
+    `SELECT COUNT(*) as count FROM contexts
+       WHERE revoked_at IS NOT NULL
+          OR (expires_at IS NOT NULL AND expires_at <= unixepoch() * 1000)`,
+  );
+  const inactive = Number(rows[0]?.count ?? 0);
+  const status: LegacyDoctorCheckStatus = inactive > 5000 ? "warn" : "ok";
+
+  return {
+    id: "permissions.rebac_context_backlog",
+    domain: "permissions",
+    title: "Inactive runtime context backlog",
+    status,
+    summary:
+      status === "warn"
+        ? `${inactive} inactive runtime context(s) retained; consider compaction`
+        : `${inactive} inactive runtime context(s) retained`,
+    ...(status === "warn"
+      ? {
+          fixHint:
+            "compact with 'ravi context prune --apply --confirm prune-contexts' to delete revoked/expired contexts",
+        }
+      : {}),
+    data: { inactive },
+  };
+}
+
+function buildRebacAutomationCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const rows = deps.queryRows<{ pid: string }>(
+    `SELECT pid FROM (
+        SELECT 'cron:' || id AS pid FROM cron_jobs
+        UNION ALL
+        SELECT 'trigger:' || id AS pid FROM triggers
+      ) automations
+      WHERE NOT EXISTS (
+        SELECT 1 FROM relations r
+         WHERE r.subject_type = 'automation' AND r.subject_id = automations.pid
+           AND r.relation = 'member' AND r.object_type = 'role'
+           AND r.revoked_at IS NULL AND (r.expires_at IS NULL OR r.expires_at > unixepoch())
+      )`,
+  );
+  const uncovered = rows.map((row) => `automation:${row.pid}`);
+
+  if (uncovered.length > 0) {
+    return {
+      id: "permissions.rebac_automation_uncovered",
+      domain: "permissions",
+      title: "Automations without a role",
+      status: "warn",
+      summary: `${uncovered.length} cron/trigger principal(s) carry no active role and are denied under delegated authority`,
+      details: limitStrings(uncovered, 12),
+      fixHint:
+        "restart the daemon to run reconcileAutomationPrincipals, or grant the automation a role; the executor agent must use roles",
+      data: { uncovered: uncovered.length },
+    };
+  }
+
+  return {
+    id: "permissions.rebac_automation_uncovered",
+    domain: "permissions",
+    title: "Automations without a role",
+    status: "ok",
+    summary: "every cron/trigger principal has an active role",
+    data: { uncovered: 0 },
   };
 }
 

@@ -1,6 +1,6 @@
 import { resolveToolGroup } from "../cli/tool-registry.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { canWithCapabilities, matchPattern } from "./capability-context.js";
+import { canWithCapabilities, objectIdMatches, parseContextCapabilities } from "./capability-context.js";
 import {
   DELEGATION_OVERRIDE_RELATION_PREFIX,
   formatAuthorityPrincipal,
@@ -11,7 +11,7 @@ import {
 } from "./delegation.js";
 import { getPermissionDenial } from "./denials.js";
 import { can } from "./engine.js";
-import { listRelations, type Relation } from "./relations.js";
+import { isRelationActive, listRelations, type Relation } from "./relations.js";
 
 export type ExplainGrantState =
   | "allowed"
@@ -272,7 +272,7 @@ export function explainPermissionDenial(
   const context = objectValue(denial.detail?.context);
   const actor = stringValue(context?.actorPrincipal) ?? stringValue(denial.detail?.actorPrincipal);
   const chat = stringValue(context?.surfacePrincipal) ?? stringValue(denial.detail?.surfacePrincipal);
-  const turnCapabilities = capabilityArrayValue(context?.turnCapabilities);
+  const turnCapabilities = parseContextCapabilities(context?.turnCapabilities);
   const agentId = denial.agentId ?? denial.subjectId;
   const current = explainPermissionDecision({
     relation: denial.relation,
@@ -525,7 +525,7 @@ function explainSurfaceConstraints(
     subjectId: surfacePrincipal.subjectId,
     relation: "constrain",
     objectType: "role",
-  }).filter(isActiveRelationNow);
+  }).filter((relation) => isRelationActive(relation));
   const constraintRelations = constraints.map((rel) => explainRelation(rel, ["surface_constraint"]));
   const roleMatches = constraints.flatMap((constraint) =>
     findMatchingRelations(
@@ -625,7 +625,7 @@ function findMatchingRelations(
       : relations
           .filter(
             (candidate) =>
-              candidate.relation === "member" && candidate.objectType === "role" && isActiveRelationNow(candidate),
+              candidate.relation === "member" && candidate.objectType === "role" && isRelationActive(candidate),
           )
           .flatMap((membership) => {
             if (visitedRoles.has(membership.objectId)) return [];
@@ -672,12 +672,7 @@ function relationCoversRequest(
   if (relation.relation !== requestedRelation || relation.objectType !== requestedObjectType) {
     return false;
   }
-  if (relation.objectId === requestedObjectId || relation.objectId === "*") {
-    return true;
-  }
-  return (
-    requestedObjectId !== "*" && relation.objectId.includes("*") && matchPattern(relation.objectId, requestedObjectId)
-  );
+  return objectIdMatches(relation.objectId, requestedObjectId);
 }
 
 function isSpecialRequestedRelation(relation: string): boolean {
@@ -698,7 +693,7 @@ function explainRelation(relation: Relation, provenance: string[]): ExplainedRel
     reason: relation.reason,
     issuedBy: relation.issuedBy,
     createdAt: relation.createdAt,
-    active: isActiveRelationNow(relation),
+    active: isRelationActive(relation),
     provenance,
   };
 }
@@ -851,11 +846,6 @@ function uniqueExplainedRelations(relations: ExplainedRelation[]): ExplainedRela
   return result;
 }
 
-function isActiveRelationNow(relation: Relation): boolean {
-  if (relation.revokedAt !== null) return false;
-  return relation.expiresAt === null || relation.expiresAt > Math.floor(Date.now() / 1000);
-}
-
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -866,27 +856,6 @@ function stringValue(value: unknown): string | null {
 
 function hasAnyCapability(value: ContextCapability[] | null | undefined): value is ContextCapability[] {
   return Boolean(value && value.length > 0);
-}
-
-function capabilityArrayValue(value: unknown): ContextCapability[] {
-  if (!Array.isArray(value)) return [];
-  const capabilities: ContextCapability[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const record = item as Record<string, unknown>;
-    const permission = stringValue(record.permission);
-    const objectType = stringValue(record.objectType);
-    const objectId = stringValue(record.objectId);
-    if (!permission || !objectType || !objectId) continue;
-    const source = stringValue(record.source);
-    capabilities.push({
-      permission,
-      objectType,
-      objectId,
-      ...(source ? { source } : {}),
-    });
-  }
-  return capabilities;
 }
 
 function isNumber(value: unknown): value is number {

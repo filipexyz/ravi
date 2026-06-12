@@ -11,7 +11,7 @@ import {
   getContextLineage,
   RAVI_CONTEXT_KEY_ENV,
 } from "../../runtime/context-registry.js";
-import { dbGetContext, dbListContexts, type ContextRecord } from "../../router/router-db.js";
+import { dbGetContext, dbListContexts, dbPruneContexts, type ContextRecord } from "../../router/router-db.js";
 import { listSessions, resolveSession } from "../../router/sessions.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
@@ -432,6 +432,43 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printAgentRuntimeCleanup(payload));
+    return payload;
+  }
+
+  @Command({
+    name: "prune",
+    description: "Compact the context store by deleting inactive (revoked/expired) contexts",
+  })
+  prune(
+    @Option({
+      flags: "--older-than <duration>",
+      description: "Only delete contexts created at least this long ago (default: 7d)",
+    })
+    olderThan = "7d",
+    @Option({ flags: "--apply", description: "Delete the matched contexts. Requires --confirm prune-contexts." })
+    apply = false,
+    @Option({ flags: "--confirm <text>", description: "Required with --apply; must be exactly prune-contexts" })
+    confirm?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    if (apply && confirm !== "prune-contexts") {
+      fail("--apply requires --confirm prune-contexts");
+    }
+    const olderThanMs = parseDurationMs(olderThan);
+    const result = dbPruneContexts({ apply, olderThanMs });
+    const payload = {
+      status: apply ? ("pruned" as const) : ("planned" as const),
+      dryRun: !apply,
+      olderThan,
+      matchedCount: result.matched,
+      changedCount: result.pruned,
+    };
+    this.printPayload(payload, asJson, () => {
+      console.log(
+        `${apply ? "✓ Pruned" : "✓ Planned prune of"} ${result.matched} inactive context(s) older than ${olderThan}` +
+          (apply ? "" : "; pass --apply --confirm prune-contexts to delete"),
+      );
+    });
     return payload;
   }
 

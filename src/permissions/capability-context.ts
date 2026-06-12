@@ -34,26 +34,11 @@ function capabilitiesAllow(
 
   if (
     capabilities.some(
-      (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
+      (cap) =>
+        cap.permission === permission && cap.objectType === objectType && objectIdMatches(cap.objectId, objectId),
     )
   ) {
     return true;
-  }
-
-  if (
-    objectId !== "*" &&
-    capabilities.some((cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === "*")
-  ) {
-    return true;
-  }
-
-  if (objectId !== "*") {
-    for (const cap of capabilities) {
-      if (cap.permission !== permission || cap.objectType !== objectType) continue;
-      if (cap.objectId.includes("*") && matchPattern(cap.objectId, objectId)) {
-        return true;
-      }
-    }
   }
 
   if (permission === "use" && objectType === "tool" && objectId !== "*") {
@@ -127,22 +112,15 @@ function liveAgentCan(agentId: string, permission: string, objectType: string, o
     return true;
   }
 
-  if (objectId !== "*" && hasRelation("agent", agentId, permission, objectType, "*")) {
-    return true;
-  }
-
-  if (objectId !== "*") {
-    const patternRelations = listRelations({
-      subjectType: "agent",
-      subjectId: agentId,
-      relation: permission,
-      objectType,
-    });
-
-    for (const relation of patternRelations) {
-      if (relation.objectId.includes("*") && matchPattern(relation.objectId, objectId)) {
-        return true;
-      }
+  const candidateRelations = listRelations({
+    subjectType: "agent",
+    subjectId: agentId,
+    relation: permission,
+    objectType,
+  });
+  for (const relation of candidateRelations) {
+    if (objectIdMatches(relation.objectId, objectId)) {
+      return true;
     }
   }
 
@@ -175,4 +153,45 @@ export function matchPattern(pattern: string, value: string): boolean {
   }
 
   return false;
+}
+
+/**
+ * Single source of truth for object-id matching across every evaluator
+ * (engine, snapshot matcher, delegated materializer, explain).
+ *
+ * A granted object id covers a requested object id when they are equal, when
+ * the grant is the full `*` wildcard, or when the grant is a trailing pattern
+ * that matches. A specific grant never satisfies a `*` request.
+ */
+export function objectIdMatches(grantObjectId: string, requestedObjectId: string): boolean {
+  if (grantObjectId === requestedObjectId) return true;
+  if (requestedObjectId === "*") return false;
+  if (grantObjectId === "*") return true;
+  if (grantObjectId.includes("*")) return matchPattern(grantObjectId, requestedObjectId);
+  return false;
+}
+
+/**
+ * Parse a `ContextCapability[]` out of untyped context metadata (e.g. serialized
+ * `turnCapabilities`). Shared by the engine and explain so they read context
+ * capability snapshots the same way.
+ */
+export function parseContextCapabilities(value: unknown): ContextCapability[] {
+  if (!Array.isArray(value)) return [];
+  const capabilities: ContextCapability[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const permission = nonEmptyString(record.permission);
+    const objectType = nonEmptyString(record.objectType);
+    const objectId = nonEmptyString(record.objectId);
+    if (!permission || !objectType || !objectId) continue;
+    const source = nonEmptyString(record.source);
+    capabilities.push({ permission, objectType, objectId, ...(source ? { source } : {}) });
+  }
+  return capabilities;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

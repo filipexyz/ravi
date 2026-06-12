@@ -196,13 +196,20 @@ function normalizeOptionalString(value: string | null | undefined): string | nul
   return trimmed ? trimmed : null;
 }
 
-function isActiveRelation(relation: Relation): boolean {
+/**
+ * Whether a relation currently authorizes: not revoked and not expired.
+ * Single source of truth for the in-memory active-relation predicate (the SQL
+ * equivalent is `activeRelationWhere()`).
+ */
+export function isRelationActive(relation: Pick<Relation, "revokedAt" | "expiresAt">): boolean {
   if (relation.revokedAt) return false;
   return !relation.expiresAt || relation.expiresAt > Math.floor(Date.now() / 1000);
 }
 
 /**
- * Grant a relation. Upsert — if the exact tuple already exists, it's a no-op.
+ * Grant a relation. Upserts on the unique tuple: an existing row is overwritten
+ * (source, grant_mode, expiry, reason, issued_by, created_at) and any prior
+ * revocation is cleared (`revoked_at`/`revocation_batch_id` reset to NULL).
  */
 export function grantRelation(
   subjectType: string,
@@ -268,7 +275,7 @@ export function grantRelation(
       includeInactive: true,
     })[0] ?? null;
 
-  if (source === "manual" && granted && isActiveRelation(granted)) {
+  if (source === "manual" && granted && isRelationActive(granted)) {
     resolvePermissionDenialsForGrant(granted);
   }
 
@@ -301,7 +308,7 @@ export function grantRelationIfAbsentOrOwned(
       includeInactive: true,
     })[0] ?? null;
 
-  const existingIsActive = existing ? isActiveRelation(existing) : false;
+  const existingIsActive = existing ? isRelationActive(existing) : false;
   if (existing && existingIsActive && existing.source !== source) {
     return {
       status: "conflict",
@@ -370,58 +377,102 @@ export function revokeRelation(
   return result.changes > 0;
 }
 
+export interface RestoreRelationsOptions {
+  apply?: boolean;
+  subjectType?: string;
+  subjectId?: string;
+}
+
+function matchesRestoreSubject(relation: Relation, options: RestoreRelationsOptions): boolean {
+  if (options.subjectType && relation.subjectType !== options.subjectType) return false;
+  if (options.subjectId && relation.subjectId !== options.subjectId) return false;
+  return true;
+}
+
+/**
+ * Restore a set of revoked relations by id (clears revoked_at + batch id).
+ * Restoring by id keeps subject-scoped restores precise instead of clearing the
+ * whole batch/timestamp blindly.
+ */
+function restoreMatchedRelations(matched: Relation[], apply: boolean): RestoreRelationsResult {
+  if (matched.length === 0) {
+    return { matched: 0, restored: 0, relations: [] };
+  }
+  if (apply) {
+    const db = getDb();
+    const stmt = db.prepare("UPDATE relations SET revoked_at = NULL, revocation_batch_id = NULL WHERE id = ?");
+    for (const relation of matched) {
+      stmt.run(relation.id);
+    }
+    const restored = listRelations({ includeInactive: true }).filter((relation) =>
+      matched.some((item) => item.id === relation.id),
+    );
+    return { matched: matched.length, restored: matched.length, relations: restored };
+  }
+  return { matched: matched.length, restored: 0, relations: matched };
+}
+
 export function restoreRelationsRevocationBatch(
   revocationBatchId: string,
-  options: { apply?: boolean } = {},
+  options: RestoreRelationsOptions = {},
 ): RestoreRelationsResult {
   const batchId = normalizeOptionalString(revocationBatchId);
   if (!batchId) {
     return { matched: 0, restored: 0, relations: [] };
   }
-  const matched = listRelations({ includeInactive: true, revocationBatchId: batchId });
-  if (matched.length === 0) {
-    return { matched: 0, restored: 0, relations: [] };
-  }
-
-  if (options.apply === true) {
-    getDb()
-      .prepare("UPDATE relations SET revoked_at = NULL, revocation_batch_id = NULL WHERE revocation_batch_id = ?")
-      .run(batchId);
-  }
-
-  const relations = options.apply
-    ? listRelations({ includeInactive: true }).filter((relation) => matched.some((item) => item.id === relation.id))
-    : matched;
-  return {
-    matched: matched.length,
-    restored: options.apply === true ? matched.length : 0,
-    relations,
-  };
+  const matched = listRelations({ includeInactive: true, revocationBatchId: batchId }).filter((relation) =>
+    matchesRestoreSubject(relation, options),
+  );
+  return restoreMatchedRelations(matched, options.apply === true);
 }
 
 export function restoreRelationsRevokedAt(
   revokedAt: number,
-  options: { apply?: boolean } = {},
+  options: RestoreRelationsOptions = {},
 ): RestoreRelationsResult {
-  const matched = listRelations({ includeInactive: true }).filter((relation) => relation.revokedAt === revokedAt);
-  if (matched.length === 0) {
-    return { matched: 0, restored: 0, relations: [] };
+  const matched = listRelations({ includeInactive: true }).filter(
+    (relation) => relation.revokedAt === revokedAt && matchesRestoreSubject(relation, options),
+  );
+  return restoreMatchedRelations(matched, options.apply === true);
+}
+
+export interface PruneRevokedOptions {
+  apply?: boolean;
+  /** Only prune rows revoked at least this many seconds ago (retention window). */
+  olderThanSeconds?: number;
+}
+
+export interface PruneRevokedResult {
+  matched: number;
+  pruned: number;
+  cutoff: number;
+}
+
+/**
+ * Compact the relation store by hard-deleting old revoked rows.
+ *
+ * Only rows that are currently revoked (`revoked_at` set) and older than the
+ * retention cutoff are removed. Active grants and re-granted tuples (whose
+ * `revoked_at` was cleared) are never touched, so pruning cannot remove live
+ * authority. This is compaction, not revocation.
+ */
+export function pruneRevokedRelations(options: PruneRevokedOptions = {}): PruneRevokedResult {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  const cutoff = options.olderThanSeconds != null ? now - Math.max(0, options.olderThanSeconds) : now;
+
+  const matched =
+    (
+      db
+        .prepare("SELECT COUNT(*) AS count FROM relations WHERE revoked_at IS NOT NULL AND revoked_at <= ?")
+        .get(cutoff) as { count: number } | undefined
+    )?.count ?? 0;
+
+  if (options.apply === true && matched > 0) {
+    db.prepare("DELETE FROM relations WHERE revoked_at IS NOT NULL AND revoked_at <= ?").run(cutoff);
   }
 
-  if (options.apply === true) {
-    getDb()
-      .prepare("UPDATE relations SET revoked_at = NULL, revocation_batch_id = NULL WHERE revoked_at = ?")
-      .run(revokedAt);
-  }
-
-  const relations = options.apply
-    ? listRelations({ includeInactive: true }).filter((relation) => matched.some((item) => item.id === relation.id))
-    : matched;
-  return {
-    matched: matched.length,
-    restored: options.apply === true ? matched.length : 0,
-    relations,
-  };
+  return { matched, pruned: options.apply === true ? matched : 0, cutoff };
 }
 
 /**

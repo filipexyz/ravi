@@ -7416,6 +7416,35 @@ export function dbDeleteContext(contextId: string): boolean {
   return getDbChanges() > 0;
 }
 
+export interface PruneContextsResult {
+  matched: number;
+  pruned: number;
+}
+
+/**
+ * Compact the context store by deleting inactive (revoked or expired) runtime
+ * contexts older than the retention cutoff. Active contexts are never removed,
+ * so pruning cannot drop live authority. Timestamps are epoch milliseconds.
+ */
+export function dbPruneContexts(options: { apply?: boolean; olderThanMs?: number } = {}): PruneContextsResult {
+  const now = Date.now();
+  const cutoff = options.olderThanMs != null ? now - Math.max(0, options.olderThanMs) : now;
+  const prunable = dbListContexts({ includeInactive: true }).filter((context) => {
+    const inactive =
+      (context.revokedAt != null && context.revokedAt <= now) ||
+      (context.expiresAt != null && context.expiresAt <= now);
+    return inactive && context.createdAt <= cutoff;
+  });
+
+  if (options.apply === true) {
+    for (const context of prunable) {
+      dbDeleteContext(context.contextId);
+    }
+  }
+
+  return { matched: prunable.length, pruned: options.apply === true ? prunable.length : 0 };
+}
+
 // ============================================================================
 // Convenience Getters
 // ============================================================================

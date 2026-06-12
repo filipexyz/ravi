@@ -18,6 +18,7 @@ import {
   clearRelations,
   restoreRelationsRevocationBatch,
   restoreRelationsRevokedAt,
+  pruneRevokedRelations,
   syncRelationsFromConfig,
   type RelationFilter,
   type Relation,
@@ -966,14 +967,25 @@ export class PermissionsCommands {
       description: "Interpret the batch argument as a legacy revoked_at timestamp",
     })
     byRevokedAt?: boolean,
+    @Option({
+      flags: "--subject <s>",
+      description: "Restore only this subject's revoked grants in the batch, e.g. agent:dev or chat:chat_id",
+    })
+    subject?: string,
   ) {
     if (apply && confirm !== "restore-revocation") {
       fail("--apply requires --confirm restore-revocation");
     }
+    const subjectFilter: { subjectType?: string; subjectId?: string } = {};
+    if (subject) {
+      const [subjectType, subjectId] = parseEntity(subject);
+      subjectFilter.subjectType = subjectType;
+      subjectFilter.subjectId = subjectId;
+    }
     const revokedAt = byRevokedAt ? parseRevocationTimestamp(batchArg) : null;
     const result = revokedAt
-      ? restoreRelationsRevokedAt(revokedAt, { apply: apply === true })
-      : restoreRelationsRevocationBatch(batchArg, { apply: apply === true });
+      ? restoreRelationsRevokedAt(revokedAt, { apply: apply === true, ...subjectFilter })
+      : restoreRelationsRevocationBatch(batchArg, { apply: apply === true, ...subjectFilter });
     const payload = {
       status: apply ? ("restored" as const) : ("planned" as const),
       dryRun: !apply,
@@ -981,6 +993,7 @@ export class PermissionsCommands {
         type: "revocation-batch" as const,
         batch: batchArg,
         revokedAt,
+        subject: subject ?? null,
       },
       matchedCount: result.matched,
       changedCount: result.restored,
@@ -992,7 +1005,60 @@ export class PermissionsCommands {
       printJson(payload);
     } else {
       console.log(
-        `${apply ? "✓ Restored" : "✓ Planned restore for"} revocation batch ${batchArg}: ${result.matched} relation(s)`,
+        `${apply ? "✓ Restored" : "✓ Planned restore for"} revocation batch ${batchArg}` +
+          `${subject ? ` (subject ${subject})` : ""}: ${result.matched} relation(s)`,
+      );
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "prune-revoked",
+    description: "Compact the relation store by deleting old revoked relations",
+  })
+  @Returns(permissionsLegacyReturnSchema)
+  pruneRevoked(
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+    @Option({
+      flags: "--apply",
+      description: "Delete the matched revoked relations. Requires --confirm prune-revoked.",
+    })
+    apply?: boolean,
+    @Option({
+      flags: "--confirm <text>",
+      description: "Required with --apply; must be exactly prune-revoked",
+    })
+    confirm?: string,
+    @Option({
+      flags: "--older-than-days <n>",
+      description: "Only prune relations revoked at least N days ago (default: 90)",
+    })
+    olderThanDays?: string,
+  ) {
+    if (apply && confirm !== "prune-revoked") {
+      fail("--apply requires --confirm prune-revoked");
+    }
+    const days = olderThanDays != null ? parsePositiveInt(olderThanDays, "--older-than-days") : 90;
+    const result = pruneRevokedRelations({ apply: apply === true, olderThanSeconds: days * 24 * 60 * 60 });
+    const payload = {
+      status: apply ? ("pruned" as const) : ("planned" as const),
+      dryRun: !apply,
+      target: {
+        type: "revoked-relations" as const,
+        olderThanDays: days,
+        cutoff: result.cutoff,
+      },
+      matchedCount: result.matched,
+      changedCount: result.pruned,
+    };
+
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(
+        `${apply ? "✓ Pruned" : "✓ Planned prune of"} ${result.matched} revoked relation(s) older than ${days} day(s)` +
+          (apply ? "" : "; pass --apply --confirm prune-revoked to delete"),
       );
     }
     return payload;

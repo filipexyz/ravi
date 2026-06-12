@@ -7,23 +7,23 @@
  *   1. No agent context (CLI direct) → always allowed
  *   2. Scoped runtime context? → check its capability lease
  *   3. Superadmin? → check (agent, <id>, admin, system, *)
- *   4. Direct relation? → check (agent, <id>, <permission>, <objectType>, <objectId>)
- *   5. Wildcard? → check (agent, <id>, <permission>, <objectType>, *)
- *   6. Pattern match? → check relations with glob patterns (e.g., dev-*)
- *   7. Tool group? → check if tool belongs to a granted toolgroup
+ *   4. Object-id match (exact / wildcard / trailing pattern) via objectIdMatches
+ *   5. Tool group? → check if tool belongs to a granted toolgroup
+ *   6. Role membership? → expand member→role:<id> and re-evaluate
  */
 
 import { hasRelation, listRelations } from "./relations.js";
 import { resolveToolGroup } from "../cli/tool-registry.js";
 import { getContext } from "../cli/context.js";
-import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import type { ContextRecord } from "../router/router-db.js";
 import {
   canWithCapabilities,
   canWithCapabilityContext as canWithSnapshotCapabilityContext,
   isAgentSuperadmin,
   isDelegatedAuthorityContext,
   isSuperadmin,
-  matchPattern,
+  objectIdMatches,
+  parseContextCapabilities,
 } from "./capability-context.js";
 import { materializeDelegatedAuthority, parseAuthorityPrincipal } from "./delegation.js";
 import { revalidatePolicyMaterializationsBeforeAuthorization } from "./policies.js";
@@ -86,29 +86,21 @@ function canInternal(
     return true;
   }
 
-  // 3. Wildcard on object_id
-  if (objectId !== "*" && hasRelation(subjectType, subjectId, permission, objectType, "*")) {
-    return true;
-  }
-
-  // 4. Pattern match — check if any relation with glob patterns matches
-  //    e.g., relation (agent, dev, access, session, dev-*) should match objectId "dev-grupo1"
-  if (objectId !== "*") {
-    const patternRelations = listRelations({
-      subjectType,
-      subjectId,
-      relation: permission,
-      objectType,
-    });
-
-    for (const rel of patternRelations) {
-      if (rel.objectId.includes("*") && matchPattern(rel.objectId, objectId)) {
-        return true;
-      }
+  // 3. Object-id match (exact / wildcard / trailing pattern) via the shared
+  //    matcher, so the live engine agrees with the snapshot and explain paths.
+  const candidateRelations = listRelations({
+    subjectType,
+    subjectId,
+    relation: permission,
+    objectType,
+  });
+  for (const rel of candidateRelations) {
+    if (objectIdMatches(rel.objectId, objectId)) {
+      return true;
     }
   }
 
-  // 5. Tool group resolution: check if tool belongs to a granted group
+  // 4. Tool group resolution: check if tool belongs to a granted group
   if (permission === "use" && objectType === "tool" && objectId !== "*") {
     const groupRelations = listRelations({
       subjectType,
@@ -122,7 +114,7 @@ function canInternal(
     }
   }
 
-  // 6. Role membership: subject --member--> role:<id>, then evaluate the role.
+  // 5. Role membership: subject --member--> role:<id>, then evaluate the role.
   const roleMemberships = listRelations({
     subjectType,
     subjectId,
@@ -204,7 +196,7 @@ function canWithLiveDelegatedAuthorityContext(
   }
 
   const surfacePrincipal = parseAuthorityPrincipal(metadata.surfacePrincipal);
-  const turnCapabilities = capabilityArrayValue(metadata.turnCapabilities);
+  const turnCapabilities = parseContextCapabilities(metadata.turnCapabilities);
   const materialized = materializeDelegatedAuthority({
     agentPrincipal: { subjectType: "agent", subjectId: executorAgentId },
     actorPrincipal,
@@ -237,25 +229,4 @@ function stringValue(value: unknown): string | null {
 
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function capabilityArrayValue(value: unknown): ContextCapability[] {
-  if (!Array.isArray(value)) return [];
-  const capabilities: ContextCapability[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const record = item as Record<string, unknown>;
-    const permission = stringValue(record.permission);
-    const objectType = stringValue(record.objectType);
-    const objectId = stringValue(record.objectId);
-    if (!permission || !objectType || !objectId) continue;
-    const source = stringValue(record.source);
-    capabilities.push({
-      permission,
-      objectType,
-      objectId,
-      ...(source ? { source } : {}),
-    });
-  }
-  return capabilities;
 }

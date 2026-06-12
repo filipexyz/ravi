@@ -160,6 +160,47 @@ describe("inspectDoctor", () => {
     expect(report.findings.every((finding) => finding.severity !== "error")).toBe(true);
   });
 
+  it("flags rebac zeroed subjects, revoked backlog, and admin contexts", () => {
+    const deps = makeHealthyDeps();
+    const revoked = {
+      id: 1,
+      subjectType: "chat",
+      subjectId: "zeroed-surface",
+      relation: "use",
+      objectType: "tool",
+      objectId: "Bash",
+      source: "manual",
+      grantMode: "permanent",
+      expiresAt: null,
+      revokedAt: 123,
+      revocationBatchId: "batch-1",
+      reason: null,
+      issuedBy: null,
+      createdAt: 0,
+    };
+    const baseQueryRows = deps.queryRows;
+    const report = inspectDoctor({
+      ...deps,
+      // active list is empty; includeInactive surfaces a revoked-only subject.
+      listRelations: ((filter?: { includeInactive?: boolean }) =>
+        (filter?.includeInactive ? [revoked] : []) as any) as typeof deps.listRelations,
+      queryRows: ((sql: string, params?: any) =>
+        sql.includes("contexts")
+          ? ([{ count: 4 }] as any)
+          : (baseQueryRows as any)(sql, params)) as typeof deps.queryRows,
+    });
+
+    const zero = report.findings.find((finding) => finding.id === "permissions.rebac_zero_capabilities");
+    expect(zero?.severity).toBe("warn");
+    expect(zero?.summary).toContain("1 subject");
+
+    const admin = report.findings.find((finding) => finding.id === "permissions.rebac_admin_contexts");
+    expect(admin?.severity).toBe("info");
+    expect(admin?.summary).toContain("4 active");
+
+    expect(report.findings.some((finding) => finding.id === "permissions.rebac_revoked_backlog")).toBe(true);
+  });
+
   it("surfaces fail and warn states when critical config is missing or divergent", () => {
     const home = makeTempDir("ravi-doctor-bad-home-");
     const stateDir = join(home, ".ravi");
