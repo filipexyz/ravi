@@ -6991,6 +6991,8 @@ export type PermissionsPoliciesExplainReturn = Record<string, unknown>;
 /** Input shape for `permissions.policies.list`. */
 export type PermissionsPoliciesListInput = {
   dir?: string;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `permissions.policies.list`. */

@@ -3810,6 +3810,8 @@ export class RaviClient {
       /** List permission policies */
       list: async (options?: {
         dir?: string;
+        limit?: string;
+        offset?: string;
       }): Promise<PermissionsPoliciesListReturn> => {
         return this.transport.call({
           groupSegments: ["permissions","policies"],

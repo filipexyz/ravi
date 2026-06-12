@@ -33887,6 +33887,14 @@ export const PermissionsPoliciesListInputSchema = {
     "dir": {
       "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
       "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of policies to skip (default: 0)",
+      "type": "string"
     }
   },
   "type": "object"
