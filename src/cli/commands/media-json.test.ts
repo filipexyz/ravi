@@ -47,6 +47,7 @@ mock.module("../../audio/generator.js", () => ({
     filePath: "/tmp/ravi-audio.mp3",
     mimeType: "audio/mpeg",
   })),
+  listElevenLabsVoices: mock(async () => []),
 }));
 
 mock.module("../../router/config.js", () => ({

@@ -11,6 +11,7 @@ const JSON_ALLOWLIST = new Set([
   "daemon dev",
   // Binary streams. They return raw bytes via Response, not JSON.
   "artifacts blob",
+  "audio blob",
 ]);
 
 function hasJsonOption(options: Array<{ flags: string }>): boolean {

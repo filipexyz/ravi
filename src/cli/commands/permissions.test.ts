@@ -192,6 +192,18 @@ mock.module("../../permissions/relations.js", () => ({
       relations: matched,
     };
   },
+  pruneRevokedRelations: (options?: { apply?: boolean; olderThanSeconds?: number }) => {
+    const now = Math.floor(Date.now() / 1000);
+    const cutoff = options?.olderThanSeconds != null ? now - options.olderThanSeconds : now;
+    const matched = relations.filter((relation) => relation.revokedAt != null && relation.revokedAt <= cutoff);
+    if (options?.apply) {
+      for (const relation of matched) {
+        const idx = relations.indexOf(relation);
+        if (idx >= 0) relations.splice(idx, 1);
+      }
+    }
+    return { matched: matched.length, pruned: options?.apply ? matched.length : 0, cutoff };
+  },
   syncRelationsFromConfig: () => {
     relations.push({
       id: nextRelationId++,
