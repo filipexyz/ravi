@@ -3,6 +3,8 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 afterAll(() => mock.restore());
 const actualRouterConfigModule = await import("../../router/config.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
+const actualSessionsModule = await import("../../router/sessions.js");
+const actualSessionKeyModule = await import("../../router/session-key.js");
 
 const emitMock = mock(async () => {});
 
@@ -60,10 +62,12 @@ mock.module("../../router/config.js", () => ({
 }));
 
 mock.module("../../router/session-key.js", () => ({
+  ...actualSessionKeyModule,
   deriveSourceFromSessionKey: () => undefined,
 }));
 
 mock.module("../../router/sessions.js", () => ({
+  ...actualSessionsModule,
   resolveSession: () => null,
 }));
 
