@@ -15322,6 +15322,13 @@ export const ContextPruneInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `context.prune`. */
+export const ContextPruneReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.revoke`. */
 export const ContextRevokeInputSchema = {
   "additionalProperties": false,

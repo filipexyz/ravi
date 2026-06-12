@@ -3032,8 +3032,8 @@ export type ContextPruneInput = {
   olderThan?: string;
 };
 
-/** Return shape for `context.prune`. (no @Returns declared) */
-export type ContextPruneReturn = unknown;
+/** Return shape for `context.prune`. */
+export type ContextPruneReturn = Record<string, unknown>;
 
 /** Input shape for `context.revoke`. */
 export type ContextRevokeInput = {
