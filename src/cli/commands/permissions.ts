@@ -1110,19 +1110,34 @@ export class PermissionPolicyCommands {
     asJson?: boolean,
     @Option({ flags: "--dir <path>", description: "Policy directory (default: $RAVI_STATE_DIR/permission-policies)" })
     directory?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" })
+    limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of policies to skip (default: 0)" })
+    offset?: string,
   ) {
     const loaded = loadPermissionPolicyRulesFromDirectory(directory);
+    const allPolicies = loaded.rules.map((item) => ({
+      id: item.rule.id,
+      version: item.rule.version,
+      enabled: item.rule.enabled,
+      selector: item.rule.selector,
+      emits: item.rule.emits.length,
+      source: item.source,
+    }));
+    const page = paginateCliItems(allPolicies, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "permissions", "policies", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: ["--dir", directory],
+    });
     const payload = {
       total: loaded.rules.length,
       errors: loaded.errors,
-      policies: loaded.rules.map((item) => ({
-        id: item.rule.id,
-        version: item.rule.version,
-        enabled: item.rule.enabled,
-        selector: item.rule.selector,
-        emits: item.rule.emits.length,
-        source: item.source,
-      })),
+      pagination,
+      policies: page.items,
     };
     if (asJson) {
       printJson(payload);
@@ -1131,7 +1146,7 @@ export class PermissionPolicyCommands {
     if (payload.policies.length === 0) {
       console.log("No permission policies found.");
     } else {
-      console.log(`Permission policies (${payload.policies.length}):`);
+      console.log(`Permission policies (${payload.policies.length}/${payload.total}):`);
       for (const policy of payload.policies) {
         console.log(
           `  ${policy.enabled ? "✓" : "✗"} ${policy.id}@${policy.version} ${policy.selector.assetType}:${policy.selector.tag}`,
