@@ -195,16 +195,21 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
 
 export function resolveStoredRuntimeProvider(
   session: Pick<SessionEntry, "runtimeProvider" | "providerSessionId" | "sdkSessionId">,
-  defaultRuntimeProviderId: RuntimeProviderId,
 ): RuntimeProviderId | undefined {
   if (session.runtimeProvider) {
     return session.runtimeProvider;
   }
 
   if (session.providerSessionId || session.sdkSessionId) {
-    // Legacy sessions predate runtime_provider and belong to the default runtime.
-    return defaultRuntimeProviderId;
+    // Legacy sessions predate the runtime_provider column. Modern sessions always
+    // record runtime_provider (session-launcher), so a stored session id with no
+    // provider can only be a pre-multi-provider Claude session — not the current
+    // default (which has since moved to codex).
+    return LEGACY_RUNTIME_PROVIDER_ID;
   }
 
   return undefined;
 }
+
+/** Provider that owned sessions created before the runtime_provider column existed. */
+export const LEGACY_RUNTIME_PROVIDER_ID: RuntimeProviderId = "claude";

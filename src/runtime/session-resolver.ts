@@ -88,7 +88,7 @@ export function resolveRuntimeSession(options: {
   let storedRuntimeSessionParams = session.runtimeSessionParams;
   let storedProviderSessionId =
     session.runtimeSessionDisplayId ?? session.providerSessionId ?? session.sdkSessionId ?? undefined;
-  const storedRuntimeProvider = resolveStoredRuntimeProvider(session, options.defaultRuntimeProviderId);
+  const storedRuntimeProvider = resolveStoredRuntimeProvider(session);
   const providerMatches = storedRuntimeProvider === runtimeProviderId;
   const sessionStateValidation = validateRuntimeSessionState({
     capabilities: runtimeCapabilities,

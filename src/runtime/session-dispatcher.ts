@@ -774,6 +774,10 @@ export class RuntimeSessionDispatcher {
           return;
         }
 
+        if (prompt.source) {
+          existing.currentSource = prompt.source;
+        }
+
         const userMsg: RuntimeUserMessage = {
           ...createQueuedRuntimeUserMessage(prompt),
         };

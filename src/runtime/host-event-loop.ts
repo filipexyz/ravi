@@ -36,6 +36,7 @@ import {
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
+  LEGACY_RUNTIME_PROVIDER_ID,
   stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
@@ -373,14 +374,16 @@ function resolveCostTrackingModel(
   runtimeProvider: RuntimeProviderId,
   executionModel: string | null | undefined,
   configuredModel: string,
-  defaultRuntimeProviderId: RuntimeProviderId,
 ): string | null {
   const explicitModel = executionModel?.trim();
   if (explicitModel) {
     return explicitModel;
   }
 
-  return runtimeProvider === defaultRuntimeProviderId ? configuredModel : null;
+  // Only the legacy Claude provider backfills the agent's configured model when
+  // execution metadata omits one. Subscription-billed providers (codex) report
+  // no per-token model and must not be priced against an assumed model.
+  return runtimeProvider === LEGACY_RUNTIME_PROVIDER_ID ? configuredModel : null;
 }
 
 export interface RunRuntimeEventLoopOptions {
@@ -413,7 +416,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     runtimeCapabilities,
     model,
     instanceId,
-    defaultRuntimeProviderId,
     streamingSessions,
     stashedMessages,
     safeEmit,
@@ -1456,12 +1458,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
         updateTokens(session.sessionKey, inputTokens, outputTokens);
 
-        const executionModel = resolveCostTrackingModel(
-          runtimeSession.provider,
-          event.execution?.model,
-          model,
-          defaultRuntimeProviderId,
-        );
+        const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel
           ? calculateCost(executionModel, {
               inputTokens,
