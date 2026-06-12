@@ -62,6 +62,18 @@ zero) across different chats/agents at once.
    forward (replacement roles/policies exist). Restoring is correct when no
    replacement was materialized.
 
+## Break-Glass Recovery (admin-independent)
+
+An incident that revokes every agent's `admin system:*` does NOT lock out
+recovery. Superadmin-scoped permission commands (`grant`, `init`,
+`restore-batch`) are gated by `enforceScopeCheck`, which allows them when there
+is no agent principal in context — i.e. a direct operator CLI invocation.
+
+The recovery path is therefore: run the `ravi` CLI directly as the operator (no
+agent runtime context), not through a bot/agent session. A bot session that
+lost admin will be denied; the operator shell will not. This is the intended
+break-glass channel and requires no agent to hold admin.
+
 ## Restore A Bulk Revocation Batch
 
 Preferred path:
@@ -71,12 +83,21 @@ ravi permissions restore-batch <revocation_batch_id> --json
 ravi permissions restore-batch <revocation_batch_id> --apply --confirm restore-revocation
 ```
 
+Subject-scoped restore (recover one subject without touching the rest of the
+batch — no SQL):
+
+```bash
+ravi permissions restore-batch <revocation_batch_id> --subject agent:dev --json
+ravi permissions restore-batch <revocation_batch_id> --subject agent:dev --apply --confirm restore-revocation
+```
+
 Timestamp-only restore is legacy fallback and may restore unrelated revocations
 from the same second. Use only when the batch predates `revocation_batch_id` and
-after inspecting the exact matched tuples:
+after inspecting the exact matched tuples. `--subject` also applies here:
 
 ```bash
 ravi permissions restore-batch <revoked_at> --revoked-at --json
+ravi permissions restore-batch <revoked_at> --revoked-at --subject agent:dev --apply --confirm restore-revocation
 ```
 
 Then:

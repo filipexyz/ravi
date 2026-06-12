@@ -26,6 +26,11 @@ permissions.grant_broad
 permissions.grant_permanent_without_reason
 permissions.grant_orphan_subject
 permissions.grant_orphan_object
+permissions.rebac_zero_capabilities
+permissions.rebac_revoked_backlog
+permissions.rebac_admin_contexts
+permissions.rebac_context_backlog
+permissions.rebac_automation_uncovered
 costs.pricing_unpriced_usage
 costs.pricing_catalog_stale
 costs.event_incomplete_usage

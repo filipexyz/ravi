@@ -12,6 +12,8 @@ capabilities:
   - runtime-context
   - least-privilege
   - explain
+  - production-readiness
+  - enterprise
 tags:
   - permissions
   - rebac
