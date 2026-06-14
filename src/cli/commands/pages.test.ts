@@ -1,7 +1,24 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { PagesCommands } from "./pages.js";
+
+const tempDirs: string[] = [];
+let stateDir: string | null = null;
+
+afterEach(async () => {
+  for (const dir of tempDirs.splice(0)) {
+    await rm(dir, { recursive: true, force: true });
+  }
+  if (stateDir) {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  }
+});
 
 describe("pages CLI commands", () => {
   it("lists project Pages sites through the Console CLI API", async () => {
@@ -215,6 +232,107 @@ describe("pages CLI commands", () => {
       bindings: [{ hostname: "www.filipe.ai" }, { hostname: "filipe.ai" }],
     });
   });
+
+  it("publishes a local source to a Pages site through the artifact upload pipeline", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-publish-command-test-");
+    const dir = await tempDir();
+    await writeFile(join(dir, "index.html"), "<h1>Docs</h1>");
+    const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
+    const client = {
+      me: mock(async () => ({
+        user: { email: "alice@example.com" },
+        organization: { id: "org_1" },
+      })),
+      createPageUploadSession: mock(async (input: Record<string, unknown>, accessToken: string) => {
+        expect(accessToken).toBe("access-secret");
+        calls.push({ method: "createPageUploadSession", payload: input });
+        expect(input).toMatchObject({
+          projectRef: "proj",
+          siteRef: "demo",
+          idempotencyKey: "idem-1",
+          packageManifest: {
+            entrypoint: "index.html",
+            files: [{ path: "index.html" }],
+          },
+        });
+        return {
+          uploadSession: { id: "upl_123" },
+          uploadPolicy: { directUpload: false },
+        };
+      }),
+      finalizeArtifactPublish: mock(async (input: Record<string, unknown>, accessToken: string) => {
+        expect(accessToken).toBe("access-secret");
+        calls.push({ method: "finalizeArtifactPublish", payload: input });
+        expect(input).toMatchObject({
+          uploadSessionId: "upl_123",
+          idempotencyKey: "idem-1",
+          artifact: {
+            name: "Docs",
+            description: "Docs page",
+          },
+          publish: {
+            siteRef: "demo",
+            activate: true,
+            replaceRelease: true,
+            reason: "ship docs",
+            visibility: "public",
+            route: {
+              path: "/guide",
+              visibility: "public",
+            },
+          },
+          source: {
+            tool: "ravi pages publish",
+            target: "local_artifact",
+            versionNumber: 1,
+          },
+        });
+        return {
+          artifact: { id: "cloud_art_123" },
+          artifactVersion: { id: "cloud_ver_123", versionNumber: 1 },
+          site: { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page", defaultVisibility: "public" },
+          publish: { id: "pub_123" },
+          release: { id: "rel_123", url: "https://demo.ravi.page/guide" },
+          routes: [{ id: "route_123", path: "/guide" }],
+        };
+      }),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.publish(
+        "proj",
+        "demo",
+        dir,
+        "/guide",
+        "public",
+        "Docs",
+        undefined,
+        "Docs page",
+        "index.html",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "idem-1",
+        "ship docs",
+        true,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls.map((call) => call.method)).toEqual(["createPageUploadSession", "finalizeArtifactPublish"]);
+    expect(payload).toMatchObject({
+      success: true,
+      url: "https://demo.ravi.page/guide",
+      upload: { attempted: 0, skipped: 1 },
+      site: { slug: "demo" },
+      release: { id: "rel_123" },
+    });
+  });
 });
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
@@ -264,4 +382,10 @@ function makeCredentials(): CloudCredentials {
     createdAt: "2026-05-09T00:00:00.000Z",
     updatedAt: "2026-05-09T00:00:00.000Z",
   };
+}
+
+async function tempDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "ravi-pages-cli-test-"));
+  tempDirs.push(dir);
+  return dir;
 }

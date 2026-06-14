@@ -139,6 +139,32 @@ ravi artifacts events art_...
 ravi artifacts watch art_...
 ```
 
+## Pages Publishing
+
+Ravi Pages content publishing uses the artifact package/release pipeline
+internally, but the user-facing command MUST be Pages-specific.
+
+`ravi pages create/update/visibility/domains` manage the remote site record only.
+They do not upload HTML, assets, or release content. A complete Pages upload uses
+`ravi pages publish`, which packages a local directory/file or a local Ravi
+artifact version, opens a Console upload session, uploads bytes, finalizes the
+cloud artifact version, and activates a site release.
+
+Canonical directory publish:
+
+```bash
+ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html
+```
+
+Canonical local artifact publish:
+
+```bash
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
+```
+
+Pages publishing MUST use `ravi pages publish` for the user-facing command.
+`ravi artifacts publish` remains the generic primitive under the hood.
+
 Synchronous generation remains available only when explicitly requested:
 
 ```bash

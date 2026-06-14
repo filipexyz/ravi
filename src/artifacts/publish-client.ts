@@ -49,6 +49,7 @@ export interface ArtifactPublishOptions {
   activate?: boolean;
   replaceRelease?: boolean;
   reason?: string;
+  tool?: string;
   json?: boolean;
 }
 
@@ -228,7 +229,7 @@ export async function publishArtifactToConsole(
           }
         : {}),
       source: {
-        tool: "ravi artifacts publish",
+        tool: publishOptions.tool ?? "ravi artifacts publish",
         ...packageBuild.source,
       },
     },

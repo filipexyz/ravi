@@ -53,3 +53,33 @@ ravi artifacts create \
 Manual artifact creation is acceptable for recovery, but it SHOULD be tagged
 `recovered` and SHOULD include enough summary/metadata to explain why the normal
 lifecycle was bypassed.
+
+## Publish HTML To Ravi Pages
+
+1. Put the page in a local directory. For raw HTML, write `index.html`.
+
+```bash
+mkdir -p /tmp/ravi-page
+$EDITOR /tmp/ravi-page/index.html
+```
+
+2. Ensure the target site exists. This only creates/updates the site record.
+
+```bash
+ravi pages create <project-ref> <site-slug> --visibility public
+```
+
+3. Publish content through the Pages command.
+
+```bash
+ravi pages publish <project-ref> <site-slug> /tmp/ravi-page --route / --visibility public --entrypoint index.html
+```
+
+4. If the HTML was already registered as an artifact package, publish the
+artifact id instead of the directory.
+
+```bash
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
+```
+
+Pages publishing is handled through `ravi pages publish`.

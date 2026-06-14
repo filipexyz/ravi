@@ -2,8 +2,13 @@ import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
+import {
+  publishArtifactToConsole,
+  type ArtifactPublishDeps,
+  type ArtifactPublishResult,
+} from "../../artifacts/publish-client.js";
 import {
   bindPageDomains,
   createPageSite,
@@ -19,15 +24,15 @@ import {
 } from "../../pages/client.js";
 import { hasContext } from "../context.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
-import { declareCommandReturns } from "./operational-return-schemas.js";
+import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 
-export interface PagesCommandDeps extends PagesClientDeps {
+export interface PagesCommandDeps extends PagesClientDeps, Pick<ArtifactPublishDeps, "fetch"> {
   client?: ConsoleApiClient;
 }
 
 @Group({
   name: "pages",
-  description: "Manage Ravi Pages sites through Console",
+  description: "Manage Ravi Pages sites and publish content through Console",
   scope: "open",
 })
 export class PagesCommands {
@@ -64,7 +69,7 @@ export class PagesCommands {
     });
   }
 
-  @Command({ name: "create", description: "Create a Ravi Pages site in a Console project" })
+  @Command({ name: "create", description: "Create a Ravi Pages site record; does not upload HTML or assets" })
   async create(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Arg("slug", { description: "Hosted subdomain slug, e.g. demo for demo.ravi.page" }) slug: string,
@@ -87,6 +92,67 @@ export class PagesCommands {
         this.deps,
       );
       printPayload(result, asJson, () => printCreatedSite(result));
+      return result;
+    });
+  }
+
+  @Command({ name: "publish", description: "Publish a directory, file, or local artifact to a Ravi Pages site" })
+  async publish(
+    @Arg("project", { description: "Console project id or slug" }) project: string,
+    @Arg("site", { description: "Pages site id or slug" }) site: string,
+    @Arg("source", { description: "Local directory, file, or artifact id to publish" }) source: string,
+    @Option({ flags: "--route <path>", description: "Pages route path to mount content at (default: /)" })
+    route?: string,
+    @Option({ flags: "--visibility <visibility>", description: "Pages visibility: private|protected_link|public" })
+    visibility?: string,
+    @Option({ flags: "--title <title>", description: "Published artifact title" }) title?: string,
+    @Option({ flags: "--artifact-slug <slug>", description: "Published artifact slug" }) artifactSlug?: string,
+    @Option({ flags: "--description <text>", description: "Published artifact description" }) description?: string,
+    @Option({ flags: "--entrypoint <path>", description: "Package entrypoint path, usually index.html" })
+    entrypoint?: string,
+    @Option({ flags: "--artifact-version <n>", description: "Local artifact version number (default: latest)" })
+    artifactVersion?: string,
+    @Option({ flags: "--base-path <path>", description: "Package base path intent" }) basePath?: string,
+    @Option({ flags: "--asset-base <path>", description: "Package asset base intent" }) assetBase?: string,
+    @Option({ flags: "--upload-session <id>", description: "Use an existing Console upload session" })
+    uploadSession?: string,
+    @Option({ flags: "--idempotency-key <key>", description: "Idempotency key for Console retries" })
+    idempotencyKey?: string,
+    @Option({ flags: "--reason <text>", description: "Release reason sent to Console" }) reason?: string,
+    @Option({ flags: "--replace-release", description: "Replace the full active route map instead of merging" })
+    replaceRelease?: boolean,
+    @Option({ flags: "--no-activate", description: "Create publish records without activating a site release" })
+    activate?: boolean,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand(asJson, async () => {
+      const result = await publishArtifactToConsole(
+        source,
+        {
+          project,
+          site,
+          route,
+          visibility: normalizePageVisibility(visibility),
+          name: title,
+          slug: artifactSlug,
+          description,
+          entrypoint,
+          artifactVersion: artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined,
+          basePath,
+          assetBase,
+          uploadSession,
+          idempotencyKey,
+          reason,
+          replaceRelease,
+          activate,
+          console: consoleUrl,
+          tool: "ravi pages publish",
+          json: asJson,
+        },
+        this.deps,
+      );
+      printPayload(result, asJson, () => printPagePublishResult(result));
       return result;
     });
   }
@@ -183,6 +249,7 @@ const pagesListReturnSchema = z.object({
 
 const pageSiteCreateReturnSchema = z.object({
   success: z.literal(true),
+  contentPublishCommand: z.string().nullable(),
   consoleUrl: z.string(),
   projectRef: z.string(),
   site: pageSiteSchema,
@@ -213,6 +280,7 @@ const pageDomainBindReturnSchema = z.object({
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
   create: pageSiteCreateReturnSchema,
+  publish: artifactPublishReturnSchema,
   update: pageSiteUpdateReturnSchema,
   visibility: pageSiteUpdateReturnSchema,
   domains: pageDomainBindReturnSchema,
@@ -275,6 +343,33 @@ function printCreatedSite(result: PageSiteCreateResult): void {
   console.log("✓ Pages site created");
   printSiteFields(result.site);
   if (result.url) console.log(`  URL:        ${result.url}`);
+  if (result.contentPublishCommand) {
+    console.log("  Publish:    upload content with Pages");
+    console.log(`             ${result.contentPublishCommand}`);
+  }
+}
+
+function printPagePublishResult(result: ArtifactPublishResult): void {
+  const artifact = objectValue(result.artifact);
+  const version = objectValue(result.artifactVersion);
+  const publish = objectValue(result.publish);
+  const release = objectValue(result.release);
+  const site = objectValue(result.site);
+
+  console.log("✓ Pages publish finalized");
+  if (site) printSiteFields(site);
+  if (stringValue(artifact?.id)) console.log(`  Artifact   ${stringValue(artifact?.id)}`);
+  if (stringValue(version?.id)) console.log(`  Version    ${stringValue(version?.id)}`);
+  if (stringValue(publish?.id)) console.log(`  Publish    ${stringValue(publish?.id)}`);
+  if (stringValue(release?.id)) console.log(`  Release    ${stringValue(release?.id)}`);
+  if (result.routes.length > 0) console.log(`  Routes     ${result.routes.length}`);
+  console.log(`  Upload     ${result.upload.attempted} direct, ${result.upload.skipped} staged`);
+  console.log(`  URL        ${result.url ?? "not returned by Console"}`);
+  if (result.localSync.status === "recorded") {
+    console.log(`  Local      recorded on ${result.localSync.artifactId} v${result.localSync.versionNumber}`);
+  } else if (result.localSync.status === "failed") {
+    console.log(`  Local      remote published, but local sync failed: ${result.localSync.error}`);
+  }
 }
 
 function printUpdatedSite(result: PageSiteUpdateResult): void {
@@ -338,4 +433,12 @@ function booleanLabel(value: unknown): string | null {
 
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function parseInteger(value: string, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new CloudAuthError("PAYLOAD_INVALID", `${label} must be a non-negative integer.`);
+  }
+  return parsed;
 }

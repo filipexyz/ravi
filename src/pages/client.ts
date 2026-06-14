@@ -59,6 +59,7 @@ export interface PageSiteListResult {
 
 export interface PageSiteCreateResult {
   success: true;
+  contentPublishCommand: string | null;
   consoleUrl: string;
   projectRef: string;
   site: PageSitePayload;
@@ -219,10 +220,12 @@ export async function createPageSite(
 ): Promise<PageSiteCreateResult> {
   const auth = await createAuthenticatedPagesContext(options, deps);
   const site = await new RaviPagesClient(auth.client).createSite(auth.accessToken, options);
+  const projectRef = requireText(options.project, "project");
   return {
     success: true,
+    contentPublishCommand: contentPublishCommandForSite(projectRef, site),
     consoleUrl: auth.consoleUrl,
-    projectRef: requireText(options.project, "project"),
+    projectRef,
     site,
     url: hostedSiteUrl(site),
   };
@@ -321,6 +324,13 @@ function normalizeHostnames(values: string[]): string[] {
 function hostedSiteUrl(site: PageSitePayload): string | null {
   const hostname = stringValue(site.defaultHostname) ?? stringValue(site.hostname);
   return hostname ? `https://${hostname}/` : null;
+}
+
+function contentPublishCommandForSite(projectRef: string, site: PageSitePayload): string | null {
+  const siteRef = stringValue(site.slug) ?? stringValue(site.id);
+  if (!siteRef) return null;
+  const visibility = stringValue(site.defaultVisibility) ?? stringValue(site.visibility) ?? "public";
+  return `ravi pages publish ${projectRef} ${siteRef} ./site --route / --visibility ${visibility} --entrypoint index.html`;
 }
 
 function requireText(value: string | undefined, label: string): string {

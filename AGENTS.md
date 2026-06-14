@@ -44,6 +44,27 @@ ravi daemon status
 ravi daemon logs
 ```
 
+## Ravi Pages Publishing
+
+`ravi pages` manages Console Pages site records only: slug, visibility defaults,
+domains, and site settings. It does not upload HTML or assets.
+
+Use the Pages publish command for content:
+
+```bash
+ravi pages create <project-ref> <site-slug> --visibility public
+ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html
+```
+
+If a local Ravi artifact already exists, publish the artifact id:
+
+```bash
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
+```
+
+`ravi pages publish` is the user-facing Pages command. It delegates to the
+artifact upload/publish pipeline internally.
+
 ## Topics
 
 For full topic reference with payloads, see the **events** skill (`src/plugins/internal/ravi-system/skills/events/SKILL.md`).

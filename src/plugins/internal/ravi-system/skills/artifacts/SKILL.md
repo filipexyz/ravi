@@ -117,6 +117,26 @@ ravi artifacts archive art_xxx
 
 Archive é soft-delete: o artifact sai da listagem padrão, mas continua consultável com `--include-deleted`.
 
+## Publicar Conteúdo em Ravi Pages
+
+Para subir HTML/site no Ravi Pages, use `ravi pages publish`. `ravi pages`
+cria/edita o site, mas não sobe bytes sem o publish.
+
+Fluxo canônico para diretório local:
+
+```bash
+ravi pages create <project-ref> <site-slug> --visibility public
+ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html
+```
+
+Se já existe artifact local:
+
+```bash
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
+```
+
+O upload de conteúdo do Pages é `ravi pages publish`.
+
 ## Integração Atual
 
 `ravi image generate` registra automaticamente artifacts `kind=image` usando lifecycle.
