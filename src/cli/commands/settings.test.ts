@@ -10,6 +10,7 @@ const emitMock = mock(async () => {});
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CommandAccess: () => () => {},
   Scope: () => () => {},
   CliOnly: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),

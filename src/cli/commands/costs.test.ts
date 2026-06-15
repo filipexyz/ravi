@@ -5,6 +5,7 @@ let pricingUpdates: unknown[] = [];
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CommandAccess: () => () => {},
   CliOnly: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
   Arg: () => () => {},

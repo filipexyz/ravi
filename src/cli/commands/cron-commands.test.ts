@@ -13,6 +13,7 @@ let cronJob: Record<string, unknown> | null = null;
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CommandAccess: () => () => {},
   Scope: () => () => {},
   CliOnly: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),

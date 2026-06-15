@@ -46,6 +46,7 @@ const instructionStates = new Map<string, string>();
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CommandAccess: () => () => {},
   Scope: () => () => {},
   CliOnly: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),

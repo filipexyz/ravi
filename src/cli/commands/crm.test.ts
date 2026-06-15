@@ -52,6 +52,12 @@ mock.module("../context.js", () => ({
   },
 }));
 
+mock.module("../../permissions/scope.js", () => ({
+  getScopeContext: () => undefined,
+  isScopeEnforced: () => false,
+  canAccessContact: () => true,
+}));
+
 mock.module("../../contacts.js", () => ({
   ...actualContactsModule,
   getCrmContactProfile: (contactRef: string) =>

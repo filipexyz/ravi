@@ -9,6 +9,7 @@ const updatedTriggers: Array<{ id: string; patch: Record<string, unknown> }> = [
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CommandAccess: () => () => {},
   Scope: () => () => {},
   CliOnly: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
