@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Command, Group, Option } from "../decorators.js";
+import { Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
   declareCommandReturns,
@@ -215,6 +215,7 @@ interface SelfContextPacket {
 })
 export class SelfCommands {
   @Command({ name: "whoami", description: "Show the current agent/session identity" })
+  @CommandAccess({ kind: "read", resource: "self", action: "whoami", risk: "low" })
   whoami(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = {
@@ -231,6 +232,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "context", description: "Show the full current self-context packet" })
+  @CommandAccess({ kind: "read", resource: "self", action: "context", risk: "low" })
   context(
     @Option({ flags: "--depth <depth>", description: "Depth: summary, normal, or full" }) depth?: string,
     @Option({ flags: "--limit <limit>", description: "Maximum recent messages to inspect" }) limit?: string,
@@ -242,6 +244,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "chat", description: "Show the current chat binding and participants" })
+  @CommandAccess({ kind: "read", resource: "self", action: "chat", risk: "low" })
   chat(
     @Option({ flags: "--depth <depth>", description: "Depth: summary, normal, or full" }) depth?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -253,6 +256,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "route", description: "Show route information that led to the current session" })
+  @CommandAccess({ kind: "read", resource: "self", action: "route", risk: "low" })
   route(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "normal", limit: 5 });
     const payload = packet.route;
@@ -261,6 +265,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "recent", description: "Show bounded recent message metadata for the current chat" })
+  @CommandAccess({ kind: "read", resource: "self", action: "recent", risk: "low" })
   recent(
     @Option({ flags: "--limit <limit>", description: "Maximum recent messages to inspect" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -272,6 +277,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "permissions", description: "Show capabilities inherited by the current context" })
+  @CommandAccess({ kind: "read", resource: "self", action: "permissions", risk: "low" })
   permissions(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = packet.permissions;
@@ -280,6 +286,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "knowledge", description: "Show current knowledge integration status for this context" })
+  @CommandAccess({ kind: "read", resource: "self", action: "knowledge", risk: "low" })
   knowledge(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = packet.knowledge;
@@ -288,6 +295,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "explain", description: "Explain how Ravi resolved the current self-context" })
+  @CommandAccess({ kind: "read", resource: "self", action: "explain", risk: "low" })
   explain(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "full", limit: 5 });
     const payload = {

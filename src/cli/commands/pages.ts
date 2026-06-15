@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
@@ -39,6 +39,7 @@ export class PagesCommands {
   constructor(private readonly deps: PagesCommandDeps = defaultPagesDeps()) {}
 
   @Command({ name: "list", description: "List Ravi Pages sites in a Console project" })
+  @CommandAccess({ kind: "read", resource: "pages", action: "list", risk: "low" })
   async list(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -70,6 +71,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "create", description: "Create a Ravi Pages site record; does not upload HTML or assets" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "create", risk: "medium" })
   async create(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Arg("slug", { description: "Hosted subdomain slug, e.g. demo for demo.ravi.page" }) slug: string,
@@ -97,6 +99,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "publish", description: "Publish a directory, file, or local artifact to a Ravi Pages site" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "publish", risk: "high" })
   async publish(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Arg("site", { description: "Pages site id or slug" }) site: string,
@@ -158,6 +161,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "update", description: "Update a Ravi Pages site in a Console project" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "update", risk: "medium" })
   async update(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Arg("site", { description: "Pages site id or slug" }) site: string,
@@ -182,6 +186,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "visibility", description: "Set a Ravi Pages site default visibility" })
+  @CommandAccess({ kind: "read", resource: "pages", action: "visibility", risk: "low" })
   async visibility(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Arg("site", { description: "Pages site id or slug" }) site: string,
@@ -205,6 +210,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "domains", description: "Bind custom hostnames to a Ravi Pages site" })
+  @CommandAccess({ kind: "read", resource: "pages", action: "domains", risk: "low" })
   async domains(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Arg("site", { description: "Pages site id or slug" }) site: string,

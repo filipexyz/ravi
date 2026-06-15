@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import {
   dbGetCostSummary,
   dbGetCostByAgent,
@@ -332,6 +332,7 @@ async function recomputePricingRows(input: {
 })
 export class CostCommands {
   @Command({ name: "summary", description: "Show total cost summary for a recent window" })
+  @CommandAccess({ kind: "read", resource: "costs", action: "summary", risk: "low" })
   @Returns(costsSummaryReturnSchema)
   summary(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
@@ -352,6 +353,7 @@ export class CostCommands {
   }
 
   @Command({ name: "agents", description: "Show cost breakdown by agent" })
+  @CommandAccess({ kind: "read", resource: "costs", action: "agents", risk: "low" })
   @Returns(costsAgentsReturnSchema)
   agents(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
@@ -429,6 +431,7 @@ export class CostCommands {
   }
 
   @Command({ name: "top-sessions", description: "Show most expensive sessions" })
+  @CommandAccess({ kind: "read", resource: "costs", action: "top-sessions", risk: "low" })
   @Returns(costsTopSessionsReturnSchema)
   topSessions(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
@@ -479,6 +482,7 @@ export class CostCommands {
   }
 
   @Command({ name: "agent", description: "Show detailed cost summary for one agent" })
+  @CommandAccess({ kind: "read", resource: "costs", action: "agent", risk: "low" })
   @Returns(costsAgentReturnSchema)
   agent(
     @Arg("agentId", { description: "Agent ID" }) agentId: string,
@@ -501,6 +505,7 @@ export class CostCommands {
   }
 
   @Command({ name: "session", description: "Show detailed cost summary for one session" })
+  @CommandAccess({ kind: "read", resource: "costs", action: "session", risk: "low" })
   @Returns(costsSessionReturnSchema)
   session(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -524,6 +529,7 @@ export class CostCommands {
   }
 
   @Command({ name: "pricing", description: "Audit pricing coverage for recent cost events" })
+  @CommandAccess({ kind: "read", resource: "costs", action: "pricing", risk: "low" })
   @Returns(costsPricingReturnSchema)
   async pricing(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,

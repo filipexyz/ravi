@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, CliOnly, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import {
@@ -39,6 +39,7 @@ function printJson(payload: unknown): void {
 })
 export class WatchCommands {
   @Command({ name: "connectors", description: "List available watch connectors and event types" })
+  @CommandAccess({ kind: "read", resource: "watch", action: "connectors", risk: "low" })
   @Returns(watchConnectorsReturnSchema)
   connectors(
     @Option({ flags: "--provider <provider>", description: "Filter by provider id" }) provider?: string,
@@ -60,6 +61,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "create", description: "Create a watch" })
+  @CommandAccess({ kind: "mutate", resource: "watch", action: "create", risk: "medium" })
   @Returns(watchCreateReturnSchema)
   async create(
     @Arg("provider", { description: "Connector id: github or npm" }) provider: string,
@@ -107,6 +109,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "list", description: "List watches" })
+  @CommandAccess({ kind: "read", resource: "watch", action: "list", risk: "low" })
   @Returns(watchListReturnSchema)
   list(
     @Option({ flags: "--provider <provider>", description: "Filter by provider" }) provider?: string,
@@ -156,6 +159,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "show", description: "Show watch details" })
+  @CommandAccess({ kind: "read", resource: "watch", action: "show", risk: "low" })
   @Returns(watchShowReturnSchema)
   show(
     @Arg("id", { description: "Watch id" }) id: string,
@@ -173,6 +177,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "enable", description: "Enable a watch" })
+  @CommandAccess({ kind: "mutate", resource: "watch", action: "enable", risk: "medium" })
   @Returns(watchMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Watch id" }) id: string,
@@ -188,6 +193,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "disable", description: "Disable a watch" })
+  @CommandAccess({ kind: "mutate", resource: "watch", action: "disable", risk: "medium" })
   @Returns(watchMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Watch id" }) id: string,
@@ -203,6 +209,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "rm", description: "Remove a watch" })
+  @CommandAccess({ kind: "mutate", resource: "watch", action: "rm", risk: "destructive" })
   @Returns(watchRemoveReturnSchema)
   async rm(
     @Arg("id", { description: "Watch id" }) id: string,
@@ -218,6 +225,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "events", description: "Show trigger-ready event subjects for a watch" })
+  @CommandAccess({ kind: "read", resource: "watch", action: "events", risk: "low" })
   @Returns(watchEventsReturnSchema)
   events(
     @Arg("id", { description: "Watch id" }) id: string,
@@ -240,6 +248,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "trigger", description: "Create a trigger for a watch event in the current chat" })
+  @CommandAccess({ kind: "mutate", resource: "watch", action: "trigger", risk: "high" })
   @Returns(watchTriggerReturnSchema)
   async trigger(
     @Arg("id", { description: "Watch id" }) id: string,

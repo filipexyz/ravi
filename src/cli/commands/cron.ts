@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cronListReturnSchema, cronMutationReturnSchema, cronShowReturnSchema } from "./operational-return-schemas.js";
@@ -125,6 +125,7 @@ function serializeCronJob(job: CronJob) {
 })
 export class CronCommands {
   @Command({ name: "list", description: "List all scheduled jobs" })
+  @CommandAccess({ kind: "read", resource: "cron", action: "list", risk: "low" })
   @Returns(cronListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -203,6 +204,7 @@ export class CronCommands {
   }
 
   @Command({ name: "show", description: "Show job details" })
+  @CommandAccess({ kind: "read", resource: "cron", action: "show", risk: "low" })
   @Returns(cronShowReturnSchema)
   show(
     @Arg("id", { description: "Job ID" }) id: string,
@@ -228,6 +230,7 @@ export class CronCommands {
   }
 
   @Command({ name: "add", description: "Add a new scheduled job" })
+  @CommandAccess({ kind: "mutate", resource: "cron", action: "add", risk: "medium" })
   @Returns(cronMutationReturnSchema)
   async add(
     @Arg("name", { description: "Job name" }) name: string,
@@ -398,6 +401,7 @@ export class CronCommands {
   }
 
   @Command({ name: "enable", description: "Enable a job" })
+  @CommandAccess({ kind: "mutate", resource: "cron", action: "enable", risk: "medium" })
   @Returns(cronMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Job ID" }) id: string,
@@ -437,6 +441,7 @@ export class CronCommands {
   }
 
   @Command({ name: "disable", description: "Disable a job" })
+  @CommandAccess({ kind: "mutate", resource: "cron", action: "disable", risk: "medium" })
   @Returns(cronMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Job ID" }) id: string,
@@ -469,6 +474,7 @@ export class CronCommands {
   }
 
   @Command({ name: "set", description: "Set job property" })
+  @CommandAccess({ kind: "mutate", resource: "cron", action: "set", risk: "medium" })
   @Returns(cronMutationReturnSchema)
   async set(
     @Arg("id", { description: "Job ID" }) id: string,
@@ -679,6 +685,7 @@ export class CronCommands {
   }
 
   @Command({ name: "run", description: "Manually run a job (ignores schedule)" })
+  @CommandAccess({ kind: "mutate", resource: "cron", action: "run", risk: "high" })
   @Returns(cronMutationReturnSchema)
   async run(
     @Arg("id", { description: "Job ID" }) id: string,
@@ -715,6 +722,7 @@ export class CronCommands {
   }
 
   @Command({ name: "rm", description: "Delete a job", aliases: ["delete", "remove"] })
+  @CommandAccess({ kind: "mutate", resource: "cron", action: "rm", risk: "destructive" })
   @Returns(cronMutationReturnSchema)
   async rm(
     @Arg("id", { description: "Job ID" }) id: string,

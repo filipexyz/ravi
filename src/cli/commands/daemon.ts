@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { Group, Command, CliOnly, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, CliOnly, Option, Returns } from "../decorators.js";
 import { getContext, hasContext, fail } from "../context.js";
 import {
   daemonEnvReturnSchema,
@@ -310,6 +310,7 @@ function requirePm2() {
 })
 export class DaemonCommands {
   @Command({ name: "start", description: "Start the daemon via PM2" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "start", risk: "high" })
   @Returns(daemonMutationReturnSchema)
   start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
@@ -371,6 +372,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "stop", description: "Stop the daemon" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "stop", risk: "medium" })
   @Returns(daemonMutationReturnSchema)
   stop(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
@@ -412,6 +414,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "restart", description: "Restart the daemon" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "restart", risk: "high" })
   @Returns(daemonMutationReturnSchema)
   restart(
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
@@ -586,6 +589,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "status", description: "Show daemon and infrastructure status" })
+  @CommandAccess({ kind: "read", resource: "daemon", action: "status", risk: "low" })
   @Returns(daemonStatusReturnSchema)
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const payload = buildDaemonStatusJson();
@@ -634,6 +638,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "logs", description: "Show daemon logs (PM2)" })
+  @CommandAccess({ kind: "read", resource: "daemon", action: "logs", risk: "low" })
   @Returns(daemonLogsReturnSchema)
   logs(
     @Option({ flags: "-f, --follow", description: "Follow log output" }) follow?: boolean,
@@ -770,6 +775,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "install", description: "Save PM2 process list and suggest startup" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "install", risk: "high" })
   @Returns(daemonMutationReturnSchema)
   install(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
@@ -790,6 +796,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "uninstall", description: "Remove ravi from PM2 and clean up" })
+  @CommandAccess({ kind: "read", resource: "daemon", action: "uninstall", risk: "low" })
   @Returns(daemonMutationReturnSchema)
   uninstall(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
@@ -898,6 +905,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "env", description: "Edit environment file (~/.ravi/.env)" })
+  @CommandAccess({ kind: "read", resource: "daemon", action: "env", risk: "low" })
   @Returns(daemonEnvReturnSchema)
   env(@Option({ flags: "--json", description: "Print raw JSON result without opening an editor" }) asJson?: boolean) {
     mkdirSync(RAVI_DIR, { recursive: true });
@@ -968,6 +976,7 @@ ANTHROPIC_API_KEY=
     name: "init-admin-key",
     description: "Bootstrap the admin runtime context-key. Refuses to run if any live admin context already exists.",
   })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "init-admin-key", risk: "medium" })
   @Returns(daemonInitAdminKeyReturnSchema)
   initAdminKey(
     @Option({ flags: "--label <name>", description: "Label for the bootstrap context (default: hostname)" })

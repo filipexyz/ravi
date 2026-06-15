@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -81,6 +81,7 @@ function summarizePrimaryArtifacts(profile: {
 })
 export class TaskProfileCommands {
   @Command({ name: "list", description: "List resolved task profiles from all catalog sources" })
+  @CommandAccess({ kind: "read", resource: "tasks.profiles", action: "list", risk: "low" })
   @Returns(taskProfilesListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -124,6 +125,7 @@ export class TaskProfileCommands {
   }
 
   @Command({ name: "show", description: "Show the resolved manifest for one task profile" })
+  @CommandAccess({ kind: "read", resource: "tasks.profiles", action: "show", risk: "low" })
   @Returns(taskProfileReturnSchema)
   show(
     @Arg("profileId", { description: "Task profile id" }) profileId: string,
@@ -184,6 +186,7 @@ export class TaskProfileCommands {
   }
 
   @Command({ name: "preview", description: "Render a profile preview with the resolved template context" })
+  @CommandAccess({ kind: "read", resource: "tasks.profiles", action: "preview", risk: "low" })
   @Returns(taskProfilePreviewReturnSchema)
   preview(
     @Arg("profileId", { description: "Task profile id" }) profileId: string,
@@ -254,6 +257,7 @@ export class TaskProfileCommands {
   }
 
   @Command({ name: "validate", description: "Validate one profile or the whole resolved catalog" })
+  @CommandAccess({ kind: "read", resource: "tasks.profiles", action: "validate", risk: "low" })
   @Returns(taskProfilesValidateReturnSchema)
   validate(
     @Arg("profileId", { required: false, description: "Optional task profile id" }) profileId?: string,
@@ -283,6 +287,7 @@ export class TaskProfileCommands {
   }
 
   @Command({ name: "init", description: "Create a profile scaffold in the workspace or user catalog" })
+  @CommandAccess({ kind: "mutate", resource: "tasks.profiles", action: "init", risk: "medium" })
   @Returns(taskProfileInitReturnSchema)
   init(
     @Arg("profileId", { description: "Task profile id" }) profileId: string,

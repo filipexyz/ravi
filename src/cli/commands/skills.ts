@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
@@ -58,6 +58,7 @@ export class SkillsCommands {
     description: "List Ravi catalog skills, installed skills or source skills",
     aliases: ["ls"],
   })
+  @CommandAccess({ kind: "read", resource: "skills", action: "list", risk: "low" })
   @Returns(skillsListReturnSchema)
   list(
     @Option({ flags: "--source <source>", description: "List skills available in a GitHub URL, git URL or local path" })
@@ -126,6 +127,7 @@ export class SkillsCommands {
   }
 
   @Command({ name: "show", description: "Show a Ravi catalog skill, installed skill or source skill" })
+  @CommandAccess({ kind: "read", resource: "skills", action: "show", risk: "low" })
   @Returns(skillShowReturnSchema)
   show(
     @Arg("name", { description: "Catalog skill name, installed skill name, or source skill name" }) name: string,
@@ -162,6 +164,7 @@ export class SkillsCommands {
   }
 
   @Command({ name: "install", description: "Install Ravi catalog skills or skills from an explicit source" })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "install", risk: "high" })
   @Returns(skillsInstallReturnSchema)
   install(
     @Arg("name", {
@@ -226,6 +229,7 @@ export class SkillsCommands {
   }
 
   @Command({ name: "sync", description: "Sync Ravi plugin skills into the Codex skills directory" })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "sync", risk: "high" })
   @Returns(skillsSyncReturnSchema)
   sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const codexSynced = syncCodex();

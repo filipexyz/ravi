@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -288,6 +288,7 @@ function printAppLine(record: z.infer<typeof appSummarySchema>): void {
 })
 export class AppsCommands {
   @Command({ name: "list", description: "List discovered Ravi apps" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "list", risk: "low" })
   @Returns(appsListReturnSchema)
   list(
     @Option({ flags: "--source <source>", description: "Filter by source: repo|plugin|state" }) source?: string,
@@ -335,6 +336,7 @@ export class AppsCommands {
   }
 
   @Command({ name: "show", description: "Show a Ravi app manifest" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "show", risk: "low" })
   @Returns(appsShowReturnSchema)
   show(
     @Arg("id", { description: "App id" }) id: string,
@@ -371,6 +373,7 @@ export class AppsCommands {
   }
 
   @Command({ name: "check", description: "Validate Ravi app manifests without executing app code" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "check", risk: "low" })
   @Returns(appsCheckReturnSchema)
   check(
     @Arg("id", { required: false, description: "Optional app id. Omit to check all discovered apps." }) id?: string,
@@ -417,6 +420,7 @@ export class AppsCommands {
   }
 
   @Command({ name: "run", description: "Run a Ravi app operation through the runtime app router" })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "run", risk: "high" })
   @Returns(appsRunReturnSchema)
   async run(
     @Arg("id", { description: "App id" }) id: string,
@@ -438,6 +442,7 @@ export class AppsCommands {
   }
 
   @Command({ name: "scaffold", description: "Create a Ravi app scaffold from the app contract" })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "scaffold", risk: "medium" })
   @Returns(appsScaffoldReturnSchema)
   scaffold(
     @Arg("id", { description: "Stable app id, e.g. music or music/player" }) id: string,
@@ -483,6 +488,7 @@ export class AppsCommands {
   }
 
   @Command({ name: "import-cli", description: "Create a Ravi app draft from an existing CLI contract" })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "import-cli", risk: "high" })
   @Returns(appsImportCliReturnSchema)
   importCli(
     @Arg("command", { description: "CLI command to import, e.g. 'ravi apps' or 'my-cli'" }) command: string,
@@ -536,6 +542,7 @@ export class AppsCommands {
   }
 
   @Command({ name: "guide", description: "Print agent guidance for discovering, scaffolding, and operating Ravi apps" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "guide", risk: "low" })
   @Returns(appsGuideReturnSchema)
   guide(
     @Arg("id", { required: false, description: "Optional app id for app-specific prompts" }) id?: string,
@@ -545,6 +552,7 @@ export class AppsCommands {
   }
 
   @Command({ name: "prompts", description: "Print all built-in Ravi apps agent prompts" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "prompts", risk: "low" })
   @Returns(appsGuideReturnSchema)
   prompts(
     @Arg("id", { required: false, description: "Optional app id for app-specific prompts" }) id?: string,

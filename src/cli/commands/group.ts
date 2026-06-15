@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { Group, Command, Arg, Option, Scope } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
@@ -815,6 +815,7 @@ async function setGroupSettingsViaOmni(input: {
 })
 export class GroupCommands {
   @Command({ name: "list", description: "List all groups the bot participates in" })
+  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -874,6 +875,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "info", description: "Show group metadata" })
+  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "info", risk: "low" })
   async info(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -930,6 +932,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "send", description: "Send a message to a WhatsApp group" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "send", risk: "high" })
   @Scope("open")
   async send(
     @Arg("groupId", { description: "Group ID, JID, or 'here' for the current chat" }) groupId: string,
@@ -1005,6 +1008,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "create", description: "Create a new group" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "create", risk: "high" })
   async create(
     @Arg("name", { description: "Group name/subject" }) name: string,
     @Arg("participants", {
@@ -1273,6 +1277,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "add", description: "Add participants to a group" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "add", risk: "high" })
   async add(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to add (comma-separated)" }) participantsStr: string,
@@ -1297,6 +1302,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "remove", description: "Remove participants from a group" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "remove", risk: "destructive" })
   async remove(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to remove (comma-separated)" }) participantsStr: string,
@@ -1323,6 +1329,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "promote", description: "Promote participants to admin" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "promote", risk: "high" })
   async promote(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to promote (comma-separated)" }) participantsStr: string,
@@ -1349,6 +1356,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "demote", description: "Demote participants from admin" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "demote", risk: "high" })
   async demote(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to demote (comma-separated)" }) participantsStr: string,
@@ -1375,6 +1383,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "invite", description: "Get group invite link" })
+  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "invite", risk: "low" })
   async invite(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -1391,6 +1400,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "revoke-invite", description: "Revoke current invite link" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "revoke-invite", risk: "destructive" })
   async revokeInvite(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -1407,6 +1417,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "join", description: "Join a group via invite link/code" })
+  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "join", risk: "low" })
   async join(
     @Arg("code", { description: "Invite code or full link" }) code: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -1422,6 +1433,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "leave", description: "Leave a group" })
+  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "leave", risk: "low" })
   async leave(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -1437,6 +1449,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "rename", description: "Rename a group" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "rename", risk: "high" })
   async rename(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("name", { description: "New group name" }) name: string,
@@ -1453,6 +1466,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "description", description: "Update group description" })
+  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "description", risk: "low" })
   async description(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("text", { description: "New description" }) text: string,
@@ -1472,6 +1486,7 @@ export class GroupCommands {
     name: "settings",
     description: "Update group settings (announcement, not_announcement, locked, unlocked)",
   })
+  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "settings", risk: "low" })
   async settings(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("setting", { description: "Setting: announcement, not_announcement, locked, unlocked" }) setting: string,

@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option, Scope } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { jsonObjectSchema } from "../return-schemas.js";
@@ -201,6 +201,7 @@ const sessionFollowupCadenceEnvelopeReturnSchema = z.object({
 export class SessionFollowupCommands {
   @Scope("admin")
   @Command({ name: "list", description: "List session followup cadences" })
+  @CommandAccess({ kind: "read", resource: "sessions.followups", action: "list", risk: "low" })
   list(
     @Option({ flags: "--include-disabled", description: "Include paused/disabled cadences" }) includeDisabled?: boolean,
     @Option({ flags: "--target-type <type>", description: "Filter by target type: session|chat|reading_list" })
@@ -247,6 +248,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "add", description: "Create a session followup cadence" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "add", risk: "medium" })
   add(
     @Arg("name", { description: "Followup cadence name" }) name: string,
     @Option({ flags: "--target-session <session>", description: "Target one session by name or key" })
@@ -304,6 +306,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "update", description: "Update a session followup cadence without recreating it" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "update", risk: "medium" })
   update(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--name <name>", description: "Update cadence name" }) name?: string,
@@ -370,6 +373,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "inspect", description: "Inspect one session followup cadence and recent runs" })
+  @CommandAccess({ kind: "read", resource: "sessions.followups", action: "inspect", risk: "low" })
   inspect(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--runs <n>", description: "Number of recent runs (default: 20)" }) runs?: string,
@@ -396,6 +400,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "runs", description: "List session followup runs" })
+  @CommandAccess({ kind: "read", resource: "sessions.followups", action: "runs", risk: "low" })
   runs(
     @Option({ flags: "--cadence <id>", description: "Filter by cadence id" }) cadenceId?: string,
     @Option({ flags: "--status <status>", description: "Filter by run status" }) status?: string,
@@ -432,6 +437,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "run", description: "Run a followup cadence now without consuming its next scheduled time" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "run", risk: "high" })
   async run(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -448,6 +454,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "pause", description: "Pause a followup cadence" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "pause", risk: "medium" })
   pause(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -465,6 +472,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "resume", description: "Resume a followup cadence and recalculate next run" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "resume", risk: "medium" })
   resume(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -486,6 +494,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "snooze", description: "Snooze a followup cadence until a timestamp" })
+  @CommandAccess({ kind: "read", resource: "sessions.followups", action: "snooze", risk: "low" })
   snooze(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--until <iso>", description: "Wake-up timestamp" }) until?: string,
@@ -507,6 +516,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "retry", description: "Retry failed/dead followup runs" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "retry", risk: "medium" })
   retry(
     @Arg("run", { required: false, description: "Optional run id" }) runId?: string,
     @Option({ flags: "--cadence <id>", description: "Retry failed/dead runs for one cadence" }) cadenceId?: string,

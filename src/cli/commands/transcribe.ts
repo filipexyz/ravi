@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { z } from "zod";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
 
@@ -47,6 +47,7 @@ const EXT_MIME: Record<string, string> = {
 })
 export class TranscribeCommands {
   @Command({ name: "file", description: "Transcribe a local audio file" })
+  @CommandAccess({ kind: "read", resource: "transcribe", action: "file", risk: "low" })
   @Returns(transcribeFileReturnSchema)
   async file(
     @Arg("path", { description: "Path to audio file" }) filePath: string,

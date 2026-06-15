@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option, Scope } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
@@ -287,6 +287,7 @@ function serializeReadingDelta(delta: ChatReadingDelta, includeRaw?: boolean): R
 export class ChatsCommands {
   @Scope("admin")
   @Command({ name: "list", aliases: ["recent"], description: "List recent canonical chats" })
+  @CommandAccess({ kind: "read", resource: "chats", action: "list", risk: "low" })
   list(
     @Option({ flags: "--instance <name-or-id>", description: "Filter by instance name or Omni instance id" })
     instance?: string,
@@ -359,6 +360,7 @@ export class ChatsCommands {
 
   @Scope("admin")
   @Command({ name: "read", aliases: ["messages"], description: "Read messages from one chat" })
+  @CommandAccess({ kind: "read", resource: "chats", action: "read", risk: "low" })
   read(
     @Arg("chat", { description: "Chat id, platform chat id, phone, group id, or normalized chat id" }) chatRef: string,
     @Option({ flags: "--instance <name-or-id>", description: "Resolve chat within an instance" }) instance?: string,
@@ -421,6 +423,7 @@ export class ChatsCommands {
     name: "backfill-provider-timestamps",
     description: "Backfill message provider timestamps from raw provenance",
   })
+  @CommandAccess({ kind: "mutate", resource: "chats", action: "backfill-provider-timestamps", risk: "medium" })
   backfillProviderTimestamps(
     @Option({ flags: "--limit <n>", description: "Maximum matching messages to inspect/apply" }) limit?: string,
     @Option({ flags: "--apply", description: "Write corrected provider timestamps. Without this, runs dry-run." })
@@ -480,6 +483,7 @@ export class ChatsCommands {
 export class ChatReadingListCommands {
   @Scope("admin")
   @Command({ name: "list", description: "List chat reading lists" })
+  @CommandAccess({ kind: "read", resource: "chats.lists", action: "list", risk: "low" })
   list(
     @Option({ flags: "--owner <type:id>", description: "Filter by owner, e.g. agent:ravi-crm" }) owner?: string,
     @Option({ flags: "--include-archived", description: "Include archived lists" }) includeArchived?: boolean,
@@ -523,6 +527,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "create", description: "Create or restore a chat reading list" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "create", risk: "medium" })
   create(
     @Arg("name", { description: "Reading list name" }) name: string,
     @Option({ flags: "--owner <type:id>", description: "Owner scope (default: current agent or system:ravi)" })
@@ -553,6 +558,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "add", description: "Add a chat to a reading list" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "add", risk: "medium" })
   add(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -580,6 +586,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "remove", description: "Remove a chat from a reading list without deleting cursor history" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "remove", risk: "destructive" })
   remove(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -604,6 +611,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "members", description: "List chats in a reading list with unread counts" })
+  @CommandAccess({ kind: "read", resource: "chats.lists", action: "members", risk: "low" })
   members(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Option({ flags: "--reader <type:id>", description: "Reader cursor scope (default: current agent)" })
@@ -653,6 +661,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "recompute", description: "Materialize dynamic reading-list selector membership" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "recompute", risk: "medium" })
   recompute(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
@@ -673,6 +682,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "delta", description: "Read what changed in a chat since this list reader cursor" })
+  @CommandAccess({ kind: "read", resource: "chats.lists", action: "delta", risk: "low" })
   delta(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -725,6 +735,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "mark-read", description: "Explicitly advance one reading-list cursor" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "mark-read", risk: "medium" })
   markRead(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,

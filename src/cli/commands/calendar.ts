@@ -38,7 +38,7 @@ import {
   type CalendarVisibility,
 } from "../../calendar/index.js";
 import { hasContext } from "../context.js";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { jsonObjectSchema, stringNumberRecordSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -51,6 +51,7 @@ const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 })
 export class CalendarAccountsCommands {
   @Command({ name: "list", description: "List local calendar accounts" })
+  @CommandAccess({ kind: "read", resource: "calendar.accounts", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--provider <provider>", description: "Filter by provider" }) provider?: string,
     @Option({ flags: "--status <status>", description: "Filter by account status" }) status?: string,
@@ -72,6 +73,7 @@ export class CalendarAccountsCommands {
   }
 
   @Command({ name: "create", description: "Create or update a local calendar provider account" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.accounts", action: "create", risk: "medium" })
   async create(
     @Option({ flags: "--provider <provider>", description: "Provider id, e.g. local or google-calendar" })
     provider?: string,
@@ -97,6 +99,7 @@ export class CalendarAccountsCommands {
   }
 
   @Command({ name: "sync", description: "Run one provider sync tick for an account" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.accounts", action: "sync", risk: "high" })
   async sync(
     @Arg("account", { description: "Local calendar account id" }) accountId: string,
     @Option({ flags: "--once", description: "Run one foreground tick" }) _once?: boolean,
@@ -128,6 +131,7 @@ export class CalendarAccountsCommands {
 })
 export class CalendarCalendarsCommands {
   @Command({ name: "list", description: "List local calendars visible to the current requester" })
+  @CommandAccess({ kind: "read", resource: "calendar.calendars", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--account <account>", description: "Local account id" }) accountId?: string,
     @Option({ flags: "--status <status>", description: "Filter by calendar status" }) status?: string,
@@ -149,6 +153,7 @@ export class CalendarCalendarsCommands {
   }
 
   @Command({ name: "create", description: "Create or update a local calendar projection" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.calendars", action: "create", risk: "medium" })
   async create(
     @Option({ flags: "--name <name>", description: "Calendar name" }) name?: string,
     @Option({ flags: "--account <account>", description: "Local account id" }) accountId?: string,
@@ -190,6 +195,7 @@ export class CalendarCalendarsCommands {
   }
 
   @Command({ name: "show", description: "Show a local calendar" })
+  @CommandAccess({ kind: "read", resource: "calendar.calendars", action: "show", risk: "low" })
   async show(
     @Arg("calendar", { description: "Local calendar id, name, or provider calendar id" }) calendarRef: string,
     @Option({ flags: "--members", description: "Include membership projection rows" }) includeMembers?: boolean,
@@ -208,6 +214,7 @@ export class CalendarCalendarsCommands {
   }
 
   @Command({ name: "share", description: "Grant a calendar relation to an agent/contact/system subject" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.calendars", action: "share", risk: "medium" })
   async share(
     @Arg("calendar", { description: "Local calendar id or name" }) calendarRef: string,
     @Option({ flags: "--with <subject>", description: "Subject, e.g. agent:main" }) subject?: string,
@@ -236,6 +243,7 @@ export class CalendarCalendarsCommands {
   }
 
   @Command({ name: "disable", description: "Disable a local calendar projection" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.calendars", action: "disable", risk: "medium" })
   async disable(
     @Arg("calendar", { description: "Local calendar id or name" }) calendarRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -258,6 +266,7 @@ export class CalendarCalendarsCommands {
 })
 export class CalendarEventsCommands {
   @Command({ name: "list", description: "List local calendar events in a bounded time window" })
+  @CommandAccess({ kind: "read", resource: "calendar.events", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--calendar <calendar>", description: "Local calendar id or name" }) calendarRef?: string,
     @Option({ flags: "--from <time>", description: "Window start; default now" }) from?: string,
@@ -295,6 +304,7 @@ export class CalendarEventsCommands {
   }
 
   @Command({ name: "read", description: "Read one local calendar event" })
+  @CommandAccess({ kind: "read", resource: "calendar.events", action: "read", risk: "low" })
   async read(
     @Arg("event", { description: "Local event id" }) eventId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -310,6 +320,7 @@ export class CalendarEventsCommands {
   }
 
   @Command({ name: "create", description: "Create a local calendar event and local outbox row" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "create", risk: "high" })
   async create(
     @Option({ flags: "--calendar <calendar>", description: "Local calendar id or name" }) calendarRef?: string,
     @Option({ flags: "--title <title>", description: "Event title" }) title?: string,
@@ -351,6 +362,7 @@ export class CalendarEventsCommands {
   }
 
   @Command({ name: "update", description: "Update a local calendar event and enqueue provider delivery" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "update", risk: "high" })
   async update(
     @Arg("event", { description: "Local event id" }) eventId: string,
     @Option({ flags: "--title <title>", description: "Event title" }) title?: string,
@@ -391,6 +403,7 @@ export class CalendarEventsCommands {
   }
 
   @Command({ name: "cancel", description: "Cancel a local calendar event" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "cancel", risk: "high" })
   async cancel(
     @Arg("event", { description: "Local event id" }) eventId: string,
     @Option({ flags: "--idempotency-key <key>", description: "Local write idempotency key" }) idempotencyKey?: string,
@@ -411,6 +424,7 @@ export class CalendarEventsCommands {
   }
 
   @Command({ name: "respond", description: "Record an attendee response and enqueue provider delivery" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "respond", risk: "high" })
   async respond(
     @Arg("event", { description: "Local event id" }) eventId: string,
     @Option({ flags: "--status <status>", description: "accepted, declined, tentative, needs_action, or unknown" })
@@ -448,6 +462,7 @@ export class CalendarEventsCommands {
 })
 export class CalendarOutboxCommands {
   @Command({ name: "status", description: "Show local calendar outbox status" })
+  @CommandAccess({ kind: "read", resource: "calendar.outbox", action: "status", risk: "low" })
   async status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     return runCalendarCommand(asJson, async () => {
       const rows = listCalendarOutbox({ limit: 500 }).filter((row) => canUseRowCalendar("write", row.calendarId));
@@ -462,6 +477,7 @@ export class CalendarOutboxCommands {
   }
 
   @Command({ name: "list", description: "List local calendar outbox rows" })
+  @CommandAccess({ kind: "read", resource: "calendar.outbox", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--status <status>", description: "Filter by outbox status" }) status?: string,
     @Option({ flags: "--calendar <calendar>", description: "Local calendar id or name" }) calendarRef?: string,
@@ -484,6 +500,7 @@ export class CalendarOutboxCommands {
   }
 
   @Command({ name: "inspect", description: "Inspect one local calendar outbox row" })
+  @CommandAccess({ kind: "read", resource: "calendar.outbox", action: "inspect", risk: "low" })
   async inspect(
     @Arg("outbox", { description: "Local outbox id" }) outboxId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -499,6 +516,7 @@ export class CalendarOutboxCommands {
   }
 
   @Command({ name: "retry", description: "Move a failed/dead local outbox row back to pending" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.outbox", action: "retry", risk: "medium" })
   async retry(
     @Arg("outbox", { description: "Local outbox id" }) outboxId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -522,6 +540,7 @@ export class CalendarOutboxCommands {
 })
 export class CalendarCommands {
   @Command({ name: "availability", description: "Return free/busy availability in a bounded time window" })
+  @CommandAccess({ kind: "read", resource: "calendar", action: "availability", risk: "low" })
   async availability(
     @Option({ flags: "--calendar <calendar>", description: "Local calendar id or name" }) calendarRef?: string,
     @Option({ flags: "--from <time>", description: "Window start; default now" }) from?: string,

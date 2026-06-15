@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { z } from "zod";
-import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import { LinkStepUpRequiredError } from "../../link/client.js";
 import { execCapability, listConnectors } from "../../link/connectors.js";
@@ -17,6 +17,7 @@ import { declareCommandReturns } from "./operational-return-schemas.js";
 })
 export class GmailCommands {
   @Command({ name: "list", description: "List messages in the connected Gmail mailbox" })
+  @CommandAccess({ kind: "read", resource: "gmail", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--q <query>", description: "Gmail search query (same as the web search bar)" }) query?: string,
     @Option({ flags: "--label <id>", description: "Filter by label id (repeat for multiple)" }) label?: string,
@@ -65,6 +66,7 @@ export class GmailCommands {
   }
 
   @Command({ name: "read", description: "Read a single Gmail message" })
+  @CommandAccess({ kind: "read", resource: "gmail", action: "read", risk: "low" })
   async read(
     @Arg("id", { description: "Gmail message id (from `ravi gmail list`)" }) id: string,
     @Option({ flags: "--format <format>", description: "full | metadata | raw (default full)" }) format?: string,

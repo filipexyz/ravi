@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { configStore } from "../../config-store.js";
@@ -98,6 +98,7 @@ function normalizeRestArgs(rest?: string[]): string[] {
 })
 export class RaviCommandsCommands {
   @Command({ name: "list", description: "List Ravi commands" })
+  @CommandAccess({ kind: "read", resource: "commands", action: "list", risk: "low" })
   @Returns(commandsListReturnSchema)
   list(
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
@@ -166,6 +167,7 @@ export class RaviCommandsCommands {
   }
 
   @Command({ name: "show", description: "Show one Ravi command" })
+  @CommandAccess({ kind: "read", resource: "commands", action: "show", risk: "low" })
   @Returns(commandShowReturnSchema)
   show(
     @Arg("name", { description: "Command name, with or without #" }) name: string,
@@ -195,6 +197,7 @@ export class RaviCommandsCommands {
   }
 
   @Command({ name: "validate", description: "Validate Ravi command files" })
+  @CommandAccess({ kind: "read", resource: "commands", action: "validate", risk: "low" })
   @Returns(commandValidateReturnSchema)
   validate(
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
@@ -228,6 +231,7 @@ export class RaviCommandsCommands {
   }
 
   @Command({ name: "run", description: "Render a Ravi command into its composed prompt" })
+  @CommandAccess({ kind: "read", resource: "commands", action: "render", risk: "low" })
   @Returns(commandRunReturnSchema)
   run(
     @Arg("name", { description: "Command name, with or without #" }) name: string,

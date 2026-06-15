@@ -28,7 +28,7 @@ import "reflect-metadata";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import qrcode from "qrcode-terminal";
-import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
+import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -646,6 +646,7 @@ export class InstancesCommands {
   // list
   // --------------------------------------------------------------------------
   @Command({ name: "list", description: "List all instances" })
+  @CommandAccess({ kind: "read", resource: "instances", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical instance tag" }) tagSlug?: string,
@@ -752,6 +753,7 @@ export class InstancesCommands {
   // show
   // --------------------------------------------------------------------------
   @Command({ name: "show", description: "Show instance details" })
+  @CommandAccess({ kind: "read", resource: "instances", action: "show", risk: "low" })
   async show(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -825,6 +827,7 @@ export class InstancesCommands {
   // create
   // --------------------------------------------------------------------------
   @Command({ name: "create", description: "Create a new instance" })
+  @CommandAccess({ kind: "mutate", resource: "instances", action: "create", risk: "medium" })
   create(
     @Arg("name", { description: "Instance name (e.g., main, vendas)" }) name: string,
     @Option({ flags: "--channel <channel>", description: "Channel type (default: whatsapp)" }) channel?: string,
@@ -890,6 +893,7 @@ export class InstancesCommands {
   // get
   // --------------------------------------------------------------------------
   @Command({ name: "get", description: "Get an instance property" })
+  @CommandAccess({ kind: "read", resource: "instances", action: "get", risk: "low" })
   get(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("key", { description: `Property key (${SETTABLE_KEYS.join(", ")})` }) key: string,
@@ -916,6 +920,7 @@ export class InstancesCommands {
   // set
   // --------------------------------------------------------------------------
   @Command({ name: "set", description: "Set an instance property" })
+  @CommandAccess({ kind: "mutate", resource: "instances", action: "set", risk: "medium" })
   set(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("key", { description: `Property key (${SETTABLE_KEYS.join(", ")})` }) key: string,
@@ -1008,6 +1013,7 @@ export class InstancesCommands {
   // enable
   // --------------------------------------------------------------------------
   @Command({ name: "enable", description: "Enable an instance in Ravi without changing omni" })
+  @CommandAccess({ kind: "mutate", resource: "instances", action: "enable", risk: "medium" })
   enable(
     @Arg("target", { description: "Instance name or omni instanceId" }) target: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1064,6 +1070,7 @@ export class InstancesCommands {
   // disable
   // --------------------------------------------------------------------------
   @Command({ name: "disable", description: "Disable an instance in Ravi without changing omni" })
+  @CommandAccess({ kind: "mutate", resource: "instances", action: "disable", risk: "medium" })
   disable(
     @Arg("target", { description: "Instance name or omni instanceId" }) target: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1133,6 +1140,7 @@ export class InstancesCommands {
   // delete
   // --------------------------------------------------------------------------
   @Command({ name: "delete", description: "Delete an instance (soft-delete, recoverable)" })
+  @CommandAccess({ kind: "mutate", resource: "instances", action: "delete", risk: "destructive" })
   delete(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1162,6 +1170,7 @@ export class InstancesCommands {
   // restore
   // --------------------------------------------------------------------------
   @Command({ name: "restore", description: "Restore a soft-deleted instance" })
+  @CommandAccess({ kind: "mutate", resource: "instances", action: "restore", risk: "medium" })
   restore(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1189,6 +1198,7 @@ export class InstancesCommands {
   // deleted
   // --------------------------------------------------------------------------
   @Command({ name: "deleted", description: "List soft-deleted instances" })
+  @CommandAccess({ kind: "read", resource: "instances", action: "deleted", risk: "low" })
   deleted(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const instances = dbListDeletedInstances();
     const payload = {
@@ -1379,6 +1389,7 @@ export class InstancesCommands {
   // disconnect
   // --------------------------------------------------------------------------
   @Command({ name: "disconnect", description: "Disconnect an instance from omni" })
+  @CommandAccess({ kind: "read", resource: "instances", action: "disconnect", risk: "low" })
   async disconnect(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1409,6 +1420,7 @@ export class InstancesCommands {
   // status
   // --------------------------------------------------------------------------
   @Command({ name: "status", description: "Show connection status for an instance" })
+  @CommandAccess({ kind: "read", resource: "instances", action: "status", risk: "low" })
   async status(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1467,6 +1479,7 @@ export class InstancesCommands {
   }
 
   @Command({ name: "target", description: "Explain which runtime, DB, and live instance this CLI would affect" })
+  @CommandAccess({ kind: "read", resource: "instances", action: "target", risk: "low" })
   target(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({
@@ -1502,6 +1515,7 @@ export class InstancesCommands {
 })
 export class RoutesCommands {
   @Command({ name: "list", description: "List routes across all instances or for one instance" })
+  @CommandAccess({ kind: "read", resource: "routes", action: "list", risk: "low" })
   list(
     @Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1519,6 +1533,7 @@ export class RoutesCommands {
   }
 
   @Command({ name: "show", description: "Show route details" })
+  @CommandAccess({ kind: "read", resource: "routes", action: "show", risk: "low" })
   show(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
@@ -1534,6 +1549,7 @@ export class RoutesCommands {
   }
 
   @Command({ name: "explain", description: "Explain how a pattern resolves in config and the live router" })
+  @CommandAccess({ kind: "read", resource: "routes", action: "explain", risk: "low" })
   explain(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
@@ -1565,6 +1581,7 @@ export class RoutesCommands {
 })
 export class InstancesRoutesCommands {
   @Command({ name: "list", description: "List routes for an instance" })
+  @CommandAccess({ kind: "read", resource: "instances.routes", action: "list", risk: "low" })
   list(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1583,6 +1600,7 @@ export class InstancesRoutesCommands {
   }
 
   @Command({ name: "show", description: "Show route details" })
+  @CommandAccess({ kind: "read", resource: "instances.routes", action: "show", risk: "low" })
   show(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
@@ -1598,6 +1616,7 @@ export class InstancesRoutesCommands {
   }
 
   @Command({ name: "add", description: "Add a route to an instance" })
+  @CommandAccess({ kind: "mutate", resource: "instances.routes", action: "add", risk: "medium" })
   add(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern (e.g., group:123456, 5511*, thread:*, *)" }) pattern: string,
@@ -1692,6 +1711,7 @@ export class InstancesRoutesCommands {
   }
 
   @Command({ name: "remove", description: "Remove a route (soft-delete, recoverable)" })
+  @CommandAccess({ kind: "mutate", resource: "instances.routes", action: "remove", risk: "destructive" })
   remove(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
@@ -1731,6 +1751,7 @@ export class InstancesRoutesCommands {
   }
 
   @Command({ name: "restore", description: "Restore a soft-deleted route" })
+  @CommandAccess({ kind: "mutate", resource: "instances.routes", action: "restore", risk: "medium" })
   restore(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
@@ -1766,6 +1787,7 @@ export class InstancesRoutesCommands {
   }
 
   @Command({ name: "deleted", description: "List soft-deleted routes" })
+  @CommandAccess({ kind: "read", resource: "instances.routes", action: "deleted", risk: "low" })
   deleted(
     @Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1791,6 +1813,7 @@ export class InstancesRoutesCommands {
   }
 
   @Command({ name: "set", description: "Set a route property" })
+  @CommandAccess({ kind: "mutate", resource: "instances.routes", action: "set", risk: "medium" })
   set(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
@@ -1885,6 +1908,7 @@ export class InstancesRoutesCommands {
 })
 export class InstancesPendingCommands {
   @Command({ name: "list", description: "List pending contacts and chats for an instance" })
+  @CommandAccess({ kind: "read", resource: "instances.pending", action: "list", risk: "low" })
   list(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1973,6 +1997,7 @@ export class InstancesPendingCommands {
   }
 
   @Command({ name: "approve", description: "Approve a pending contact or chat" })
+  @CommandAccess({ kind: "mutate", resource: "instances.pending", action: "approve", risk: "medium" })
   approve(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("contact", { description: "Contact identity or chat route pattern" }) contact: string,
@@ -2054,6 +2079,7 @@ export class InstancesPendingCommands {
   }
 
   @Command({ name: "reject", description: "Reject and remove a pending contact or chat" })
+  @CommandAccess({ kind: "mutate", resource: "instances.pending", action: "reject", risk: "destructive" })
   reject(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("contact", { description: "Contact identity or chat route pattern" }) contact: string,

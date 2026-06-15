@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
+import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -1778,6 +1778,7 @@ function printSessionTraceExplanationHuman(explanation: SessionTraceExplanation)
 })
 export class SessionCommands {
   @Command({ name: "list", description: "List all sessions" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "list", risk: "low" })
   list(
     @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
     @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean,
@@ -1893,6 +1894,7 @@ export class SessionCommands {
     description: "Show unified session inspection details",
     aliases: ["inspect"],
   })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "info", risk: "low" })
   info(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -2043,6 +2045,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "goal", description: "Inspect or mutate persisted session goal state" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "goal", risk: "low" })
   goal(
     @Arg("action", { description: "get|set|create|pause|resume|complete|clear|account" }) action: string,
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -2163,6 +2166,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "visibility", description: "Show runtime session visibility state" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "visibility", risk: "low" })
   visibility(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -2208,6 +2212,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "set-display", description: "Set session display label" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "set-display", risk: "medium" })
   setDisplay(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("displayName", { description: "Display label" }) displayName: string,
@@ -2250,6 +2255,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "rename", description: "Rename canonical session name" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "rename", risk: "medium" })
   rename(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("newName", { description: "New canonical session name" }) newName: string,
@@ -2300,6 +2306,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "set-model", description: "Set session model override" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "set-model", risk: "medium" })
   async setModel(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("model", { description: "Model name (sonnet, opus, haiku) or 'clear' to remove override" }) model: string,
@@ -2370,6 +2377,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "set-thinking", description: "Set session thinking level" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "set-thinking", risk: "medium" })
   setThinking(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("level", { description: "Thinking level (off, normal, verbose) or 'clear'" }) level: string,
@@ -2424,6 +2432,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "reset", description: "Reset a session (fresh start)" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "reset", risk: "medium" })
   async reset(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -2499,6 +2508,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "delete", description: "Delete a session permanently" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "delete", risk: "destructive" })
   async delete(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -2571,6 +2581,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "prune", description: "Prune sessions inactive for a duration (dry-run by default)" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "prune", risk: "destructive" })
   async prune(
     @Option({ flags: "--inactive-for <duration>", description: "Only match sessions inactive for this duration" })
     inactiveFor?: string,
@@ -2733,6 +2744,7 @@ export class SessionCommands {
   // ===========================================================================
 
   @Command({ name: "set-ttl", description: "Make a session ephemeral with a TTL" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "set-ttl", risk: "medium" })
   setTtl(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("duration", { description: "TTL duration (e.g. 5h, 30m, 1d)" }) duration: string,
@@ -2781,6 +2793,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "extend", description: "Extend an ephemeral session's TTL" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "extend", risk: "low" })
   extend(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("duration", { description: "Duration to add (default: 5h)", required: false }) duration?: string,
@@ -2834,6 +2847,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "keep", description: "Make an ephemeral session permanent" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "keep", risk: "low" })
   keep(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -2887,6 +2901,7 @@ export class SessionCommands {
     name: "send",
     description: "Send a prompt to a session (fire-and-forget). Use -w to wait for response, -i for interactive.",
   })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "send", risk: "high" })
   async send(
     @Arg("nameOrKey", { description: "Session name" }) nameOrKey: string,
     @Arg("prompt", { description: "Prompt to send (omit for interactive mode)", required: false }) prompt?: string,
@@ -3100,6 +3115,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "ask", description: "Ask a question to another session (fire-and-forget)" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "ask", risk: "low" })
   async ask(
     @Arg("target", { description: "Target session name" }) target: string,
     @Arg("message", { description: "Question to ask" }) message: string,
@@ -3143,6 +3159,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "answer", description: "Answer a question from another session (fire-and-forget)" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "answer", risk: "low" })
   async answer(
     @Arg("target", { description: "Target session name (the one that asked)" }) target: string,
     @Arg("message", { description: "Answer to send back" }) message: string,
@@ -3186,6 +3203,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "execute", description: "Send an execute command to another session (fire-and-forget)" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "execute", risk: "high" })
   async execute(
     @Arg("target", { description: "Target session name" }) target: string,
     @Arg("message", { description: "Task to execute" }) message: string,
@@ -3225,6 +3243,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "inform", description: "Send an informational message to another session (fire-and-forget)" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "inform", risk: "low" })
   async inform(
     @Arg("target", { description: "Target session name" }) target: string,
     @Arg("message", { description: "Information to send" }) message: string,
@@ -3264,6 +3283,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "read", description: "Read message history of a session (normalized)" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "read", risk: "low" })
   read(
     @Arg("nameOrKey", {
       description: "Optional session name/key override (defaults to current session)",
@@ -3559,6 +3579,7 @@ export class SessionCommands {
     name: "trace",
     description: "Read the SQLite session trace timeline",
   })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "trace", risk: "low" })
   trace(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--since <time>", description: "Start time: ISO, epoch ms, or duration like 2h" })
@@ -4165,6 +4186,7 @@ export class SessionCommands {
     name: "attach",
     description: "Attach a chat as the session output target and input source",
   })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "attach", risk: "medium" })
   attach(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
@@ -4227,6 +4249,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "detach", description: "Detach a chat/output target from a session" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "detach", risk: "medium" })
   detach(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
@@ -4269,6 +4292,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "mute", description: "Keep a subscribed chat as listen-only for a session" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "mute", risk: "medium" })
   mute(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
@@ -4302,6 +4326,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "unmute", description: "Allow a subscribed chat to receive session responses" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "unmute", risk: "medium" })
   unmute(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
@@ -4338,6 +4363,7 @@ export class SessionCommands {
     name: "actions",
     description: "Show available chat actions and recent own messages for a session",
   })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "actions", risk: "low" })
   actions(
     @Arg("nameOrKey", {
       description: "Optional session name/key override (defaults to current session)",
@@ -4396,6 +4422,7 @@ export class SessionCommands {
     name: "delete-message",
     description: "Delete one of this session agent's own channel messages",
   })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "delete-message", risk: "destructive" })
   async deleteMessage(
     @Arg("sessionOrMessage", {
       description: "Session name/key, or message id when running inside a session",
@@ -4495,6 +4522,7 @@ export class SessionCommands {
     name: "edit-message",
     description: "Edit one of this session agent's own text channel messages",
   })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "edit-message", risk: "low" })
   async editMessage(
     @Arg("sessionOrMessage", {
       description: "Session name/key, or message id when running inside a session",
@@ -4605,6 +4633,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "subscriptions", description: "List chats attached to a session" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "subscriptions", risk: "low" })
   subscriptions(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

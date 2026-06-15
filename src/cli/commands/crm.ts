@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns, Scope } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -547,6 +547,7 @@ function showCrmOpportunity(opportunityId: string, asJson?: boolean) {
 export class ACrmCommands {
   @Scope("open")
   @Command({ name: "next", description: "List open CRM next actions" })
+  @CommandAccess({ kind: "read", resource: "crm", action: "next", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   next(
     @Option({ flags: "--owner <type:id>", description: "Filter by owner, e.g. agent:main" }) owner?: string,
@@ -619,6 +620,7 @@ export class ACrmCommands {
 
   @Scope("open")
   @Command({ name: "contact", description: "Show CRM profile for one contact" })
+  @CommandAccess({ kind: "read", resource: "crm", action: "contact", risk: "low" })
   @Returns(crmProfileReturnSchema)
   contact(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -629,6 +631,7 @@ export class ACrmCommands {
 
   @Scope("open")
   @Command({ name: "account", description: "Show CRM account" })
+  @CommandAccess({ kind: "read", resource: "crm", action: "account", risk: "low" })
   @Returns(crmProfileReturnSchema)
   account(
     @Arg("account", { description: "CRM account ID or org contact ID" }) accountRef: string,
@@ -639,6 +642,7 @@ export class ACrmCommands {
 
   @Scope("open")
   @Command({ name: "opportunity", description: "Show CRM opportunity" })
+  @CommandAccess({ kind: "read", resource: "crm", action: "opportunity", risk: "low" })
   @Returns(crmOpportunityReturnSchema)
   opportunity(
     @Arg("opportunity", { description: "CRM opportunity ID" }) opportunityId: string,
@@ -649,6 +653,7 @@ export class ACrmCommands {
 
   @Scope("open")
   @Command({ name: "contacts", description: "List CRM contact cards" })
+  @CommandAccess({ kind: "read", resource: "crm", action: "contacts", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   contacts(
     @Option({ flags: "--status <lifecycle>", description: "Filter by CRM lifecycle" }) lifecycle?: string,
@@ -688,6 +693,7 @@ export class ACrmCommands {
 
   @Scope("open")
   @Command({ name: "board", description: "Show open opportunity board" })
+  @CommandAccess({ kind: "read", resource: "crm", action: "board", risk: "low" })
   @Returns(crmBoardReturnSchema)
   board(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -738,6 +744,7 @@ export class ACrmCommands {
 export class CrmPipelineCommands {
   @Scope("open")
   @Command({ name: "list", description: "List CRM pipelines" })
+  @CommandAccess({ kind: "read", resource: "crm.pipeline", action: "list", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   list(
     @Option({ flags: "--entity-type <type>", description: "Filter by CRM entity type" }) entityType?: string,
@@ -775,6 +782,7 @@ export class CrmPipelineCommands {
 
   @Scope("open")
   @Command({ name: "show", description: "Show one CRM pipeline with stages and topics" })
+  @CommandAccess({ kind: "read", resource: "crm.pipeline", action: "show", risk: "low" })
   @Returns(crmPipelineDetailsReturnSchema)
   show(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -803,6 +811,7 @@ export class CrmPipelineCommands {
 
   @Scope("writeContacts")
   @Command({ name: "create", description: "Create a CRM pipeline" })
+  @CommandAccess({ kind: "mutate", resource: "crm.pipeline", action: "create", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   create(
     @Arg("name", { description: "Pipeline name" }) name: string,
@@ -834,6 +843,7 @@ export class CrmPipelineCommands {
 
   @Scope("writeContacts")
   @Command({ name: "set", description: "Set a CRM pipeline field" })
+  @CommandAccess({ kind: "mutate", resource: "crm.pipeline", action: "set", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   set(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -873,6 +883,7 @@ export class CrmPipelineCommands {
 export class CrmPipelineStageCommands {
   @Scope("open")
   @Command({ name: "list", description: "List stages in a CRM pipeline" })
+  @CommandAccess({ kind: "read", resource: "crm.pipeline.stage", action: "list", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   list(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -909,6 +920,7 @@ export class CrmPipelineStageCommands {
 
   @Scope("open")
   @Command({ name: "show", description: "Show one CRM pipeline stage" })
+  @CommandAccess({ kind: "read", resource: "crm.pipeline.stage", action: "show", risk: "low" })
   @Returns(crmPipelineStageDetailsReturnSchema)
   show(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -930,6 +942,7 @@ export class CrmPipelineStageCommands {
 
   @Scope("writeContacts")
   @Command({ name: "add", description: "Add a stage to a CRM pipeline" })
+  @CommandAccess({ kind: "mutate", resource: "crm.pipeline.stage", action: "add", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   add(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -971,6 +984,7 @@ export class CrmPipelineStageCommands {
 
   @Scope("writeContacts")
   @Command({ name: "set", description: "Set a CRM pipeline stage field" })
+  @CommandAccess({ kind: "mutate", resource: "crm.pipeline.stage", action: "set", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   set(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -1010,6 +1024,7 @@ export class CrmPipelineStageCommands {
 
   @Scope("writeContacts")
   @Command({ name: "archive", description: "Archive a CRM pipeline stage" })
+  @CommandAccess({ kind: "mutate", resource: "crm.pipeline.stage", action: "archive", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   archive(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -1028,6 +1043,7 @@ export class CrmPipelineStageCommands {
 
   @Scope("open")
   @Command({ name: "topics", description: "List topics configured for a CRM pipeline stage" })
+  @CommandAccess({ kind: "read", resource: "crm.pipeline.stage", action: "topics", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   topics(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -1078,6 +1094,7 @@ export class CrmPipelineStageCommands {
 export class CrmPipelineStageTopicCommands {
   @Scope("writeContacts")
   @Command({ name: "add", description: "Add a topic to a CRM pipeline stage" })
+  @CommandAccess({ kind: "mutate", resource: "crm.pipeline.stage.topic", action: "add", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   add(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -1121,6 +1138,7 @@ export class CrmPipelineStageTopicCommands {
 
   @Scope("writeContacts")
   @Command({ name: "set", description: "Set a CRM pipeline stage topic field" })
+  @CommandAccess({ kind: "mutate", resource: "crm.pipeline.stage.topic", action: "set", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   set(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -1160,6 +1178,7 @@ export class CrmPipelineStageTopicCommands {
 
   @Scope("writeContacts")
   @Command({ name: "archive", description: "Archive a CRM pipeline stage topic" })
+  @CommandAccess({ kind: "mutate", resource: "crm.pipeline.stage.topic", action: "archive", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   archive(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
@@ -1185,6 +1204,7 @@ export class CrmPipelineStageTopicCommands {
 export class CrmContactCommands {
   @Scope("open")
   @Command({ name: "show", description: "Show CRM profile for one contact" })
+  @CommandAccess({ kind: "read", resource: "crm.contact", action: "show", risk: "low" })
   @Returns(crmProfileReturnSchema)
   show(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -1195,6 +1215,7 @@ export class CrmContactCommands {
 
   @Scope("writeContacts")
   @Command({ name: "set", description: "Set one CRM contact profile field" })
+  @CommandAccess({ kind: "mutate", resource: "crm.contact", action: "set", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   set(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -1287,6 +1308,7 @@ export class CrmContactCommands {
 export class CrmAccountCommands {
   @Scope("open")
   @Command({ name: "show", description: "Show CRM account" })
+  @CommandAccess({ kind: "read", resource: "crm.account", action: "show", risk: "low" })
   @Returns(crmProfileReturnSchema)
   show(
     @Arg("account", { description: "CRM account ID or org contact ID" }) accountRef: string,
@@ -1297,6 +1319,7 @@ export class CrmAccountCommands {
 
   @Scope("writeContacts")
   @Command({ name: "create", description: "Create a CRM account" })
+  @CommandAccess({ kind: "mutate", resource: "crm.account", action: "create", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   create(
     @Arg("name", { description: "Account name" }) name: string,
@@ -1327,6 +1350,7 @@ export class CrmAccountCommands {
 
   @Scope("writeContacts")
   @Command({ name: "link-contact", description: "Link a contact to an account" })
+  @CommandAccess({ kind: "mutate", resource: "crm.account", action: "link-contact", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   linkContact(
     @Arg("account", { description: "CRM account ID" }) accountId: string,
@@ -1360,6 +1384,7 @@ export class CrmAccountCommands {
 export class CrmOpportunityCommands {
   @Scope("open")
   @Command({ name: "show", description: "Show CRM opportunity" })
+  @CommandAccess({ kind: "read", resource: "crm.opportunity", action: "show", risk: "low" })
   @Returns(crmOpportunityReturnSchema)
   show(
     @Arg("opportunity", { description: "CRM opportunity ID" }) opportunityId: string,
@@ -1370,6 +1395,7 @@ export class CrmOpportunityCommands {
 
   @Scope("writeContacts")
   @Command({ name: "create", description: "Create a CRM opportunity" })
+  @CommandAccess({ kind: "mutate", resource: "crm.opportunity", action: "create", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   create(
     @Arg("title", { description: "Opportunity title" }) title: string,
@@ -1408,6 +1434,7 @@ export class CrmOpportunityCommands {
 
   @Scope("writeContacts")
   @Command({ name: "move", description: "Move an opportunity to another stage" })
+  @CommandAccess({ kind: "read", resource: "crm.opportunity", action: "move", risk: "low" })
   @Returns(changedEntityReturnSchema)
   move(
     @Arg("opportunity", { description: "CRM opportunity ID" }) opportunityId: string,
@@ -1433,6 +1460,7 @@ export class CrmOpportunityCommands {
 
   @Scope("open")
   @Command({ name: "contacts", description: "List contacts linked to an opportunity" })
+  @CommandAccess({ kind: "read", resource: "crm.opportunity", action: "contacts", risk: "low" })
   @Returns(crmOpportunityContactsReturnSchema)
   contacts(
     @Arg("opportunity", { description: "CRM opportunity ID" }) opportunityId: string,
@@ -1456,6 +1484,7 @@ export class CrmOpportunityCommands {
 
   @Scope("writeContacts")
   @Command({ name: "link-contact", description: "Link a contact to an opportunity" })
+  @CommandAccess({ kind: "mutate", resource: "crm.opportunity", action: "link-contact", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   linkContact(
     @Arg("opportunity", { description: "CRM opportunity ID" }) opportunityId: string,
@@ -1491,6 +1520,7 @@ export class CrmOpportunityCommands {
 export class CrmFactCommands {
   @Scope("open")
   @Command({ name: "list", description: "List CRM facts" })
+  @CommandAccess({ kind: "read", resource: "crm.fact", action: "list", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   list(
     @Option({ flags: "--entity-type <type>", description: "Filter by CRM entity type" }) entityType?: string,
@@ -1559,6 +1589,7 @@ export class CrmFactCommands {
 
   @Scope("writeContacts")
   @Command({ name: "propose", description: "Propose or confirm a CRM fact" })
+  @CommandAccess({ kind: "read", resource: "crm.fact", action: "propose", risk: "low" })
   @Returns(changedEntityReturnSchema)
   propose(
     @Arg("entityType", { description: "CRM entity type" }) entityType: string,
@@ -1599,6 +1630,7 @@ export class CrmFactCommands {
 
   @Scope("writeContacts")
   @Command({ name: "confirm", description: "Confirm a CRM fact" })
+  @CommandAccess({ kind: "read", resource: "crm.fact", action: "confirm", risk: "low" })
   @Returns(changedEntityReturnSchema)
   confirm(
     @Arg("fact", { description: "CRM fact ID" }) factId: string,
@@ -1616,6 +1648,7 @@ export class CrmFactCommands {
 
   @Scope("writeContacts")
   @Command({ name: "reject", description: "Reject a CRM fact" })
+  @CommandAccess({ kind: "mutate", resource: "crm.fact", action: "reject", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   reject(
     @Arg("fact", { description: "CRM fact ID" }) factId: string,
@@ -1639,6 +1672,7 @@ export class CrmFactCommands {
 export class CrmTaskCommands {
   @Scope("open")
   @Command({ name: "show", description: "Show CRM task" })
+  @CommandAccess({ kind: "read", resource: "crm.task", action: "show", risk: "low" })
   @Returns(crmTaskReturnSchema)
   show(
     @Arg("task", { description: "CRM task ID" }) taskId: string,
@@ -1660,6 +1694,7 @@ export class CrmTaskCommands {
 
   @Scope("writeContacts")
   @Command({ name: "create", description: "Create a CRM relationship task" })
+  @CommandAccess({ kind: "mutate", resource: "crm.task", action: "create", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   create(
     @Arg("title", { description: "Task title" }) title: string,
@@ -1713,6 +1748,7 @@ export class CrmTaskCommands {
 
   @Scope("writeContacts")
   @Command({ name: "done", description: "Complete a CRM task" })
+  @CommandAccess({ kind: "mutate", resource: "crm.task", action: "done", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   done(
     @Arg("task", { description: "CRM task ID" }) taskId: string,
@@ -1730,6 +1766,7 @@ export class CrmTaskCommands {
 
   @Scope("writeContacts")
   @Command({ name: "cancel", description: "Cancel a CRM task" })
+  @CommandAccess({ kind: "mutate", resource: "crm.task", action: "cancel", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   cancel(
     @Arg("task", { description: "CRM task ID" }) taskId: string,
@@ -1749,6 +1786,7 @@ export class CrmTaskCommands {
 
   @Scope("writeContacts")
   @Command({ name: "snooze", description: "Snooze a CRM task to a new due_at" })
+  @CommandAccess({ kind: "read", resource: "crm.task", action: "snooze", risk: "low" })
   @Returns(changedEntityReturnSchema)
   snooze(
     @Arg("task", { description: "CRM task ID" }) taskId: string,
@@ -1775,6 +1813,7 @@ export class CrmTaskCommands {
 
   @Scope("open")
   @Command({ name: "list", description: "List CRM tasks (all statuses)" })
+  @CommandAccess({ kind: "read", resource: "crm.task", action: "list", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   list(
     @Option({ flags: "--owner <type:id>", description: "Filter by owner, e.g. agent:main" }) owner?: string,

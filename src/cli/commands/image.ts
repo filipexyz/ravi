@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { resolve, basename } from "node:path";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail, type ToolContext } from "../context.js";
 import { generateImage, normalizeImageProvider, type ImageMode } from "../../image/generator.js";
 import { getAgent } from "../../router/config.js";
@@ -193,6 +193,7 @@ export class ImageCommands {
     name: "generate",
     description: "Generate an image from a text prompt",
   })
+  @CommandAccess({ kind: "mutate", resource: "image", action: "generate", risk: "high" })
   @Returns(imageGenerateReturnSchema)
   async generate(
     @Arg("prompt", { description: "Text prompt describing the image to generate" })
@@ -782,6 +783,7 @@ export class ImageAtlasCommands {
     name: "split",
     description: "Split an image atlas/contact sheet into deterministic crop artifacts",
   })
+  @CommandAccess({ kind: "read", resource: "image.atlas", action: "split", risk: "low" })
   @Returns(imageAtlasSplitReturnSchema)
   async split(
     @Arg("input", { description: "Atlas/contact sheet image path" })

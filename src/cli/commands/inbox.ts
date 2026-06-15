@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { publish } from "../../nats.js";
 import {
@@ -91,6 +91,7 @@ function parseTimestamp(value: string | undefined, label: string): number {
 })
 export class InboxCommands {
   @Command({ name: "list", description: "List local inbox items" })
+  @CommandAccess({ kind: "read", resource: "inbox", action: "list", risk: "low" })
   @Returns(inboxItemsReturnSchema)
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
@@ -133,6 +134,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "read", description: "Read one local inbox item and mark it seen" })
+  @CommandAccess({ kind: "read", resource: "inbox", action: "read", risk: "low" })
   @Returns(inboxReadReturnSchema)
   read(
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
@@ -156,6 +158,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "done", description: "Mark a local inbox item done" })
+  @CommandAccess({ kind: "mutate", resource: "inbox", action: "done", risk: "medium" })
   @Returns(inboxItemEnvelopeReturnSchema)
   done(
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
@@ -169,6 +172,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "snooze", description: "Snooze a local inbox item until a timestamp" })
+  @CommandAccess({ kind: "read", resource: "inbox", action: "snooze", risk: "low" })
   @Returns(inboxItemEnvelopeReturnSchema)
   snooze(
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
@@ -187,6 +191,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "archive", description: "Archive a local inbox item" })
+  @CommandAccess({ kind: "mutate", resource: "inbox", action: "archive", risk: "medium" })
   @Returns(inboxItemEnvelopeReturnSchema)
   archive(
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
@@ -200,6 +205,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "sources", description: "List local inbox source domains" })
+  @CommandAccess({ kind: "read", resource: "inbox", action: "sources", risk: "low" })
   @Returns(inboxSourcesReturnSchema)
   sources(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const sources = listLocalInboxSources();
@@ -221,6 +227,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "status", description: "Show inbox poller status and subscriptions" })
+  @CommandAccess({ kind: "read", resource: "inbox", action: "status", risk: "low" })
   @Returns(inboxStatusReturnSchema)
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const snapshot = getStatusSnapshot();
@@ -265,6 +272,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "enable", description: "Enable inbox polling for the current Console+org" })
+  @CommandAccess({ kind: "mutate", resource: "inbox", action: "enable", risk: "medium" })
   @Returns(inboxToggleReturnSchema)
   enable(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const result = setEnabledForCurrentOrg(true);
@@ -275,6 +283,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "disable", description: "Disable inbox polling for the current Console+org" })
+  @CommandAccess({ kind: "mutate", resource: "inbox", action: "disable", risk: "medium" })
   @Returns(inboxToggleReturnSchema)
   disable(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const result = setEnabledForCurrentOrg(false);
@@ -285,6 +294,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "poll", description: "Run a single inbox poll cycle (foreground)" })
+  @CommandAccess({ kind: "read", resource: "inbox", action: "poll", risk: "low" })
   @Returns(inboxPollReturnSchema)
   async poll(
     @Option({ flags: "--once", description: "Run one cycle and exit (default)" }) _once?: boolean,
@@ -304,6 +314,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "items", description: "List recently delivered inbox items in the local mirror" })
+  @CommandAccess({ kind: "read", resource: "inbox", action: "items", risk: "low" })
   @Returns(inboxItemsReturnSchema)
   items(
     @Option({ flags: "--limit <n>", description: "Maximum items to return (default: 25, max: 500)" })
@@ -338,6 +349,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "replay", description: "Republish a locally stored inbox item to NATS" })
+  @CommandAccess({ kind: "read", resource: "inbox", action: "replay", risk: "low" })
   @Returns(inboxReplayReturnSchema)
   async replay(
     @Arg("ref", { description: "Local row id (number) or remote item id (uuid)" }) ref: string,

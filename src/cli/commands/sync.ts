@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { readCloudCredentials } from "../../cloud-auth/storage.js";
 import { createConsoleSyncBridge, getSyncStatusSummary, inspectSyncRecord, retryOutbox } from "../../sync/index.js";
 import { getSyncRuntimeConfig } from "../../sync/config.js";
@@ -20,6 +20,7 @@ function printJson(payload: unknown): void {
 })
 export class SyncCommands {
   @Command({ name: "status", description: "Show local sync status" })
+  @CommandAccess({ kind: "read", resource: "sync", action: "status", risk: "low" })
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const payload = buildStatusPayload();
     if (asJson) {
@@ -39,6 +40,7 @@ export class SyncCommands {
   }
 
   @Command({ name: "push", description: "Upload a bounded outbox batch to Console" })
+  @CommandAccess({ kind: "mutate", resource: "sync", action: "push", risk: "high" })
   async push(
     @Option({ flags: "--domain <domain>", description: "Filter one sync domain" }) domain?: string,
     @Option({ flags: "--project <project>", description: "Alias for --project-ref" }) project?: string,
@@ -80,6 +82,7 @@ export class SyncCommands {
   }
 
   @Command({ name: "pull", description: "Download a bounded remote event batch from Console" })
+  @CommandAccess({ kind: "mutate", resource: "sync", action: "pull", risk: "high" })
   async pull(
     @Option({ flags: "--domain <domain>", description: "Filter one sync domain" }) domain?: string,
     @Option({ flags: "--project <project>", description: "Alias for --project-ref" }) project?: string,
@@ -104,6 +107,7 @@ export class SyncCommands {
   }
 
   @Command({ name: "retry", description: "Move failed sync outbox rows back to pending" })
+  @CommandAccess({ kind: "mutate", resource: "sync", action: "retry", risk: "medium" })
   retry(
     @Option({ flags: "--id <id>", description: "Retry one outbox id" }) id?: string,
     @Option({ flags: "--dead", description: "Also retry dead rows" }) includeDead?: boolean,
@@ -120,6 +124,7 @@ export class SyncCommands {
   }
 
   @Command({ name: "inspect", description: "Inspect a sync outbox/inbox row by id" })
+  @CommandAccess({ kind: "read", resource: "sync", action: "inspect", risk: "low" })
   inspect(
     @Arg("id", { description: "sync_outbox or sync_inbox id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

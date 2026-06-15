@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, looseObjectSchema } from "../return-schemas.js";
 import {
@@ -85,6 +85,7 @@ const adaptersListReturnSchema = z.object({
 })
 export class AdapterCommands {
   @Command({ name: "list", description: "List session adapters with health and bind state" })
+  @CommandAccess({ kind: "read", resource: "adapters", action: "list", risk: "low" })
   @Returns(adaptersListReturnSchema)
   list(
     @Option({ flags: "--session <sessionKey>", description: "Filter by session key" }) sessionKey?: string,
@@ -121,6 +122,7 @@ export class AdapterCommands {
   }
 
   @Command({ name: "show", description: "Show a session adapter debug snapshot" })
+  @CommandAccess({ kind: "read", resource: "adapters", action: "show", risk: "low" })
   @Returns(adapterRecordReturnSchema)
   show(
     @Arg("adapterId", { description: "Adapter ID to inspect" }) adapterId: string,

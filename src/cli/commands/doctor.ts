@@ -256,38 +256,57 @@ const MUTATING_VERBS = new Set([
   "clear",
   "comment",
   "create",
+  "cleanup",
   "delete",
+  "demote",
   "deny",
   "detach",
   "disable",
   "dispatch",
   "done",
   "enable",
+  "execute",
   "fail",
   "grant",
   "import",
   "init",
   "link",
   "merge",
+  "mute",
   "push",
+  "promote",
+  "prune",
+  "refresh",
   "recompute",
+  "reject",
   "remove",
   "rename",
+  "reply",
+  "reset",
+  "resume",
   "restart",
   "revoke",
   "run",
+  "seed",
   "send",
   "set",
   "start",
   "stop",
   "sync",
   "tag",
+  "trigger",
   "unlink",
+  "unmute",
   "unarchive",
   "untag",
   "update",
   "upsert",
   "write",
+]);
+
+const READ_COMMAND_ACCESS_MUTATION_ALLOWLIST = new Set([
+  // This command only renders the plan for a policy materialization and never writes.
+  "permissions.policies.dry-run",
 ]);
 
 export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: InspectDoctorOptions = {}): DoctorReport {
@@ -1679,17 +1698,29 @@ function buildSdkReturnCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck {
 
 function buildCliMutationMetadataCheck(deps: DoctorDeps): LegacyDoctorCheck {
   const registry = deps.getRegistry();
-  const candidates = openMutatingCandidates(registry);
-  if (candidates.length > 0) {
+  const missing = openMutatingCandidates(registry);
+  const readMutating = readAccessMutatingCandidates(registry);
+  if (missing.length > 0 || readMutating.length > 0) {
+    const details = [
+      ...missing.map((command) => `missing @CommandAccess: ${command}`),
+      ...readMutating.map((command) => `read access on mutating action: ${command}`),
+    ];
     return {
       id: "permissions.command_mutation_unclassified",
       domain: "permissions",
       title: "CLI mutation metadata",
-      status: "warn",
-      summary: `${candidates.length} open-scope command(s) look mutating and need explicit metadata review`,
-      details: limitStrings(candidates, 12),
-      fixHint: "add explicit mutation/risk/permission metadata before treating these as safe",
-      data: { total: candidates.length, examples: candidates.slice(0, 20) },
+      status: "fail",
+      severity: "error",
+      summary: `${missing.length + readMutating.length} command access metadata issue(s) need review`,
+      details: limitStrings(details, 12),
+      fixHint:
+        'declare mutating commands as @CommandAccess({ kind: "mutate", ... }) or add an explicit allowlist entry for true read-only verbs',
+      data: {
+        total: missing.length + readMutating.length,
+        missing,
+        readMutating,
+        examples: details.slice(0, 20),
+      },
     };
   }
   return {
@@ -1711,18 +1742,35 @@ function buildCliCommandAccessCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck
     .sort((a, b) => a.localeCompare(b));
   const annotated = publicCommands.length - missing.length;
 
+  if (missing.length > 0) {
+    return {
+      id: "permissions.command_access.coverage",
+      domain: "permissions",
+      title: "CLI command access coverage",
+      status: "fail",
+      summary: `${missing.length} public command(s) lack @CommandAccess`,
+      details: limitStrings(missing, 12),
+      fixHint: "add @CommandAccess to every public non-CLI-only command before treating CLI authorization as complete",
+      data: {
+        publicCommands: publicCommands.length,
+        annotated,
+        missing: missing.length,
+        examples: missing.slice(0, 20),
+      },
+    };
+  }
+
   return {
     id: "permissions.command_access.coverage",
     domain: "permissions",
     title: "CLI command access coverage",
     status: "ok",
     summary: `${annotated}/${publicCommands.length} public command(s) declare @CommandAccess`,
-    details: missing.length > 0 ? limitStrings(missing, 12) : [],
     data: {
       publicCommands: publicCommands.length,
       annotated,
-      missing: missing.length,
-      examples: missing.slice(0, 20),
+      missing: 0,
+      examples: [],
     },
   };
 }
@@ -1737,8 +1785,18 @@ function openMutatingCandidates(registry: RegistrySnapshot): string[] {
     .sort((a, b) => a.localeCompare(b));
 }
 
+function readAccessMutatingCandidates(registry: RegistrySnapshot): string[] {
+  return registry.commands
+    .filter((command) => !command.cliOnly)
+    .filter((command) => command.access?.kind === "read")
+    .filter((command) => !READ_COMMAND_ACCESS_MUTATION_ALLOWLIST.has(command.fullName))
+    .filter((command) => isLikelyMutatingCommand(command.access?.action ?? command.fullName))
+    .map((command) => command.fullName)
+    .sort((a, b) => a.localeCompare(b));
+}
+
 function isLikelyMutatingCommand(fullName: string): boolean {
-  const parts = fullName.split(".");
+  const parts = fullName.split(/[^a-zA-Z0-9]+/);
   return parts.some((part) => MUTATING_VERBS.has(part));
 }
 

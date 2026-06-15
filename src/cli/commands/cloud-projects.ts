@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
@@ -30,6 +30,7 @@ export class CloudProjectsCommands {
   constructor(private readonly deps: CloudProjectsCommandDeps = defaultCloudProjectsDeps()) {}
 
   @Command({ name: "list", description: "List Ravi Cloud projects from Console" })
+  @CommandAccess({ kind: "read", resource: "cloud.projects", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--limit <n>", description: "Maximum projects to return (default: 50)" }) limit?: string,
@@ -60,6 +61,7 @@ export class CloudProjectsCommands {
   }
 
   @Command({ name: "create", description: "Create a Ravi Cloud project in Console" })
+  @CommandAccess({ kind: "mutate", resource: "cloud.projects", action: "create", risk: "high" })
   async create(
     @Arg("slug", { description: "Console project slug" }) slug: string,
     @Option({ flags: "--name <name>", description: "Project display name; defaults to the slug" }) name?: string,

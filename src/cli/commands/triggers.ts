@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -128,6 +128,7 @@ function resolveTriggerMessage(topic: string, message: string | undefined) {
 })
 export class TriggersCommands {
   @Command({ name: "topics", description: "List trigger-ready NATS topics" })
+  @CommandAccess({ kind: "read", resource: "triggers", action: "topics", risk: "low" })
   @Returns(triggerTopicsReturnSchema)
   topics(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const topics = getTriggerTopicCatalog();
@@ -141,6 +142,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "list", description: "List all event triggers" })
+  @CommandAccess({ kind: "read", resource: "triggers", action: "list", risk: "low" })
   @Returns(triggerListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -219,6 +221,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "show", description: "Show trigger details" })
+  @CommandAccess({ kind: "read", resource: "triggers", action: "show", risk: "low" })
   @Returns(triggerShowReturnSchema)
   show(
     @Arg("id", { description: "Trigger ID" }) id: string,
@@ -263,6 +266,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "add", description: "Add a new event trigger" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "add", risk: "medium" })
   @Returns(triggerMutationReturnSchema)
   async add(
     @Arg("name", { description: "Trigger name" }) name: string,
@@ -420,6 +424,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "enable", description: "Enable a trigger" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "enable", risk: "medium" })
   @Returns(triggerMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Trigger ID" }) id: string,
@@ -451,6 +456,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "disable", description: "Disable a trigger" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "disable", risk: "medium" })
   @Returns(triggerMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Trigger ID" }) id: string,
@@ -482,6 +488,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "set", description: "Set trigger property" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "set", risk: "medium" })
   @Returns(triggerMutationReturnSchema)
   async set(
     @Arg("id", { description: "Trigger ID" }) id: string,
@@ -600,6 +607,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "test", description: "Test trigger with fake event data" })
+  @CommandAccess({ kind: "read", resource: "triggers", action: "test", risk: "low" })
   @Returns(triggerMutationReturnSchema)
   async test(
     @Arg("id", { description: "Trigger ID" }) id: string,
@@ -640,6 +648,7 @@ export class TriggersCommands {
     description: "Delete a trigger",
     aliases: ["delete", "remove"],
   })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "rm", risk: "destructive" })
   @Returns(triggerMutationReturnSchema)
   async rm(
     @Arg("id", { description: "Trigger ID" }) id: string,

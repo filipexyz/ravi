@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { file as bunFile } from "bun";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
@@ -265,6 +265,7 @@ function isDirectoryPath(path: string): boolean {
 })
 export class ArtifactsCommands {
   @Command({ name: "create", description: "Create a generic Ravi artifact record" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "create", risk: "medium" })
   @Returns(artifactCreateReturnSchema)
   create(
     @Option({ flags: "--kind <kind>", description: "Optional semantic artifact kind, e.g. image, report, trace" })
@@ -373,6 +374,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "list", description: "List artifacts" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "list", risk: "low" })
   @Returns(artifactListReturnSchema)
   list(
     @Option({ flags: "--kind <kind>", description: "Filter by artifact kind" }) kind?: string,
@@ -476,6 +478,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "show", description: "Show artifact details, links and events" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "show", risk: "low" })
   @Returns(artifactDetailsReturnSchema)
   show(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -502,6 +505,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "snapshot", description: "Create an immutable version snapshot for an artifact" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "snapshot", risk: "low" })
   @Returns(artifactSnapshotReturnSchema)
   snapshot(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -533,6 +537,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "versions", description: "List immutable versions for an artifact" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "versions", risk: "low" })
   @Returns(artifactVersionsReturnSchema)
   versions(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -557,6 +562,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "version", description: "Show one immutable artifact version" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "version", risk: "low" })
   @Returns(artifactVersionShowReturnSchema)
   version(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -579,6 +585,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "restore", description: "Restore current artifact content from an immutable version" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "restore", risk: "medium" })
   @Returns(artifactRestoreReturnSchema)
   restore(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -611,6 +618,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "update", description: "Edit artifact metadata and high-level fields" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "update", risk: "medium" })
   @Returns(artifactMutationReturnSchema)
   update(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -680,6 +688,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "attach", description: "Attach an artifact to a task, session, message or any target" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "attach", risk: "medium" })
   @Returns(artifactMutationReturnSchema)
   attach(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -706,6 +715,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "archive", description: "Soft-archive an artifact" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "archive", risk: "medium" })
   @Returns(artifactMutationReturnSchema)
   archive(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -722,6 +732,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "event", description: "Append an artifact lifecycle event" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "event", risk: "low" })
   @Returns(artifactEventReturnSchema)
   event(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -752,6 +763,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "events", description: "List artifact lifecycle events" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "events", risk: "low" })
   @Returns(artifactEventsReturnSchema)
   events(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -783,6 +795,7 @@ export class ArtifactsCommands {
     name: "publish",
     description: "Upload a local artifact/file/directory to Console and optionally release it to Ravi Pages",
   })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "publish", risk: "high" })
   @Returns(artifactPublishReturnSchema)
   async publish(
     @Arg("target", { description: "Local artifact id, file, or directory; use a directory with index.html for Pages" })
@@ -855,6 +868,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "blob", description: "Stream raw artifact bytes" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "blob", risk: "low" })
   @Returns.binary()
   async blob(@Arg("id", { description: "Artifact id" }) id: string): Promise<Response> {
     const result = await resolveArtifactBlob({ artifactId: id });
@@ -877,6 +891,7 @@ export class ArtifactsCommands {
 })
 export class ArtifactReleaseCommands {
   @Command({ name: "activate", description: "Activate an existing Pages release for a local artifact" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts.release", action: "activate", risk: "high" })
   @Returns(artifactReleaseActivateReturnSchema)
   async activate(
     @Arg("id", { description: "Local artifact id" }) id: string,

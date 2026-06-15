@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -241,6 +241,7 @@ function printProfile(profile: ResolvedObserverProfile): void {
 })
 export class ObserverCommands {
   @Command({ name: "list", description: "List session observer bindings" })
+  @CommandAccess({ kind: "read", resource: "observers", action: "list", risk: "low" })
   list(
     @Option({
       flags: "--session <name>",
@@ -299,6 +300,7 @@ export class ObserverCommands {
   }
 
   @Command({ name: "show", description: "Show one observer binding" })
+  @CommandAccess({ kind: "read", resource: "observers", action: "show", risk: "low" })
   show(
     @Arg("bindingId", { description: "Observer binding id" }) bindingId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -319,6 +321,7 @@ export class ObserverCommands {
     name: "refresh",
     description: "Apply observer rules to an existing source session",
   })
+  @CommandAccess({ kind: "mutate", resource: "observers", action: "refresh", risk: "medium" })
   refresh(
     @Arg("session", { description: "Source session name or key" })
     sessionName: string,
@@ -356,6 +359,7 @@ export class ObserverCommands {
 })
 export class ObserverRuleCommands {
   @Command({ name: "list", description: "List observer rules" })
+  @CommandAccess({ kind: "read", resource: "observers.rules", action: "list", risk: "low" })
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
@@ -399,6 +403,7 @@ export class ObserverRuleCommands {
   }
 
   @Command({ name: "show", description: "Show one observer rule" })
+  @CommandAccess({ kind: "read", resource: "observers.rules", action: "show", risk: "low" })
   show(
     @Arg("id", { description: "Observer rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -416,6 +421,7 @@ export class ObserverRuleCommands {
   }
 
   @Command({ name: "set", description: "Create or overwrite an observer rule" })
+  @CommandAccess({ kind: "mutate", resource: "observers.rules", action: "set", risk: "medium" })
   set(
     @Arg("id", { description: "Observer rule id" }) id: string,
     @Arg("observerAgentId", {
@@ -560,6 +566,7 @@ export class ObserverRuleCommands {
   }
 
   @Command({ name: "enable", description: "Enable an observer rule" })
+  @CommandAccess({ kind: "mutate", resource: "observers.rules", action: "enable", risk: "medium" })
   enable(
     @Arg("id", { description: "Observer rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -573,6 +580,7 @@ export class ObserverRuleCommands {
   }
 
   @Command({ name: "disable", description: "Disable an observer rule" })
+  @CommandAccess({ kind: "mutate", resource: "observers.rules", action: "disable", risk: "medium" })
   disable(
     @Arg("id", { description: "Observer rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -586,6 +594,7 @@ export class ObserverRuleCommands {
   }
 
   @Command({ name: "rm", description: "Delete an observer rule" })
+  @CommandAccess({ kind: "mutate", resource: "observers.rules", action: "rm", risk: "destructive" })
   rm(
     @Arg("id", { description: "Observer rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -600,6 +609,7 @@ export class ObserverRuleCommands {
   }
 
   @Command({ name: "validate", description: "Validate observer rules" })
+  @CommandAccess({ kind: "read", resource: "observers.rules", action: "validate", risk: "low" })
   validate(
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
@@ -621,6 +631,7 @@ export class ObserverRuleCommands {
     name: "explain",
     description: "Explain observer rule matching for a source session",
   })
+  @CommandAccess({ kind: "read", resource: "observers.rules", action: "explain", risk: "low" })
   explain(
     @Arg("session", { description: "Source session name or key" })
     sessionName: string,
@@ -663,6 +674,7 @@ export class ObserverRuleCommands {
 })
 export class ObserverProfileCommands {
   @Command({ name: "list", description: "List observer profiles" })
+  @CommandAccess({ kind: "read", resource: "observers.profiles", action: "list", risk: "low" })
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
@@ -706,6 +718,7 @@ export class ObserverProfileCommands {
   }
 
   @Command({ name: "show", description: "Show one observer profile" })
+  @CommandAccess({ kind: "read", resource: "observers.profiles", action: "show", risk: "low" })
   show(
     @Arg("profileId", { description: "Observer profile id" }) profileId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -725,6 +738,7 @@ export class ObserverProfileCommands {
   }
 
   @Command({ name: "preview", description: "Render an observer profile preview" })
+  @CommandAccess({ kind: "read", resource: "observers.profiles", action: "preview", risk: "low" })
   preview(
     @Arg("profileId", { description: "Observer profile id" }) profileId: string,
     @Option({ flags: "--event <type>", description: "Observation event type to preview" })
@@ -748,6 +762,7 @@ export class ObserverProfileCommands {
   }
 
   @Command({ name: "validate", description: "Validate observer profiles" })
+  @CommandAccess({ kind: "read", resource: "observers.profiles", action: "validate", risk: "low" })
   validate(
     @Arg("profileId", { required: false, description: "Optional observer profile id" }) profileId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -769,6 +784,7 @@ export class ObserverProfileCommands {
   }
 
   @Command({ name: "init", description: "Create a Markdown observer profile scaffold" })
+  @CommandAccess({ kind: "mutate", resource: "observers.profiles", action: "init", risk: "medium" })
   init(
     @Arg("profileId", { description: "Observer profile id" }) profileId: string,
     @Option({ flags: "--source <source>", description: "workspace|user" })

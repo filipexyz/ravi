@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Scope, Arg, Option } from "../decorators.js";
+import { Group, Command, CommandAccess, Scope, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
@@ -377,6 +377,7 @@ function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string
 export class ContactsCommands {
   @Scope("open")
   @Command({ name: "list", description: "List all contacts" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "list", risk: "low" })
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) filterStatus?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -446,6 +447,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "pending", description: "List pending contacts" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "pending", risk: "low" })
   pending(
     @Option({ flags: "-a, --account <id>", description: "Filter by account" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -545,6 +547,7 @@ export class ContactsCommands {
     aliases: ["intake-backfill"],
     description: "Backfill canonical contacts from captured chats",
   })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "backfill", risk: "medium" })
   backfill(
     @Option({ flags: "--instance <id>", description: "Limit to one channel instance/account" }) instanceId?: string,
     @Option({ flags: "--channel <channel>", description: "Limit to one channel, e.g. whatsapp" }) channel?: string,
@@ -643,6 +646,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "add", description: "Add/allow a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "add", risk: "medium" })
   add(
     @Arg("identity", { description: "Phone number or WhatsApp identity" }) identity: string,
     @Arg("name", { required: false, description: "Contact name" }) name?: string,
@@ -692,6 +696,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "approve", description: "Approve pending contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "approve", risk: "medium" })
   approve(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("mode", { required: false, description: "Reply mode (auto|mention)" })
@@ -743,6 +748,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "remove", description: "Remove a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "remove", risk: "destructive" })
   remove(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -765,6 +771,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "allow", description: "Allow a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "allow", risk: "medium" })
   allow(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -794,6 +801,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "block", description: "Block a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "block", risk: "destructive" })
   block(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -823,6 +831,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "set", description: "Set contact property" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "set", risk: "medium" })
   set(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("key", { description: "Property key" }) key: string,
@@ -923,6 +932,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "get", description: "Show canonical contact details", aliases: ["show"] })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "get", risk: "low" })
   get(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1029,6 +1039,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "info", description: "Show contact details with all identities" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "info", risk: "low" })
   info(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1038,6 +1049,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "check", description: "Check contact status (alias for info)" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "check", risk: "low" })
   check(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1047,6 +1059,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "timeline", description: "Show contact timeline events" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "timeline", risk: "low" })
   timeline(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -1111,6 +1124,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "messages", description: "Show messages attributed to a contact" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "messages", risk: "low" })
   messages(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -1165,6 +1179,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "activity", description: "Show session activity attributed to a contact" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "activity", risk: "low" })
   activity(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -1223,6 +1238,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "sessions", description: "Show session summaries attributed to a contact" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "sessions", risk: "low" })
   sessions(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -1280,6 +1296,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "profile", description: "Show a contact profile card" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "profile", risk: "low" })
   profile(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1402,6 +1419,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "note", description: "Append a note to a contact timeline" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "note", risk: "low" })
   note(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("text", { description: "Note text" }) text: string,
@@ -1436,6 +1454,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "find", description: "Find contacts by tag or search query" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "find", risk: "low" })
   find(
     @Arg("query", { description: "Tag name (with --tag) or search query" }) query: string,
     @Option({ flags: "--tag", description: "Search by tag" }) byTag?: boolean,
@@ -1474,6 +1493,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "tag", description: "Add a tag to a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "tag", risk: "medium" })
   tag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("tag", { description: "Tag to add" }) tag: string,
@@ -1502,6 +1522,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "untag", description: "Remove a tag from a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "untag", risk: "medium" })
   untag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("tag", { description: "Tag to remove" }) tag: string,
@@ -1530,6 +1551,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "link", description: "Link a platform identity to a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "link", risk: "medium" })
   link(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--channel <channel>", description: "Channel, e.g. phone, whatsapp, telegram, email" })
@@ -1572,6 +1594,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "unlink", description: "Unlink a platform identity from its contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "unlink", risk: "medium" })
   unlink(
     @Arg("platformIdentity", { description: "Platform identity ID or value" }) platformIdentityRef: string,
     @Option({ flags: "--reason <text>", description: "Reason for the unlink audit event" }) reason?: string,
@@ -1603,6 +1626,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "duplicates", description: "Find likely duplicate contacts" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "duplicates", risk: "low" })
   duplicates(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const scopeCtx = getScopeContext();
     const duplicateContacts = listDuplicateContacts()
@@ -1642,6 +1666,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "merge", description: "Merge two contacts (move identities from source to target)" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "merge", risk: "medium" })
   merge(
     @Arg("source", { description: "Source contact ID (will be deleted)" }) sourceRef: string,
     @Arg("target", { description: "Target contact ID" }) targetRef: string,
@@ -1683,6 +1708,7 @@ export class ContactsCommands {
 export class ContactsMetadataCommands {
   @Scope("open")
   @Command({ name: "list", description: "List current scoped metadata for a contact" })
+  @CommandAccess({ kind: "read", resource: "contacts.metadata", action: "list", risk: "low" })
   list(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--scope <type:id>", description: "Filter by scoped context" }) scope?: string,
@@ -1736,6 +1762,7 @@ export class ContactsMetadataCommands {
 
   @Scope("writeContacts")
   @Command({ name: "set", description: "Set scoped metadata for a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts.metadata", action: "set", risk: "medium" })
   set(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("key", { description: "Namespaced metadata key" }) key: string,
@@ -1773,6 +1800,7 @@ export class ContactsMetadataCommands {
 
   @Scope("writeContacts")
   @Command({ name: "remove", description: "Remove scoped metadata from a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts.metadata", action: "remove", risk: "destructive" })
   remove(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("key", { description: "Namespaced metadata key" }) key: string,

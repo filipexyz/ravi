@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -57,6 +57,7 @@ async function emitMutation(result: {
 })
 export class TaskDependencyCommands {
   @Command({ name: "add", description: "Add one gating dependency to a task" })
+  @CommandAccess({ kind: "mutate", resource: "tasks.deps", action: "add", risk: "medium" })
   @Returns(taskMutationReturnSchema)
   async add(
     @Arg("taskId", { description: "Downstream task id" }) taskId: string,
@@ -80,6 +81,7 @@ export class TaskDependencyCommands {
   }
 
   @Command({ name: "rm", description: "Remove one gating dependency from a task", aliases: ["remove"] })
+  @CommandAccess({ kind: "mutate", resource: "tasks.deps", action: "rm", risk: "destructive" })
   @Returns(taskMutationReturnSchema)
   async rm(
     @Arg("taskId", { description: "Downstream task id" }) taskId: string,
@@ -103,6 +105,7 @@ export class TaskDependencyCommands {
   }
 
   @Command({ name: "ls", description: "List gating dependencies and dependents for a task", aliases: ["list"] })
+  @CommandAccess({ kind: "read", resource: "tasks.deps", action: "ls", risk: "low" })
   @Returns(taskDependencyListReturnSchema)
   ls(
     @Arg("taskId", { description: "Task id to inspect" }) taskId: string,

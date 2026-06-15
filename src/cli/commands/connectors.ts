@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import {
   execCapability,
@@ -92,6 +92,7 @@ export class ConnectorsCommands {
   }
 
   @Command({ name: "list", description: "List your connectors" })
+  @CommandAccess({ kind: "read", resource: "connectors", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--provider <provider>", description: "Filter by provider id" }) provider?: string,
     @Option({ flags: "--project <id>", description: "Filter by Ravi Cloud project id" }) project?: string,
@@ -122,6 +123,7 @@ export class ConnectorsCommands {
   }
 
   @Command({ name: "show", description: "Show details of a single connector" })
+  @CommandAccess({ kind: "read", resource: "connectors", action: "show", risk: "low" })
   async show(
     @Arg("id", { description: "Connector id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -139,6 +141,7 @@ export class ConnectorsCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a connector and delete its stored credentials" })
+  @CommandAccess({ kind: "mutate", resource: "connectors", action: "revoke", risk: "destructive" })
   async revoke(
     @Arg("id", { description: "Connector id" }) id: string,
     @Option({ flags: "--yes", description: "Skip confirmation prompt" }) yes?: boolean,

@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -164,6 +164,7 @@ const permissionPolicyListReturnSchema = z.object({}).passthrough();
 })
 export class PermissionsCommands {
   @Command({ name: "grant", description: "Grant a relation" })
+  @CommandAccess({ kind: "mutate", resource: "permissions", action: "grant", risk: "medium" })
   @Returns(permissionsGrantReturnSchema)
   grant(
     @Arg("subject", { description: "Subject (e.g., agent:dev)" })
@@ -288,6 +289,7 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a relation" })
+  @CommandAccess({ kind: "mutate", resource: "permissions", action: "revoke", risk: "destructive" })
   @Returns(permissionsRevokeReturnSchema)
   revoke(
     @Arg("subject", { description: "Subject (e.g., agent:dev)" })
@@ -365,6 +367,7 @@ export class PermissionsCommands {
     name: "check",
     description: "Check if the legacy relation ledger would allow a subject on an object",
   })
+  @CommandAccess({ kind: "read", resource: "permissions", action: "check", risk: "low" })
   @Returns(permissionsCheckReturnSchema)
   check(
     @Arg("subject", { description: "Subject (e.g., agent:dev)" })
@@ -404,6 +407,7 @@ export class PermissionsCommands {
     name: "explain",
     description: "Explain a permission decision using the enforcement evaluator",
   })
+  @CommandAccess({ kind: "read", resource: "permissions", action: "explain", risk: "low" })
   @Returns(permissionsExplainReturnSchema)
   explain(
     @Arg("relation", {
@@ -474,6 +478,7 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "list", description: "List relations" })
+  @CommandAccess({ kind: "read", resource: "permissions", action: "list", risk: "low" })
   @Returns(permissionsListReturnSchema)
   list(
     @Option({
@@ -607,6 +612,7 @@ export class PermissionsCommands {
     name: "sync",
     description: "Re-sync relations from agent configs",
   })
+  @CommandAccess({ kind: "mutate", resource: "permissions", action: "sync", risk: "high" })
   @Returns(permissionsSyncReturnSchema)
   sync(
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -633,6 +639,7 @@ export class PermissionsCommands {
     name: "init",
     description: "Apply a permission template to an agent",
   })
+  @CommandAccess({ kind: "mutate", resource: "permissions", action: "init", risk: "medium" })
   @Returns(permissionsInitReturnSchema)
   init(
     @Arg("subject", { description: "Subject (e.g., agent:dev)" })
@@ -800,6 +807,7 @@ export class PermissionsCommands {
     name: "legacy",
     description: "Plan or revoke legacy manual permanent grants",
   })
+  @CommandAccess({ kind: "read", resource: "permissions", action: "legacy", risk: "low" })
   @Returns(permissionsLegacyReturnSchema)
   legacy(
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -960,6 +968,7 @@ export class PermissionsCommands {
     name: "restore-batch",
     description: "Plan or restore relations revoked in the same batch",
   })
+  @CommandAccess({ kind: "mutate", resource: "permissions", action: "restore-batch", risk: "medium" })
   @Returns(permissionsLegacyReturnSchema)
   restoreBatch(
     @Arg("batch", { description: "Revocation batch id. Use --revoked-at only for legacy timestamp fallback." })
@@ -1031,6 +1040,7 @@ export class PermissionsCommands {
     name: "prune-revoked",
     description: "Compact the relation store by deleting old revoked relations",
   })
+  @CommandAccess({ kind: "mutate", resource: "permissions", action: "prune-revoked", risk: "destructive" })
   @Returns(permissionsLegacyReturnSchema)
   pruneRevoked(
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -1081,6 +1091,7 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "clear", description: "Clear all manual relations" })
+  @CommandAccess({ kind: "mutate", resource: "permissions", action: "clear", risk: "destructive" })
   @Returns(permissionsClearReturnSchema)
   clear(
     @Option({
@@ -1121,6 +1132,7 @@ export class PermissionsCommands {
 })
 export class PermissionPolicyCommands {
   @Command({ name: "list", description: "List permission policies" })
+  @CommandAccess({ kind: "read", resource: "permissions.policies", action: "list", risk: "low" })
   @Returns(permissionPolicyListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -1175,6 +1187,7 @@ export class PermissionPolicyCommands {
   }
 
   @Command({ name: "show", description: "Show a permission policy and its materializations" })
+  @CommandAccess({ kind: "read", resource: "permissions.policies", action: "show", risk: "low" })
   @Returns(permissionPolicyListReturnSchema)
   show(
     @Arg("policy", { description: "Policy id" })
@@ -1215,6 +1228,7 @@ export class PermissionPolicyCommands {
   }
 
   @Command({ name: "validate", description: "Validate permission policies" })
+  @CommandAccess({ kind: "read", resource: "permissions.policies", action: "validate", risk: "low" })
   @Returns(permissionPolicyRunReturnSchema)
   validate(
     @Arg("policy", { required: false, description: "Optional policy id" })
@@ -1237,6 +1251,7 @@ export class PermissionPolicyCommands {
   }
 
   @Command({ name: "dry-run", description: "Plan permission policy materialization without writing" })
+  @CommandAccess({ kind: "read", resource: "permissions.policies", action: "dry-run", risk: "low" })
   @Returns(permissionPolicyRunReturnSchema)
   dryRun(
     @Arg("policy", { required: false, description: "Optional policy id" })
@@ -1256,6 +1271,7 @@ export class PermissionPolicyCommands {
   }
 
   @Command({ name: "apply", description: "Apply permission policies and materialize grants" })
+  @CommandAccess({ kind: "read", resource: "permissions.policies", action: "apply", risk: "low" })
   @Returns(permissionPolicyRunReturnSchema)
   apply(
     @Arg("policy", { required: false, description: "Optional policy id" })
@@ -1276,6 +1292,7 @@ export class PermissionPolicyCommands {
   }
 
   @Command({ name: "reconcile", description: "Apply policies and revoke stale policy-owned grants" })
+  @CommandAccess({ kind: "read", resource: "permissions.policies", action: "reconcile", risk: "low" })
   @Returns(permissionPolicyRunReturnSchema)
   reconcile(
     @Arg("policy", { required: false, description: "Optional policy id" })
@@ -1296,6 +1313,7 @@ export class PermissionPolicyCommands {
   }
 
   @Command({ name: "explain", description: "Explain policy matches for a tagged asset" })
+  @CommandAccess({ kind: "read", resource: "permissions.policies", action: "explain", risk: "low" })
   @Returns(permissionPolicyRunReturnSchema)
   explain(
     @Arg("asset", { description: "Asset selector, e.g. contact:c1 or chat:chat_id" })

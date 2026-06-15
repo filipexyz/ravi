@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, looseObjectSchema } from "../return-schemas.js";
@@ -203,6 +203,7 @@ function resolveSendTarget(options: {
 })
 export class StickerCommands {
   @Command({ name: "add", description: "Add or update a sticker catalog entry" })
+  @CommandAccess({ kind: "mutate", resource: "stickers", action: "add", risk: "medium" })
   @Returns(stickerMutationReturnSchema)
   add(
     @Arg("id", { description: "Stable sticker id (lowercase, digits, dash or underscore)" }) id: string,
@@ -254,6 +255,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "list", description: "List stickers in the typed catalog" })
+  @CommandAccess({ kind: "read", resource: "stickers", action: "list", risk: "low" })
   @Returns(stickersListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -296,6 +298,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "show", description: "Show one sticker catalog entry" })
+  @CommandAccess({ kind: "read", resource: "stickers", action: "show", risk: "low" })
   @Returns(stickerShowReturnSchema)
   show(
     @Arg("id", { description: "Sticker id" }) id: string,
@@ -325,6 +328,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "remove", description: "Remove a sticker catalog entry" })
+  @CommandAccess({ kind: "mutate", resource: "stickers", action: "remove", risk: "destructive" })
   @Returns(stickerRemoveReturnSchema)
   remove(
     @Arg("id", { description: "Sticker id" }) id: string,
@@ -347,6 +351,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "send", description: "Send a sticker to the current WhatsApp chat" })
+  @CommandAccess({ kind: "mutate", resource: "stickers", action: "send", risk: "high" })
   @Returns(stickerSendReturnSchema)
   async send(
     @Arg("id", { description: "Sticker id" }) id: string,

@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -29,6 +29,7 @@ import {
 })
 export class ToolsCommands {
   @Command({ name: "list", description: "List all available CLI tools" })
+  @CommandAccess({ kind: "read", resource: "tools", action: "list", risk: "low" })
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -104,6 +105,7 @@ export class ToolsCommands {
   }
 
   @Command({ name: "show", description: "Show details for a specific tool" })
+  @CommandAccess({ kind: "read", resource: "tools", action: "show", risk: "low" })
   show(
     @Arg("name", { description: "Tool name (e.g., agents_list)" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -174,6 +176,7 @@ export class ToolsCommands {
   }
 
   @Command({ name: "manifest", description: "Export tools as JSON manifest" })
+  @CommandAccess({ kind: "read", resource: "tools", action: "manifest", risk: "low" })
   manifest(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson?: boolean) {
     const tools = extractTools(getAllCommandClasses());
     const manifest = generateManifest(tools);
@@ -182,6 +185,7 @@ export class ToolsCommands {
   }
 
   @Command({ name: "schema", description: "Export tools as JSON Schema" })
+  @CommandAccess({ kind: "read", resource: "tools", action: "schema", risk: "low" })
   schema(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson?: boolean) {
     const schema = generateToolsJsonSchema(getAllCommandClasses());
     console.log(JSON.stringify(schema, null, 2));
@@ -189,6 +193,7 @@ export class ToolsCommands {
   }
 
   @Command({ name: "test", description: "Test a tool execution" })
+  @CommandAccess({ kind: "read", resource: "tools", action: "test", risk: "low" })
   async test(
     @Arg("name", { description: "Tool name" }) name: string,
     @Arg("args", { required: false, description: "JSON args (optional)" }) argsJson?: string,

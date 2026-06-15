@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { resolve, basename } from "node:path";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext } from "../context.js";
 import { generateAudio, listElevenLabsVoices } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
@@ -35,6 +35,7 @@ export class AudioCommands {
     name: "generate",
     description: "Generate speech from text using ElevenLabs TTS",
   })
+  @CommandAccess({ kind: "mutate", resource: "audio", action: "generate", risk: "high" })
   @Returns(audioGenerateReturnSchema)
   async generate(
     @Arg("text", { description: "Text to convert to speech" })
@@ -179,6 +180,7 @@ export class AudioCommands {
     name: "tts",
     description: "Publish a ravi.tts request for ElevenLabs generation and extension playback",
   })
+  @CommandAccess({ kind: "mutate", resource: "audio", action: "tts", risk: "high" })
   @Returns(audioTtsReturnSchema)
   async tts(
     @Arg("text", { description: "Text to convert to speech" })
@@ -267,6 +269,7 @@ export class AudioCommands {
     name: "voices",
     description: "List available ElevenLabs voices for picker UIs",
   })
+  @CommandAccess({ kind: "read", resource: "audio", action: "voices", risk: "low" })
   @Returns(audioVoicesReturnSchema)
   async voices(
     @Option({ flags: "--search <text>", description: "Search by voice name, description or labels" })
@@ -300,6 +303,7 @@ export class AudioCommands {
     name: "pending",
     description: "List generated ravi.tts playback items waiting for extension playback",
   })
+  @CommandAccess({ kind: "read", resource: "audio", action: "pending", risk: "low" })
   @Returns(audioPendingReturnSchema)
   pending(
     @Option({ flags: "--id <id>", description: "Filter by playback item id" })
@@ -349,6 +353,7 @@ export class AudioCommands {
     name: "blob",
     description: "Return generated TTS audio bytes",
   })
+  @CommandAccess({ kind: "read", resource: "audio", action: "blob", risk: "low" })
   @Returns.binary()
   blob(
     @Arg("id", { description: "TTS playback item id" })

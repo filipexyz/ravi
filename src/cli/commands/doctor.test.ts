@@ -251,6 +251,82 @@ describe("inspectDoctor", () => {
     expect(report.checks.find((check) => check.id === "agents.instructions")?.status).toBe("fail");
     expect(report.checks.find((check) => check.id === "runtime.providers")?.status).toBe("fail");
   });
+
+  it("does not flag mutating public commands that declare command access metadata", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      getRegistry: () =>
+        ({
+          commands: [
+            {
+              fullName: "demo.create",
+              scope: "open",
+              returns: true,
+              access: { kind: "mutate", resource: "demo", action: "create", risk: "medium" },
+            },
+          ],
+        }) as any,
+    });
+
+    expect(report.checks.find((check) => check.id === "permissions.command_mutation_unclassified")?.status).toBe(
+      "pass",
+    );
+    expect(report.checks.find((check) => check.id === "permissions.command_access.coverage")?.data).toMatchObject({
+      publicCommands: 1,
+      annotated: 1,
+      missing: 0,
+    });
+  });
+
+  it("fails mutation metadata when a mutating action is declared as read access", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      getRegistry: () =>
+        ({
+          commands: [
+            {
+              fullName: "daemon.restart",
+              scope: "open",
+              returns: true,
+              access: { kind: "read", resource: "daemon", action: "restart", risk: "low" },
+            },
+          ],
+        }) as any,
+    });
+
+    const check = report.checks.find((item) => item.id === "permissions.command_mutation_unclassified");
+    expect(check?.status).toBe("fail");
+    expect(check?.data).toMatchObject({
+      total: 1,
+      readMutating: ["daemon.restart"],
+    });
+  });
+
+  it("fails command access coverage when a public command lacks metadata", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      getRegistry: () =>
+        ({
+          commands: [
+            {
+              fullName: "demo.list",
+              scope: "open",
+              returns: true,
+            },
+          ],
+        }) as any,
+    });
+
+    expect(report.checks.find((check) => check.id === "permissions.command_access.coverage")?.status).toBe("fail");
+    expect(report.checks.find((check) => check.id === "permissions.command_access.coverage")?.data).toMatchObject({
+      publicCommands: 1,
+      annotated: 0,
+      missing: 1,
+    });
+  });
 });
 
 describe("runDoctor", () => {

@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListOffset } from "../pagination.js";
 import {
@@ -112,6 +112,7 @@ export class InsightCommands {
     name: "create",
     description: "Create a new insight with lineage captured from the current runtime context",
   })
+  @CommandAccess({ kind: "mutate", resource: "insights", action: "create", risk: "medium" })
   create(
     @Arg("summary", { description: "Short actionable summary" }) summary: string,
     @Option({ flags: "--detail <text>", description: "Longer explanation or evidence" }) detail?: string,
@@ -217,6 +218,7 @@ export class InsightCommands {
   }
 
   @Command({ name: "list", description: "List recent insights with optional filters" })
+  @CommandAccess({ kind: "read", resource: "insights", action: "list", risk: "low" })
   list(
     @Option({ flags: "--kind <kind>", description: "observation|pattern|win|problem|improvement" }) kind?: string,
     @Option({ flags: "--confidence <level>", description: "low|medium|high" }) confidence?: string,
@@ -323,6 +325,7 @@ export class InsightCommands {
   }
 
   @Command({ name: "show", description: "Show one insight with lineage and comments" })
+  @CommandAccess({ kind: "read", resource: "insights", action: "show", risk: "low" })
   show(
     @Arg("id", { description: "Insight ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -369,6 +372,7 @@ export class InsightCommands {
   }
 
   @Command({ name: "search", description: "Search insights by free text" })
+  @CommandAccess({ kind: "read", resource: "insights", action: "search", risk: "low" })
   search(
     @Arg("text", { description: "Search text" }) text: string,
     @Option({ flags: "--limit <n>", description: "Result limit", defaultValue: "20" }) limit?: string,

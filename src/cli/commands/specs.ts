@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -35,6 +35,7 @@ function printSpecSummary(spec: SpecRecord): void {
 })
 export class SpecsCommands {
   @Command({ name: "list", description: "List specs from .ravi/specs" })
+  @CommandAccess({ kind: "read", resource: "specs", action: "list", risk: "low" })
   @Returns(specsListReturnSchema)
   list(
     @Option({ flags: "--domain <domain>", description: "Filter by domain" }) domain?: string,
@@ -82,6 +83,7 @@ export class SpecsCommands {
   }
 
   @Command({ name: "get", description: "Get inherited spec context" })
+  @CommandAccess({ kind: "read", resource: "specs", action: "get", risk: "low" })
   @Returns(specContextReturnSchema)
   get(
     @Arg("id", { description: "Spec id: domain[/capability[/feature]]" }) id: string,
@@ -110,6 +112,7 @@ export class SpecsCommands {
   }
 
   @Command({ name: "new", description: "Create a new spec under .ravi/specs" })
+  @CommandAccess({ kind: "read", resource: "specs", action: "new", risk: "low" })
   @Returns(specCreateReturnSchema)
   new(
     @Arg("id", { description: "Spec id: domain[/capability[/feature]]" }) id: string,
@@ -156,6 +159,7 @@ export class SpecsCommands {
   }
 
   @Command({ name: "sync", description: "Rebuild the specs SQLite index from Markdown" })
+  @CommandAccess({ kind: "mutate", resource: "specs", action: "sync", risk: "high" })
   @Returns(specsSyncReturnSchema)
   sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     try {

@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
@@ -121,6 +121,7 @@ function formatDate(value: number): string {
 })
 export class ThreadCommands {
   @Command({ name: "create", description: "Create a Ravi-owned thread" })
+  @CommandAccess({ kind: "mutate", resource: "threads", action: "create", risk: "medium" })
   @Returns(threadActionReturnSchema)
   create(
     @Arg("slug", { description: "Thread slug" }) slug: string,
@@ -155,6 +156,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "list", description: "List Ravi threads" })
+  @CommandAccess({ kind: "read", resource: "threads", action: "list", risk: "low" })
   @Returns(threadListReturnSchema)
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
@@ -197,6 +199,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "show", description: "Show one thread with links and recent entries" })
+  @CommandAccess({ kind: "read", resource: "threads", action: "show", risk: "low" })
   @Returns(threadShowReturnSchema)
   show(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
@@ -236,6 +239,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "comment", description: "Append a comment to a thread" })
+  @CommandAccess({ kind: "mutate", resource: "threads", action: "comment", risk: "medium" })
   @Returns(threadEntryReturnSchema)
   comment(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
@@ -249,6 +253,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "note", description: "Append a note to a thread" })
+  @CommandAccess({ kind: "read", resource: "threads", action: "note", risk: "low" })
   @Returns(threadEntryReturnSchema)
   note(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
@@ -262,6 +267,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "link", description: "Link a thread to another Ravi object" })
+  @CommandAccess({ kind: "mutate", resource: "threads", action: "link", risk: "medium" })
   @Returns(threadLinkReturnSchema)
   link(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
@@ -294,6 +300,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "entries", description: "List thread entries" })
+  @CommandAccess({ kind: "read", resource: "threads", action: "entries", risk: "low" })
   @Returns(threadEntriesReturnSchema)
   entries(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
@@ -321,6 +328,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "brief", description: "Render the bounded thread brief used for handoff" })
+  @CommandAccess({ kind: "read", resource: "threads", action: "brief", risk: "low" })
   @Returns(threadBriefReturnSchema)
   brief(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
@@ -339,6 +347,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "close", description: "Close a thread" })
+  @CommandAccess({ kind: "read", resource: "threads", action: "close", risk: "low" })
   @Returns(threadActionReturnSchema)
   close(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,

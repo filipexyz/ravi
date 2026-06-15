@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { looseObjectSchema } from "../return-schemas.js";
 import { loadEvalTaskSpec } from "../../eval/spec.js";
@@ -27,6 +27,7 @@ const evalRunReturnSchema = z
 })
 export class EvalCommands {
   @Command({ name: "run", description: "Run an eval task spec and persist artifacts" })
+  @CommandAccess({ kind: "mutate", resource: "eval", action: "run", risk: "high" })
   @Returns(evalRunReturnSchema)
   async run(
     @Arg("specPath", { description: "Path to the eval task spec JSON" }) specPath: string,

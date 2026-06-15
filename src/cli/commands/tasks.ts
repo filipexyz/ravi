@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, CliOnly, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
   decodeListCursor,
@@ -960,6 +960,7 @@ export class TaskCommands {
     name: "create",
     description: "Create a tracked task; unresolved dependencies arm launch plans instead of dispatching early",
   })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "create", risk: "medium" })
   @Returns(taskCreateReturnSchema)
   async create(
     @Arg("title", { description: "Short task title" }) title: string,
@@ -1124,6 +1125,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "list", description: "List tasks" })
+  @CommandAccess({ kind: "read", resource: "tasks", action: "list", risk: "low" })
   @Returns(taskListReturnSchema)
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
@@ -1376,6 +1378,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "show", description: "Show task details and history" })
+  @CommandAccess({ kind: "read", resource: "tasks", action: "show", risk: "low" })
   @Returns(taskShowReturnSchema)
   show(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1632,6 +1635,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "comment", description: "Add a comment to a task and steer the assignee if it is active" })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "comment", risk: "medium" })
   @Returns(taskCommentReturnSchema)
   async comment(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1665,6 +1669,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "archive", description: "Archive a task without changing its execution status" })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "archive", risk: "medium" })
   @Returns(taskMutationReturnSchema)
   async archive(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1693,6 +1698,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "unarchive", description: "Restore an archived task to the default list" })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "unarchive", risk: "medium" })
   @Returns(taskMutationReturnSchema)
   async unarchive(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1714,6 +1720,7 @@ export class TaskCommands {
     name: "dispatch",
     description: "Dispatch a task now, or arm a launch plan if dependencies still gate start",
   })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "dispatch", risk: "high" })
   @Returns(taskDispatchReturnSchema)
   async dispatch(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1809,6 +1816,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "report", description: "Report task progress from a CLI or agent session" })
+  @CommandAccess({ kind: "read", resource: "tasks", action: "report", risk: "low" })
   @Returns(taskMutationReturnSchema)
   async report(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1861,6 +1869,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "done", description: "Mark a task as done" })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "done", risk: "medium" })
   @Returns(taskMutationReturnSchema)
   async done(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1902,6 +1911,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "block", description: "Mark a task as blocked" })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "block", risk: "medium" })
   @Returns(taskMutationReturnSchema)
   async block(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1943,6 +1953,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "fail", description: "Mark a task as failed" })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "fail", risk: "medium" })
   @Returns(taskMutationReturnSchema)
   async failTaskCommand(
     @Arg("taskId", { description: "Task ID" }) taskId: string,

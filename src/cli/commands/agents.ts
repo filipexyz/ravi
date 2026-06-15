@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -250,6 +250,7 @@ function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, un
 })
 export class AgentsCommands {
   @Command({ name: "list", description: "List all agents" })
+  @CommandAccess({ kind: "read", resource: "agents", action: "list", risk: "low" })
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical tag slug" }) tagSlug?: string,
@@ -316,6 +317,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "show", description: "Show agent details" })
+  @CommandAccess({ kind: "read", resource: "agents", action: "show", risk: "low" })
   show(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -371,6 +373,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "create", description: "Create a new agent" })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "create", risk: "medium" })
   create(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("cwd", { description: "Working directory" }) cwd: string,
@@ -444,6 +447,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "sync-instructions", description: "Migrate agent workspaces to AGENTS.md as the canonical file" })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "sync-instructions", risk: "high" })
   syncInstructions(
     @Option({ flags: "--agent <id>", description: "Sync only one agent" }) agentId?: string,
     @Option({
@@ -523,6 +527,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "delete", description: "Delete an agent" })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "delete", risk: "destructive" })
   delete(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -552,6 +557,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "set", description: "Set agent property" })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "set", risk: "medium" })
   async set(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("key", { description: "Property key" }) key: string,
@@ -715,6 +721,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "debounce", description: "Set message debounce time" })
+  @CommandAccess({ kind: "read", resource: "agents", action: "debounce", risk: "low" })
   debounce(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("ms", { required: false, description: "Debounce time in ms (0 to disable)" }) ms?: string,
@@ -784,6 +791,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "spec-mode", description: "Enable or disable spec mode for an agent" })
+  @CommandAccess({ kind: "read", resource: "agents", action: "spec-mode", risk: "low" })
   specMode(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("enabled", { required: false, description: "true/false" }) enabled?: string,
@@ -837,6 +845,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "session", description: "Show agent session status" })
+  @CommandAccess({ kind: "read", resource: "agents", action: "session", risk: "low" })
   session(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -880,6 +889,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "reset", description: "Reset agent session" })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "reset", risk: "medium" })
   async reset(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("nameOrKey", { required: false, description: "Session name/key, 'all' to reset all, or omit for main" })
@@ -1012,6 +1022,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "debug", description: "Show last turns of an agent session (what it received, what it responded)" })
+  @CommandAccess({ kind: "read", resource: "agents", action: "debug", risk: "low" })
   debug(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("nameOrKey", { required: false, description: "Session name/key (omit for main)" }) nameOrKey?: string,

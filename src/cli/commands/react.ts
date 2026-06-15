@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail } from "../context.js";
 import { nats } from "../../nats.js";
 
@@ -38,6 +38,7 @@ const reactSendReturnSchema = z.object({
 })
 export class ReactCommands {
   @Command({ name: "send", description: "Send an emoji reaction to a message" })
+  @CommandAccess({ kind: "mutate", resource: "react", action: "send", risk: "high" })
   @Returns(reactSendReturnSchema)
   async send(
     @Arg("messageId", { description: "Message ID to react to (from [mid:ID] tag)" }) messageId: string,

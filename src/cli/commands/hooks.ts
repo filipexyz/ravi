@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -183,6 +183,7 @@ function serializeHook(hook: HookRecord) {
 })
 export class HooksCommands {
   @Command({ name: "list", description: "List configured hooks" })
+  @CommandAccess({ kind: "read", resource: "hooks", action: "list", risk: "low" })
   @Returns(hookListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -254,6 +255,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "show", description: "Show hook details" })
+  @CommandAccess({ kind: "read", resource: "hooks", action: "show", risk: "low" })
   @Returns(hookShowReturnSchema)
   show(
     @Arg("id", { description: "Hook ID" }) id: string,
@@ -294,6 +296,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "create", description: "Create a new runtime hook", aliases: ["add"] })
+  @CommandAccess({ kind: "mutate", resource: "hooks", action: "create", risk: "medium" })
   @Returns(hookMutationReturnSchema)
   async create(
     @Arg("name", { description: "Hook name" }) name: string,
@@ -374,6 +377,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "enable", description: "Enable a hook" })
+  @CommandAccess({ kind: "mutate", resource: "hooks", action: "enable", risk: "medium" })
   @Returns(hookMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Hook ID" }) id: string,
@@ -400,6 +404,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "disable", description: "Disable a hook" })
+  @CommandAccess({ kind: "mutate", resource: "hooks", action: "disable", risk: "medium" })
   @Returns(hookMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Hook ID" }) id: string,
@@ -430,6 +435,7 @@ export class HooksCommands {
     description: "Delete a hook",
     aliases: ["delete", "remove"],
   })
+  @CommandAccess({ kind: "mutate", resource: "hooks", action: "rm", risk: "destructive" })
   @Returns(hookMutationReturnSchema)
   async remove(
     @Arg("id", { description: "Hook ID" }) id: string,
@@ -456,6 +462,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "test", description: "Execute a hook once with a synthetic event" })
+  @CommandAccess({ kind: "read", resource: "hooks", action: "test", risk: "low" })
   @Returns(hookTestReturnSchema)
   async test(
     @Arg("id", { description: "Hook ID" }) id: string,
