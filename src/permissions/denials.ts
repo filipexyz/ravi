@@ -3,7 +3,7 @@ import { publishSessionPrompt } from "../omni/session-stream.js";
 import { getDb } from "../router/router-db.js";
 import { getSession } from "../router/sessions.js";
 import { logger } from "../utils/logger.js";
-import { matchPattern } from "./capability-context.js";
+import { matchPattern } from "./capability-snapshot.js";
 import type { Relation } from "./relations.js";
 
 const log = logger.child("permissions:denials");

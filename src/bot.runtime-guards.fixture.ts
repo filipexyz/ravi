@@ -10,11 +10,11 @@ const actualRouterIndexModule = await import("./router/index.js");
 const actualRouterDbModule = await import("./router/router-db.js");
 const actualCliContextModule = await import("./cli/context.js");
 const actualRemoteSpawnNatsModule = await import("./remote-spawn-nats.js");
-const actualPermissionsEngineModule = await import("./permissions/engine.js");
+const actualPermissionProviderRuntimeModule = await import("./permissions/provider-runtime.js");
 const actualRuntimeProviderRegistryModule = await import("./runtime/provider-registry.js");
 const actualTaskDbModule = await import("./tasks/task-db.js");
-const actualAgentCan = actualPermissionsEngineModule.agentCan;
-const actualCanWithCapabilities = actualPermissionsEngineModule.canWithCapabilities;
+const actualAgentCan = actualPermissionProviderRuntimeModule.agentCan;
+const actualCanWithCapabilities = actualPermissionProviderRuntimeModule.canWithCapabilities;
 
 type RuntimeProviderId = "claude" | "codex";
 
@@ -530,8 +530,8 @@ mock.module("./remote-spawn-nats.js", () => ({
   },
 }));
 
-mock.module("./permissions/engine.js", () => ({
-  ...actualPermissionsEngineModule,
+mock.module("./permissions/provider-runtime.js", () => ({
+  ...actualPermissionProviderRuntimeModule,
   agentCan: (...args: Parameters<typeof actualAgentCan>) => agentCanImpl(...args),
   canWithCapabilities: (...args: Parameters<typeof actualCanWithCapabilities>) => canWithCapabilitiesImpl(...args),
 }));

@@ -18,7 +18,7 @@ applies_to:
   - src/router
   - src/runtime
 owners:
-  - ravi-rebac
+  - ravi-dev
   - ravi-dev
 status: active
 normative: true

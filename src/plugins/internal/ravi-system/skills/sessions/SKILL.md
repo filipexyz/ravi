@@ -185,6 +185,34 @@ ravi sessions keep <name>
 3. O agent pode executar `extend`, `keep`, ou `delete`
 4. Sem ação → sessão é automaticamente deletada pelo runner
 
+### Session Followups
+
+Use `sessions followups` para cadências de inatividade em sessões/chats/listas. Isso é diferente de cron: `--every` conta a partir da última atividade externa relevante.
+
+```bash
+# Criar followup simples
+ravi sessions followups add "Follow-up ravi-dev" --target-chat <chat-id> --every 15m --message "Revise o contexto e faça follow-up curto."
+
+# Criar cadência progressiva
+ravi sessions followups add "Follow-up ravi-dev" --target-chat <chat-id> \
+  --step "15m=Revise o contexto e faça um follow-up curto." \
+  --step "30m=Estude o próximo passo relevante e recomende uma ação concreta."
+
+# Editar uma cadência existente sem recriar
+ravi sessions followups update <id> \
+  --step "15m=Revise o contexto e faça um follow-up curto." \
+  --step "30m=Estude o próximo passo relevante e recomende uma ação concreta."
+
+# Atualizar mensagem de cadência single-step
+ravi sessions followups update <id> --message "Nova mensagem."
+```
+
+Regras:
+
+- Use `update`, não recrie/pausa cadência, quando a intenção é editar nome, descrição, barrier, mensagem ou steps.
+- Em cadências progressivas, `--step` substitui a lista inteira de steps. Não use `--message` para tentar editar o segundo step.
+- `update` preserva `nextRunAt` por padrão; use `--recalculate-next` só quando quiser recalcular a próxima execução.
+
 ### Comunicação Inter-Sessão
 
 ```bash

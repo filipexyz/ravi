@@ -34,10 +34,31 @@ const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
   ]),
 );
 
+const appPermissionProviderSchemaSummarySchema = z.object({
+  kind: z.enum(["ref", "inline", "unknown"]),
+  ref: z.string().nullable(),
+  schema: z.string().nullable(),
+  type: z.string().nullable(),
+});
+
+const appPermissionProviderSchema = z.object({
+  id: z.string(),
+  version: z.string(),
+  interface: z.enum(["builtin", "cli", "sdk", "tool"]),
+  operation: z.string(),
+  decisionSchema: appPermissionProviderSchemaSummarySchema,
+  requestSchema: appPermissionProviderSchemaSummarySchema,
+  timeoutMs: z.number().optional(),
+  cacheTtlSec: z.number().optional(),
+  failClosed: z.literal(true),
+  scope: z.array(z.string()).optional(),
+});
+
 const appPermissionsSchema = z.object({
   required: z.array(z.string()),
   optional: z.array(z.string()),
   mutating: z.array(z.string()),
+  provider: appPermissionProviderSchema.nullable(),
 });
 
 const appSummarySchema = z.object({
@@ -179,7 +200,54 @@ const appsRunReturnSchema = z.object({
   exitCode: z.number().nullable().optional(),
   stdout: z.string().optional(),
   stderr: z.string().optional(),
+  permissionProvider: z
+    .object({
+      providerId: z.string(),
+      providerVersion: z.string(),
+      providerOperationId: z.string(),
+      interface: z.enum(["builtin", "cli", "sdk", "tool"]),
+      requestId: z.string(),
+      decision: z.enum(["allow", "deny", "needs_grant", "not_applicable", "error", "invalid"]),
+      reasonCode: z.string().nullable(),
+      reason: z.string().optional(),
+      durationMs: z.number(),
+      cache: z.object({
+        hit: z.boolean(),
+        ttlSec: z.number().optional(),
+      }),
+      grantSuggestion: jsonValueSchema.optional(),
+      audit: jsonValueSchema.optional(),
+      error: z.string().optional(),
+    })
+    .optional(),
 });
+
+function toProviderSchemaSummary(value: unknown): z.infer<typeof appPermissionProviderSchemaSummarySchema> {
+  if (typeof value === "string") {
+    return { kind: "ref", ref: value, schema: null, type: null };
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return {
+      kind: "inline",
+      ref: null,
+      schema: typeof record.schema === "string" ? record.schema : null,
+      type: typeof record.type === "string" ? record.type : null,
+    };
+  }
+  return { kind: "unknown", ref: null, schema: null, type: null };
+}
+
+function toPermissionsSummary(record: RaviAppManifestRecord): z.infer<typeof appPermissionsSchema> {
+  const provider = record.permissions.provider
+    ? {
+        ...record.permissions.provider,
+        decisionSchema: toProviderSchemaSummary(record.permissions.provider.decisionSchema),
+        requestSchema: toProviderSchemaSummary(record.permissions.provider.requestSchema),
+      }
+    : null;
+  return { ...record.permissions, provider };
+}
 
 function toSummary(record: RaviAppManifestRecord): z.infer<typeof appSummarySchema> {
   return {
@@ -193,7 +261,7 @@ function toSummary(record: RaviAppManifestRecord): z.infer<typeof appSummarySche
     relativePath: record.relativePath,
     rootPath: record.rootPath,
     interfaceNames: record.interfaceNames,
-    permissions: record.permissions,
+    permissions: toPermissionsSummary(record),
     valid: record.valid,
     errors: record.errors,
     warnings: record.warnings,

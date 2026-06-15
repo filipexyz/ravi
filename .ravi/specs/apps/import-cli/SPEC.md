@@ -179,7 +179,7 @@ Dry-run output SHOULD include:
 - CLI import is not app discovery. Discovery reads manifests; import creates or
   previews manifests.
 - CLI import is not permission grant. Suggested permissions remain
-  requirements until REBAC grants them.
+  requirements until configured permission providers grant them.
 - CLI import is not SDK codegen. Static SDK methods still come from the Ravi
   decorated command registry; dynamic app operations are routed through
   `apps.run` unless a separate static SDK surface is added.

@@ -337,6 +337,28 @@ export type AppsGuideReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -447,6 +469,28 @@ export type AppsListReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -467,6 +511,28 @@ export type AppsListReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -507,6 +573,28 @@ export type AppsPromptsReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -553,6 +641,24 @@ export type AppsRunReturn = {
   ok: boolean;
   operation: string | null;
   operationId: string | null;
+  permissionProvider?: {
+    audit?: unknown;
+    cache: {
+      hit: boolean;
+      ttlSec?: number;
+    };
+    decision: "allow" | "deny" | "needs_grant" | "not_applicable" | "error" | "invalid";
+    durationMs: number;
+    error?: string;
+    grantSuggestion?: unknown;
+    interface: "builtin" | "cli" | "sdk" | "tool";
+    providerId: string;
+    providerOperationId: string;
+    providerVersion: string;
+    reason?: string;
+    reasonCode: string | null;
+    requestId: string;
+  };
   result?: unknown;
   status: "completed" | "failed";
   stderr?: string;
@@ -611,6 +717,28 @@ export type AppsShowReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -10962,8 +11090,10 @@ export type TriggersTopicsReturn = {
 
 /** Input shape for `video.analyze`. */
 export type VideoAnalyzeInput = {
+  forceAnalyze?: boolean;
   output?: string;
   prompt?: string;
+  strategy?: string;
   url: string;
 };
 
@@ -10973,8 +11103,11 @@ export type VideoAnalyzeReturn = {
   options: Record<string, unknown>;
   success: true;
   video: {
+    chapters?: Array<Record<string, unknown>>;
     duration: string;
     source: string;
+    strategy: "gemini" | "subtitles";
+    subtitleLanguage?: string | null;
     summary: string;
     title: string;
     topics: string[];

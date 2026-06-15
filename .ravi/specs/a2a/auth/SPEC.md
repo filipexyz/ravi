@@ -8,7 +8,7 @@ tags:
   - a2a
   - authorization
   - credentials
-  - rebac
+  - provider-runtime
   - agent-card
 applies_to:
   - src/a2a/auth.ts

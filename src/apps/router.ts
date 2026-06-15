@@ -4,10 +4,12 @@ import type {
   RaviAppAliasInvocation,
   RaviAppManifestRecord,
   RaviAppOperationDeclaration,
+  RaviAppPermissionProviderAudit,
   RaviAppRunOptions,
   RaviAppRunResult,
 } from "./types.js";
 import { emitCliAuditEvent } from "../cli/audit.js";
+import { AppPermissionProviderDeniedError, evaluateAppPermissionProvider } from "../permissions/provider-runtime.js";
 import { assertCanRunAppOperation, assertCanUseApp, filterVisibleAppManifests } from "./permissions.js";
 
 interface ResolvedOperation {
@@ -52,6 +54,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       status: "failed",
       durationMs: Date.now() - startedAt,
       error: error instanceof Error ? error.message : String(error),
+      ...(error instanceof AppPermissionProviderDeniedError ? { permissionProvider: error.audit } : {}),
     };
   }
 
@@ -65,6 +68,17 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       operationId: result.operationId,
       interface: result.interface,
       mutating: result.mutating,
+      permissionProvider: result.permissionProvider
+        ? {
+            providerId: result.permissionProvider.providerId,
+            providerVersion: result.permissionProvider.providerVersion,
+            providerOperationId: result.permissionProvider.providerOperationId,
+            decision: result.permissionProvider.decision,
+            reasonCode: result.permissionProvider.reasonCode,
+            cache: result.permissionProvider.cache,
+            durationMs: result.permissionProvider.durationMs,
+          }
+        : undefined,
     },
     isError: !result.ok,
     status: "completed",
@@ -209,28 +223,41 @@ async function dispatchResolvedOperation(
   const interfaceName = operation.interface;
   const mutating = operation.mutating === true;
 
+  if (isPermissionProviderOperation(app, resolved.id)) {
+    throw new Error(
+      `Operation ${resolved.id} is reserved for app permission provider decisions and cannot be run directly.`,
+    );
+  }
   if (mutating && !hasDeclaredOperationPermission(operation)) {
     throw new Error(`Mutating operation ${resolved.id} must declare permission or permissions.`);
   }
   assertCanRunAppOperation(appId, resolved.id, mutating);
+  const permissionProvider = await evaluateAppPermissionProvider(app, resolved, {
+    args: options.args,
+    cwd: options.cwd,
+    env: options.env,
+  });
 
   if (interfaceName === "builtin") {
     const handler = operation.handler?.trim();
     if (!handler || !RAVI_APP_BUILTIN_OPERATION_HANDLERS.has(handler)) {
       throw new Error(`Unsupported builtin app operation handler: ${handler ?? "(missing)"}`);
     }
-    return {
-      ok: true,
-      appId,
-      operation: localOperationName(appId, resolved.id),
-      operationId: resolved.id,
-      interface: "builtin",
-      mutating,
-      status: "completed",
-      durationMs: Date.now() - options.startedAt,
-      handler,
-      result: runBuiltinHandler(handler, app),
-    };
+    return withPermissionProvider(
+      {
+        ok: true,
+        appId,
+        operation: localOperationName(appId, resolved.id),
+        operationId: resolved.id,
+        interface: "builtin",
+        mutating,
+        status: "completed",
+        durationMs: Date.now() - options.startedAt,
+        handler,
+        result: runBuiltinHandler(handler, app),
+      },
+      permissionProvider,
+    );
   }
 
   if (interfaceName === "cli") {
@@ -240,28 +267,39 @@ async function dispatchResolvedOperation(
     if (isRecursiveCliCommand(appId, operation.command, options.staticRootCommands)) {
       throw new Error(`CLI operation ${resolved.id} recursively invokes ravi ${appId.split("/").join(" ")}.`);
     }
-    return runCliOperation(app, resolved, options);
+    return withPermissionProvider(await runCliOperation(app, resolved, options), permissionProvider);
   }
 
   if (interfaceName === "stream") {
-    return {
-      ok: true,
-      appId,
-      operation: localOperationName(appId, resolved.id),
-      operationId: resolved.id,
-      interface: "stream",
-      mutating,
-      status: "completed",
-      durationMs: Date.now() - options.startedAt,
-      channel: operation.channel,
-      result: {
+    return withPermissionProvider(
+      {
+        ok: true,
+        appId,
+        operation: localOperationName(appId, resolved.id),
+        operationId: resolved.id,
+        interface: "stream",
+        mutating,
+        status: "completed",
+        durationMs: Date.now() - options.startedAt,
         channel: operation.channel,
-        message: "Stream operations must be handled by a dedicated stream/control surface.",
+        result: {
+          channel: operation.channel,
+          message: "Stream operations must be handled by a dedicated stream/control surface.",
+        },
       },
-    };
+      permissionProvider,
+    );
   }
 
   throw new Error(`App operation interface is not supported by the CLI router yet: ${interfaceName}`);
+}
+
+function withPermissionProvider(
+  result: RaviAppRunResult,
+  permissionProvider: RaviAppPermissionProviderAudit | null,
+): RaviAppRunResult {
+  if (!permissionProvider) return result;
+  return { ...result, permissionProvider };
 }
 
 async function runCliOperation(
@@ -316,7 +354,7 @@ async function runCliOperation(
 
 function runBuiltinHandler(handler: string, app: RaviAppManifestRecord): unknown {
   if (handler === "apps.help") {
-    const operationIds = Object.keys(manifestOperations(app)).sort();
+    const operationIds = visibleOperationIdsForHelp(app);
     return {
       app: toDetail(app),
       operations: operationIds,
@@ -362,6 +400,16 @@ function manifestOperations(app: RaviAppManifestRecord): Record<string, unknown>
   return operations && typeof operations === "object" && !Array.isArray(operations)
     ? (operations as Record<string, unknown>)
     : {};
+}
+
+function visibleOperationIdsForHelp(app: RaviAppManifestRecord): string[] {
+  return Object.keys(manifestOperations(app))
+    .filter((id) => !isPermissionProviderOperation(app, id))
+    .sort();
+}
+
+function isPermissionProviderOperation(app: RaviAppManifestRecord, operationId: string): boolean {
+  return app.permissions.provider?.operation === operationId;
 }
 
 function virtualBuiltin(id: string, handler: string): ResolvedOperation {
@@ -456,29 +504,82 @@ function renderCliCommand(template: string, input: { appId: string; operationId:
 
 function spawnShellCommand(
   command: string,
-  options: { cwd?: string; env?: NodeJS.ProcessEnv; capture: boolean },
-): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+  options: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    mergeProcessEnv?: boolean;
+    capture: boolean;
+    stdin?: string;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+  },
+): Promise<{
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  truncated: boolean;
+}> {
   return new Promise((resolve) => {
     const child = spawn(command, {
       cwd: options.cwd ?? process.cwd(),
-      env: { ...process.env, ...(options.env ?? {}) },
+      env: options.mergeProcessEnv === false ? options.env : { ...process.env, ...(options.env ?? {}) },
       shell: true,
-      stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
+      stdio: options.capture ? ["pipe", "pipe", "pipe"] : "inherit",
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let truncated = false;
+    const maxOutputBytes = options.maxOutputBytes ?? Number.POSITIVE_INFINITY;
+    const timeout =
+      options.timeoutMs === undefined
+        ? null
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill();
+          }, options.timeoutMs);
     if (options.capture) {
       child.stdout?.setEncoding("utf8");
       child.stderr?.setEncoding("utf8");
       child.stdout?.on("data", (chunk) => {
-        stdout += chunk;
+        const next = appendOutputChunk(stdout, String(chunk), maxOutputBytes);
+        stdout = next.value;
+        if (next.truncated) {
+          truncated = true;
+          child.kill();
+          return;
+        }
       });
       child.stderr?.on("data", (chunk) => {
-        stderr += chunk;
+        const next = appendOutputChunk(stderr, String(chunk), maxOutputBytes);
+        stderr = next.value;
+        if (next.truncated) {
+          truncated = true;
+          child.kill();
+          return;
+        }
       });
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(options.stdin ?? "");
     }
-    child.on("close", (exitCode) => resolve({ exitCode, stdout, stderr }));
+    child.on("close", (exitCode) => {
+      if (timeout) clearTimeout(timeout);
+      resolve({ exitCode, stdout, stderr, timedOut, truncated });
+    });
   });
+}
+
+function appendOutputChunk(
+  current: string,
+  chunk: string,
+  maxOutputBytes: number,
+): { value: string; truncated: boolean } {
+  const next = current + chunk;
+  if (!Number.isFinite(maxOutputBytes) || Buffer.byteLength(next, "utf8") <= maxOutputBytes) {
+    return { value: next, truncated: false };
+  }
+  return { value: Buffer.from(next, "utf8").subarray(0, maxOutputBytes).toString("utf8"), truncated: true };
 }
 
 function parseJsonOutput(stdout: string): unknown {

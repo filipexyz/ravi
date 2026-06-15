@@ -49,8 +49,8 @@ export {
   canUseAnyMailbox,
   canUseMailProvider,
   getMailScopeContext,
-  type MailboxRebacPermission,
-  type MailProviderRebacPermission,
+  type MailboxPermission,
+  type MailProviderPermission,
   type MailScopeContext,
 } from "./access.js";
 

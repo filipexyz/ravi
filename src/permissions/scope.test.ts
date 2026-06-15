@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
+import type { ContextCapability } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { listPermissionDenials } from "./denials.js";
-import { grantRelation } from "./relations.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -13,11 +13,62 @@ import {
   canWriteContacts,
   canAccessResource,
   enforceScopeCheck,
+  type ScopeContext,
 } from "./scope.js";
 
 // Helpers
-function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
-  grantRelation(subjectType, subjectId, relation, objectType, objectId, "test");
+function cap(permission: string, objectType: string, objectId: string): ContextCapability {
+  return { permission, objectType, objectId, source: "test" };
+}
+
+function scopeCtx(
+  agentId: string,
+  capabilities: ContextCapability[],
+  overrides: Partial<ScopeContext> = {},
+): ScopeContext {
+  const sessionName = overrides.sessionName ?? `${agentId}-main`;
+  const sessionKey = overrides.sessionKey ?? `agent:${agentId}:${sessionName}`;
+  return {
+    agentId,
+    sessionName,
+    sessionKey,
+    context: {
+      contextId: "ctx_test",
+      contextKey: "rctx_test",
+      kind: "agent-runtime",
+      agentId,
+      sessionKey,
+      sessionName,
+      capabilities,
+      createdAt: 0,
+    },
+    ...overrides,
+  };
+}
+
+function toolCtx(
+  agentId: string,
+  capabilities: ContextCapability[],
+  overrides: { contextId?: string; sessionKey?: string; sessionName?: string } = {},
+): ToolContext {
+  const sessionName = overrides.sessionName ?? `${agentId}-main`;
+  const sessionKey = overrides.sessionKey ?? `agent:${agentId}:${sessionName}`;
+  return {
+    contextId: overrides.contextId ?? "ctx_test",
+    agentId,
+    sessionKey,
+    sessionName,
+    context: {
+      contextId: overrides.contextId ?? "ctx_test",
+      contextKey: "rctx_test",
+      kind: "agent-runtime",
+      agentId,
+      sessionKey,
+      sessionName,
+      capabilities,
+      createdAt: 0,
+    },
+  };
 }
 
 type MinimalSession = { name?: string; sessionKey: string; agentId?: string };
@@ -96,13 +147,11 @@ describe("Scope Isolation", () => {
     });
 
     it("not enforced for superadmin", () => {
-      grant("agent", "main", "admin", "system", "*");
-      expect(isScopeEnforced({ agentId: "main" })).toBe(false);
+      expect(isScopeEnforced(scopeCtx("main", [cap("admin", "system", "*")]))).toBe(false);
     });
 
     it("enforced for non-admin agent", () => {
-      grant("agent", "dev", "use", "tool", "Bash");
-      expect(isScopeEnforced({ agentId: "dev" })).toBe(true);
+      expect(isScopeEnforced(scopeCtx("dev", [cap("use", "tool", "Bash")]))).toBe(true);
     });
   });
 
@@ -124,16 +173,18 @@ describe("Scope Isolation", () => {
       expect(denied.allowed).toBe(false);
       expect(denied.errorMessage).toContain("requires execute on group:apps_list");
 
-      grant("agent", "dev", "execute", "group", "apps_list");
-      expect(enforceScopeCheck("open", "apps", "list").allowed).toBe(true);
+      const allowedContext = toolCtx("dev", [cap("execute", "group", "apps_list")], {
+        sessionKey: "agent:dev:dev-main",
+        sessionName: "dev-main",
+      });
+      expect(runWithContext(allowedContext, () => enforceScopeCheck("open", "apps", "list").allowed)).toBe(true);
     });
 
-    it("allows CLI groups for live superadmin with stale runtime capabilities", () => {
-      grant("agent", "dev", "admin", "system", "*");
-      process.env.RAVI_AGENT_ID = "dev";
+    it("allows CLI groups from the runtime capability snapshot", () => {
+      const context = toolCtx("dev", [cap("execute", "group", "*")]);
 
-      expect(enforceScopeCheck("admin", "daemon", "restart").allowed).toBe(true);
-      expect(enforceScopeCheck("admin", "agents", "create").allowed).toBe(true);
+      expect(runWithContext(context, () => enforceScopeCheck("admin", "daemon", "restart").allowed)).toBe(true);
+      expect(runWithContext(context, () => enforceScopeCheck("admin", "agents", "create").allowed)).toBe(true);
     });
 
     it("allows superadmin commands for a direct operator even when no agent holds admin", () => {
@@ -151,7 +202,7 @@ describe("Scope Isolation", () => {
       expect(result.errorMessage).toContain("requires admin on system:*");
     });
 
-    it("allows CLI group grants added after a stale agent-runtime context was issued", () => {
+    it("keeps stale agent-runtime contexts isolated from legacy grant-store changes", () => {
       const context = {
         contextId: "ctx_stale",
         agentId: "homologacao-solar",
@@ -172,9 +223,15 @@ describe("Scope Isolation", () => {
         },
       } satisfies ToolContext;
 
-      grant("agent", "homologacao-solar", "execute", "group", "agents_create");
+      expect(runWithContext(context, () => enforceScopeCheck("admin", "agents", "create").allowed)).toBe(false);
 
-      expect(runWithContext(context, () => enforceScopeCheck("admin", "agents", "create").allowed)).toBe(true);
+      const refreshed = toolCtx("homologacao-solar", [
+        { permission: "use", objectType: "tool", objectId: "*" },
+        { permission: "execute", objectType: "executable", objectId: "*" },
+        cap("execute", "group", "agents_create"),
+      ]);
+
+      expect(runWithContext(refreshed, () => enforceScopeCheck("admin", "agents", "create").allowed)).toBe(true);
     });
 
     it("records denied CLI group scope with the current session", () => {
@@ -204,10 +261,6 @@ describe("Scope Isolation", () => {
     });
 
     it("allows delegated command scopes inherited from the actor when the surface has no override, including repeated context ids", () => {
-      grant("agent", "audit", "execute", "group", "context_codex-bash-hook");
-      grant("agent", "audit", "execute", "group", "sessions_info");
-      grant("contact", "luis", "execute", "group", "context_codex-bash-hook");
-      grant("contact", "luis", "execute", "group", "sessions_info");
       const context = {
         contextId: "ctx_repeated_delegated",
         agentId: "audit",
@@ -411,18 +464,17 @@ describe("Scope Isolation", () => {
     });
 
     it("allows with explicit access grant", () => {
-      grant("agent", "dev", "access", "session", "main");
-      expect(canAccessSession({ agentId: "dev" }, "main")).toBe(true);
+      expect(canAccessSession(scopeCtx("dev", [cap("access", "session", "main")]), "main")).toBe(true);
     });
 
     it("denies without grant", () => {
       expect(canAccessSession({ agentId: "dev" }, "main")).toBe(false);
     });
 
-    it("allows with pattern grant", () => {
-      grant("agent", "dev", "access", "session", "test-*");
-      expect(canAccessSession({ agentId: "dev" }, "test-foo")).toBe(true);
-      expect(canAccessSession({ agentId: "dev" }, "main")).toBe(false);
+    it("allows with pattern capability", () => {
+      const ctx = scopeCtx("dev", [cap("access", "session", "test-*")]);
+      expect(canAccessSession(ctx, "test-foo")).toBe(true);
+      expect(canAccessSession(ctx, "main")).toBe(false);
     });
   });
 
@@ -444,16 +496,14 @@ describe("Scope Isolation", () => {
     });
 
     it("filters to accessible sessions only", () => {
-      grant("agent", "test", "access", "session", "test-*");
-      const ctx = { agentId: "test", sessionName: "test-own" };
+      const ctx = scopeCtx("test", [cap("access", "session", "test-*")], { sessionName: "test-own" });
       const result = filterAccessibleSessions(ctx, sessions as any);
       expect(result).toHaveLength(2);
       expect(result.map((s: any) => s.name)).toEqual(["test-foo", "test-bar"]);
     });
 
     it("includes own session + granted", () => {
-      grant("agent", "dev", "access", "session", "main");
-      const ctx = { agentId: "dev", sessionName: "dev-grupo" };
+      const ctx = scopeCtx("dev", [cap("access", "session", "main")], { sessionName: "dev-grupo" });
       const result = filterAccessibleSessions(ctx, sessions as any);
       expect(result).toHaveLength(2);
       expect(result.map((s: any) => s.name)).toEqual(["main", "dev-grupo"]);
@@ -470,14 +520,12 @@ describe("Scope Isolation", () => {
     });
 
     it("allows with modify grant", () => {
-      grant("agent", "dev", "modify", "session", "test-session");
-      expect(canModifySession({ agentId: "dev" }, "test-session")).toBe(true);
+      expect(canModifySession(scopeCtx("dev", [cap("modify", "session", "test-session")]), "test-session")).toBe(true);
     });
 
     it("denies without modify grant", () => {
       // access != modify
-      grant("agent", "dev", "access", "session", "test-session");
-      expect(canModifySession({ agentId: "dev" }, "test-session")).toBe(false);
+      expect(canModifySession(scopeCtx("dev", [cap("access", "session", "test-session")]), "test-session")).toBe(false);
     });
   });
 
@@ -493,50 +541,47 @@ describe("Scope Isolation", () => {
     });
 
     it("allows with write_contacts", () => {
-      grant("agent", "dev", "write_contacts", "system", "*");
-      expect(canAccessContact({ agentId: "dev" }, contact)).toBe(true);
+      expect(canAccessContact(scopeCtx("dev", [cap("write_contacts", "system", "*")]), contact)).toBe(true);
     });
 
     it("allows with read_own_contacts when contact has agent session", () => {
-      grant("agent", "dev", "read_own_contacts", "system", "*");
       const sessions = [{ agentId: "dev" }];
-      expect(canAccessContact({ agentId: "dev" }, contact, null, sessions)).toBe(true);
+      expect(
+        canAccessContact(scopeCtx("dev", [cap("read_own_contacts", "system", "*")]), contact, null, sessions),
+      ).toBe(true);
     });
 
     it("denies with read_own_contacts when contact has no agent session", () => {
-      grant("agent", "dev", "read_own_contacts", "system", "*");
       const sessions = [{ agentId: "other" }];
-      expect(canAccessContact({ agentId: "dev" }, contact, null, sessions)).toBe(false);
+      expect(
+        canAccessContact(scopeCtx("dev", [cap("read_own_contacts", "system", "*")]), contact, null, sessions),
+      ).toBe(false);
     });
 
     it("denies with read_own_contacts when no sessions provided", () => {
-      grant("agent", "dev", "read_own_contacts", "system", "*");
-      expect(canAccessContact({ agentId: "dev" }, contact)).toBe(false);
+      expect(canAccessContact(scopeCtx("dev", [cap("read_own_contacts", "system", "*")]), contact)).toBe(false);
     });
 
     it("allows with read_tagged_contacts matching tag", () => {
-      grant("agent", "dev", "read_tagged_contacts", "system", "vip");
-      expect(canAccessContact({ agentId: "dev" }, contact)).toBe(true);
+      expect(canAccessContact(scopeCtx("dev", [cap("read_tagged_contacts", "system", "vip")]), contact)).toBe(true);
     });
 
     it("denies with read_tagged_contacts non-matching tag", () => {
-      grant("agent", "dev", "read_tagged_contacts", "system", "enterprise");
-      expect(canAccessContact({ agentId: "dev" }, contact)).toBe(false);
+      expect(canAccessContact(scopeCtx("dev", [cap("read_tagged_contacts", "system", "enterprise")]), contact)).toBe(
+        false,
+      );
     });
 
     it("allows with specific read_contact", () => {
-      grant("agent", "dev", "read_contact", "contact", "abc123");
-      expect(canAccessContact({ agentId: "dev" }, contact)).toBe(true);
+      expect(canAccessContact(scopeCtx("dev", [cap("read_contact", "contact", "abc123")]), contact)).toBe(true);
     });
 
     it("denies with read_contact on different contact", () => {
-      grant("agent", "dev", "read_contact", "contact", "other-id");
-      expect(canAccessContact({ agentId: "dev" }, contact)).toBe(false);
+      expect(canAccessContact(scopeCtx("dev", [cap("read_contact", "contact", "other-id")]), contact)).toBe(false);
     });
 
     it("denies with no relevant permissions", () => {
-      grant("agent", "dev", "use", "tool", "Bash");
-      expect(canAccessContact({ agentId: "dev" }, contact)).toBe(false);
+      expect(canAccessContact(scopeCtx("dev", [cap("use", "tool", "Bash")]), contact)).toBe(false);
     });
   });
 
@@ -546,13 +591,11 @@ describe("Scope Isolation", () => {
 
   describe("canWriteContacts", () => {
     it("allows with write_contacts grant", () => {
-      grant("agent", "dev", "write_contacts", "system", "*");
-      expect(canWriteContacts({ agentId: "dev" })).toBe(true);
+      expect(canWriteContacts(scopeCtx("dev", [cap("write_contacts", "system", "*")]))).toBe(true);
     });
 
     it("denies without write_contacts", () => {
-      grant("agent", "dev", "read_own_contacts", "system", "*");
-      expect(canWriteContacts({ agentId: "dev" })).toBe(false);
+      expect(canWriteContacts(scopeCtx("dev", [cap("read_own_contacts", "system", "*")]))).toBe(false);
     });
   });
 
@@ -566,8 +609,7 @@ describe("Scope Isolation", () => {
     });
 
     it("allows superadmin", () => {
-      grant("agent", "main", "admin", "system", "*");
-      expect(canAccessResource({ agentId: "main" }, "dev")).toBe(true);
+      expect(canAccessResource(scopeCtx("main", [cap("admin", "system", "*")]), "dev")).toBe(true);
     });
 
     it("allows own resource", () => {

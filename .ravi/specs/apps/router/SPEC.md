@@ -82,8 +82,9 @@ ravi <app-id> [operation] [args...] --json
 - CLI-backed operations SHOULD be external commands or static internal Ravi
   commands that do not re-enter the same dynamic route.
 - The router MUST perform manifest permission preflight before dispatch.
-- The router MUST still rely on runtime authorization at execution time for
-  mutating, sensitive, externally visible, or identity-dependent operations.
+- The router MUST still rely on the Permission Provider Runtime at execution
+  time for mutating, sensitive, externally visible, or identity-dependent
+  operations.
 - When a runtime/agent principal exists, the router MUST authorize the app
   object before dispatch:
   - non-mutating operation: `use app:<app-id>`;
@@ -164,9 +165,10 @@ Stream operations MUST declare `channel`.
 - The app router is not an app discovery index by itself. It consumes the app
   service/registry and refuses ambiguous or invalid entries.
 - The app router is not a permission grant. Manifest permissions describe
-  requirements; runtime authorization remains authoritative.
-- `use app:<id>` and `execute app:<id>` are the app isolation boundary for
-  runtime dispatch. Manifest permissions MUST NOT be interpreted as grants.
+  requirements; provider-runtime authorization remains authoritative.
+- Provider-runtime decisions equivalent to `use app:<id>` and
+  `execute app:<id>` are the app isolation boundary for runtime dispatch.
+  Manifest permissions MUST NOT be interpreted as grants.
 - The app router is not a replacement for first-party static CLI commands.
   Stable core commands may remain build-time registered when they need SDK
   codegen, decorators, or custom parser behavior.
@@ -197,8 +199,8 @@ Stream operations MUST declare `channel`.
   contracts.
 - Declaring a CLI operation as `ravi <app-id> <operation>` creates recursive
   routing.
-- Treating manifest permissions as grants bypasses REBAC and context-key
-  authorization.
+- Treating manifest permissions as grants bypasses the Permission Provider
+  Runtime and context-key authorization.
 - Running health checks during discovery creates side effects and slow startup.
 - Hiding app route failures behind generic Commander help makes agents unable
   to diagnose missing manifests or invalid operations.

@@ -59,6 +59,9 @@ Canonical manifest protocol: `ravi.app/v1`.
 - A manifest MUST declare `permissions.required` for mutating, sensitive, or
   identity-dependent operations. These declarations are requirements, not
   grants.
+- A manifest MAY declare `permissions.provider` for app-owned domain
+  authorization. Provider declarations MUST satisfy `apps/permission-providers`
+  and remain decision hooks, not grants.
 - A manifest MUST NOT contain secrets, bearer tokens, raw context keys, private
   API keys, or user-specific credentials.
 - A manifest SHOULD declare storage ownership when the app persists state. This
@@ -84,8 +87,9 @@ Canonical manifest protocol: `ravi.app/v1`.
 - A plugin MAY package one or more apps, but the plugin is only the container.
   The app manifest defines the operational capability. The plugin manifest
   defines packaging and install/discovery behavior.
-- An app manifest MUST NOT bypass REBAC, context-key authorization, skill
-  gates, runtime provider boundaries, or plugin association rules.
+- An app manifest MUST NOT bypass the Permission Provider Runtime, context-key
+  authorization, skill gates, runtime provider boundaries, or plugin
+  association rules.
 
 ## Manifest Shape
 
@@ -156,6 +160,13 @@ The initial manifest contract is:
       "handler": "apps.manifest.show",
       "mutating": false
     },
+    "music.permissions.decide": {
+      "interface": "cli",
+      "command": "musicctl permissions decide --json",
+      "mutating": false,
+      "inputSchema": "schemas/permission-request.v1.json",
+      "outputSchema": "schemas/permission-decision.v1.json"
+    },
     "music.library.list": {
       "interface": "cli",
       "command": "musicctl library list --json",
@@ -173,7 +184,17 @@ The initial manifest contract is:
   "permissions": {
     "required": ["music:read"],
     "optional": [],
-    "mutating": ["music:write"]
+    "mutating": ["music:write"],
+    "provider": {
+      "id": "music.local",
+      "version": "0.1.0",
+      "interface": "cli",
+      "operation": "music.permissions.decide",
+      "decisionSchema": "schemas/permission-decision.v1.json",
+      "requestSchema": "schemas/permission-request.v1.json",
+      "timeoutMs": 500,
+      "failClosed": true
+    }
   },
   "storage": {
     "sqlite": [
@@ -278,6 +299,14 @@ merely because a manifest was generated.
 - Mutating operations SHOULD declare `permission` or `permissions`.
 - Operations SHOULD declare input and output schema references when the
   operation is consumed by UI or automation.
+- Operations MAY declare `authorization.resource` to describe the app-domain
+  resource protected by a permission provider. Supported derivations are static
+  `id`, positional `idFromArg`, named `idFromOption`, and canonical owner
+  principals via `ownerFrom: "actor" | "surface" | "executorAgent"`.
+- Operations MAY declare `authorization.input.includeArgs` and
+  `authorization.input.includeOptions` to expose selected, sanitized operation
+  input fields to an app permission provider. Raw payloads and secret-like
+  options MUST NOT be sent by default.
 - Discovery MUST validate operation metadata without executing operations.
 
 ## Permission Rules

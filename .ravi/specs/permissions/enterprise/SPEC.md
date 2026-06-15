@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: enterprise
 capabilities:
-  - rebac
+  - local-grants
   - delegation
   - break-glass
   - audit
@@ -23,7 +23,6 @@ applies_to:
   - src/cli/commands/permissions.ts
   - src/events/audit-stream.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true

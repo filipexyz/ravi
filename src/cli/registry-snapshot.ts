@@ -16,11 +16,13 @@ import {
   getArgsMetadata,
   getCliOnlyMetadata,
   getCommandsMetadata,
+  getCommandAccessMetadata,
   getGroupMetadata,
   getOptionsMetadata,
   getReturnsBinaryMetadata,
   getReturnsMetadata,
   getScopeMetadata,
+  type CommandAccessOptions,
   type ScopeType,
 } from "./decorators.js";
 import { inferArgSchema, inferOptionSchema, type ParsedOptionFlags } from "./schema-inference.js";
@@ -111,6 +113,8 @@ export interface CommandRegistryEntry {
   cliOnly?: boolean;
   /** Skill gate declaration enforced by runtime tools and interactive CLI hooks. */
   skillGate?: SkillGateMetadata;
+  /** Semantic operation contract used by the Permission Provider Runtime. */
+  access?: CommandAccessOptions;
 }
 
 export interface RegistrySnapshot {
@@ -149,6 +153,7 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
     const returnsMap = getReturnsMetadata(cls);
     const binaryReturnsSet = getReturnsBinaryMetadata(cls);
     const cliOnlySet = getCliOnlyMetadata(cls);
+    const commandAccessMap = getCommandAccessMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
@@ -209,6 +214,7 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
         ...(binaryReturnsSet.has(cmdMeta.method) ? { binary: true } : {}),
         ...(cliOnlySet.has(cmdMeta.method) ? { cliOnly: true } : {}),
         ...(skillGate ? { skillGate } : {}),
+        ...(commandAccessMap.get(cmdMeta.method) ? { access: commandAccessMap.get(cmdMeta.method)! } : {}),
       };
 
       const existing = commandsByFullName.get(fullName);

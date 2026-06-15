@@ -1437,6 +1437,162 @@ export const AppsGuideReturnSchema = {
                   },
                   "type": "array"
                 },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cacheTtlSec": {
+                          "type": "number"
+                        },
+                        "decisionSchema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "ref",
+                                "inline",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "schema": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ref",
+                            "schema",
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "failClosed": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "interface": {
+                          "enum": [
+                            "builtin",
+                            "cli",
+                            "sdk",
+                            "tool"
+                          ],
+                          "type": "string"
+                        },
+                        "operation": {
+                          "type": "string"
+                        },
+                        "requestSchema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "ref",
+                                "inline",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "schema": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ref",
+                            "schema",
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "scope": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "interface",
+                        "operation",
+                        "decisionSchema",
+                        "requestSchema",
+                        "failClosed"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "required": {
                   "items": {
                     "type": "string"
@@ -1447,7 +1603,8 @@ export const AppsGuideReturnSchema = {
               "required": [
                 "required",
                 "optional",
-                "mutating"
+                "mutating",
+                "provider"
               ],
               "type": "object"
             },
@@ -2061,6 +2218,162 @@ export const AppsListReturnSchema = {
                 },
                 "type": "array"
               },
+              "provider": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cacheTtlSec": {
+                        "type": "number"
+                      },
+                      "decisionSchema": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "ref",
+                              "inline",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "schema": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "ref",
+                          "schema",
+                          "type"
+                        ],
+                        "type": "object"
+                      },
+                      "failClosed": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "interface": {
+                        "enum": [
+                          "builtin",
+                          "cli",
+                          "sdk",
+                          "tool"
+                        ],
+                        "type": "string"
+                      },
+                      "operation": {
+                        "type": "string"
+                      },
+                      "requestSchema": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "ref",
+                              "inline",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "schema": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "ref",
+                          "schema",
+                          "type"
+                        ],
+                        "type": "object"
+                      },
+                      "scope": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "timeoutMs": {
+                        "type": "number"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "interface",
+                      "operation",
+                      "decisionSchema",
+                      "requestSchema",
+                      "failClosed"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "required": {
                 "items": {
                   "type": "string"
@@ -2071,7 +2384,8 @@ export const AppsListReturnSchema = {
             "required": [
               "required",
               "optional",
-              "mutating"
+              "mutating",
+              "provider"
             ],
             "type": "object"
           },
@@ -2196,6 +2510,162 @@ export const AppsListReturnSchema = {
                 },
                 "type": "array"
               },
+              "provider": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cacheTtlSec": {
+                        "type": "number"
+                      },
+                      "decisionSchema": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "ref",
+                              "inline",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "schema": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "ref",
+                          "schema",
+                          "type"
+                        ],
+                        "type": "object"
+                      },
+                      "failClosed": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "interface": {
+                        "enum": [
+                          "builtin",
+                          "cli",
+                          "sdk",
+                          "tool"
+                        ],
+                        "type": "string"
+                      },
+                      "operation": {
+                        "type": "string"
+                      },
+                      "requestSchema": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "ref",
+                              "inline",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "schema": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "ref",
+                          "schema",
+                          "type"
+                        ],
+                        "type": "object"
+                      },
+                      "scope": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "timeoutMs": {
+                        "type": "number"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "interface",
+                      "operation",
+                      "decisionSchema",
+                      "requestSchema",
+                      "failClosed"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "required": {
                 "items": {
                   "type": "string"
@@ -2206,7 +2676,8 @@ export const AppsListReturnSchema = {
             "required": [
               "required",
               "optional",
-              "mutating"
+              "mutating",
+              "provider"
             ],
             "type": "object"
           },
@@ -2419,6 +2890,162 @@ export const AppsPromptsReturnSchema = {
                   },
                   "type": "array"
                 },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cacheTtlSec": {
+                          "type": "number"
+                        },
+                        "decisionSchema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "ref",
+                                "inline",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "schema": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ref",
+                            "schema",
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "failClosed": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "interface": {
+                          "enum": [
+                            "builtin",
+                            "cli",
+                            "sdk",
+                            "tool"
+                          ],
+                          "type": "string"
+                        },
+                        "operation": {
+                          "type": "string"
+                        },
+                        "requestSchema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "ref",
+                                "inline",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "schema": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ref",
+                            "schema",
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "scope": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "interface",
+                        "operation",
+                        "decisionSchema",
+                        "requestSchema",
+                        "failClosed"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "required": {
                   "items": {
                     "type": "string"
@@ -2429,7 +3056,8 @@ export const AppsPromptsReturnSchema = {
               "required": [
                 "required",
                 "optional",
-                "mutating"
+                "mutating",
+                "provider"
               ],
               "type": "object"
             },
@@ -2606,6 +3234,39 @@ export const AppsRunInputSchema = {
 
 /** JSON Schema for the return shape of `apps.run`. */
 export const AppsRunReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "appId": {
@@ -2685,6 +3346,95 @@ export const AppsRunReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "permissionProvider": {
+      "additionalProperties": false,
+      "properties": {
+        "audit": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "cache": {
+          "additionalProperties": false,
+          "properties": {
+            "hit": {
+              "type": "boolean"
+            },
+            "ttlSec": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "hit"
+          ],
+          "type": "object"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny",
+            "needs_grant",
+            "not_applicable",
+            "error",
+            "invalid"
+          ],
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "error": {
+          "type": "string"
+        },
+        "grantSuggestion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "interface": {
+          "enum": [
+            "builtin",
+            "cli",
+            "sdk",
+            "tool"
+          ],
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "providerOperationId": {
+          "type": "string"
+        },
+        "providerVersion": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reasonCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "providerVersion",
+        "providerOperationId",
+        "interface",
+        "requestId",
+        "decision",
+        "reasonCode",
+        "durationMs",
+        "cache"
+      ],
+      "type": "object"
     },
     "result": {},
     "status": {
@@ -2999,6 +3749,162 @@ export const AppsShowReturnSchema = {
               },
               "type": "array"
             },
+            "provider": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cacheTtlSec": {
+                      "type": "number"
+                    },
+                    "decisionSchema": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "ref",
+                            "inline",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "schema": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "schema",
+                        "type"
+                      ],
+                      "type": "object"
+                    },
+                    "failClosed": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "interface": {
+                      "enum": [
+                        "builtin",
+                        "cli",
+                        "sdk",
+                        "tool"
+                      ],
+                      "type": "string"
+                    },
+                    "operation": {
+                      "type": "string"
+                    },
+                    "requestSchema": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "ref",
+                            "inline",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "schema": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "schema",
+                        "type"
+                      ],
+                      "type": "object"
+                    },
+                    "scope": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "timeoutMs": {
+                      "type": "number"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version",
+                    "interface",
+                    "operation",
+                    "decisionSchema",
+                    "requestSchema",
+                    "failClosed"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "required": {
               "items": {
                 "type": "string"
@@ -3009,7 +3915,8 @@ export const AppsShowReturnSchema = {
           "required": [
             "required",
             "optional",
-            "mutating"
+            "mutating",
+            "provider"
           ],
           "type": "object"
         },
@@ -49097,12 +50004,20 @@ export const TriggersTopicsReturnSchema = {
 export const VideoAnalyzeInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "forceAnalyze": {
+      "description": "Force Gemini analysis even when YouTube subtitles exist",
+      "type": "boolean"
+    },
     "output": {
       "description": "Output file path (default: auto-generated in cwd)",
       "type": "string"
     },
     "prompt": {
-      "description": "Custom analysis prompt",
+      "description": "Custom Gemini prompt used by Gemini strategy/fallback",
+      "type": "string"
+    },
+    "strategy": {
+      "description": "Analysis strategy: auto, subtitles, or gemini (default: auto)",
       "type": "string"
     },
     "url": {
@@ -49137,11 +50052,36 @@ export const VideoAnalyzeReturnSchema = {
     "video": {
       "additionalProperties": {},
       "properties": {
+        "chapters": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
         "duration": {
           "type": "string"
         },
         "source": {
           "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "gemini",
+            "subtitles"
+          ],
+          "type": "string"
+        },
+        "subtitleLanguage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "summary": {
           "type": "string"
@@ -49164,6 +50104,7 @@ export const VideoAnalyzeReturnSchema = {
       },
       "required": [
         "source",
+        "strategy",
         "title",
         "duration",
         "summary",

@@ -15,10 +15,12 @@ feature: break-glass
   `enforceScopeCheck("superadmin", "permissions", "grant")` is DENIED.
 - Enterprise mode ON, valid operator credential: the same check is ALLOWED and
   the resolved principal is `operator:<id>` in the scope context.
-- Enterprise mode ON: `agentCan(undefined, …)` does NOT return allow purely from
-  a missing `agentId`; it requires a resolved operator.
-- Enterprise mode OFF (compatibility): the legacy no-agentId allow path still
-  works (one explicit regression test pinning the legacy behavior).
+- `agentCan(undefined, …)` does NOT return allow purely from a missing
+  `agentId`; it fails closed.
+- A no-subject/no-context provider-runtime request is denied unless it
+  explicitly requests local-operator authorization.
+- Explicit local-operator authorization is exercised through the provider
+  runtime facade and never through a hidden caller branch.
 - A break-glass `permissions grant` records `issued_by = operator:<id>` on the
   created relation.
 - A break-glass mutation with no auditable sink available is REFUSED (audit is a
@@ -37,8 +39,8 @@ feature: break-glass
 
 ## Doctor
 
-- `ravi doctor` reports whether the unauthenticated no-agentId bypass is active
-  (enterprise mode off) as a warning in enterprise contexts.
+- `ravi doctor` reports whether no-agent/no-context authorization is fail-closed
+  and whether explicit local-operator authorization works.
 - A check reports any privileged operator credential without an expiry as an
   informational finding (prefer time-bound operator privilege).
 

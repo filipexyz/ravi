@@ -186,7 +186,7 @@ Examples of policy consumers:
 - Observer Rules using `scope=tag`.
 - Contact permissions using `read_tagged_contacts`.
 - Permission policy materializers that turn explicit `policy.*` tag matches
-  into REBAC `relations`.
+  into Permission Provider Runtime `relations`.
 - Future route policies using chat/contact/session tags.
 - Future automations firing only for tagged tasks/projects.
 - Future retention jobs pruning assets by retention tags.

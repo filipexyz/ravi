@@ -72,7 +72,7 @@ people who sign the cheque.
 - **Multi-tenant SaaS first.** Rejected for now: it forces a tenancy and scale
   rearchitecture that fights Ravi's local-first strength, and on-prem is where
   the differentiated, regulated-industry demand is.
-- **Replace the bespoke engine wholesale.** Rejected: the core is the asset and
+- **Replace the local authorization model wholesale.** Rejected: the core is the asset and
   is industry-validated; the enterprise gap is the perimeter (identity, audit,
   governance), not the decision model. Analyzable policy (Cedar) is adopted as a
   later assurance layer, not a Phase 0 rewrite.

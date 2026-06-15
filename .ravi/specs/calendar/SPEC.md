@@ -105,7 +105,7 @@ through the contacts identity graph write path, not direct contact merges.
 
 ## Permission Model
 
-Calendar MUST integrate with Ravi REBAC.
+Calendar MUST integrate with Ravi Permission Provider Runtime.
 
 The default object type SHOULD be `calendar`. Provider credentials and provider
 sync SHOULD use `calendar-provider`.
@@ -130,7 +130,7 @@ Calendar membership SHOULD support relations such as:
 - `free_busy`
 
 Calendar membership MAY be persisted as local rows for listing and diagnostics,
-but runtime authorization MUST be enforced through the permissions/REBAC
+but runtime authorization MUST be enforced through the permissions and Permission Provider Runtime
 boundary. A local membership row MUST NOT bypass a denied permission check.
 
 An agent with no relation to a private calendar MUST NOT read event details from
@@ -223,7 +223,7 @@ subject that produced it.
   events through provider-neutral commands.
 - "My agenda" resolves through identity and never lists unauthorized calendars
   by default.
-- Calendar permissions are enforced through REBAC object scopes.
+- Calendar permissions are enforced through Permission Provider Runtime object scopes.
 - Provider sync is optional and best-effort.
 - Duplicate provider events do not create duplicate local events.
 - Recurring events and instances have stable local identities.

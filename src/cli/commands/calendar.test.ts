@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
-import { grantRelation } from "../../permissions/relations.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { listCalendarEvents, listCalendarOutbox } from "../../calendar/index.js";
 import {
@@ -173,8 +172,10 @@ describe("calendar CLI commands", () => {
       ),
     );
 
+    await captureConsole(() =>
+      calendars.share(calendarPayload.calendar.id, "agent:agent-freebusy", "free_busy", undefined, true),
+    );
     process.env.RAVI_AGENT_ID = "agent-freebusy";
-    grantRelation("agent", "agent-freebusy", "free-busy", "calendar", calendarPayload.calendar.id, "test");
 
     const { output: listOutput } = await captureConsole(() =>
       events.list(
@@ -204,7 +205,7 @@ describe("calendar CLI commands", () => {
     expect(availabilityPayload.busy[0].redacted).toBe(true);
   });
 
-  it("shares calendars through REBAC and allows the grantee to read events", async () => {
+  it("shares calendars through Permission Provider Runtime and allows the grantee to read events", async () => {
     const accounts = new CalendarAccountsCommands();
     const calendars = new CalendarCalendarsCommands();
     const events = new CalendarEventsCommands();

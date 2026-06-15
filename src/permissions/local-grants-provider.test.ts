@@ -2,12 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { buildEffectiveCapabilities } from "./delegation.js";
+import { snapshotSubjectCapabilities, snapshotSubjectDelegationOverrides } from "./local-grants-capabilities.js";
 import {
-  buildEffectiveCapabilities,
-  snapshotSubjectCapabilities,
-  snapshotSubjectDelegationOverrides,
-} from "./delegation.js";
-import { can, agentCan, canWithCapabilityContext, canWithCapabilities } from "./engine.js";
+  agentCanWithLocalGrants as agentCan,
+  canSubjectWithLocalGrants as can,
+  canWithCapabilityContext,
+} from "./local-grants-provider.js";
+import { canWithCapabilities } from "./provider-runtime.js";
 import { grantRelation, revokeRelation } from "./relations.js";
 
 let stateDir: string | null = null;
@@ -50,9 +52,9 @@ function grant(
 // Tests
 // ============================================================================
 
-describe("REBAC Engine", () => {
+describe("local grants permission provider", () => {
   beforeEach(async () => {
-    stateDir = await createIsolatedRaviState("ravi-permissions-engine-test-");
+    stateDir = await createIsolatedRaviState("ravi-local-grants-provider-test-");
   });
 
   afterEach(async () => {
@@ -65,10 +67,10 @@ describe("REBAC Engine", () => {
   // --------------------------------------------------------------------------
 
   describe("agentCan", () => {
-    it("allows everything when agentId is undefined (CLI direct)", () => {
-      expect(agentCan(undefined, "use", "tool", "Bash")).toBe(true);
-      expect(agentCan(undefined, "execute", "executable", "rm")).toBe(true);
-      expect(agentCan(undefined, "admin", "system", "*")).toBe(true);
+    it("fails closed when agentId is undefined", () => {
+      expect(agentCan(undefined, "use", "tool", "Bash")).toBe(false);
+      expect(agentCan(undefined, "execute", "executable", "rm")).toBe(false);
+      expect(agentCan(undefined, "admin", "system", "*")).toBe(false);
     });
 
     it("denies when no relations exist", () => {

@@ -13,8 +13,7 @@ import {
 } from "../bash/index.js";
 import { nats } from "../nats.js";
 import { authorizeRuntimeContext, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
-import { agentCan, canWithCapabilityContext } from "../permissions/engine.js";
-import { isDelegatedAuthorityContext } from "../permissions/capability-context.js";
+import { agentCan, canWithCapabilityContext, isDelegatedAuthorityContext } from "../permissions/provider-runtime.js";
 import type { ContextRecord } from "../router/index.js";
 import type {
   RuntimeApprovalResult,

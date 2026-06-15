@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 
 afterAll(() => mock.restore());
 
@@ -21,6 +21,7 @@ interface TestRelation {
 
 let relations: TestRelation[] = [];
 let nextRelationId = 1;
+let previousLegacyLocalGrantsMutation: string | undefined;
 
 function matchesFilter(relation: TestRelation, filter?: Record<string, unknown>): boolean {
   if (!filter) return true;
@@ -105,6 +106,66 @@ mock.module("../../permissions/relations.js", () => ({
     };
     relations.push(created);
     return created;
+  },
+  grantRelationIfAbsentOrOwned: (
+    subjectType: string,
+    subjectId: string,
+    relation: string,
+    objectType: string,
+    objectId: string,
+    source: string,
+    options?: {
+      permanent?: boolean;
+      ttlMs?: number;
+      expiresAt?: number;
+      reason?: string;
+      issuedBy?: string;
+    },
+  ) => {
+    const existing = relations.find((item) =>
+      matchesFilter(item, {
+        subjectType,
+        subjectId,
+        relation,
+        objectType,
+        objectId,
+      }),
+    );
+    if (existing && !existing.revokedAt && existing.source !== source) {
+      return { status: "conflict", relation: existing, conflictSource: existing.source };
+    }
+    if (existing) {
+      existing.source = source;
+      existing.grantMode = options?.permanent ? "permanent" : source === "manual" ? "temporary" : "permanent";
+      existing.expiresAt = options?.permanent ? null : (options?.expiresAt ?? 3601);
+      existing.reason = options?.reason ?? null;
+      existing.issuedBy = options?.issuedBy ?? null;
+      existing.revokedAt = null;
+      existing.revocationBatchId = null;
+      return { status: "refreshed", relation: existing };
+    }
+    const created = {
+      id: nextRelationId++,
+      subjectType,
+      subjectId,
+      relation,
+      objectType,
+      objectId,
+      source,
+      grantMode: options?.permanent
+        ? ("permanent" as const)
+        : source === "manual"
+          ? ("temporary" as const)
+          : ("permanent" as const),
+      expiresAt: options?.permanent ? null : source === "manual" ? (options?.expiresAt ?? 3601) : null,
+      revokedAt: null,
+      revocationBatchId: null,
+      reason: options?.reason ?? null,
+      issuedBy: options?.issuedBy ?? null,
+      createdAt: 1,
+    };
+    relations.push(created);
+    return { status: "created", relation: created };
   },
   revokeRelation: (subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) => {
     const before = relations.length;
@@ -228,7 +289,7 @@ mock.module("../../permissions/grant-notifications.js", () => ({
   notifyPermissionGrantsCreated: () => {},
 }));
 
-mock.module("../../permissions/engine.js", () => ({
+mock.module("../../permissions/provider-runtime.js", () => ({
   can: (subjectType: string, subjectId: string, permission: string, objectType: string, objectId: string) =>
     relations.some((item) =>
       matchesFilter(item, {
@@ -274,6 +335,7 @@ mock.module("../../permissions/policies.js", () => ({
   }),
   listPermissionPolicyMaterializations: () => [],
   loadPermissionPolicyRulesFromDirectory: () => ({ rules: [], errors: [] }),
+  revalidatePolicyMaterializationsBeforeAuthorization: () => [],
   reconcilePermissionPolicies: () => ({
     mode: "reconcile",
     valid: true,
@@ -364,6 +426,16 @@ describe("PermissionsCommands --json", () => {
   beforeEach(() => {
     relations = [];
     nextRelationId = 1;
+    previousLegacyLocalGrantsMutation = process.env.RAVI_ENABLE_LEGACY_LOCAL_GRANTS_MUTATION;
+    process.env.RAVI_ENABLE_LEGACY_LOCAL_GRANTS_MUTATION = "1";
+  });
+
+  afterEach(() => {
+    if (previousLegacyLocalGrantsMutation === undefined) {
+      delete process.env.RAVI_ENABLE_LEGACY_LOCAL_GRANTS_MUTATION;
+    } else {
+      process.env.RAVI_ENABLE_LEGACY_LOCAL_GRANTS_MUTATION = previousLegacyLocalGrantsMutation;
+    }
   });
 
   it("returns the granted relation as structured JSON", () => {

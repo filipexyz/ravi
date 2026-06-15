@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: delegation
 capabilities:
-  - rebac
+  - local-grants
   - roles
   - invocation-context
   - effective-capabilities
@@ -22,7 +22,6 @@ applies_to:
   - src/omni/consumer.ts
   - src/contacts.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true

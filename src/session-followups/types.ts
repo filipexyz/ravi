@@ -52,6 +52,17 @@ export interface SessionFollowupCadenceInput {
   now?: number;
 }
 
+export interface SessionFollowupCadenceUpdateInput {
+  name?: string;
+  description?: string | null;
+  schedule?: SessionFollowupSchedule;
+  deliveryBarrier?: string;
+  messageTemplate?: string;
+  metadata?: Record<string, unknown>;
+  recalculateNextRun?: boolean;
+  now?: number;
+}
+
 export interface SessionFollowupRun {
   id: string;
   cadenceId: string;

@@ -15,6 +15,8 @@ function makeTempDir(prefix: string): string {
 function makeHealthyDeps() {
   const home = makeTempDir("ravi-doctor-home-");
   const stateDir = join(home, ".ravi");
+  const cwd = "/repo";
+  const providerRuntimePath = join(cwd, "src", "permissions", "provider-runtime.ts");
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(join(stateDir, "ravi.db"), "");
   writeFileSync(join(stateDir, "insights.db"), "");
@@ -90,7 +92,6 @@ function makeHealthyDeps() {
     getRuntimeCompatibilityIssues: () => [],
     checkAppManifests: () => [] as any,
     discoverAppManifests: () => [] as any,
-    listRelations: () => [] as any,
     getRegistry: () => ({ commands: [] }) as any,
     currentWeakPublicReturnCommands: () => [],
     currentCliOnlyCommands: () => [],
@@ -123,13 +124,20 @@ function makeHealthyDeps() {
     listSkillFiles: () => [],
     getGitInfo: () => ({ branch: "main", commit: "abc123", dirty: false, ahead: 0, behind: 0 }),
     exists: (path: string) =>
-      [stateDir, join(stateDir, "ravi.db"), join(stateDir, "insights.db"), join(home, ".codex", "hooks.json")].includes(
-        path,
-      ),
-    readFile: (path: string) => readFileSync(path, "utf8"),
+      [
+        stateDir,
+        join(stateDir, "ravi.db"),
+        join(stateDir, "insights.db"),
+        join(home, ".codex", "hooks.json"),
+        providerRuntimePath,
+      ].includes(path),
+    readFile: (path: string) =>
+      path === providerRuntimePath
+        ? 'import { contextCapabilitiesProvider } from "./context-capabilities-provider.js";'
+        : readFileSync(path, "utf8"),
     readDir: () => [] as any,
     homeDir: () => home,
-    cwd: () => "/repo",
+    cwd: () => cwd,
     now: () => new Date("2026-06-08T12:00:00.000Z"),
   };
 }
@@ -158,47 +166,6 @@ describe("inspectDoctor", () => {
       "2 task automations",
     );
     expect(report.findings.every((finding) => finding.severity !== "error")).toBe(true);
-  });
-
-  it("flags rebac zeroed subjects, revoked backlog, and admin contexts", () => {
-    const deps = makeHealthyDeps();
-    const revoked = {
-      id: 1,
-      subjectType: "chat",
-      subjectId: "zeroed-surface",
-      relation: "use",
-      objectType: "tool",
-      objectId: "Bash",
-      source: "manual",
-      grantMode: "permanent",
-      expiresAt: null,
-      revokedAt: 123,
-      revocationBatchId: "batch-1",
-      reason: null,
-      issuedBy: null,
-      createdAt: 0,
-    };
-    const baseQueryRows = deps.queryRows;
-    const report = inspectDoctor({
-      ...deps,
-      // active list is empty; includeInactive surfaces a revoked-only subject.
-      listRelations: ((filter?: { includeInactive?: boolean }) =>
-        (filter?.includeInactive ? [revoked] : []) as any) as typeof deps.listRelations,
-      queryRows: ((sql: string, params?: any) =>
-        sql.includes("contexts")
-          ? ([{ count: 4 }] as any)
-          : (baseQueryRows as any)(sql, params)) as typeof deps.queryRows,
-    });
-
-    const zero = report.findings.find((finding) => finding.id === "permissions.rebac_zero_capabilities");
-    expect(zero?.severity).toBe("warn");
-    expect(zero?.summary).toContain("1 subject");
-
-    const admin = report.findings.find((finding) => finding.id === "permissions.rebac_admin_contexts");
-    expect(admin?.severity).toBe("info");
-    expect(admin?.summary).toContain("4 active");
-
-    expect(report.findings.some((finding) => finding.id === "permissions.rebac_revoked_backlog")).toBe(true);
   });
 
   it("surfaces fail and warn states when critical config is missing or divergent", () => {
@@ -247,7 +214,6 @@ describe("inspectDoctor", () => {
           : [],
       checkAppManifests: () => [] as any,
       discoverAppManifests: () => [] as any,
-      listRelations: () => [] as any,
       getRegistry: () => ({ commands: [] }) as any,
       currentWeakPublicReturnCommands: () => [],
       currentCliOnlyCommands: () => [],

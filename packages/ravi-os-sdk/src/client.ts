@@ -6405,8 +6405,10 @@ export class RaviClient {
   readonly video = {
     /** Analyze a video (YouTube URL or local file) and save to markdown */
     analyze: async (url: string, options?: {
+      forceAnalyze?: boolean;
       output?: string;
       prompt?: string;
+      strategy?: string;
     }): Promise<VideoAnalyzeReturn> => {
       return this.transport.call({
         groupSegments: ["video"],

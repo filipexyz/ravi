@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { grantRelation } from "../permissions/relations.js";
+import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   assertCanRunAppOperation,
@@ -13,19 +13,51 @@ import {
 let stateDir: string | null = null;
 
 const AGENT_CONTEXT: ToolContext = { agentId: "dev" };
+const CONTEXT_ENV_KEYS = [
+  "RAVI_CONTEXT_KEY",
+  "RAVI_SESSION_KEY",
+  "RAVI_SESSION_NAME",
+  "RAVI_AGENT_ID",
+  "RAVI_CHANNEL",
+  "RAVI_ACCOUNT_ID",
+  "RAVI_CHAT_ID",
+] as const;
+const originalContextEnv = new Map<string, string | undefined>(CONTEXT_ENV_KEYS.map((key) => [key, process.env[key]]));
 
-function grant(relation: string, appId: string) {
-  grantRelation("agent", "dev", relation, "app", appId, "manual", { permanent: true });
+function appCapability(permission: string, appId: string): ContextCapability {
+  return { permission, objectType: "app", objectId: appId };
+}
+
+function contextWith(capabilities: ContextCapability[]): ToolContext {
+  const context: ContextRecord = {
+    contextId: "ctx_apps_permissions",
+    contextKey: "ctx_key_apps_permissions",
+    kind: "test-runtime",
+    agentId: "dev",
+    capabilities,
+    metadata: {},
+    createdAt: 0,
+  };
+  return { agentId: "dev", context };
 }
 
 describe("app permission gate", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-app-permissions-test-");
+    for (const key of CONTEXT_ENV_KEYS) delete process.env[key];
   });
 
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+    for (const key of CONTEXT_ENV_KEYS) {
+      const value = originalContextEnv.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
   });
 
   it("allows everything for a direct operator with no agent principal", () => {
@@ -42,8 +74,7 @@ describe("app permission gate", () => {
   });
 
   it("separates use from execute", () => {
-    grant("use", "apps");
-    runWithContext(AGENT_CONTEXT, () => {
+    runWithContext(contextWith([appCapability("use", "apps")]), () => {
       expect(canUseApp("apps")).toBe(true);
       // use does not imply execute (mutating)
       expect(canExecuteApp("apps")).toBe(false);
@@ -51,44 +82,39 @@ describe("app permission gate", () => {
   });
 
   it("grants mutating operations only with execute", () => {
-    grant("execute", "apps");
-    runWithContext(AGENT_CONTEXT, () => {
+    runWithContext(contextWith([appCapability("execute", "apps")]), () => {
       expect(canExecuteApp("apps")).toBe(true);
       expect(() => assertCanRunAppOperation("apps", "do-thing", true)).not.toThrow();
     });
   });
 
   it("requires use for non-mutating ops and execute for mutating ops", () => {
-    grant("use", "apps");
-    runWithContext(AGENT_CONTEXT, () => {
+    runWithContext(contextWith([appCapability("use", "apps")]), () => {
       expect(() => assertCanRunAppOperation("apps", "list", false)).not.toThrow();
       expect(() => assertCanRunAppOperation("apps", "delete", true)).toThrow(/requires execute on app:apps/);
     });
   });
 
   it("normalizes the app id before checking", () => {
-    grant("use", "music/player");
-    runWithContext(AGENT_CONTEXT, () => {
+    runWithContext(contextWith([appCapability("use", "music/player")]), () => {
       // mixed case + whitespace resolves to the normalized grant
       expect(canUseApp("  Music/Player ")).toBe(true);
     });
   });
 
   it("honors a wildcard app grant", () => {
-    grant("use", "*");
-    runWithContext(AGENT_CONTEXT, () => {
+    runWithContext(contextWith([appCapability("use", "*")]), () => {
       expect(canUseApp("apps")).toBe(true);
       expect(canUseApp("music/player")).toBe(true);
     });
   });
 
   it("filters discovery to visible apps", () => {
-    grant("use", "apps");
     const records = [
       { id: "apps", manifest: { id: "apps" } },
       { id: "secret", manifest: { id: "secret" } },
     ] as any;
-    runWithContext(AGENT_CONTEXT, () => {
+    runWithContext(contextWith([appCapability("use", "apps")]), () => {
       const visible = filterVisibleAppManifests(records);
       expect(visible.map((r: { id: string }) => r.id)).toEqual(["apps"]);
     });

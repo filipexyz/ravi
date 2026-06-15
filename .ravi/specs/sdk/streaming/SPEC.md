@@ -81,7 +81,7 @@ mágico.
 
 Channels ativos:
 
-| Channel                  | Endpoint                              | Topic NATS subjacente                                                                | Escopo REBAC                |
+| Channel                  | Endpoint                              | Topic NATS subjacente                                                                | Escopo Permission Provider Runtime                |
 |--------------------------|---------------------------------------|--------------------------------------------------------------------------------------|-----------------------------|
 | `events`                 | `/api/v1/_stream/events`              | `>` com filtros                                                                      | `view system:events`        |
 | `tasks`                  | `/api/v1/_stream/tasks`               | `ravi.task.*.event`                                                                  | `view system:tasks`         |
@@ -102,7 +102,7 @@ permanecem permanentemente CLI-only — não fazem sentido remotos.
 ## Auth e Escopo
 
 - Auth Bearer é a mesma do gateway: `resolveRuntimeContext(token)`.
-- Cada channel declara um escopo REBAC (ex: `events` → relação `view` em
+- Cada channel declara um escopo Permission Provider Runtime (ex: `events` → relação `view` em
   `system:events`). O gateway recusa subscribe sem permissão e emite
   `ravi.audit.denied` antes de fechar a conexão.
 - Streaming endpoint NUNCA aceita token de escopo `open`. Streams sempre

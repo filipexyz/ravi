@@ -1447,7 +1447,7 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name) WHERE name IS NOT NULL;
 
-    -- REBAC: Relationship-based access control
+    -- local-grants: Relationship-based access control
     CREATE TABLE IF NOT EXISTS relations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       subject_type TEXT NOT NULL,
@@ -1966,7 +1966,7 @@ function getDb(): Database {
     log.info("Added remote_user column to agents table");
   }
 
-  // Migration: drop legacy permission columns (replaced by REBAC)
+  // Migration: drop legacy permission columns (replaced by local-grants)
   const legacyCols = ["allowed_tools", "bash_mode", "bash_allowlist", "bash_denylist"];
   const toDrop = legacyCols.filter((c) => agentColumns.some((ac) => ac.name === c));
   if (toDrop.length > 0) {

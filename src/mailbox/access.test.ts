@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { grantRelation } from "../permissions/relations.js";
+import { runWithContext } from "../cli/context.js";
+import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { canUseMailMailbox, canUseMailProvider, getMailScopeContext } from "./access.js";
 import { createMailAccount, createMailMailbox } from "./index.js";
@@ -7,7 +8,26 @@ import { createMailAccount, createMailMailbox } from "./index.js";
 let stateDir: string | null = null;
 let previousAgentId: string | undefined;
 
-describe("mailbox REBAC access", () => {
+function cap(permission: string, objectType: string, objectId: string): ContextCapability {
+  return { permission, objectType, objectId };
+}
+
+function toolContext(capabilities: ContextCapability[]): { agentId: string; context: ContextRecord } {
+  return {
+    agentId: "mail-agent",
+    context: {
+      contextId: "ctx_mailbox_access",
+      contextKey: "ctx_key_mailbox_access",
+      kind: "test-runtime",
+      agentId: "mail-agent",
+      capabilities,
+      metadata: {},
+      createdAt: 0,
+    },
+  };
+}
+
+describe("mailbox Permission Provider Runtime access", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-mailbox-access-test-");
     previousAgentId = process.env.RAVI_AGENT_ID;
@@ -33,12 +53,14 @@ describe("mailbox REBAC access", () => {
     process.env.RAVI_AGENT_ID = "mail-agent";
     expect(canUseMailMailbox(getMailScopeContext(), "read", mailbox)).toBe(false);
 
-    grantRelation("agent", "mail-agent", "read", "mailbox", mailbox.normalizedAddress, "test");
-    expect(canUseMailMailbox(getMailScopeContext(), "read", mailbox)).toBe(true);
-    expect(canUseMailMailbox(getMailScopeContext(), "send", mailbox)).toBe(false);
+    runWithContext(toolContext([cap("read", "mailbox", mailbox.normalizedAddress)]), () => {
+      expect(canUseMailMailbox(getMailScopeContext(), "read", mailbox)).toBe(true);
+      expect(canUseMailMailbox(getMailScopeContext(), "send", mailbox)).toBe(false);
+    });
 
-    grantRelation("agent", "mail-agent", "send", "mailbox", "*", "test");
-    expect(canUseMailMailbox(getMailScopeContext(), "send", mailbox)).toBe(true);
+    runWithContext(toolContext([cap("send", "mailbox", "*")]), () => {
+      expect(canUseMailMailbox(getMailScopeContext(), "send", mailbox)).toBe(true);
+    });
   });
 
   it("requires provider-scoped grants for provider sync", () => {
@@ -46,8 +68,9 @@ describe("mailbox REBAC access", () => {
 
     expect(canUseMailProvider(getMailScopeContext(), "sync", "ravi-mail")).toBe(false);
 
-    grantRelation("agent", "mail-agent", "sync", "mail-provider", "ravi-mail", "test");
-    expect(canUseMailProvider(getMailScopeContext(), "sync", "ravi-mail")).toBe(true);
-    expect(canUseMailProvider(getMailScopeContext(), "manage", "ravi-mail")).toBe(false);
+    runWithContext(toolContext([cap("sync", "mail-provider", "ravi-mail")]), () => {
+      expect(canUseMailProvider(getMailScopeContext(), "sync", "ravi-mail")).toBe(true);
+      expect(canUseMailProvider(getMailScopeContext(), "manage", "ravi-mail")).toBe(false);
+    });
   });
 });

@@ -21,7 +21,6 @@ applies_to:
   - src/events/audit-stream.ts
   - src/permissions/audit-provenance.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true

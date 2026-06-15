@@ -27,7 +27,6 @@ import {
   resolveRuntimeContext,
 } from "../../runtime/context-registry.js";
 import { dbCreateAgent, dbGetAgent, dbUpsertDaemonRestartEpoch } from "../../router/router-db.js";
-import { grantRelation } from "../../permissions/relations.js";
 import {
   CredentialsFileError,
   emptyCredentialsFile,
@@ -1156,8 +1155,6 @@ ANTHROPIC_API_KEY=
         cwd: RAVI_DIR,
       });
     }
-
-    grantRelation("agent", ADMIN_BOOTSTRAP_AGENT_ID, "admin", "system", "*", "config:admin-bootstrap");
 
     const issuedAt = Date.now();
     const expiresAt = issuedAt + DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS;

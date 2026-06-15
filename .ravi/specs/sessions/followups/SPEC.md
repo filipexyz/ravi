@@ -121,6 +121,7 @@ The CLI SHOULD expose:
 
 - `ravi sessions followups list`
 - `ravi sessions followups add`
+- `ravi sessions followups update <id>`
 - `ravi sessions followups inspect <id>`
 - `ravi sessions followups run <id>`
 - `ravi sessions followups pause <id>`
@@ -135,6 +136,10 @@ CLI semantics:
 - `--every <duration> --message <text>` creates a single inactivity step.
 - `--step "<duration>=<message>"` MAY be repeated to create progressive followups, e.g. `--step "2h=First followup" --step "3h=Second followup"`.
 - `--step` MUST NOT be combined with `--every`, `--at`, or `--cron`.
+- `update <id>` MUST mutate the existing cadence in place. It MUST NOT require recreating a cadence for name, description, barrier, message, or idle step changes.
+- `update <id> --step ...` MUST replace the full progressive step list for an `every` cadence.
+- `update <id>` MUST preserve the existing `nextRunAt` by default. Recalculating the next run MUST require an explicit operator flag.
+- `update <id> --message` MAY update single-step cadences in place. It MUST NOT silently pretend to update progressive step messages; operators MUST use `--step` for multi-step cadences.
 
 ## Acceptance Criteria
 
@@ -145,6 +150,7 @@ CLI semantics:
 - A reading-list cadence expands to one run per active member chat.
 - A chat/list cadence anchors inactivity on the last non-agent chat message.
 - Progressive steps fire one at a time and reset when a new external chat message appears.
+- Updating a cadence's progressive steps preserves its `id`, target, owner, creation timestamp, and next run unless recalculation is explicitly requested.
 - A chat/list target with no attached session records a skipped run instead of creating a route.
 - `ravi sessions followups list --json` returns pagination-ready machine-readable state.
 - The runner is best-effort and must not prevent daemon startup if a cadence fails.

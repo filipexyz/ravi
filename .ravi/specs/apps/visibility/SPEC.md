@@ -6,7 +6,7 @@ domain: apps
 capability: visibility
 capabilities:
   - discovery
-  - rebac
+  - provider-runtime
   - cli
   - router
 tags:
@@ -21,7 +21,7 @@ applies_to:
   - src/cli/index.ts
   - src/permissions/scope.ts
 owners:
-  - ravi-rebac
+  - ravi-dev
   - ravi-dev
 status: active
 normative: true

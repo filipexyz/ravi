@@ -12,6 +12,7 @@ const COMMANDS_KEY = Symbol("cli:commands");
 const ARGS_KEY = Symbol("cli:args");
 const OPTIONS_KEY = Symbol("cli:options");
 const SCOPE_KEY = Symbol("cli:scope");
+const COMMAND_ACCESS_KEY = Symbol("cli:commandAccess");
 const RETURNS_KEY = Symbol("cli:returns");
 const RETURNS_BINARY_KEY = Symbol("cli:returns:binary");
 const CLI_ONLY_KEY = Symbol("cli:cliOnly");
@@ -28,6 +29,23 @@ const CLI_ONLY_KEY = Symbol("cli:cliOnly");
  * - "open"          — No restrictions.
  */
 export type ScopeType = "superadmin" | "admin" | "writeContacts" | "resource" | "open";
+export type CommandAccessKind = "read" | "mutate";
+export type CommandAccessRisk = "low" | "medium" | "high" | "destructive";
+export type CommandAccessContextRequirement = "actor" | "surface" | "session" | "executorAgent" | "resource";
+
+export interface CommandAccessOptions {
+  kind: CommandAccessKind;
+  resource: string;
+  action: string;
+  risk: CommandAccessRisk;
+  requiresContext?: CommandAccessContextRequirement[];
+  resourceId?: string;
+  input?: string[];
+  redactions?: string[];
+  localOperator?: boolean;
+  requiresConfirmation?: boolean;
+  notes?: string;
+}
 
 export interface GroupOptions {
   name: string;
@@ -99,6 +117,21 @@ export function Scope(type: ScopeType) {
     const scopes: Map<string, ScopeType> = Reflect.getMetadata(SCOPE_KEY, target.constructor) || new Map();
     scopes.set(propertyKey, type);
     Reflect.defineMetadata(SCOPE_KEY, scopes, target.constructor);
+  };
+}
+
+/**
+ * @CommandAccess decorator - declares semantic operation metadata for a CLI command.
+ *
+ * This is not a grant and not policy. It describes the operation so runtime
+ * surfaces can build a Permission Provider Runtime request before execution.
+ */
+export function CommandAccess(options: CommandAccessOptions) {
+  return (target: object, propertyKey: string, _descriptor: PropertyDescriptor) => {
+    const map: Map<string, CommandAccessOptions> =
+      Reflect.getMetadata(COMMAND_ACCESS_KEY, target.constructor) || new Map();
+    map.set(propertyKey, options);
+    Reflect.defineMetadata(COMMAND_ACCESS_KEY, map, target.constructor);
   };
 }
 
@@ -193,6 +226,10 @@ export function getOptionsMetadata(target: object, propertyKey: string): OptionM
 
 export function getScopeMetadata(target: Function): Map<string, ScopeType> {
   return Reflect.getMetadata(SCOPE_KEY, target) || new Map();
+}
+
+export function getCommandAccessMetadata(target: Function): Map<string, CommandAccessOptions> {
+  return Reflect.getMetadata(COMMAND_ACCESS_KEY, target) || new Map();
 }
 
 export function getReturnsMetadata(target: Function): Map<string, ZodTypeAny> {

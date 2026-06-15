@@ -54,7 +54,7 @@ state.
 - Remote provider ids MUST be stored as provenance, not as primary local ids.
 - Provider-specific behavior MUST stay behind provider adapters.
 - Calendar reads in agent/runtime context MUST be filtered through identity and
-  REBAC.
+  Permission Provider Runtime.
 
 ## Data Model
 
@@ -110,7 +110,7 @@ provenance and MUST NOT replace Ravi ownership.
 
 ### `calendar_members`
 
-REBAC-friendly membership projection for calendars.
+Provider-runtime-friendly membership projection for calendars.
 
 Fields:
 
@@ -128,7 +128,7 @@ Temporary membership MAY use `expires_at` when supported by the permissions
 system.
 
 Membership rows are not an independent authorization engine. Runtime access
-MUST still be evaluated through Ravi permissions/REBAC, and denied permission
+MUST still be evaluated through Ravi permissions and the Permission Provider Runtime, and denied permission
 checks MUST fail closed even if a stale membership row exists.
 
 ### `calendar_events`
@@ -383,7 +383,7 @@ payloads.
 
 - Lazy init creates the local calendar schema without provider auth.
 - Local calendars and events can be created without remote providers.
-- Agent calendar reads are scoped by requester identity and REBAC.
+- Agent calendar reads are scoped by requester identity and Permission Provider Runtime.
 - Recurring event instances have stable local ids.
 - Provider replay is idempotent.
 - Local writes create outbox rows before provider delivery.

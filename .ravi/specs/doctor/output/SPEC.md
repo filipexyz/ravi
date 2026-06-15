@@ -172,9 +172,12 @@ ERROR
 - routes.agent_missing: Route points to missing agent ravi-namastex
 
 WARN
-- permissions.grant_broad: 2249 broad grants are active
+- permissions.command_mutation_unclassified: 94 open-scope commands look mutating
 
 INFO
+- permissions.provider_runtime_default_chain: default provider chain matches contract
+- permissions.local_operator_explicit: missing-principal authorization fails closed
+- permissions.runtime_bootstrap_scope: runtime bootstrap excludes actor/surface/admin authority
 - sdk.returns: 561 public commands, 0 missing returns
 ```
 

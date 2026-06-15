@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: tag-policy
 capabilities:
-  - rebac
+  - local-grants
   - tags
   - policy-materialization
   - profiles
@@ -13,7 +13,7 @@ capabilities:
   - resource-visibility
 tags:
   - permissions
-  - rebac
+  - local-grants
   - tags
   - policy
   - profiles
@@ -26,7 +26,6 @@ applies_to:
   - src/cli/commands/tags.ts
   - .ravi/specs/tags
 owners:
-  - ravi-rebac
   - ravi-dev
 status: draft
 normative: true
@@ -40,8 +39,8 @@ Tag-driven permission policy lets operators manage permissions at human scale
 without making tags become hidden authority.
 
 Tags classify subjects, surfaces, and resources. Policy rules consume selected
-tags and materialize explicit REBAC relations. The `relations` graph remains
-the authorization source of truth.
+tags and materialize explicit provider-owned grants. The Permission Provider
+Runtime remains the authorization surface.
 
 ## Core Decision
 
@@ -51,7 +50,7 @@ routers, CLI decorators, provider hooks, or runtime contexts.
 The allowed flow is:
 
 ```text
-tag_bindings -> permission policy rule -> relations -> effective capabilities
+tag_bindings -> permission policy rule -> provider-owned grants -> effective capabilities
 ```
 
 This preserves auditability, revocation, TTL, explain output, and one
@@ -65,7 +64,7 @@ authorization path.
 - `policy tag`: a tag intentionally used as selector input for a permission
   policy rule. Policy tags SHOULD use the `policy.*` namespace.
 - `permission policy rule`: a stored declarative rule that selects tagged
-  assets and emits desired REBAC relation tuples.
+  assets and emits desired provider-owned grant tuples.
 - `rule version`: immutable version or content hash of a permission policy rule
   at the moment it was evaluated.
 - `materialized grant`: a relation row created or refreshed by a policy rule.
@@ -79,8 +78,8 @@ authorization path.
 
 - Tags are inert by default.
 - A policy rule MUST be explicit before a tag can affect authority.
-- Policy rules MUST materialize concrete `relations`; they MUST NOT introduce a
-  second runtime authorization engine.
+- Policy rules MUST materialize concrete provider-owned grants; they MUST NOT
+  introduce a second authorization surface outside the provider runtime.
 - Policy materialization MUST be deterministic and explainable.
 - Policy materialization MUST fail closed when a selector, tag, asset,
   relation, object, TTL, or rule source cannot be resolved.
@@ -98,8 +97,8 @@ authorization path.
   is marked break-glass, carries an approval record, and uses a short maximum
   TTL.
 - A policy rule MUST NOT exceed delegated turn ceilings. It can only create
-  graph edges that the existing engine later intersects with actor, surface,
-  agent, and turn authority.
+  provider-owned grant state that the provider runtime later intersects with
+  actor, surface, agent, and turn authority.
 - Policy-owned grants MUST be revoked or suspended immediately when a policy
   tag is detached, a policy rule is disabled, a policy source becomes
   untrusted, or the emitted role closure becomes forbidden.
@@ -217,10 +216,10 @@ Example: chat-scoped delegated tool override.
 
 ```json
 {
-  "id": "rebac-chat-bash-override",
+  "id": "local-grants-chat-bash-override",
   "version": "sha256:<content-hash>",
   "enabled": true,
-  "description": "This chat may delegate Bash to resolved contacts through ravi-rebac.",
+  "description": "This chat may delegate Bash to resolved contacts through ravi-dev.",
   "selector": {
     "assetType": "chat",
     "tag": "policy.allow.tool.bash",

@@ -13,8 +13,7 @@ import {
   type ContextSource,
   type RevokeContextResult,
 } from "../router/router-db.js";
-import { canWithCapabilityContext } from "../permissions/capability-context.js";
-import { snapshotSubjectCapabilities } from "../permissions/delegation.js";
+import { canWithCapabilityContext, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 
 export const RAVI_CONTEXT_KEY_ENV = "RAVI_CONTEXT_KEY";
 export const DEFAULT_CONTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -143,7 +142,7 @@ export function revokeAgentRuntimeContextsForSession(
 }
 
 export function snapshotAgentCapabilities(agentId: string): ContextCapability[] {
-  return dedupeCapabilities(snapshotSubjectCapabilities("agent", agentId));
+  return dedupeCapabilities(materializeSubjectCapabilities("agent", agentId));
 }
 
 export function resolveRuntimeContext(

@@ -100,9 +100,18 @@ describe("runtime context registry", () => {
     expect(second.source).toEqual({ channel: "whatsapp", accountId: "main", chatId: "chat-2" });
     expect(second.metadata).toEqual({ runtimeProvider: "codex", runtimeModel: "gpt-5.5" });
     expect(second.lastUsedAt).toBeGreaterThanOrEqual(first.createdAt);
-    expect(second.capabilities).toEqual([
-      { permission: "execute", objectType: "group", objectId: "context", source: "manual" },
-    ]);
+    expect(second.capabilities).toContainEqual({
+      permission: "use",
+      objectType: "tool",
+      objectId: "*",
+      source: "runtime-bootstrap:agent",
+    });
+    expect(second.capabilities).not.toContainEqual({
+      permission: "admin",
+      objectType: "system",
+      objectId: "*",
+      source: "manual",
+    });
   });
 
   it("creates a fresh agent-runtime context when the previous one is revoked or expired", () => {
@@ -169,18 +178,18 @@ describe("runtime context registry", () => {
     expect(dbGetContext(first.contextId)?.metadata?.revocationReason).toBe("session_reset_test");
   });
 
-  it("snapshots agent relations as context capabilities", () => {
+  it("snapshots provider materialized capabilities instead of agent relations", () => {
     grantRelation("agent", TEST_AGENT_ID, "execute", "group", "context", "manual");
     grantRelation("agent", TEST_AGENT_ID, "access", "session", "dev-*", "manual");
 
     const capabilities = snapshotAgentCapabilities(TEST_AGENT_ID);
     expect(capabilities).toContainEqual({
-      permission: "execute",
-      objectType: "group",
-      objectId: "context",
-      source: "manual",
+      permission: "use",
+      objectType: "tool",
+      objectId: "*",
+      source: "runtime-bootstrap:agent",
     });
-    expect(capabilities).toContainEqual({
+    expect(capabilities).not.toContainEqual({
       permission: "access",
       objectType: "session",
       objectId: "dev-*",
@@ -339,7 +348,7 @@ describe("runtime context registry", () => {
     expect(resolveRuntimeContext(child.contextKey, { touch: false })).not.toBeNull();
   });
 
-  it("allows existing parent contexts to issue new capabilities after live superadmin grant", () => {
+  it("keeps existing parent contexts bounded after live superadmin grant changes", () => {
     const parent = createRuntimeContext({
       agentId: TEST_AGENT_ID,
       capabilities: [],
@@ -355,13 +364,13 @@ describe("runtime context registry", () => {
 
     grantRelation("agent", TEST_AGENT_ID, "admin", "system", "*", "manual");
 
-    const child = issueRuntimeContext({
-      parent,
-      cliName: "sync-cli",
-      capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
-    });
-
-    expect(child.capabilities).toEqual([{ permission: "execute", objectType: "group", objectId: "daemon" }]);
+    expect(() =>
+      issueRuntimeContext({
+        parent,
+        cliName: "sync-cli",
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+      }),
+    ).toThrow("Capability not granted by parent context");
   });
 
   it("only treats bootstrap admin contexts as live admin contexts", () => {

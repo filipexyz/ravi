@@ -6,11 +6,10 @@ import {
   formatAuthorityPrincipal,
   materializeDelegatedAuthority,
   parseAuthorityPrincipal,
-  snapshotSubjectCapabilities,
   type AuthorityPrincipal,
 } from "./delegation.js";
+import { snapshotSubjectCapabilities, snapshotSubjectDelegationOverrides } from "./local-grants-capabilities.js";
 import { getPermissionDenial } from "./denials.js";
-import { can } from "./engine.js";
 import { isRelationActive, listRelations, type Relation } from "./relations.js";
 
 export type ExplainGrantState =
@@ -191,6 +190,25 @@ export function explainPermissionDecision(input: ExplainPermissionInput): Explai
         agentPrincipal,
         actorPrincipal,
         surfacePrincipal,
+        agentCapabilities: snapshotSubjectCapabilities(agentPrincipal.subjectType, agentPrincipal.subjectId),
+        actorCapabilities: snapshotSubjectCapabilities(actorPrincipal.subjectType, actorPrincipal.subjectId),
+        surfaceCapabilities: surfacePrincipal
+          ? snapshotSubjectCapabilities(surfacePrincipal.subjectType, surfacePrincipal.subjectId, {
+              includeRoles: false,
+            })
+          : [],
+        agentDelegationOverrides: snapshotSubjectDelegationOverrides(
+          agentPrincipal.subjectType,
+          agentPrincipal.subjectId,
+          {
+            includeRoles: false,
+          },
+        ),
+        surfaceDelegationOverrides: surfacePrincipal
+          ? snapshotSubjectDelegationOverrides(surfacePrincipal.subjectType, surfacePrincipal.subjectId, {
+              includeRoles: false,
+            })
+          : [],
         agentCapabilityAdditions: turnCapabilities,
         turnCapabilities,
       });
@@ -343,7 +361,12 @@ function explainSubject(
           objectType,
           objectId,
         )
-      : can(principal.subjectType, principal.subjectId, relation, objectType, objectId);
+      : canWithCapabilities(
+          snapshotSubjectCapabilities(principal.subjectType, principal.subjectId),
+          relation,
+          objectType,
+          objectId,
+        );
   return {
     principal: formatAuthorityPrincipal(principal),
     allowed,

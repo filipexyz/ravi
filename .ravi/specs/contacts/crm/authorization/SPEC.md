@@ -6,7 +6,7 @@ domain: contacts
 capability: crm
 feature: authorization
 capabilities:
-  - rebac
+  - provider-runtime
   - contact-visibility
   - crm
 tags:
@@ -20,7 +20,7 @@ applies_to:
   - src/cli/commands/contacts.ts
   - src/permissions/scope.ts
 owners:
-  - ravi-rebac
+  - ravi-dev
   - ravi-dev
 status: active
 normative: true

@@ -2,11 +2,11 @@
  * Scope Isolation Module
  *
  * Central module for verifying agent access to resources.
- * Delegates all permission checks to the REBAC engine.
+ * Delegates all permission checks to the Permission Provider Runtime.
  */
 
 import { getContext } from "../cli/context.js";
-import { agentCan } from "./engine.js";
+import { agentCan, canWithCapabilityContext, localOperatorCan } from "./provider-runtime.js";
 import { recordPermissionDenial } from "./denials.js";
 import { explainPermissionDecision, summarizePermissionGrantState, type ExplainGrantState } from "./explain.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "./audit-provenance.js";
@@ -316,12 +316,25 @@ export function getScopeContext(): ScopeContext {
 /**
  * Check if scope enforcement is active.
  * Returns false (no enforcement) when:
- * - No agentId in context (CLI direct call, not from agent)
+ * - Explicit local-operator authorization is available
  * - Agent is superadmin (has admin relation)
  */
 export function isScopeEnforced(ctx: ScopeContext): boolean {
-  if (!ctx.agentId) return false;
-  return !agentCan(ctx.agentId, "admin", "system", "*");
+  if (!ctx.agentId) return !localOperatorCan("admin", "system", "*");
+  return !scopeCan(ctx, "admin", "system", "*");
+}
+
+function scopeCan(ctx: ScopeContext, permission: string, objectType: string, objectId: string): boolean {
+  if (ctx.context) {
+    return canWithCapabilityContext(
+      { ...ctx.context, agentId: ctx.context.agentId ?? ctx.agentId },
+      permission,
+      objectType,
+      objectId,
+    );
+  }
+  if (!ctx.agentId) return localOperatorCan(permission, objectType, objectId);
+  return agentCan(ctx.agentId, permission, objectType, objectId);
 }
 
 // ============================================================================
@@ -332,18 +345,18 @@ export function isScopeEnforced(ctx: ScopeContext): boolean {
  * Check if the current context can access a target session.
  *
  * Access is allowed when:
- * 1. No agent context (CLI direct) → always allowed
+ * 1. No agent context (CLI direct) → explicit local-operator access
  * 2. Target is the agent's own session
  * 3. Agent has 'access' relation on session:<target> (including wildcards)
  */
 export function canAccessSession(ctx: ScopeContext, targetNameOrKey: string): boolean {
-  if (!ctx.agentId) return true;
+  if (!ctx.agentId) return localOperatorCan("access", "session", targetNameOrKey);
 
   // Own session
   if (ctx.sessionName && ctx.sessionName === targetNameOrKey) return true;
   if (ctx.sessionKey && ctx.sessionKey === targetNameOrKey) return true;
 
-  return agentCan(ctx.agentId, "access", "session", targetNameOrKey);
+  return scopeCan(ctx, "access", "session", targetNameOrKey);
 }
 
 /**
@@ -362,18 +375,18 @@ export function filterAccessibleSessions(ctx: ScopeContext, sessions: SessionEnt
  * Check if the current context can modify a session (reset/delete/rename).
  *
  * Allowed when:
- * 1. No agent context → always allowed
+ * 1. No agent context → explicit local-operator modify
  * 2. Target is own session
  * 3. Agent has 'modify' relation on session:<target>
  */
 export function canModifySession(ctx: ScopeContext, targetNameOrKey: string): boolean {
-  if (!ctx.agentId) return true;
+  if (!ctx.agentId) return localOperatorCan("modify", "session", targetNameOrKey);
 
   // Own session
   if (ctx.sessionName && ctx.sessionName === targetNameOrKey) return true;
   if (ctx.sessionKey && ctx.sessionKey === targetNameOrKey) return true;
 
-  return agentCan(ctx.agentId, "modify", "session", targetNameOrKey);
+  return scopeCan(ctx, "modify", "session", targetNameOrKey);
 }
 
 // ============================================================================
@@ -390,23 +403,23 @@ export function canAccessContact(
   _agentConfig?: unknown,
   contactSessions?: { agentId: string }[],
 ): boolean {
-  if (!ctx.agentId) return true;
+  if (!ctx.agentId) return localOperatorCan("access", "contact", contact.id);
 
   // write_contacts implies read
-  if (agentCan(ctx.agentId, "write_contacts", "system", "*")) return true;
+  if (scopeCan(ctx, "write_contacts", "system", "*")) return true;
 
   // read_own_contacts: contact has sessions routed to this agent
-  if (agentCan(ctx.agentId, "read_own_contacts", "system", "*")) {
+  if (scopeCan(ctx, "read_own_contacts", "system", "*")) {
     if (contactSessions?.some((s) => s.agentId === ctx.agentId)) return true;
   }
 
   // read_tagged_contacts: check each tag
   for (const tag of contact.tags) {
-    if (agentCan(ctx.agentId, "read_tagged_contacts", "system", tag)) return true;
+    if (scopeCan(ctx, "read_tagged_contacts", "system", tag)) return true;
   }
 
   // Specific contact relation
-  if (agentCan(ctx.agentId, "read_contact", "contact", contact.id)) return true;
+  if (scopeCan(ctx, "read_contact", "contact", contact.id)) return true;
 
   return false;
 }
@@ -419,17 +432,17 @@ export function canAccessContact(
  * Check if the current context can view a specific agent.
  *
  * Allowed when:
- * 1. No agent context (CLI direct) → always allowed
+ * 1. No agent context (CLI direct) → explicit local-operator access
  * 2. Agent is viewing itself
  * 3. Agent has 'view' relation on agent:<targetId>
  */
 export function canViewAgent(ctx: ScopeContext, targetAgentId: string): boolean {
-  if (!ctx.agentId) return true;
+  if (!ctx.agentId) return localOperatorCan("access", "agent", targetAgentId);
 
   // Own agent
   if (ctx.agentId === targetAgentId) return true;
 
-  return agentCan(ctx.agentId, "view", "agent", targetAgentId);
+  return scopeCan(ctx, "view", "agent", targetAgentId);
 }
 
 /**
@@ -445,7 +458,7 @@ export function filterVisibleAgents<T extends { id: string }>(ctx: ScopeContext,
  * Check if the current context can write contacts (add/approve/block/delete).
  */
 export function canWriteContacts(ctx: ScopeContext): boolean {
-  return agentCan(ctx.agentId, "write_contacts", "system", "*");
+  return scopeCan(ctx, "write_contacts", "system", "*");
 }
 
 // ============================================================================
@@ -457,10 +470,10 @@ export function canWriteContacts(ctx: ScopeContext): boolean {
  * Ownership is checked directly (agent_id match), not via relations.
  */
 export function canAccessResource(ctx: ScopeContext, resourceAgentId: string | undefined): boolean {
-  if (!ctx.agentId) return true;
+  if (!ctx.agentId) return localOperatorCan("access", "agent", resourceAgentId ?? "*");
 
   // Superadmin
-  if (agentCan(ctx.agentId, "admin", "system", "*")) return true;
+  if (scopeCan(ctx, "admin", "system", "*")) return true;
 
   // Resource has no owner → only superadmin
   if (!resourceAgentId) return false;
@@ -496,10 +509,16 @@ export function enforceScopeCheck(
   const ctx = getScopeContext();
 
   if (scope === "open") {
-    if (!ctx.agentId) return { allowed: true, errorMessage: "" };
-    const groupAllowed = agentCan(ctx.agentId, "execute", "group", groupName ?? "*");
+    if (!ctx.agentId) {
+      const allowed = localOperatorCan("execute", "group", groupName ?? "*");
+      return {
+        allowed,
+        errorMessage: allowed ? "" : `Permission denied: local operator cannot execute group:${groupName ?? "*"}`,
+      };
+    }
+    const groupAllowed = scopeCan(ctx, "execute", "group", groupName ?? "*");
     const commandAllowed =
-      commandName && groupName ? agentCan(ctx.agentId, "execute", "group", `${groupName}_${commandName}`) : false;
+      commandName && groupName ? scopeCan(ctx, "execute", "group", `${groupName}_${commandName}`) : false;
     if (groupAllowed || commandAllowed) return { allowed: true, errorMessage: "" };
 
     const target = commandName && groupName ? `group:${groupName}_${commandName}` : `group:${groupName ?? "*"}`;
@@ -526,7 +545,7 @@ export function enforceScopeCheck(
 
   switch (scope) {
     case "superadmin": {
-      const allowed = agentCan(ctx.agentId, "admin", "system", "*");
+      const allowed = scopeCan(ctx, "admin", "system", "*");
       if (!allowed) {
         const reason = `Permission denied: agent:${ctx.agentId} requires admin on system:*`;
         const denial = recordScopeDenial({
@@ -553,12 +572,12 @@ export function enforceScopeCheck(
     }
     case "admin": {
       // Check group-level access first (e.g., execute group:agents)
-      const groupAllowed = agentCan(ctx.agentId, "execute", "group", groupName ?? "*");
+      const groupAllowed = scopeCan(ctx, "execute", "group", groupName ?? "*");
       if (groupAllowed) return { allowed: true, errorMessage: "" };
 
       // Check subcommand-level access (e.g., execute group:agents_list)
       if (commandName && groupName) {
-        const cmdAllowed = agentCan(ctx.agentId, "execute", "group", `${groupName}_${commandName}`);
+        const cmdAllowed = scopeCan(ctx, "execute", "group", `${groupName}_${commandName}`);
         if (cmdAllowed) return { allowed: true, errorMessage: "" };
       }
 

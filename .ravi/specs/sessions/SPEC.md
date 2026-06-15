@@ -7,7 +7,7 @@ capabilities:
   - attach
   - actions
   - visibility
-  - rebac
+  - provider-runtime
 tags:
   - sessions
   - runtime

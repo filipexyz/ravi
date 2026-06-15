@@ -1,5 +1,5 @@
 import { emitCliAuditEvent } from "../../../cli/audit.js";
-import { canWithCapabilityContext } from "../../../permissions/engine.js";
+import { canWithCapabilityContext } from "../../../permissions/provider-runtime.js";
 import { publish } from "../../../nats.js";
 import type { ContextRecord } from "../../../router/router-db.js";
 import { methodNotAllowed, notFound, permissionDenied, unauthorized } from "../errors.js";

@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "9fc3d7278ed53a94"
+    "version": "85cbcc7da1ef6a00"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -712,6 +712,10 @@
                   },
                   "id": {
                     "description": "Agent ID",
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "Runtime model selector",
                     "type": "string"
                   },
                   "provider": {
@@ -1972,6 +1976,162 @@
                                   },
                                   "type": "array"
                                 },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "cacheTtlSec": {
+                                          "type": "number"
+                                        },
+                                        "decisionSchema": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kind": {
+                                              "enum": [
+                                                "ref",
+                                                "inline",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "ref": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "schema": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "type": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "ref",
+                                            "schema",
+                                            "type"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "failClosed": {
+                                          "const": true,
+                                          "type": "boolean"
+                                        },
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "interface": {
+                                          "enum": [
+                                            "builtin",
+                                            "cli",
+                                            "sdk",
+                                            "tool"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "operation": {
+                                          "type": "string"
+                                        },
+                                        "requestSchema": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kind": {
+                                              "enum": [
+                                                "ref",
+                                                "inline",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "ref": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "schema": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "type": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "ref",
+                                            "schema",
+                                            "type"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "scope": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "timeoutMs": {
+                                          "type": "number"
+                                        },
+                                        "version": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "version",
+                                        "interface",
+                                        "operation",
+                                        "decisionSchema",
+                                        "requestSchema",
+                                        "failClosed"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "required": {
                                   "items": {
                                     "type": "string"
@@ -1982,7 +2142,8 @@
                               "required": [
                                 "required",
                                 "optional",
-                                "mutating"
+                                "mutating",
+                                "provider"
                               ],
                               "type": "object"
                             },
@@ -2652,6 +2813,162 @@
                                 },
                                 "type": "array"
                               },
+                              "provider": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "cacheTtlSec": {
+                                        "type": "number"
+                                      },
+                                      "decisionSchema": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "enum": [
+                                              "ref",
+                                              "inline",
+                                              "unknown"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "ref": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "schema": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "type": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "ref",
+                                          "schema",
+                                          "type"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "failClosed": {
+                                        "const": true,
+                                        "type": "boolean"
+                                      },
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "interface": {
+                                        "enum": [
+                                          "builtin",
+                                          "cli",
+                                          "sdk",
+                                          "tool"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "operation": {
+                                        "type": "string"
+                                      },
+                                      "requestSchema": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "enum": [
+                                              "ref",
+                                              "inline",
+                                              "unknown"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "ref": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "schema": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "type": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "ref",
+                                          "schema",
+                                          "type"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "scope": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "timeoutMs": {
+                                        "type": "number"
+                                      },
+                                      "version": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "version",
+                                      "interface",
+                                      "operation",
+                                      "decisionSchema",
+                                      "requestSchema",
+                                      "failClosed"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "required": {
                                 "items": {
                                   "type": "string"
@@ -2662,7 +2979,8 @@
                             "required": [
                               "required",
                               "optional",
-                              "mutating"
+                              "mutating",
+                              "provider"
                             ],
                             "type": "object"
                           },
@@ -2787,6 +3105,162 @@
                                 },
                                 "type": "array"
                               },
+                              "provider": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "cacheTtlSec": {
+                                        "type": "number"
+                                      },
+                                      "decisionSchema": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "enum": [
+                                              "ref",
+                                              "inline",
+                                              "unknown"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "ref": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "schema": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "type": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "ref",
+                                          "schema",
+                                          "type"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "failClosed": {
+                                        "const": true,
+                                        "type": "boolean"
+                                      },
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "interface": {
+                                        "enum": [
+                                          "builtin",
+                                          "cli",
+                                          "sdk",
+                                          "tool"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "operation": {
+                                        "type": "string"
+                                      },
+                                      "requestSchema": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "enum": [
+                                              "ref",
+                                              "inline",
+                                              "unknown"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "ref": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "schema": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "type": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "ref",
+                                          "schema",
+                                          "type"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "scope": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "timeoutMs": {
+                                        "type": "number"
+                                      },
+                                      "version": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "version",
+                                      "interface",
+                                      "operation",
+                                      "decisionSchema",
+                                      "requestSchema",
+                                      "failClosed"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "required": {
                                 "items": {
                                   "type": "string"
@@ -2797,7 +3271,8 @@
                             "required": [
                               "required",
                               "optional",
-                              "mutating"
+                              "mutating",
+                              "provider"
                             ],
                             "type": "object"
                           },
@@ -3038,6 +3513,162 @@
                                   },
                                   "type": "array"
                                 },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "cacheTtlSec": {
+                                          "type": "number"
+                                        },
+                                        "decisionSchema": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kind": {
+                                              "enum": [
+                                                "ref",
+                                                "inline",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "ref": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "schema": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "type": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "ref",
+                                            "schema",
+                                            "type"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "failClosed": {
+                                          "const": true,
+                                          "type": "boolean"
+                                        },
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "interface": {
+                                          "enum": [
+                                            "builtin",
+                                            "cli",
+                                            "sdk",
+                                            "tool"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "operation": {
+                                          "type": "string"
+                                        },
+                                        "requestSchema": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kind": {
+                                              "enum": [
+                                                "ref",
+                                                "inline",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "ref": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "schema": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "type": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "ref",
+                                            "schema",
+                                            "type"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "scope": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "timeoutMs": {
+                                          "type": "number"
+                                        },
+                                        "version": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "version",
+                                        "interface",
+                                        "operation",
+                                        "decisionSchema",
+                                        "requestSchema",
+                                        "failClosed"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "required": {
                                   "items": {
                                     "type": "string"
@@ -3048,7 +3679,8 @@
                               "required": [
                                 "required",
                                 "optional",
-                                "mutating"
+                                "mutating",
+                                "provider"
                               ],
                               "type": "object"
                             },
@@ -3253,6 +3885,39 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
                   "additionalProperties": false,
                   "properties": {
                     "appId": {
@@ -3332,6 +3997,95 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "permissionProvider": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "audit": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "cache": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "hit": {
+                              "type": "boolean"
+                            },
+                            "ttlSec": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "hit"
+                          ],
+                          "type": "object"
+                        },
+                        "decision": {
+                          "enum": [
+                            "allow",
+                            "deny",
+                            "needs_grant",
+                            "not_applicable",
+                            "error",
+                            "invalid"
+                          ],
+                          "type": "string"
+                        },
+                        "durationMs": {
+                          "type": "number"
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "grantSuggestion": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "interface": {
+                          "enum": [
+                            "builtin",
+                            "cli",
+                            "sdk",
+                            "tool"
+                          ],
+                          "type": "string"
+                        },
+                        "providerId": {
+                          "type": "string"
+                        },
+                        "providerOperationId": {
+                          "type": "string"
+                        },
+                        "providerVersion": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "reasonCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "providerId",
+                        "providerVersion",
+                        "providerOperationId",
+                        "interface",
+                        "requestId",
+                        "decision",
+                        "reasonCode",
+                        "durationMs",
+                        "cache"
+                      ],
+                      "type": "object"
                     },
                     "result": {},
                     "status": {
@@ -3702,6 +4456,162 @@
                               },
                               "type": "array"
                             },
+                            "provider": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "cacheTtlSec": {
+                                      "type": "number"
+                                    },
+                                    "decisionSchema": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "ref",
+                                            "inline",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "ref": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "schema": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "type": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "ref",
+                                        "schema",
+                                        "type"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "failClosed": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "interface": {
+                                      "enum": [
+                                        "builtin",
+                                        "cli",
+                                        "sdk",
+                                        "tool"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "operation": {
+                                      "type": "string"
+                                    },
+                                    "requestSchema": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "ref",
+                                            "inline",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "ref": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "schema": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "type": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "ref",
+                                        "schema",
+                                        "type"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "scope": {
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "timeoutMs": {
+                                      "type": "number"
+                                    },
+                                    "version": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "version",
+                                    "interface",
+                                    "operation",
+                                    "decisionSchema",
+                                    "requestSchema",
+                                    "failClosed"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "required": {
                               "items": {
                                 "type": "string"
@@ -3712,7 +4622,8 @@
                           "required": [
                             "required",
                             "optional",
-                            "mutating"
+                            "mutating",
+                            "provider"
                           ],
                           "type": "object"
                         },
@@ -5373,6 +6284,55 @@
         ]
       }
     },
+    "/api/v1/audio/blob": {
+      "post": {
+        "operationId": "audio.blob",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "TTS playback item id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Success — binary response declared via `@Returns.binary()`."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Return generated TTS audio bytes",
+        "tags": [
+          "audio"
+        ]
+      }
+    },
     "/api/v1/audio/generate": {
       "post": {
         "operationId": "audio.generate",
@@ -5538,6 +6498,929 @@
         },
         "security": [],
         "summary": "Generate speech from text using ElevenLabs TTS",
+        "tags": [
+          "audio"
+        ]
+      }
+    },
+    "/api/v1/audio/pending": {
+      "post": {
+        "operationId": "audio.pending",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Filter by agent id",
+                    "type": "string"
+                  },
+                  "chat": {
+                    "description": "Filter by target chat id",
+                    "type": "string"
+                  },
+                  "clientId": {
+                    "description": "Filter by extension playback client id",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "Filter by playback item id",
+                    "type": "string"
+                  },
+                  "includeFailed": {
+                    "description": "Include failed TTS requests",
+                    "type": "boolean"
+                  },
+                  "limit": {
+                    "description": "Maximum items to return",
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "description": "Filter by playback request id",
+                    "type": "string"
+                  },
+                  "session": {
+                    "description": "Filter by session name",
+                    "type": "string"
+                  },
+                  "sessionKey": {
+                    "description": "Filter by session key",
+                    "type": "string"
+                  },
+                  "since": {
+                    "description": "Only return TTS items after this Unix ms timestamp",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "agentId": {
+                            "type": "string"
+                          },
+                          "audio": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "filePath": {
+                                "type": "string"
+                              },
+                              "filename": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "mimeType": {
+                                "type": "string"
+                              },
+                              "modelId": {
+                                "type": "string"
+                              },
+                              "outputFormat": {
+                                "type": "string"
+                              },
+                              "provider": {
+                                "const": "elevenlabs",
+                                "type": "string"
+                              },
+                              "sizeBytes": {
+                                "type": "number"
+                              },
+                              "voiceId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "filePath",
+                              "filename",
+                              "mimeType",
+                              "sizeBytes",
+                              "provider",
+                              "voiceId",
+                              "modelId",
+                              "outputFormat"
+                            ],
+                            "type": "object"
+                          },
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "emitId": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "failedAt": {
+                            "type": "number"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "metadata": {
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            },
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "type": "object"
+                          },
+                          "playback": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "autoplay": {
+                                "type": "boolean"
+                              },
+                              "clientId": {
+                                "type": "string"
+                              },
+                              "target": {
+                                "enum": [
+                                  "extension",
+                                  "channel",
+                                  "none"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "target",
+                              "autoplay"
+                            ],
+                            "type": "object"
+                          },
+                          "readyAt": {
+                            "type": "number"
+                          },
+                          "requestId": {
+                            "type": "string"
+                          },
+                          "sessionKey": {
+                            "type": "string"
+                          },
+                          "sessionName": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "ready",
+                              "failed"
+                            ],
+                            "type": "string"
+                          },
+                          "target": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "accountId": {
+                                "type": "string"
+                              },
+                              "canonicalChatId": {
+                                "type": "string"
+                              },
+                              "channel": {
+                                "type": "string"
+                              },
+                              "chatId": {
+                                "type": "string"
+                              },
+                              "instanceId": {
+                                "type": "string"
+                              },
+                              "threadId": {
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "textPreview": {
+                            "type": "string"
+                          },
+                          "voice": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "elevenlabs": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "applyLanguageTextNormalization": {
+                                    "type": "boolean"
+                                  },
+                                  "applyTextNormalization": {
+                                    "enum": [
+                                      "auto",
+                                      "on",
+                                      "off"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "enableLogging": {
+                                    "type": "boolean"
+                                  },
+                                  "nextRequestIds": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "nextText": {
+                                    "type": "string"
+                                  },
+                                  "optimizeStreamingLatency": {
+                                    "type": "number"
+                                  },
+                                  "previousRequestIds": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "previousText": {
+                                    "type": "string"
+                                  },
+                                  "pronunciationDictionaryLocators": {
+                                    "items": {
+                                      "$ref": "#/$defs/__schema0"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "seed": {
+                                    "type": "number"
+                                  },
+                                  "usePvcAsIvc": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "type": "object"
+                              },
+                              "lang": {
+                                "type": "string"
+                              },
+                              "modelId": {
+                                "type": "string"
+                              },
+                              "outputFormat": {
+                                "type": "string"
+                              },
+                              "provider": {
+                                "const": "elevenlabs",
+                                "type": "string"
+                              },
+                              "voiceId": {
+                                "type": "string"
+                              },
+                              "voiceSettings": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "similarityBoost": {
+                                    "type": "number"
+                                  },
+                                  "speed": {
+                                    "type": "number"
+                                  },
+                                  "stability": {
+                                    "type": "number"
+                                  },
+                                  "style": {
+                                    "type": "number"
+                                  },
+                                  "useSpeakerBoost": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "provider",
+                              "modelId",
+                              "lang",
+                              "outputFormat"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "requestId",
+                          "status",
+                          "createdAt",
+                          "text",
+                          "textPreview",
+                          "playback",
+                          "voice"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "generatedAt",
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "List generated ravi.tts playback items waiting for extension playback",
+        "tags": [
+          "audio"
+        ]
+      }
+    },
+    "/api/v1/audio/tts": {
+      "post": {
+        "operationId": "audio.tts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "account": {
+                    "description": "Target account/instance alias",
+                    "type": "string"
+                  },
+                  "agent": {
+                    "description": "Agent ID used to resolve TTS defaults",
+                    "type": "string"
+                  },
+                  "channel": {
+                    "description": "Target channel, e.g. whatsapp",
+                    "type": "string"
+                  },
+                  "chat": {
+                    "description": "Target chat id",
+                    "type": "string"
+                  },
+                  "clientId": {
+                    "description": "Extension playback client id",
+                    "type": "string"
+                  },
+                  "elevenlabs": {
+                    "description": "Additional ElevenLabs request JSON",
+                    "type": "string"
+                  },
+                  "format": {
+                    "description": "ElevenLabs output format override",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "Playback request id",
+                    "type": "string"
+                  },
+                  "lang": {
+                    "description": "Language code override",
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "ElevenLabs model ID override",
+                    "type": "string"
+                  },
+                  "noAutoplay": {
+                    "default": true,
+                    "description": "Do not autoplay in extension clients",
+                    "type": "boolean"
+                  },
+                  "session": {
+                    "description": "Session name",
+                    "type": "string"
+                  },
+                  "sessionKey": {
+                    "description": "Session key",
+                    "type": "string"
+                  },
+                  "speed": {
+                    "description": "Voice speed override",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "Text to convert to speech",
+                    "type": "string"
+                  },
+                  "voice": {
+                    "description": "ElevenLabs voice ID override",
+                    "type": "string"
+                  },
+                  "voiceSettings": {
+                    "description": "ElevenLabs voiceSettings JSON",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "request": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "agentId": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "emitId": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "playback": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "autoplay": {
+                              "type": "boolean"
+                            },
+                            "clientId": {
+                              "type": "string"
+                            },
+                            "target": {
+                              "enum": [
+                                "extension",
+                                "channel",
+                                "none"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "target",
+                            "autoplay"
+                          ],
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "sessionKey": {
+                          "type": "string"
+                        },
+                        "sessionName": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "target": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "accountId": {
+                              "type": "string"
+                            },
+                            "canonicalChatId": {
+                              "type": "string"
+                            },
+                            "channel": {
+                              "type": "string"
+                            },
+                            "chatId": {
+                              "type": "string"
+                            },
+                            "instanceId": {
+                              "type": "string"
+                            },
+                            "threadId": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "voice": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "elevenlabs": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "applyLanguageTextNormalization": {
+                                  "type": "boolean"
+                                },
+                                "applyTextNormalization": {
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ],
+                                  "type": "string"
+                                },
+                                "enableLogging": {
+                                  "type": "boolean"
+                                },
+                                "nextRequestIds": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "nextText": {
+                                  "type": "string"
+                                },
+                                "optimizeStreamingLatency": {
+                                  "type": "number"
+                                },
+                                "previousRequestIds": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "previousText": {
+                                  "type": "string"
+                                },
+                                "pronunciationDictionaryLocators": {
+                                  "items": {
+                                    "$ref": "#/$defs/__schema0"
+                                  },
+                                  "type": "array"
+                                },
+                                "seed": {
+                                  "type": "number"
+                                },
+                                "usePvcAsIvc": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "lang": {
+                              "type": "string"
+                            },
+                            "modelId": {
+                              "type": "string"
+                            },
+                            "outputFormat": {
+                              "type": "string"
+                            },
+                            "provider": {
+                              "const": "elevenlabs",
+                              "type": "string"
+                            },
+                            "voiceId": {
+                              "type": "string"
+                            },
+                            "voiceSettings": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "similarityBoost": {
+                                  "type": "number"
+                                },
+                                "speed": {
+                                  "type": "number"
+                                },
+                                "stability": {
+                                  "type": "number"
+                                },
+                                "style": {
+                                  "type": "number"
+                                },
+                                "useSpeakerBoost": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "provider",
+                            "modelId",
+                            "lang",
+                            "outputFormat"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "topic": {
+                      "const": "ravi.tts",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "topic",
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Publish a ravi.tts request for ElevenLabs generation and extension playback",
+        "tags": [
+          "audio"
+        ]
+      }
+    },
+    "/api/v1/audio/voices": {
+      "post": {
+        "operationId": "audio.voices",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "category": {
+                    "description": "Voice category filter",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Maximum voices to return",
+                    "type": "string"
+                  },
+                  "search": {
+                    "description": "Search by voice name, description or labels",
+                    "type": "string"
+                  },
+                  "voiceType": {
+                    "description": "Voice type filter",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    },
+                    "nextPageToken": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "const": "elevenlabs",
+                      "type": "string"
+                    },
+                    "totalCount": {
+                      "type": "number"
+                    },
+                    "voices": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "category": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "highQualityBaseModelIds": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "isLegacy": {
+                            "type": "boolean"
+                          },
+                          "isOwner": {
+                            "type": "boolean"
+                          },
+                          "labels": {
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "type": "object"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "previewUrl": {
+                            "type": "string"
+                          },
+                          "verifiedLanguages": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "accent": {
+                                  "type": "string"
+                                },
+                                "language": {
+                                  "type": "string"
+                                },
+                                "locale": {
+                                  "type": "string"
+                                },
+                                "previewUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "voiceId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "voiceId",
+                          "name"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "provider",
+                    "generatedAt",
+                    "hasMore",
+                    "voices"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "List available ElevenLabs voices for picker UIs",
         "tags": [
           "audio"
         ]
@@ -18153,6 +20036,61 @@
         },
         "security": [],
         "summary": "List issued runtime contexts without exposing context keys",
+        "tags": [
+          "context"
+        ]
+      }
+    },
+    "/api/v1/context/prune": {
+      "post": {
+        "operationId": "context.prune",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "apply": {
+                    "description": "Delete the matched contexts. Requires --confirm prune-contexts.",
+                    "type": "boolean"
+                  },
+                  "confirm": {
+                    "description": "Required with --apply; must be exactly prune-contexts",
+                    "type": "string"
+                  },
+                  "olderThan": {
+                    "description": "Only delete contexts created at least this long ago (default: 7d)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Compact the context store by deleting inactive (revoked/expired) contexts",
         "tags": [
           "context"
         ]
@@ -41799,6 +43737,91 @@
         ]
       }
     },
+    "/api/v1/permissions/explain": {
+      "post": {
+        "operationId": "permissions.explain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "actor": {
+                    "description": "Actor principal, e.g. contact:luis",
+                    "type": "string"
+                  },
+                  "agent": {
+                    "description": "Executor agent id or agent:<id>",
+                    "type": "string"
+                  },
+                  "broad": {
+                    "description": "Allow wildcard recommendations in output",
+                    "type": "boolean"
+                  },
+                  "chat": {
+                    "description": "Surface chat id or chat:<id>",
+                    "type": "string"
+                  },
+                  "denial": {
+                    "description": "Reconstruct and re-evaluate a recorded denial",
+                    "type": "string"
+                  },
+                  "object": {
+                    "description": "Object to explain (e.g., group:sessions_info)",
+                    "type": "string"
+                  },
+                  "relation": {
+                    "description": "Relation to explain (e.g., execute, use)",
+                    "type": "string"
+                  },
+                  "session": {
+                    "description": "Session key/name for context",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Explain a permission decision using the enforcement evaluator",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
     "/api/v1/permissions/grant": {
       "post": {
         "operationId": "permissions.grant",
@@ -41928,6 +43951,16 @@
                         },
                         "relation": {
                           "type": "string"
+                        },
+                        "revocationBatchId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "revokedAt": {
                           "anyOf": [
@@ -42153,6 +44186,16 @@
                           "relation": {
                             "type": "string"
                           },
+                          "revocationBatchId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "revokedAt": {
                             "anyOf": [
                               {
@@ -42237,6 +44280,87 @@
           }
         ],
         "summary": "Apply a permission template to an agent",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/legacy": {
+      "post": {
+        "operationId": "permissions.legacy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "apply": {
+                    "description": "Revoke the selected legacy grants. Requires --confirm legacy-cleanup.",
+                    "type": "boolean"
+                  },
+                  "breakGlass": {
+                    "description": "Explicitly allow high-impact cleanup after reviewing blast radius",
+                    "type": "boolean"
+                  },
+                  "confirm": {
+                    "description": "Required with --apply; must be exactly legacy-cleanup",
+                    "type": "string"
+                  },
+                  "includeSpecific": {
+                    "description": "Also include object-specific manual permanent grants, not only wildcards/patterns",
+                    "type": "boolean"
+                  },
+                  "limit": {
+                    "description": "Maximum number of candidate grants to include/apply in this run",
+                    "type": "string"
+                  },
+                  "maxZeroSubjects": {
+                    "description": "Maximum subjects allowed to lose all active grants before requiring --break-glass (default: 5)",
+                    "type": "string"
+                  },
+                  "subject": {
+                    "description": "Limit cleanup to one subject, e.g. agent:dev or chat:chat_id",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Plan or revoke legacy manual permanent grants",
         "tags": [
           "permissions"
         ]
@@ -42391,6 +44515,16 @@
                           },
                           "relation": {
                             "type": "string"
+                          },
+                          "revocationBatchId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "revokedAt": {
                             "anyOf": [
@@ -42550,6 +44684,16 @@
                           "relation": {
                             "type": "string"
                           },
+                          "revocationBatchId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "revokedAt": {
                             "anyOf": [
                               {
@@ -42622,6 +44766,584 @@
           }
         ],
         "summary": "List relations",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/policies/apply": {
+      "post": {
+        "operationId": "permissions.policies.apply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+                    "type": "string"
+                  },
+                  "policy": {
+                    "description": "Optional policy id",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Apply permission policies and materialize grants",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/policies/dry-run": {
+      "post": {
+        "operationId": "permissions.policies.dry-run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+                    "type": "string"
+                  },
+                  "policy": {
+                    "description": "Optional policy id",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Plan permission policy materialization without writing",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/policies/explain": {
+      "post": {
+        "operationId": "permissions.policies.explain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "asset": {
+                    "description": "Asset selector, e.g. contact:c1 or chat:chat_id",
+                    "type": "string"
+                  },
+                  "dir": {
+                    "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "asset"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Explain policy matches for a tagged asset",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/policies/list": {
+      "post": {
+        "operationId": "permissions.policies.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of policies to skip (default: 0)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List permission policies",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/policies/reconcile": {
+      "post": {
+        "operationId": "permissions.policies.reconcile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+                    "type": "string"
+                  },
+                  "policy": {
+                    "description": "Optional policy id",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Apply policies and revoke stale policy-owned grants",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/policies/show": {
+      "post": {
+        "operationId": "permissions.policies.show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+                    "type": "string"
+                  },
+                  "policy": {
+                    "description": "Policy id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "policy"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Show a permission policy and its materializations",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/policies/validate": {
+      "post": {
+        "operationId": "permissions.policies.validate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
+                    "type": "string"
+                  },
+                  "policy": {
+                    "description": "Optional policy id",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Validate permission policies",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/prune-revoked": {
+      "post": {
+        "operationId": "permissions.prune-revoked",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "apply": {
+                    "description": "Delete the matched revoked relations. Requires --confirm prune-revoked.",
+                    "type": "boolean"
+                  },
+                  "confirm": {
+                    "description": "Required with --apply; must be exactly prune-revoked",
+                    "type": "string"
+                  },
+                  "olderThanDays": {
+                    "description": "Only prune relations revoked at least N days ago (default: 90)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Compact the relation store by deleting old revoked relations",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/restore-batch": {
+      "post": {
+        "operationId": "permissions.restore-batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "apply": {
+                    "description": "Restore the batch. Requires --confirm restore-revocation.",
+                    "type": "boolean"
+                  },
+                  "batch": {
+                    "description": "Revocation batch id. Use --revoked-at only for legacy timestamp fallback.",
+                    "type": "string"
+                  },
+                  "confirm": {
+                    "description": "Required with --apply; must be exactly restore-revocation",
+                    "type": "string"
+                  },
+                  "revokedAt": {
+                    "description": "Interpret the batch argument as a legacy revoked_at timestamp",
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "description": "Restore only this subject's revoked grants in the batch, e.g. agent:dev or chat:chat_id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "batch"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Plan or restore relations revoked in the same batch",
         "tags": [
           "permissions"
         ]
@@ -42741,6 +45463,16 @@
                         "relation": {
                           "type": "string"
                         },
+                        "revocationBatchId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "revokedAt": {
                           "anyOf": [
                             {
@@ -42846,6 +45578,16 @@
                           },
                           "relation": {
                             "type": "string"
+                          },
+                          "revocationBatchId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "revokedAt": {
                             "anyOf": [
@@ -43021,6 +45763,16 @@
                           },
                           "relation": {
                             "type": "string"
+                          },
+                          "revocationBatchId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "revokedAt": {
                             "anyOf": [
@@ -64069,12 +66821,20 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "forceAnalyze": {
+                    "description": "Force Gemini analysis even when YouTube subtitles exist",
+                    "type": "boolean"
+                  },
                   "output": {
                     "description": "Output file path (default: auto-generated in cwd)",
                     "type": "string"
                   },
                   "prompt": {
-                    "description": "Custom analysis prompt",
+                    "description": "Custom Gemini prompt used by Gemini strategy/fallback",
+                    "type": "string"
+                  },
+                  "strategy": {
+                    "description": "Analysis strategy: auto, subtitles, or gemini (default: auto)",
                     "type": "string"
                   },
                   "url": {
@@ -64115,11 +66875,36 @@
                     "video": {
                       "additionalProperties": {},
                       "properties": {
+                        "chapters": {
+                          "items": {
+                            "additionalProperties": {},
+                            "properties": {},
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "duration": {
                           "type": "string"
                         },
                         "source": {
                           "type": "string"
+                        },
+                        "strategy": {
+                          "enum": [
+                            "gemini",
+                            "subtitles"
+                          ],
+                          "type": "string"
+                        },
+                        "subtitleLanguage": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "summary": {
                           "type": "string"
@@ -64142,6 +66927,7 @@
                       },
                       "required": [
                         "source",
+                        "strategy",
                         "title",
                         "duration",
                         "summary",
@@ -65182,6 +67968,10 @@
                   },
                   "agentCwd": {
                     "description": "CWD for --create-agent (default: ~/ravi/<agent>)",
+                    "type": "string"
+                  },
+                  "agentModel": {
+                    "description": "Runtime model selector for --create-agent",
                     "type": "string"
                   },
                   "agentProvider": {

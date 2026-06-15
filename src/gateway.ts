@@ -16,7 +16,7 @@
  *   ravi.media.send            → media files
  *   ravi.tts                   → generate extension-playback TTS audio
  *   ravi.stickers.send         → WhatsApp stickers
- *   ravi.config.changed        → reload router config + REBAC sync
+ *   ravi.config.changed        -> reload router config
  */
 
 import { nats } from "./nats.js";
@@ -1243,14 +1243,12 @@ export class Gateway {
   }
 
   /**
-   * Subscribe to config changes for cache invalidation and REBAC sync.
+   * Subscribe to config changes for cache invalidation.
    * Fan-out intentional: all daemons must sync their own config cache.
    */
   private subscribeToConfigChanges(): void {
     this.subscribe("config", ["ravi.config.changed"], async () => {
-      const { syncRelationsFromConfig } = await import("./permissions/relations.js");
-      syncRelationsFromConfig();
-      log.info("REBAC relations synced");
+      log.info("Runtime config change observed");
     });
   }
 }

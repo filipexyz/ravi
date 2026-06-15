@@ -4,10 +4,10 @@ import { canWithCapabilities } from "./capability-context.js";
 import {
   buildEffectiveCapabilities,
   materializeDelegatedAuthority,
-  snapshotSubjectCapabilities,
-  snapshotSubjectDelegationOverrides,
+  type DelegatedAuthorityMaterializationInput,
   type AuthorityPrincipal,
 } from "./delegation.js";
+import { snapshotSubjectCapabilities, snapshotSubjectDelegationOverrides } from "./local-grants-capabilities.js";
 import { grantRelation } from "./relations.js";
 
 let stateDir: string | null = null;
@@ -29,6 +29,43 @@ function allows(
   return canWithCapabilities(result.effectiveCapabilities, relation, objectType, objectId);
 }
 
+function materialize(input: DelegatedAuthorityMaterializationInput) {
+  const actorPrincipal = input.actorPrincipal ?? null;
+  const surfacePrincipal = input.surfacePrincipal ?? null;
+  return materializeDelegatedAuthority({
+    ...input,
+    agentCapabilities:
+      input.agentCapabilities ??
+      snapshotSubjectCapabilities(input.agentPrincipal.subjectType, input.agentPrincipal.subjectId),
+    actorCapabilities:
+      input.actorCapabilities && input.actorCapabilities.length > 0
+        ? input.actorCapabilities
+        : actorPrincipal
+          ? snapshotSubjectCapabilities(actorPrincipal.subjectType, actorPrincipal.subjectId)
+          : [],
+    surfaceCapabilities:
+      input.surfaceCapabilities && input.surfaceCapabilities.length > 0
+        ? input.surfaceCapabilities
+        : surfacePrincipal
+          ? snapshotSubjectCapabilities(surfacePrincipal.subjectType, surfacePrincipal.subjectId, {
+              includeRoles: false,
+            })
+          : [],
+    agentDelegationOverrides:
+      input.agentDelegationOverrides ??
+      snapshotSubjectDelegationOverrides(input.agentPrincipal.subjectType, input.agentPrincipal.subjectId, {
+        includeRoles: false,
+      }),
+    surfaceDelegationOverrides:
+      input.surfaceDelegationOverrides ??
+      (surfacePrincipal
+        ? snapshotSubjectDelegationOverrides(surfacePrincipal.subjectType, surfacePrincipal.subjectId, {
+            includeRoles: false,
+          })
+        : []),
+  });
+}
+
 describe("delegated authority materialization", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-delegation-test-");
@@ -45,7 +82,7 @@ describe("delegated authority materialization", () => {
       grant("contact", "luis", "use", "tool", "Bash");
       grant("chat", "chat_group_1", "use", "tool", "Bash");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -58,7 +95,7 @@ describe("delegated authority materialization", () => {
       grant("agent", "executor", "use", "tool", "*");
       grant("chat", "chat_group_1", "use", "tool", "*");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -71,7 +108,7 @@ describe("delegated authority materialization", () => {
       grant("contact", "luis", "use", "tool", "Bash");
       grant("chat", "chat_group_1", "use", "tool", "*");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -87,7 +124,7 @@ describe("delegated authority materialization", () => {
       grant("contact", "luis", "execute", "group", "sessions_info");
       // surface has no grant/deny/constrain for this object
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -100,7 +137,7 @@ describe("delegated authority materialization", () => {
       grant("agent", "executor", "execute", "group", "*");
       grant("contact", "luis", "execute", "group", "sessions_info");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -114,7 +151,7 @@ describe("delegated authority materialization", () => {
       grant("contact", "luis", "use", "tool", "Bash");
       grant("chat", "chat_group_1", "use", "tool", "Bash");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -130,7 +167,7 @@ describe("delegated authority materialization", () => {
       grant("contact", "luis", "execute", "group", "sessions_info");
       grant("chat", "chat_group_1", "deny_execute", "group", "sessions_info");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -145,7 +182,7 @@ describe("delegated authority materialization", () => {
       grant("chat", "chat_group_1", "use", "tool", "Bash");
       grant("chat", "chat_group_1", "deny_use", "tool", "*");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -163,7 +200,7 @@ describe("delegated authority materialization", () => {
       grant("chat", "chat_group_1", "constrain", "role", "public-chat");
       grant("role", "public-chat", "execute", "group", "sessions_info");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -181,7 +218,7 @@ describe("delegated authority materialization", () => {
       grant("role", "trusted", "member", "role", "base");
       grant("role", "base", "use", "tool", "Bash");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -197,7 +234,7 @@ describe("delegated authority materialization", () => {
       grant("role", "b", "member", "role", "a");
       grant("role", "b", "use", "tool", "Bash");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -211,7 +248,7 @@ describe("delegated authority materialization", () => {
       grant("role", "executor-role", "execute", "group", "sessions_info");
       grant("contact", "luis", "execute", "group", "sessions_info");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -227,7 +264,7 @@ describe("delegated authority materialization", () => {
       grant("agent", "executor", "delegate_use", "tool", "Bash");
       // actor has no direct grant; surface has no grant either
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -243,7 +280,7 @@ describe("delegated authority materialization", () => {
       grant("agent", "executor", "delegate_use", "tool", "Bash");
       grant("chat", "chat_group_1", "use", "tool", "Bash");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -256,7 +293,7 @@ describe("delegated authority materialization", () => {
       grant("agent", "executor", "use", "tool", "Bash");
       grant("chat", "chat_group_1", "delegate_use", "tool", "Bash");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -269,7 +306,7 @@ describe("delegated authority materialization", () => {
       grant("chat", "chat_group_1", "delegate_use", "tool", "Bash");
       // executor agent lacks use tool:Bash
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: ACTOR,
         surfacePrincipal: SURFACE,
@@ -291,7 +328,7 @@ describe("delegated authority materialization", () => {
     it("gives an automation actor no inherited human authority even with a superadmin executor", () => {
       grant("agent", "executor", "admin", "system", "*");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: { subjectType: "automation", subjectId: "cron:job-1" },
         surfacePrincipal: SURFACE,
@@ -306,7 +343,7 @@ describe("delegated authority materialization", () => {
       grant("automation", "cron:job-1", "member", "role", "automation-base");
       grant("role", "automation-base", "execute", "group", "context_codex-bash-hook");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: { subjectType: "automation", subjectId: "cron:job-1" },
         surfacePrincipal: SURFACE,
@@ -320,7 +357,7 @@ describe("delegated authority materialization", () => {
       grant("agent", "executor", "use", "tool", "Bash");
       grant("chat", "chat_group_1", "delegate_use", "tool", "Bash");
 
-      const result = materializeDelegatedAuthority({
+      const result = materialize({
         agentPrincipal: AGENT,
         actorPrincipal: { subjectType: "automation", subjectId: "cron:job-1" },
         surfacePrincipal: SURFACE,

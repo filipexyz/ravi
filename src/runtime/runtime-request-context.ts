@@ -4,11 +4,13 @@ import {
   buildEffectiveCapabilities,
   DELEGATED_AUTHORITY_MODE,
   hasAnyCapability,
-  snapshotSubjectCapabilities,
-  snapshotSubjectDelegationOverrides,
   TURN_SCOPED_AUTHORITY_KIND,
   type AuthorityPrincipal,
 } from "../permissions/delegation.js";
+import {
+  materializeSubjectCapabilities,
+  materializeSubjectDelegationOverrides,
+} from "../permissions/provider-runtime.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
@@ -226,18 +228,18 @@ function buildDelegatedRuntimeContextInput(options: {
   const actorDisplayName = cleanStringValue(actorMetadata?.senderName);
   const surfaceDisplayName = cleanStringValue(actorMetadata?.groupName);
   const actorCapabilities = actorPrincipal
-    ? snapshotSubjectCapabilities(actorPrincipal.subjectType, actorPrincipal.subjectId)
+    ? materializeSubjectCapabilities(actorPrincipal.subjectType, actorPrincipal.subjectId)
     : [];
   const surfaceCapabilities = surfacePrincipal
-    ? snapshotSubjectCapabilities(surfacePrincipal.subjectType, surfacePrincipal.subjectId, { includeRoles: false })
+    ? materializeSubjectCapabilities(surfacePrincipal.subjectType, surfacePrincipal.subjectId, { includeRoles: false })
     : [];
   const allowDelegationOverrides = shouldApplyDelegationOverrides(actorPrincipal);
   const agentDelegationOverrides = allowDelegationOverrides
-    ? snapshotSubjectDelegationOverrides("agent", options.agentId, { includeRoles: false })
+    ? materializeSubjectDelegationOverrides("agent", options.agentId, { includeRoles: false })
     : [];
   const surfaceDelegationOverrides =
     allowDelegationOverrides && surfacePrincipal
-      ? snapshotSubjectDelegationOverrides(surfacePrincipal.subjectType, surfacePrincipal.subjectId, {
+      ? materializeSubjectDelegationOverrides(surfacePrincipal.subjectType, surfacePrincipal.subjectId, {
           includeRoles: false,
         })
       : [];

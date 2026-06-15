@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { canWithCapabilities, type CapabilityContextLike } from "./capability-context.js";
-// Cross-evaluator agreement guards against drift between the live recursive
-// engine, the pre-expanded snapshot matcher, the delegated materializer, and
+// Cross-evaluator agreement guards against drift between the local grant
+// provider, the pre-expanded snapshot matcher, the delegated materializer, and
 // the explain reporter.
-import { materializeDelegatedAuthority, snapshotSubjectCapabilities } from "./delegation.js";
-import { can, canWithCapabilityContext } from "./engine.js";
+import { materializeDelegatedAuthority } from "./delegation.js";
+import { snapshotSubjectCapabilities } from "./local-grants-capabilities.js";
+import { canSubjectWithLocalGrants } from "./local-grants-provider.js";
+import { canWithCapabilityContext } from "./provider-runtime.js";
 import { explainPermissionDecision } from "./explain.js";
 import { grantRelation } from "./relations.js";
 
@@ -23,11 +25,22 @@ interface Tuple {
   objectId: string;
 }
 
+function materializeDelegatedAuthorityFromLocalGrants() {
+  return materializeDelegatedAuthority({
+    agentPrincipal: { subjectType: "agent", subjectId: "executor" },
+    actorPrincipal: { subjectType: "contact", subjectId: "luis" },
+    surfacePrincipal: { subjectType: "chat", subjectId: "chat_group_1" },
+    agentCapabilities: snapshotSubjectCapabilities("agent", "executor"),
+    actorCapabilities: snapshotSubjectCapabilities("contact", "luis"),
+    surfaceCapabilities: snapshotSubjectCapabilities("chat", "chat_group_1", { includeRoles: false }),
+  });
+}
+
 /**
  * Each scenario seeds direct grants + role grants on `agent:subject` (no
  * `constrain`, which is a surface-only mechanism and intentionally differs
- * between the live engine and a subject snapshot), then asserts that the live
- * recursive engine (`can`) and the pre-expanded snapshot matcher agree on every
+ * between the provider runtime and a subject snapshot), then asserts that the
+ * provider decision (`can`) and the pre-expanded snapshot matcher agree on every
  * probe. These are two independent implementations of subject authority, so a
  * divergence here is a real consistency regression.
  */
@@ -99,7 +112,7 @@ describe("evaluator consistency (G2)", () => {
     stateDir = null;
   });
 
-  describe("live engine vs pre-expanded snapshot agree on subject authority", () => {
+  describe("legacy relation ledger vs pre-expanded snapshot agree on subject authority", () => {
     for (const scenario of SUBJECT_SCENARIOS) {
       it(scenario.name, () => {
         for (const g of scenario.grants) {
@@ -109,7 +122,7 @@ describe("evaluator consistency (G2)", () => {
         }
         const snapshot = snapshotSubjectCapabilities("agent", "s", { includeConstraints: false });
         for (const probe of scenario.probes) {
-          const live = can("agent", "s", probe.relation, probe.objectType, probe.objectId);
+          const live = canSubjectWithLocalGrants("agent", "s", probe.relation, probe.objectType, probe.objectId);
           const snap = canWithCapabilities(snapshot, probe.relation, probe.objectType, probe.objectId);
           expect({ probe, snap }).toEqual({ probe, snap: live });
         }
@@ -170,11 +183,7 @@ describe("evaluator consistency (G2)", () => {
             permanent: true,
           });
         }
-        const materialized = materializeDelegatedAuthority({
-          agentPrincipal: { subjectType: "agent", subjectId: "executor" },
-          actorPrincipal: { subjectType: "contact", subjectId: "luis" },
-          surfacePrincipal: { subjectType: "chat", subjectId: "chat_group_1" },
-        });
+        const materialized = materializeDelegatedAuthorityFromLocalGrants();
         const context: CapabilityContextLike = {
           agentId: "executor",
           kind: "turn-runtime",
@@ -213,11 +222,7 @@ describe("evaluator consistency (G2)", () => {
         objectType: "group",
         objectId: "sessions_info",
       });
-      const materialized = materializeDelegatedAuthority({
-        agentPrincipal: { subjectType: "agent", subjectId: "executor" },
-        actorPrincipal: { subjectType: "contact", subjectId: "luis" },
-        surfacePrincipal: { subjectType: "chat", subjectId: "chat_group_1" },
-      });
+      const materialized = materializeDelegatedAuthorityFromLocalGrants();
 
       expect(decision.final.allowed).toBe(
         canWithCapabilities(materialized.effectiveCapabilities, "execute", "group", "sessions_info"),
@@ -236,11 +241,7 @@ describe("evaluator consistency (G2)", () => {
         objectType: "group",
         objectId: "sessions_info",
       });
-      const materialized = materializeDelegatedAuthority({
-        agentPrincipal: { subjectType: "agent", subjectId: "executor" },
-        actorPrincipal: { subjectType: "contact", subjectId: "luis" },
-        surfacePrincipal: { subjectType: "chat", subjectId: "chat_group_1" },
-      });
+      const materialized = materializeDelegatedAuthorityFromLocalGrants();
 
       expect(decision.final.allowed).toBe(
         canWithCapabilities(materialized.effectiveCapabilities, "execute", "group", "sessions_info"),

@@ -26,7 +26,7 @@ ravi agents create <id> <cwd> [--provider <provider>] [--model <model>]
 
 O `cwd` é o diretório onde fica o `AGENTS.md` do agent (suas instruções canônicas). Crie o diretório e o `AGENTS.md` antes. O Ravi materializa um `CLAUDE.md` de compatibilidade quando necessário.
 
-**Regra de criação completa:** agent novo deve nascer com as configurações runtime conhecidas, não ser criado "cru" para depois corrigir manualmente. Quando souber o runtime, passe `--provider` e `--model` no `agents create`; quando estiver criando junto com WhatsApp, passe `--agent-provider` e `--agent-model` no `whatsapp group create --create-agent`. Configure permissões REBAC antes de colocar o agent numa rota live.
+**Regra de criação completa:** agent novo deve nascer com as configurações runtime conhecidas, não ser criado "cru" para depois corrigir manualmente. Quando souber o runtime, passe `--provider` e `--model` no `agents create`; quando estiver criando junto com WhatsApp, passe `--agent-provider` e `--agent-model` no `whatsapp group create --create-agent`. Antes de colocar o agent numa rota live, garanta que o Permission Provider Runtime vai materializar as capabilities necessárias para ele. `local-grants` é apenas o provider legado/materializer de compatibilidade, não a autorização nativa do core.
 
 ## Runtimes Disponíveis
 
@@ -181,15 +181,17 @@ Keys:
 - `systemPromptAppend` — Texto adicional no system prompt
 - `matrixAccount` — Conta Matrix associada
 
-## Permissões (REBAC)
+## Permissões / Provider Runtime
 
-Permissões de tools e executáveis são gerenciadas via REBAC:
+O Ravi autoriza execução pelo Permission Provider Runtime. Hoje, grants locais podem
+ser usados como provider legado para materializar capabilities no contexto do
+agent, mas a decisão runtime não deve depender de imports diretos de local-grants.
 
 ```bash
-# Ver permissões de um agent
+# Ver grants legados de um agent
 ravi permissions list --subject agent:<id>
 
-# Configurar permissões
+# Configurar grants legados que podem materializar capabilities
 ravi permissions init agent:<id> full-access     # Tudo liberado
 ravi permissions init agent:<id> sdk-tools       # SDK tools padrão
 ravi permissions init agent:<id> safe-executables # Executáveis seguros
@@ -197,13 +199,19 @@ ravi permissions init agent:<id> safe-executables # Executáveis seguros
 # Grants individuais
 ravi permissions grant agent:<id> use tool:Bash
 ravi permissions grant agent:<id> execute executable:git
+
+# Verificar estado do provider legado, não uma chamada runtime sem contexto
+ravi permissions check agent:<id> use tool:Bash
 ```
 
 Ver skill `permissions-manager` para documentação completa.
 
-### REBAC vs hooks do provider
+### Provider runtime vs hooks externos
 
-`full-access` libera a camada de permissões do Ravi: tools, grupos e executáveis. Isso não desativa automaticamente hooks globais do provider, denylist local, PreToolUse externo ou políticas instaladas fora do Ravi.
+`full-access` no provider legado permite materializar capabilities amplas para o
+Ravi: tools, grupos e executáveis. Isso não desativa automaticamente hooks
+globais do provider, denylist local, PreToolUse externo ou políticas instaladas
+fora do Ravi.
 
 Quando Bash ainda é negado depois de `ravi permissions check` permitir:
 
@@ -357,7 +365,7 @@ ravi agents create atendimento ~/ravi/atendimento --provider codex --model gpt-5
 # 3. Rotear grupo pro agent
 ravi instances routes add main group:120363425628305127 atendimento
 
-# 4. Configurar permissões (via REBAC)
+# 4. Configurar grants legados que materializam capabilities
 ravi permissions init agent:atendimento sdk-tools       # SDK tools padrão
 ravi permissions init agent:atendimento safe-executables # Executáveis seguros
 ravi permissions grant agent:atendimento use tool:Bash   # Liberar Bash

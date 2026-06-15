@@ -27,8 +27,6 @@ export interface CloudLoginOptions {
   console?: string;
   json?: boolean;
   open?: boolean;
-  org?: string;
-  organization?: string;
   poll?: boolean;
   timeoutSeconds?: string;
   intervalSeconds?: string;
@@ -63,7 +61,6 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
   const env = deps.env ?? process.env;
   const existing = read();
   const installationId = existing?.consoleUrl === consoleUrl ? existing.installationId : crypto.randomUUID();
-  const organizationRef = firstString(options.org, options.organization);
   const config = await client.getAuthConfig();
   const deviceAuth = await client.startDeviceAuthorization(config);
   const authUrl = deviceAuth.verificationUriComplete;
@@ -80,7 +77,7 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
   }
 
   if (!options.json) {
-    printLoginStart({ consoleUrl, authUrl, verificationUrl, userCode, openBrowser, organizationRef });
+    printLoginStart({ consoleUrl, authUrl, verificationUrl, userCode, openBrowser });
   }
 
   const credentials = await exchangeUntilComplete({
@@ -89,7 +86,6 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
     config,
     deviceCode: deviceAuth.deviceCode,
     existing,
-    organizationRef,
     poll: options.poll !== false,
     timeoutSeconds: parsePositiveNumber(options.timeoutSeconds, 300),
     intervalSeconds: parsePositiveNumber(
@@ -255,7 +251,6 @@ async function exchangeUntilComplete(input: {
   config: ConsoleAuthConfig;
   deviceCode: string;
   existing: CloudCredentials | null;
-  organizationRef?: string;
   poll: boolean;
   timeoutSeconds: number;
   intervalSeconds: number;
@@ -266,13 +261,7 @@ async function exchangeUntilComplete(input: {
 
   while (true) {
     try {
-      const providerToken = await input.client.pollDeviceToken(input.config, input.deviceCode);
-      const credentials = await input.client.exchange({
-        installationId: input.installationId,
-        ...(input.organizationRef ? { organizationRef: input.organizationRef } : {}),
-        workosAccessToken: providerToken.accessToken,
-        installation: input.installation,
-      });
+      const credentials = await exchangeDeviceCredentials(input);
       return {
         ...credentials,
         createdAt: input.existing?.createdAt ?? credentials.createdAt,
@@ -284,6 +273,29 @@ async function exchangeUntilComplete(input: {
       await input.sleep(input.intervalSeconds * 1000);
     }
   }
+}
+
+async function exchangeDeviceCredentials(input: {
+  client: ConsoleApiClient;
+  installationId: string;
+  config: ConsoleAuthConfig;
+  deviceCode: string;
+  installation: NonNullable<Parameters<ConsoleApiClient["exchange"]>[0]["installation"]>;
+}) {
+  if (input.config.mode === "console_device" || !input.config.endpoints?.token) {
+    return input.client.exchange({
+      installationId: input.installationId,
+      deviceCode: input.deviceCode,
+      installation: input.installation,
+    });
+  }
+
+  const providerToken = await input.client.pollDeviceToken(input.config, input.deviceCode);
+  return input.client.exchange({
+    installationId: input.installationId,
+    workosAccessToken: providerToken.accessToken,
+    installation: input.installation,
+  });
 }
 
 function mergeMeIntoSession(credentials: CloudCredentials, me: ConsoleMeResponse) {
@@ -332,10 +344,8 @@ function printLoginStart(input: {
   verificationUrl?: string;
   userCode?: string;
   openBrowser: boolean;
-  organizationRef?: string;
 }): void {
   console.log(`Ravi Cloud login: ${input.consoleUrl}`);
-  if (input.organizationRef) console.log(`Organization: ${input.organizationRef}`);
   if (input.openBrowser && input.authUrl) console.log("Opening browser for authentication...");
   if (input.verificationUrl) console.log(`Verification URL: ${input.verificationUrl}`);
   if (input.userCode) console.log(`Code: ${input.userCode}`);

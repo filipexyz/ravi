@@ -1,14 +1,30 @@
 ---
 name: permissions-manager
 description: |
-  Gerencia permissões REBAC do sistema Ravi. Use quando o usuário quiser:
-  - Ver, conceder ou revocar permissões de agents
-  - Verificar se um agent tem permissão pra algo
-  - Sincronizar permissões com configs dos agents
-  - Entender o modelo de permissões
+  Administra o provider legado de grants locais do Ravi. Use quando o usuário quiser:
+  - Ver, conceder ou revocar grants locais de agents
+  - Verificar se o estado do provider local-grants permitiria algo
+  - Sincronizar grants locais com configs dos agents
+  - Entender a diferença entre grants legados, materialização e provider runtime
 ---
 
-# Permissions Manager (REBAC)
+# Permissions Manager (legacy relation ledger)
+
+O Ravi usa o **Permission Provider Runtime** como única superfície de autorização.
+
+`ravi permissions` administra o provider legado `local-grants`: ele mantém relações
+locais e pode materializar capabilities em contextos runtime, mas não é a cadeia
+ativa de autorização direta do core.
+
+Consequências práticas:
+
+- Runtime ativo autoriza por `provider-runtime`, principalmente por contexto já
+  materializado (`context-capabilities`).
+- Grants locais podem alimentar snapshots de capabilities por uma interface de
+  materializer.
+- Um grant local não deve ser tratado como bypass direto do runtime.
+- `ravi permissions check` verifica o estado do provider legado, não garante que
+  uma chamada runtime sem contexto será permitida.
 
 Permissões no Ravi são relações: **(sujeito) tem (relação) sobre (objeto)**.
 
@@ -16,7 +32,7 @@ Exemplo: `(agent:dev) access (session:dev-*)` — o agent dev pode acessar sess�
 
 ## IMPORTANTE: Object Types
 
-O object type no grant DEVE corresponder ao que o engine checa. Se errar o type, a permissão não funciona.
+O object type no grant DEVE corresponder ao que o provider/materializer usa. Se errar o type, a capability não materializa como esperado.
 
 **Regra:** Comandos CLI usam `group:<nome-do-grupo>`. Sessões usam `session:<pattern>`. Sistema usa `system:*`.
 
@@ -108,7 +124,7 @@ ravi permissions grant agent:dev read_tagged_contacts system:leads
 `open` NÃO é bypass para runtime com agent.
 
 - CLI local sem principal pode executar comandos `open`.
-- Se houver `agentId`/contexto runtime, `open` exige `execute group:<grupo>` ou `execute group:<grupo>_<comando>`.
+- Se houver `agentId`/contexto runtime, o contexto precisa ter `execute group:<grupo>` ou `execute group:<grupo>_<comando>`.
 - `resource` continua usando checagens de ownership no comando, mas não deve ser usado para mutação sensível sem dono resolvido.
 
 Exemplo:
@@ -126,7 +142,7 @@ ravi permissions grant agent:dev execute group:apps_run
 ravi permissions grant agent:dev execute system:daemon
 ```
 
-Isso não funciona! O engine checa `group:daemon`, não `system:daemon`.
+Isso não funciona! O provider checa `group:daemon`, não `system:daemon`.
 
 ✅ **CERTO:**
 
@@ -186,7 +202,7 @@ ravi permissions grant agent:dev use tool:Read
 # Permitir TODAS as tools (bypass)
 ravi permissions grant agent:dev use tool:*
 
-# Verificar
+# Verificar estado legado do provider
 ravi permissions check agent:dev use tool:Bash
 ```
 
@@ -263,7 +279,7 @@ ravi permissions check agent:dev use tool:Read   # ✓ se tem toolgroup:read-onl
 | `teams`     | TeamCreate, TeamDelete, SendMessage                     |
 | `navigate`  | EnterWorktree, Skill                                    |
 
-**Como funciona:** Quando o engine checa `can(agent:X, use, tool, Read)`, se não encontra grant direto pra `tool:Read`, verifica se o agent tem algum `toolgroup` que inclui `Read`. Se sim, permite.
+**Como funciona:** Quando o provider checa `can(agent:X, use, tool, Read)`, se não encontra grant direto pra `tool:Read`, verifica se o agent tem algum `toolgroup` que inclui `Read`. Se sim, permite.
 
 **Combina com grants individuais:** Um agent pode ter `toolgroup:read-only` + `tool:Bash` — os dois se somam.
 
@@ -299,7 +315,7 @@ ravi permissions init agent:dev tool-groups
 # Executáveis seguros (git, node, bun, ravi, etc.)
 ravi permissions init agent:dev safe-executables
 
-# Cobertura completa: wildcards em TODOS os object types reconhecidos pelo engine
+# Cobertura completa: wildcards em TODOS os object types reconhecidos pelo provider
 # (tool, executable, toolgroup, agent, app, automation, calendar, chat, contact,
 # cron, group, mailbox, network, platform_identity, session, system, team, trigger).
 # Use quando o agent precisa operar livremente em todas as superfícies (sessions, contatos,
@@ -309,7 +325,7 @@ ravi permissions init agent:dev full-access
 
 `full-access` significa "permitido pelo Ravi". Ele não promete que hooks globais do provider, policies locais, RTK, Codex/Claude PreToolUse ou outras integrações externas vão permitir o comando final. Se `permissions check` retorna permitido mas a tool ainda falha, trate como fronteira de runtime/hook e investigue a mensagem de denial antes de adicionar mais grants.
 
-> **Nota histórica:** antes deste PR, `full-access` aplicava apenas `use tool:*` + `execute executable:*` (2 grants) — o nome prometia "tudo" mas deixava de fora as superfícies in-process do REBAC (sessions, contacts, agents, apps, automações, etc). Agora `full-access` cobre os pares `(relation, objectType)` válidos em um único comando.
+> **Nota histórica:** antes deste PR, `full-access` aplicava apenas `use tool:*` + `execute executable:*` (2 grants) — o nome prometia "tudo" mas deixava de fora as superfícies in-process do local-grants (sessions, contacts, agents, apps, automações, etc). Agora `full-access` cobre os pares `(relation, objectType)` válidos em um único comando.
 
 ## Lifetime dos Grants
 
@@ -414,7 +430,7 @@ Wildcards só funcionam no final do object ID:
 
 ## Como Funciona a Resolução
 
-Quando o engine verifica `can(agent:dev, execute, group:daemon)`:
+Quando o provider verifica `can(agent:dev, execute, group:daemon)`:
 
 1. Agent é superadmin? → checa `(agent:dev, admin, system:*)` → sim = allowed
 2. Relação direta? → checa `(agent:dev, execute, group:daemon)` → sim = allowed

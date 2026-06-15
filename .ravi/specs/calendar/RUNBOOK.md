@@ -23,7 +23,7 @@ ravi calendar events list --from now --to +7d --json
 
 1. Identify the runtime agent/contact/platform identity for the request.
 2. List calendars visible to that identity.
-3. Check REBAC relations for every returned calendar.
+3. Check Permission Provider Runtime relations for every returned calendar.
 4. Confirm no fallback path returned all calendars because identity context was
    missing.
 5. Inspect event payloads for provider ids or private fields that should have

@@ -6,13 +6,13 @@
 
 ## Why Not Turn-Scoped
 
-Turn-scoped issuance creates many active credentials for the same durable session. With the default seven-day TTL, every turn leaves an active `agent-runtime` record behind. Agents with broad REBAC grants also snapshot broad capabilities into each record, which makes operational inspection noisy and can confuse admin bootstrap checks if those checks treat all live admin-capable contexts the same.
+Turn-scoped issuance creates many active credentials for the same durable session. With the default seven-day TTL, every turn leaves an active `agent-runtime` record behind. Agents with broad provider-owned grants also snapshot broad capabilities into each record, which makes operational inspection noisy and can confuse admin bootstrap checks if those checks treat all live admin-capable contexts the same.
 
 The runtime already has a stable `dbSessionKey`. That key is the correct lifecycle boundary for provider env, tool context, audit attribution, and child CLI issuance.
 
 ## Capability Drift
 
-Capabilities intentionally remain a snapshot from context issuance time. If REBAC changes mid-session, the active context does not drift. This matches child context semantics and avoids silent privilege changes while a provider session is alive.
+Capabilities intentionally remain a snapshot from context issuance time. If Permission Provider Runtime changes mid-session, the active context does not drift. This matches child context semantics and avoids silent privilege changes while a provider session is alive.
 
 To force a new snapshot, revoke or reset the session context. The next dispatch creates a fresh `agent-runtime` context.
 

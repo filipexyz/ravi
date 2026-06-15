@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { agentCan } from "../permissions/engine.js";
+import { agentCan } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   addCalendarMember,
@@ -8,6 +8,7 @@ import {
   createCalendarEvent,
   listCalendarAccounts,
   listCalendarEvents,
+  listCalendarMembers,
   listCalendarOutbox,
   listCalendars,
   readCalendarEvent,
@@ -130,7 +131,7 @@ describe("local calendar db", () => {
     expect(events[0].title).toBe("Morning");
   });
 
-  it("mirrors calendar membership to REBAC without using membership as a bypass", () => {
+  it("stores calendar membership without making local grants an authorization bypass", () => {
     const account = createCalendarAccount({ provider: "local" });
     const calendar = createCalendar({ accountId: account.id, name: "Team" });
 
@@ -141,7 +142,16 @@ describe("local calendar db", () => {
       relation: "reader",
     });
 
-    expect(agentCan("agent-a", "read", "calendar", calendar.id)).toBe(true);
+    expect(listCalendarMembers(calendar.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberType: "agent",
+          memberId: "agent-a",
+          relation: "reader",
+        }),
+      ]),
+    );
+    expect(agentCan("agent-a", "read", "calendar", calendar.id)).toBe(false);
     expect(agentCan("agent-a", "write", "calendar", calendar.id)).toBe(false);
   });
 });

@@ -36,7 +36,9 @@ export class ConsoleApiClient {
   }
 
   async getAuthConfig(): Promise<ConsoleAuthConfig> {
-    return this.requestJson<ConsoleAuthConfig>("GET", "/api/cli/auth/config");
+    return this.requestJson<ConsoleAuthConfig>("GET", "/api/cli/auth/config", undefined, undefined, {
+      "x-ravi-cli-auth-flow": "console_device",
+    });
   }
 
   async startDeviceAuthorization(config: ConsoleAuthConfig): Promise<DeviceAuthorizationResponse> {
@@ -108,9 +110,16 @@ export class ConsoleApiClient {
     return this.requestJson<PageSiteReleaseActivateResponse>("POST", "/api/cli/artifacts/publish", input, accessToken);
   }
 
-  async requestJson<T>(method: string, path: string, body?: unknown, accessToken?: string): Promise<T> {
+  async requestJson<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    accessToken?: string,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<T> {
     const headers: Record<string, string> = {
       Accept: "application/json",
+      ...extraHeaders,
     };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`;

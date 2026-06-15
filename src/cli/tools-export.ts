@@ -5,10 +5,12 @@
 import {
   getGroupMetadata,
   getCommandsMetadata,
+  getCommandAccessMetadata,
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
   type ArgMetadata,
+  type CommandAccessOptions,
   type OptionMetadata,
   type ScopeType,
 } from "./decorators.js";
@@ -37,6 +39,7 @@ export interface ExportedTool {
     options: OptionMetadata[];
     scope?: ScopeType;
     skillGate?: SkillGateMetadata;
+    access?: CommandAccessOptions;
   };
 }
 
@@ -80,6 +83,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
 
     // Resolve scope: command-level > group-level > "admin" (fail-secure default)
     const scopeMap = getScopeMetadata(cls);
+    const commandAccessMap = getCommandAccessMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
@@ -94,6 +98,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
         command: cmdMeta.name,
         method: cmdMeta.method,
       });
+      const access = commandAccessMap.get(cmdMeta.method);
 
       tools.push({
         name: `${normalizedGroup}_${cmdMeta.name}`,
@@ -116,6 +121,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           options: optionsMeta,
           scope: effectiveScope,
           ...(skillGate ? { skillGate } : {}),
+          ...(access ? { access } : {}),
         },
       });
     }

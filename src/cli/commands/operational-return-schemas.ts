@@ -583,12 +583,15 @@ export const videoAnalyzeReturnSchema = z
     video: z
       .object({
         source: z.string(),
+        strategy: z.enum(["gemini", "subtitles"]),
         title: z.string(),
         duration: z.string(),
         summary: z.string(),
         topics: z.array(z.string()),
         transcript: z.string(),
         visualDescription: z.string(),
+        subtitleLanguage: z.string().nullable().optional(),
+        chapters: z.array(looseObjectSchema).optional(),
       })
       .passthrough(),
     options: looseObjectSchema,

@@ -885,10 +885,10 @@ describe("ContextCommands", () => {
       expect(commandSkillGateCalls).toEqual([]);
     });
 
-    it("publishes executable deny audit events for git status", () => {
+    it("publishes executable deny audit events for non-bootstrap executables", () => {
       const result = callCodexBashHook({
         tool_input: {
-          command: "git status",
+          command: "node -v",
         },
       });
 
@@ -896,7 +896,7 @@ describe("ContextCommands", () => {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
-          permissionDecisionReason: "Permission denied: agent:codex cannot execute: git",
+          permissionDecisionReason: "Permission denied: agent:codex cannot execute: node",
         },
       });
       expect(publishedAuditEvents).toEqual([
@@ -905,10 +905,10 @@ describe("ContextCommands", () => {
           data: expect.objectContaining({
             type: "executable",
             agentId: "codex",
-            denied: "git",
-            reason: "Permission denied: agent:codex cannot execute: git",
-            dedupeKey: "audit.denied:executable:codex:git:Permission denied: agent:codex cannot execute: git",
-            detail: "git status",
+            denied: "node",
+            reason: "Permission denied: agent:codex cannot execute: node",
+            dedupeKey: "audit.denied:executable:codex:node:Permission denied: agent:codex cannot execute: node",
+            detail: "node -v",
             context: expect.objectContaining({
               contextId: "ctx_codex",
               kind: "agent-runtime",

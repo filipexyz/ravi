@@ -51,8 +51,15 @@ Use focused fixtures or local test databases to cover:
 - route points to a missing instance: `routes.instance_missing` is `error`;
 - public mutating command lacks permission metadata:
   `permissions.command_mutation_unclassified` is `warn`;
-- broad permanent grant without reason:
-  `permissions.grant_permanent_without_reason` is `warn`;
+- provider runtime default chain matches the expected local-operator/context
+  providers: `permissions.provider_runtime_default_chain` is emitted;
+- provider runtime boundary is isolated from native engines and relation stores:
+  `permissions.provider_runtime_boundaries` is emitted;
+- no-subject/no-context permission requests fail closed unless explicit
+  local-operator mode is requested: `permissions.local_operator_explicit` is
+  emitted;
+- runtime bootstrap does not grant actor/surface or admin authority:
+  `permissions.runtime_bootstrap_scope` is emitted;
 - recent cost event has provider/model usage without price:
   `costs.pricing_unpriced_usage` is at least `warn`;
 - recent inbound message lacks actor metadata:

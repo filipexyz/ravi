@@ -1,5 +1,5 @@
 /**
- * Permissions Commands - REBAC relation management CLI
+ * Permissions Commands - legacy relation-ledger management CLI.
  */
 
 import "reflect-metadata";
@@ -10,6 +10,7 @@ import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   DEFAULT_MANUAL_GRANT_TTL_MS,
+  canSubjectWithLocalGrants,
   grantRelation,
   revokeRelation,
   revokeRelationIfSource,
@@ -23,8 +24,7 @@ import {
   type RelationFilter,
   type Relation,
   type GrantRelationOptions,
-} from "../../permissions/relations.js";
-import { can } from "../../permissions/engine.js";
+} from "../../permissions/local-grants-provider.js";
 import { DELEGATION_OVERRIDE_RELATION_PREFIX, DENY_RELATION_PREFIX } from "../../permissions/delegation.js";
 import {
   explainPermissionDecision,
@@ -47,6 +47,16 @@ import { getDefaultAllowlist } from "../../bash/permissions.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+const LEGACY_LOCAL_GRANTS_MUTATION_ENV = "RAVI_ENABLE_LEGACY_LOCAL_GRANTS_MUTATION";
+
+function assertLegacyLocalGrantsMutationEnabled(commandName: string): void {
+  if (process.env[LEGACY_LOCAL_GRANTS_MUTATION_ENV] === "1") return;
+  fail(
+    `Legacy local-grants mutation is disabled for '${commandName}'. ` +
+      `The active runtime uses permission providers. Set ${LEGACY_LOCAL_GRANTS_MUTATION_ENV}=1 only for explicit migration/repair work.`,
+  );
 }
 
 const paginationSchema = z.object({
@@ -149,7 +159,7 @@ const permissionPolicyListReturnSchema = z.object({}).passthrough();
 
 @Group({
   name: "permissions",
-  description: "REBAC permission management",
+  description: "Legacy relation-ledger management",
   scope: "superadmin",
 })
 export class PermissionsCommands {
@@ -189,6 +199,7 @@ export class PermissionsCommands {
     })
     reason?: string,
   ) {
+    assertLegacyLocalGrantsMutationEnabled("permissions grant");
     const [subjectType, subjectId] = parseEntity(subject);
     const [objectType, objectId] = parseEntity(object);
     validateRelation(relation);
@@ -287,6 +298,7 @@ export class PermissionsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
+    assertLegacyLocalGrantsMutationEnabled("permissions revoke");
     const [subjectType, subjectId] = parseEntity(subject);
     const [objectType, objectId] = parseEntity(object);
     if (objectType === "toolgroup" && objectId !== "*" && !TOOL_GROUPS[objectId]) {
@@ -351,7 +363,7 @@ export class PermissionsCommands {
 
   @Command({
     name: "check",
-    description: "Check if a subject has a permission on an object",
+    description: "Check if the legacy relation ledger would allow a subject on an object",
   })
   @Returns(permissionsCheckReturnSchema)
   check(
@@ -371,7 +383,7 @@ export class PermissionsCommands {
     const [subjectType, subjectId] = parseEntity(subject);
     const [objectType, objectId] = parseEntity(object);
 
-    const allowed = can(subjectType, subjectId, permission, objectType, objectId);
+    const allowed = canSubjectWithLocalGrants(subjectType, subjectId, permission, objectType, objectId);
     const payload = {
       subject: { raw: subject, type: subjectType, id: subjectId },
       permission,
@@ -600,6 +612,7 @@ export class PermissionsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
+    assertLegacyLocalGrantsMutationEnabled("permissions sync");
     syncRelationsFromConfig();
     const relations = listRelations({ source: "config" });
     const payload = {
@@ -651,6 +664,7 @@ export class PermissionsCommands {
     })
     reason?: string,
   ) {
+    assertLegacyLocalGrantsMutationEnabled("permissions init");
     const [subjectType, subjectId] = parseEntity(subject);
     const grantOptions = buildGrantOptions({
       ttl,
@@ -686,8 +700,8 @@ export class PermissionsCommands {
         return count;
       },
       "full-access": () => {
-        // Wildcards across every (relation, objectType) pair the REBAC engine recognises.
-        // Covers SDK tools, system executables, tool groups, AND the in-process REBAC types
+        // Wildcards across every (relation, objectType) pair the legacy ledger recognises.
+        // Covers SDK tools, system executables, tool groups, and in-process permission types.
         // used by command/scope checks (agent, contact, cron, group, session, system, team,
         // toolgroup, trigger). Prior versions of this template only granted use:tool:* and
         // execute:executable:*, which left agents unable to operate against the runtime even
@@ -976,6 +990,7 @@ export class PermissionsCommands {
     if (apply && confirm !== "restore-revocation") {
       fail("--apply requires --confirm restore-revocation");
     }
+    if (apply) assertLegacyLocalGrantsMutationEnabled("permissions restore-batch --apply");
     const subjectFilter: { subjectType?: string; subjectId?: string } = {};
     if (subject) {
       const [subjectType, subjectId] = parseEntity(subject);
@@ -1039,6 +1054,7 @@ export class PermissionsCommands {
     if (apply && confirm !== "prune-revoked") {
       fail("--apply requires --confirm prune-revoked");
     }
+    if (apply) assertLegacyLocalGrantsMutationEnabled("permissions prune-revoked --apply");
     const days = olderThanDays != null ? parsePositiveInt(olderThanDays, "--older-than-days") : 90;
     const result = pruneRevokedRelations({ apply: apply === true, olderThanSeconds: days * 24 * 60 * 60 });
     const payload = {
@@ -1075,6 +1091,7 @@ export class PermissionsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
+    assertLegacyLocalGrantsMutationEnabled("permissions clear");
     const count = all ? clearRelations() : clearRelations({ source: "manual" });
     const payload = {
       status: "cleared" as const,
@@ -1248,6 +1265,7 @@ export class PermissionPolicyCommands {
     @Option({ flags: "--dir <path>", description: "Policy directory (default: $RAVI_STATE_DIR/permission-policies)" })
     directory?: string,
   ) {
+    assertLegacyLocalGrantsMutationEnabled("permissions policies apply");
     const payload = applyPermissionPolicies({ directory, policyId });
     if (asJson) {
       printJson(payload);
@@ -1267,6 +1285,7 @@ export class PermissionPolicyCommands {
     @Option({ flags: "--dir <path>", description: "Policy directory (default: $RAVI_STATE_DIR/permission-policies)" })
     directory?: string,
   ) {
+    assertLegacyLocalGrantsMutationEnabled("permissions policies reconcile");
     const payload = reconcilePermissionPolicies({ directory, policyId });
     if (asJson) {
       printJson(payload);

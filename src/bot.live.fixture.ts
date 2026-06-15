@@ -8,10 +8,10 @@ import type { RuntimeProviderId } from "./runtime/types.js";
 const actualDbModule = await import("./db.js");
 const actualRouterIndexModule = await import("./router/index.js");
 const actualCliContextModule = await import("./cli/context.js");
-const actualPermissionsEngineModule = await import("./permissions/engine.js");
+const actualPermissionProviderRuntimeModule = await import("./permissions/provider-runtime.js");
 const actualRemoteSpawnNatsModule = await import("./remote-spawn-nats.js");
-const actualAgentCan = actualPermissionsEngineModule.agentCan;
-const actualCanWithCapabilities = actualPermissionsEngineModule.canWithCapabilities;
+const actualAgentCan = actualPermissionProviderRuntimeModule.agentCan;
+const actualCanWithCapabilities = actualPermissionProviderRuntimeModule.canWithCapabilities;
 
 const LIVE_TIMEOUT_MS = 180_000;
 
@@ -247,8 +247,8 @@ mock.module("./hooks/sanitize-bash.js", () => ({
   }),
 }));
 
-mock.module("./permissions/engine.js", () => ({
-  ...actualPermissionsEngineModule,
+mock.module("./permissions/provider-runtime.js", () => ({
+  ...actualPermissionProviderRuntimeModule,
   agentCan: (...args: Parameters<typeof actualAgentCan>) => agentCanImpl(...args),
   canWithCapabilities: (...args: Parameters<typeof actualCanWithCapabilities>) => canWithCapabilitiesImpl(...args),
 }));

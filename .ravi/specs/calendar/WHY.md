@@ -36,7 +36,7 @@ Calendar is more sensitive than generic task state because a query like "show my
 agenda" can easily leak another user's schedule if the system falls back to a
 global list.
 
-The calendar domain therefore treats requester resolution and REBAC filtering as
+The calendar domain therefore treats requester resolution and Permission Provider Runtime filtering as
 part of the core read path, not as an optional UI concern.
 
 ## Why Providers Are Adapters

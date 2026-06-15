@@ -4,7 +4,9 @@ title: "Permissions"
 kind: domain
 domain: permissions
 capabilities:
-  - rebac
+  - provider-runtime
+  - cli-command-access
+  - local-grants-provider
   - delegation
   - resource-visibility
   - profiles
@@ -16,7 +18,7 @@ capabilities:
   - enterprise
 tags:
   - permissions
-  - rebac
+  - provider-runtime
   - runtime
   - security
 applies_to:
@@ -28,7 +30,6 @@ applies_to:
   - src/omni/consumer.ts
   - src/router/router-db.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true
@@ -42,24 +43,31 @@ Ravi permissions define who can cause Ravi to read, execute, mutate, deliver, or
 
 The permission model MUST protect every authority-bearing surface: SDK tools, CLI groups, executables, sessions, contacts, chats, contexts, automations, observers, triggers, cron jobs, providers, and external gateways.
 
+The Permission Provider Runtime is the only authorization surface for Ravi core.
+Ravi core MUST NOT embed a native grant graph as policy. The active default
+runtime providers are `local-operator` for direct local bootstrap and
+`context-capabilities` for already materialized runtime capability snapshots.
+Relation-store grants are legacy provider state and MUST NOT be part of the
+default authorization chain.
+
 ## Invariants
 
-- Ravi MUST fail closed when the effective principal, object, relation, or context cannot be resolved.
+- Ravi MUST fail closed when the effective principal, action, object, or context cannot be resolved.
 - Permission checks MUST use canonical Ravi subjects and objects, not raw provider ids, display names, phone numbers, or chat titles.
-- Contacts, agents, chats, sessions, automations, observers, roles, and system actors are distinct principals. A grant to one MUST NOT imply a grant to another unless an explicit relation says so.
+- Contacts, agents, chats, sessions, automations, observers, roles, and system actors are distinct principals. A grant to one MUST NOT imply a grant to another unless explicit provider-owned policy says so.
 - Groups/chats/threads are communication surfaces, not human users. They MAY constrain authority, but they MUST NOT replace the current actor principal.
 - `contact_policies` status controls operational intake and reply eligibility. It MUST NOT be treated as tool/executable/CLI authorization by itself.
-- Any policy that affects tool, executable, CLI, session, contact, or gateway authority MUST be represented in the permission graph or in a runtime capability context derived from that graph.
-- Tags MAY select permission policy rules, but tags MUST NOT be ambient permissions. Tag-driven authority MUST be materialized into explicit relations before it can authorize runtime behavior.
+- Any policy that affects tool, executable, CLI, session, contact, app, or gateway authority MUST be represented as a provider decision, a runtime capability context derived from provider decisions, or provider-owned policy state.
+- Tags MAY select permission policy rules, but tags MUST NOT be ambient permissions. Tag-driven authority MUST be materialized into provider-owned policy state before it can authorize runtime behavior.
 - Runtime contexts MUST carry enough structured authority provenance to explain why a tool was allowed or denied.
-- Runtime providers MUST be adapters. They MUST NOT create a provider-private permission model that can bypass Ravi REBAC.
+- Runtime providers MUST be adapters. They MUST request authorization through the Permission Provider Runtime and MUST NOT call grant-store APIs directly.
 - Discovery MUST be treated as disclosure. Runtime list, show, search, check,
   autocomplete, alias resolution, SDK discovery, and UI picker surfaces MUST
   filter to resources visible to the effective context.
 
 ## Subject Types
 
-The permission graph MAY contain multiple subject types. These are the canonical meanings:
+The Permission Provider Runtime MAY reason over multiple subject types. These are the canonical meanings:
 
 - `agent`: Ravi agent identity and maximum technical authority.
 - `contact`: canonical human or organization from `chat.db.contacts`.
@@ -78,9 +86,11 @@ Agent permission is a ceiling, not sufficient authority.
 
 ## Grant Lifetime
 
-REBAC grants MUST carry lifetime metadata.
+Provider-issued grants MUST carry lifetime metadata. Relation-store grant rows
+are legacy provider-owned state and MUST NOT authorize runtime behavior unless
+an explicitly configured compatibility provider is installed.
 
-Canonical relation metadata:
+Canonical grant metadata:
 
 - `grant_mode`: `temporary` or `permanent`.
 - `expires_at`: epoch seconds when a temporary grant stops authorizing.
@@ -94,8 +104,9 @@ Rules:
 - `permissions grant` and `permissions init` MUST require an explicit `--permanent` flag to create permanent manual grants.
 - CLI-created temporary grants SHOULD default to a short TTL; the current default is one hour.
 - `--ttl` and `--expires-at` MAY override the default temporary expiration.
-- Grants from config/bootstrap/test/calendar sync MAY remain permanent unless they pass explicit lifetime metadata.
-- Existing legacy rows without lifetime metadata MUST be interpreted as permanent for compatibility, not silently expired.
+- Existing relation-store grant rows without lifetime metadata MAY be inspected
+  or migrated by legacy administration commands, but they MUST NOT silently
+  re-enter the default runtime provider chain.
 - Authorization checks MUST ignore expired or revoked grants.
 - Operator/audit listing MUST be able to include expired and revoked grants without making them active again.
 
@@ -126,7 +137,8 @@ Rules:
 - Config, bootstrap, policy-owned, temporary, expired, and revoked grants MUST
   be excluded from legacy cleanup unless a separate command explicitly targets
   them.
-- Cleanup MUST use relation-store APIs, not direct SQL writes.
+- Cleanup MUST use provider administration APIs, not direct SQL writes. Grant
+  store APIs are valid only inside a provider-owned administration boundary.
 - Broad `clear` is a break-glass/debug path, not the normal migration path.
 
 ### Bulk Revocation Safety
@@ -154,25 +166,25 @@ guarded by impact analysis:
 - Every new bulk revocation MUST carry an explicit batch identity in addition
   to `revoked_at`; timestamp-only grouping is legacy diagnostic fallback, not a
   safe restore key.
-- A bulk revocation batch MUST be reversible through a relation-store API
-  (restore by batch), without hand-written SQL.
+- A bulk revocation batch MUST be reversible through a provider administration
+  API (restore by batch), without hand-written SQL.
 - Agents MAY plan and preview cleanups. Applying a cleanup above the blast
   radius threshold is an operator decision.
 
 ## App Objects
 
-Apps are first-class REBAC objects.
+Apps are first-class authorization objects.
 
-- Non-mutating app operations require `use app:<app-id>` when executed under an agent/runtime context.
-- Mutating app operations require `execute app:<app-id>` when executed under an agent/runtime context.
+- Non-mutating app operations require an authorization decision equivalent to `use app:<app-id>` when executed under an agent/runtime context.
+- Mutating app operations require an authorization decision equivalent to `execute app:<app-id>` when executed under an agent/runtime context.
 - App manifest permissions describe app-level requirements. They are not grants.
-- Direct local CLI execution with no principal MAY remain a break-glass operator path, but any runtime execution with `agentId` MUST authorize against `app:<id>`.
+- Direct local CLI execution with no principal MAY remain a break-glass operator path only through an explicit local-operator provider or documented bootstrap bypass. Any runtime execution with `agentId` MUST authorize through the Permission Provider Runtime.
 
 ## Resource Visibility
 
 Resources MUST be isolated by default.
 
-Canonical visibility relations:
+Canonical visibility capabilities:
 
 - `view agent:<id>` for agent discovery beyond self.
 - `access session:<id>` for session read/trace/list visibility beyond own
@@ -232,7 +244,7 @@ themselves.
 The required shape is:
 
 ```text
-tag_bindings -> permission policy rule -> relations -> effective capabilities
+tag_bindings -> permission policy rule -> provider-owned policy state -> effective capabilities
 ```
 
 Rules:
@@ -242,14 +254,13 @@ Rules:
 - Policy tags SHOULD use the `policy.*` namespace.
 - A policy rule MUST explicitly consume a tag before that tag affects
   authorization.
-- Policy rules MUST materialize concrete relation tuples with source
-  `policy:<rule-id>` or equivalent provenance.
+- Policy rules MUST materialize concrete provider-owned grants or policy records
+  with source `policy:<rule-id>` or equivalent provenance.
 - Policy-generated grants MUST be temporary by default unless the rule
   explicitly marks them permanent.
 - Policy materialization MUST NOT overwrite manual/config/test grants with the
-  same tuple. Because the current relation store is unique by tuple and has one
-  `source`, implementations that need multi-source provenance MUST keep a
-  separate materialization ledger.
+  same semantic capability. Implementations that cannot store multi-source
+  provenance in the active provider MUST keep a separate materialization ledger.
 - Policy rules SHOULD prefer materializing role/profile membership such as
   `contact:<id> member role:trusted-dev` over many duplicated direct grants.
 - Policy-managed role/profile membership MUST validate the target role closure.
@@ -288,7 +299,7 @@ Minimum behavior:
 - `agent:<id>` grants notify active sessions for that agent.
 - `session:<id>` subject/object grants notify that concrete session.
 - Notifications are advisory. Failure to publish a notification MUST NOT roll back the grant.
-- The permission graph and denial ledger remain authoritative; the notification only lets a previously blocked session retry.
+- Provider decisions and the denial ledger remain authoritative; the notification only lets a previously blocked session retry.
 
 ## Audit Denied Provenance
 

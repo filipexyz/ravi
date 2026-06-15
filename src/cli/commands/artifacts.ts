@@ -779,10 +779,14 @@ export class ArtifactsCommands {
     }
   }
 
-  @Command({ name: "publish", description: "Publish a local artifact package through a Console-compatible endpoint" })
+  @Command({
+    name: "publish",
+    description: "Upload a local artifact/file/directory to Console and optionally release it to Ravi Pages",
+  })
   @Returns(artifactPublishReturnSchema)
   async publish(
-    @Arg("target", { description: "Local artifact id, file, or directory" }) target: string,
+    @Arg("target", { description: "Local artifact id, file, or directory; use a directory with index.html for Pages" })
+    target: string,
     @Option({ flags: "--project <project>", description: "Console project id or slug" }) project?: string,
     @Option({ flags: "--site <site>", description: "Console site id or slug to release to" }) site?: string,
     @Option({ flags: "--route <path>", description: "Site route path to mount the artifact at" }) route?: string,

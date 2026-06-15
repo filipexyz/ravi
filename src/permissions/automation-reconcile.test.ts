@@ -4,6 +4,7 @@ import { dbCreateTrigger } from "../triggers/triggers-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { reconcileAutomationPrincipals } from "./automation-reconcile.js";
 import { materializeDelegatedAuthority } from "./delegation.js";
+import { snapshotSubjectCapabilities } from "./local-grants-capabilities.js";
 import { canWithCapabilities } from "./capability-context.js";
 import { grantRelation, listRelations } from "./relations.js";
 
@@ -20,6 +21,8 @@ function delegatedAllows(
     agentPrincipal: { subjectType: "agent", subjectId: agentId },
     actorPrincipal: { subjectType: "automation", subjectId: automationId },
     surfacePrincipal: null,
+    agentCapabilities: snapshotSubjectCapabilities("agent", agentId),
+    actorCapabilities: snapshotSubjectCapabilities("automation", automationId),
   });
   return canWithCapabilities(result.effectiveCapabilities, relation, objectType, objectId);
 }

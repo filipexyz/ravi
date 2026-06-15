@@ -40,7 +40,7 @@ Roles match the operational model operators already understand:
 - easy audit of who has what;
 - clear blast radius when a role changes.
 
-Role grants also keep the low-level REBAC relation model simple: roles are just subjects with relations, and contacts/chats are members or constraints.
+Role grants also keep the low-level local-grants relation model simple: roles are just subjects with relations, and contacts/chats are members or constraints.
 
 ## Alternatives Rejected
 

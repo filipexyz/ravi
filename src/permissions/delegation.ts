@@ -1,7 +1,6 @@
 import { resolveToolGroup } from "../cli/tool-registry.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { canWithCapabilities } from "./capability-context.js";
-import { listRelations } from "./relations.js";
+import { canWithCapabilities } from "./capability-snapshot.js";
 
 export const DELEGATED_AUTHORITY_MODE = "delegated";
 export const TURN_SCOPED_AUTHORITY_KIND = "turn-runtime";
@@ -9,7 +8,7 @@ export const ROLE_MEMBERSHIP_RELATION = "member";
 export const ROLE_OBJECT_TYPE = "role";
 export const DELEGATION_OVERRIDE_RELATION_PREFIX = "delegate_";
 export const DENY_RELATION_PREFIX = "deny_";
-const BLOCKED_DELEGATION_OVERRIDE_RELATIONS = new Set(["admin"]);
+export const BLOCKED_DELEGATION_OVERRIDE_RELATIONS = new Set(["admin"]);
 
 export interface AuthorityPrincipal {
   subjectType: string;
@@ -20,6 +19,11 @@ export interface DelegatedAuthorityMaterializationInput {
   agentPrincipal: AuthorityPrincipal;
   actorPrincipal?: AuthorityPrincipal | null;
   surfacePrincipal?: AuthorityPrincipal | null;
+  agentCapabilities?: ContextCapability[];
+  actorCapabilities?: ContextCapability[];
+  surfaceCapabilities?: ContextCapability[];
+  agentDelegationOverrides?: ContextCapability[];
+  surfaceDelegationOverrides?: ContextCapability[];
   agentCapabilityAdditions?: ContextCapability[];
   turnCapabilities?: ContextCapability[];
   includeSurfaceConstraint?: boolean;
@@ -45,82 +49,20 @@ export interface EffectiveCapabilitiesInput {
   surfaceOverrideCapabilities?: ContextCapability[];
 }
 
-export function snapshotSubjectCapabilities(
-  subjectType: string,
-  subjectId: string,
-  options: { includeRoles?: boolean; includeConstraints?: boolean } = {},
-): ContextCapability[] {
-  const directRelations = listRelations({ subjectType, subjectId });
-  const directCapabilities = relationCapabilities(directRelations).filter(isSnapshotCapability);
-  const roleCapabilities =
-    options.includeRoles === false
-      ? []
-      : directRelations
-          .filter(
-            (relation) => relation.relation === ROLE_MEMBERSHIP_RELATION && relation.objectType === ROLE_OBJECT_TYPE,
-          )
-          .flatMap((relation) => expandRoleCapabilities(relation.objectId, new Set()));
-  const constraintCapabilities =
-    options.includeConstraints === false
-      ? []
-      : directRelations
-          .filter((relation) => relation.relation === "constrain" && relation.objectType === ROLE_OBJECT_TYPE)
-          .flatMap((relation) =>
-            expandRoleCapabilities(relation.objectId, new Set(), `constraint:${relation.objectId}`),
-          );
-
-  return dedupeContextCapabilities([...directCapabilities, ...roleCapabilities, ...constraintCapabilities]);
-}
-
-export function snapshotSubjectDelegationOverrides(
-  subjectType: string,
-  subjectId: string,
-  options: { includeRoles?: boolean } = {},
-): ContextCapability[] {
-  const directRelations = listRelations({ subjectType, subjectId });
-  const directOverrides = relationCapabilities(directRelations).flatMap(normalizeDelegationOverrideCapability);
-  if (options.includeRoles === false) {
-    return dedupeContextCapabilities(directOverrides);
-  }
-
-  const roleOverrides = directRelations
-    .filter((relation) => relation.relation === ROLE_MEMBERSHIP_RELATION && relation.objectType === ROLE_OBJECT_TYPE)
-    .flatMap((relation) => expandRoleDelegationOverrides(relation.objectId, new Set()));
-
-  return dedupeContextCapabilities([...directOverrides, ...roleOverrides]);
-}
-
 export function materializeDelegatedAuthority(
   input: DelegatedAuthorityMaterializationInput,
 ): DelegatedAuthorityMaterialization {
-  const graphAgentCapabilities = snapshotSubjectCapabilities(
-    input.agentPrincipal.subjectType,
-    input.agentPrincipal.subjectId,
-  );
+  const graphAgentCapabilities = input.agentCapabilities ?? [];
   const agentCapabilities = dedupeContextCapabilities([
     ...graphAgentCapabilities,
     ...(input.agentCapabilityAdditions ?? []),
   ]);
-  const actorCapabilities = input.actorPrincipal
-    ? snapshotSubjectCapabilities(input.actorPrincipal.subjectType, input.actorPrincipal.subjectId)
-    : [];
-  const surfaceCapabilities = input.surfacePrincipal
-    ? snapshotSubjectCapabilities(input.surfacePrincipal.subjectType, input.surfacePrincipal.subjectId, {
-        includeRoles: false,
-      })
-    : [];
+  const actorCapabilities = input.actorCapabilities ?? [];
+  const surfaceCapabilities = input.surfaceCapabilities ?? [];
   const allowDelegationOverrides = input.allowDelegationOverrides ?? input.actorPrincipal?.subjectType === "contact";
-  const agentDelegationOverrides = allowDelegationOverrides
-    ? snapshotSubjectDelegationOverrides(input.agentPrincipal.subjectType, input.agentPrincipal.subjectId, {
-        includeRoles: false,
-      })
-    : [];
+  const agentDelegationOverrides = allowDelegationOverrides ? (input.agentDelegationOverrides ?? []) : [];
   const surfaceDelegationOverrides =
-    allowDelegationOverrides && input.surfacePrincipal
-      ? snapshotSubjectDelegationOverrides(input.surfacePrincipal.subjectType, input.surfacePrincipal.subjectId, {
-          includeRoles: false,
-        })
-      : [];
+    allowDelegationOverrides && input.surfacePrincipal ? (input.surfaceDelegationOverrides ?? []) : [];
   const actorOverrideCapabilities = [...agentDelegationOverrides, ...surfaceDelegationOverrides];
   const surfaceOverrideCapabilities = surfaceDelegationOverrides;
   const includeSurfaceConstraint =
@@ -232,22 +174,6 @@ export function hasAnyCapability(capabilities: ContextCapability[] | undefined):
   return Boolean(capabilities && capabilities.length > 0);
 }
 
-function relationCapabilities(
-  relations: Array<{
-    relation: string;
-    objectType: string;
-    objectId: string;
-    source?: string;
-  }>,
-): ContextCapability[] {
-  return relations.map((relation) => ({
-    permission: relation.relation,
-    objectType: relation.objectType,
-    objectId: relation.objectId,
-    source: relation.source,
-  }));
-}
-
 function capabilitySetAllows(capabilities: ContextCapability[], candidate: ContextCapability): boolean {
   if (canWithCapabilities(capabilities, candidate.permission, candidate.objectType, candidate.objectId)) {
     return true;
@@ -283,15 +209,15 @@ function isToolOrToolGroup(objectType: string): boolean {
   return objectType === "tool" || objectType === "toolgroup";
 }
 
-function isRoleMembership(capability: ContextCapability): boolean {
+export function isRoleMembership(capability: ContextCapability): boolean {
   return capability.permission === ROLE_MEMBERSHIP_RELATION && capability.objectType === ROLE_OBJECT_TYPE;
 }
 
-function isSurfaceConstraint(capability: ContextCapability): boolean {
+export function isSurfaceConstraint(capability: ContextCapability): boolean {
   return capability.permission === "constrain" && capability.objectType === ROLE_OBJECT_TYPE;
 }
 
-function isDelegationOverrideCapability(capability: ContextCapability): boolean {
+export function isDelegationOverrideCapability(capability: ContextCapability): boolean {
   return (
     capability.permission.startsWith(DELEGATION_OVERRIDE_RELATION_PREFIX) &&
     capability.permission.length > DELEGATION_OVERRIDE_RELATION_PREFIX.length
@@ -304,7 +230,7 @@ function isDenyCapability(capability: ContextCapability): boolean {
   );
 }
 
-function isSnapshotCapability(capability: ContextCapability): boolean {
+export function isSnapshotCapability(capability: ContextCapability): boolean {
   return (
     !isRoleMembership(capability) && !isDelegationOverrideCapability(capability) && !isSurfaceConstraint(capability)
   );
@@ -316,20 +242,6 @@ function isRegularCapability(capability: ContextCapability): boolean {
 
 function isConstraintExpandedCapability(capability: ContextCapability): boolean {
   return capability.source?.startsWith("constraint:") ?? false;
-}
-
-function normalizeDelegationOverrideCapability(capability: ContextCapability): ContextCapability[] {
-  if (!isDelegationOverrideCapability(capability)) return [];
-  const permission = capability.permission.slice(DELEGATION_OVERRIDE_RELATION_PREFIX.length);
-  if (BLOCKED_DELEGATION_OVERRIDE_RELATIONS.has(permission)) return [];
-  return [
-    {
-      permission,
-      objectType: capability.objectType,
-      objectId: capability.objectId,
-      source: capability.source ? `delegate:${capability.source}` : "delegate",
-    },
-  ];
 }
 
 function normalizeDenyCapability(capability: ContextCapability): ContextCapability[] {
@@ -350,51 +262,6 @@ function regularCapabilities(capabilities: ContextCapability[]): ContextCapabili
 
 function denyCapabilities(capabilities: ContextCapability[]): ContextCapability[] {
   return dedupeContextCapabilities(capabilities.flatMap(normalizeDenyCapability));
-}
-
-function expandRoleCapabilities(
-  roleId: string,
-  visited: Set<string>,
-  sourcePrefix = `role:${roleId}`,
-): ContextCapability[] {
-  if (visited.has(roleId)) return [];
-  visited.add(roleId);
-  const relations = listRelations({ subjectType: ROLE_OBJECT_TYPE, subjectId: roleId });
-  const direct = relationCapabilities(relations)
-    .filter(isSnapshotCapability)
-    .map((capability) => withCapabilitySourcePrefix(capability, sourcePrefix));
-  const nested = relations
-    .filter((relation) => relation.relation === ROLE_MEMBERSHIP_RELATION && relation.objectType === ROLE_OBJECT_TYPE)
-    .flatMap((relation) =>
-      expandRoleCapabilities(relation.objectId, visited, `${sourcePrefix}/role:${relation.objectId}`),
-    );
-  return [...direct, ...nested];
-}
-
-function expandRoleDelegationOverrides(
-  roleId: string,
-  visited: Set<string>,
-  sourcePrefix = `role:${roleId}`,
-): ContextCapability[] {
-  if (visited.has(roleId)) return [];
-  visited.add(roleId);
-  const relations = listRelations({ subjectType: ROLE_OBJECT_TYPE, subjectId: roleId });
-  const direct = relationCapabilities(relations)
-    .flatMap(normalizeDelegationOverrideCapability)
-    .map((capability) => withCapabilitySourcePrefix(capability, sourcePrefix));
-  const nested = relations
-    .filter((relation) => relation.relation === ROLE_MEMBERSHIP_RELATION && relation.objectType === ROLE_OBJECT_TYPE)
-    .flatMap((relation) =>
-      expandRoleDelegationOverrides(relation.objectId, visited, `${sourcePrefix}/role:${relation.objectId}`),
-    );
-  return [...direct, ...nested];
-}
-
-function withCapabilitySourcePrefix(capability: ContextCapability, prefix: string): ContextCapability {
-  return {
-    ...capability,
-    source: capability.source ? `${prefix}/${capability.source}` : prefix,
-  };
 }
 
 function dedupeContextCapabilities(capabilities: ContextCapability[]): ContextCapability[] {

@@ -267,7 +267,7 @@ describe("runtime host skill-gate enforcement", () => {
     expect(getSession("agent:main:main")?.runtimeSessionParams?.skillVisibility).toBeUndefined();
   });
 
-  it("honors live executable grants after an agent-runtime context was issued", async () => {
+  it("keeps executable grants bounded to the issued agent-runtime context", async () => {
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "permission-live-grant-test",
       runtimeProvider: "codex",
@@ -294,6 +294,6 @@ describe("runtime host skill-gate enforcement", () => {
       input: {},
     });
 
-    expect(decision.approved).toBe(true);
+    expect(decision.approved).toBe(false);
   });
 });

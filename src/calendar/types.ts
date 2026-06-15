@@ -205,7 +205,6 @@ export interface AddCalendarMemberInput {
   memberId: string;
   relation: CalendarMemberRelation;
   expiresAt?: number | null;
-  mirrorToRebac?: boolean;
   now?: number;
 }
 

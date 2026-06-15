@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: production-readiness
 capabilities:
-  - rebac
+  - local-grants
   - delegation
   - explain
   - operations
@@ -17,7 +17,7 @@ tags:
   - testing
   - operations
 applies_to:
-  - src/permissions/engine.ts
+  - src/permissions/provider-runtime.ts
   - src/permissions/capability-context.ts
   - src/permissions/delegation.ts
   - src/permissions/scope.ts
@@ -27,7 +27,6 @@ applies_to:
   - src/runtime/runtime-request-context.ts
   - src/runtime/context-registry.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true
@@ -37,7 +36,7 @@ normative: true
 
 ## Intent
 
-This spec defines the exit criteria for declaring the REBAC permission system
+This spec defines the exit criteria for declaring the local-grants permission system
 production ready. It is a gate, not a feature: each criterion is a `MUST` that
 is either met or a tracked gap. A criterion counts as met only when it has an
 automated check that fails if the property regresses.
@@ -73,21 +72,24 @@ the full allow/deny/inherit/constrain/override matrix.
 
 ### G2 — Evaluator Consistency
 
-The system contains more than one evaluation path: the live recursive engine
-(`canInternal`), the snapshot matcher (`capabilitiesAllow`), the delegated
-materializer (`buildEffectiveCapabilities`), and the explain branch matcher
-(`relationCoversRequest`).
+The legacy relation ledger contains more than one compatibility evaluation
+path: the relation-ledger subject evaluator, the snapshot matcher
+(`capabilitiesAllow`), the delegated materializer (`buildEffectiveCapabilities`),
+and the explain branch matcher (`relationCoversRequest`). These paths are not
+the default Ravi authorization chain; they exist only for migration, explain,
+doctor, and cleanup flows.
 
 - The final delegated allow/deny used by enforcement and by `explain` MUST come
   from the same materializer (`materializeDelegatedAuthority`). A parallel
   implementation that can disagree on the final decision is forbidden.
-- For any subject and effective grant set, the live engine and the
-  snapshot/delegated path MUST agree on allow/deny across wildcards, trailing
-  patterns, tool-group membership, nested roles, and constraints.
+- For any subject and effective grant set in the legacy ledger, the legacy
+  subject decision and the snapshot/delegated path MUST agree on allow/deny
+  across wildcards, trailing patterns, tool-group membership, nested roles, and
+  constraints.
 - Wildcard/pattern semantics MUST be defined in one place and shared. The
   current contract is exact match, full `*`, and trailing `prefix*` only;
   infix patterns are not supported and MUST NOT silently appear to match.
-- A regression test MUST assert engine-vs-materializer agreement on a shared
+- A regression test MUST assert provider-vs-materializer agreement on a shared
   case matrix; drift MUST fail CI.
 
 Validation: a cross-evaluator agreement test (currently missing) plus
@@ -185,18 +187,15 @@ Validation: `permissions/explain/CHECKS.md`.
 
 ### G8 — State Hygiene
 
-- Revoked relations MUST be retained for audit but MUST NOT unbounded-grow the
-  hot table; an archival/compaction path SHOULD exist. (Today: ~16k revoked
-  rows vs ~257 active.)
-- Operator listing MUST be able to include inactive grants without
-  reactivating them. (Met.)
-- A health check MUST report subjects with zero active capabilities, broad
-  `admin system:*` contexts, and the revoked-relation backlog. (Met:
-  `permissions.rebac_zero_capabilities`, `permissions.rebac_admin_contexts`,
-  `permissions.rebac_revoked_backlog` in `ravi doctor`.)
+- Legacy relation rows MAY remain in the database for audit/migration, but they
+  MUST NOT be reported by the default doctor as active authorization health.
+- The default doctor permissions domain MUST validate the active provider
+  runtime chain and boundaries, not the retired relation-ledger state.
+- Relation-ledger archival, restore, and cleanup belong to explicit migration
+  tooling while that tooling exists.
 
 Validation: `permissions/production-readiness/CHECKS.md` and the
-`permissions.rebac_*` finding ids in `doctor/check-catalog/CHECKS.md`.
+`permissions.provider_runtime_*` finding ids in `doctor/check-catalog/CHECKS.md`.
 
 ## Exit Checklist
 
@@ -204,7 +203,7 @@ Production ready requires ALL of:
 
 - [x] G1 model-correctness matrix test green. (`delegation.test.ts`)
 - [x] G2 cross-evaluator agreement test green (`consistency.test.ts`) AND one
-      shared object-id matcher (`objectIdMatches`) used by engine, snapshot,
+      shared object-id matcher (`objectIdMatches`) used by provider, snapshot,
       materializer, and explain.
 - [x] G3 freshness + revoke-stops-auth tests green.
 - [x] G4 `delegation.test.ts` + `capability-context.test.ts` exist and pass;
@@ -212,12 +211,11 @@ Production ready requires ALL of:
       sessions, contacts, Bash, mailbox, gateway, child-context, apps, calendar).
 - [x] G5 subject-scoped restore CLI (`restore-batch --subject`) + documented
       admin-independent break-glass path, both tested.
-- [~] G6 automation/role reconcile on boot (`reconcileAutomationPrincipals`) +
-      `permissions.rebac_automation_uncovered` drift check. Remaining: retire
-      legacy wildcard debt on issuer/bootstrap subjects (operator action).
+- [x] G6 no relation-ledger reconcile on boot; automation authority is derived
+      through provider-runtime materialization/context snapshots.
 - [x] G7 explainability/audit checks green.
-- [x] G8 doctor health checks (zeroed subjects, revoked backlog, admin
-      contexts, automation coverage) + `permissions prune-revoked` compaction.
+- [x] G8 doctor health checks validate provider-runtime chain and boundaries
+      instead of relation-ledger drift.
 
 ## Current Status (2026-06-11, third pass)
 
@@ -229,30 +227,25 @@ end-to-end delegated-turn gate test
 buildRuntimeRequestContext → runWithContext → enforceScopeCheck/agentCan and
 proves trusted-allow, untrusted-deny, no cross-actor leakage, automation-deny,
 automation-covered-via-role, and surface deny-veto), G5 (`restore-batch
---subject` + operator break-glass), G7, G8 (five `permissions.rebac_*` doctor
-checks + `permissions prune-revoked` + `context prune` for context compaction;
-the admin-context check now filters expiry — contexts use epoch ms).
+--subject` + operator break-glass), G7, G8 (provider-runtime default-chain and
+boundary doctor checks).
 
-G6 substantially closed: `reconcileAutomationPrincipals` runs on boot and a
-doctor check surfaces uncovered automations.
+G6 no longer uses relation-ledger automation reconciliation on boot.
 
-The remaining gaps are NOT code — they are operational/deployment:
+The remaining gaps are migration cleanup, not active runtime authorization:
 
-1. Retire the residual full-access wildcard grants on issuer/bootstrap subjects
-   (the restored `agent:dev` superadmin set, the `main` bootstrap wildcards) via
-   the guarded `permissions legacy` flow once role coverage is confirmed. Left
-   to a human because bulk revocation caused the 2026-06-10 incident.
-2. Restart the daemon so `reconcileAutomationPrincipals` covers the ~39
-   currently-uncovered live automations.
-3. Run `permissions prune-revoked --apply` (~16k revoked rows) and `context
-   prune --apply` (~8k inactive contexts) to compact the live store.
-4. Complete the role migration so no agent depends on direct wildcards.
-5. Deploy: commit, PR `dev → main`, merge; optionally wire a denial monitor on
+1. Retire or remove the user-facing legacy `ravi permissions` ledger commands.
+2. Move relation-ledger restore/archive flows behind explicit migration tooling
+   or delete them after the migration window closes.
+3. Complete provider-owned replacements for any remaining app/domain policy
+   flows that still materialize relations.
+4. Deploy: commit, PR `dev → main`, merge; optionally wire a denial monitor on
    `ravi.audit.denied`.
 
-The remaining optional code hardening (non-blocking): unify the role-expansion
-traversal so engine and materializer share one implementation (today agreement
-is test-locked); fix the test-harness global-state-lock flakiness for CI.
+The remaining optional code hardening (non-blocking): remove the legacy
+relation-ledger agreement harness after all cleanup/doctor/explain flows move to
+provider-native implementations; fix the test-harness global-state-lock
+flakiness for CI.
 
 Superseded snapshot (first pass): G1 (model implemented), G3 (live re-materialization
 of delegated contexts), G5 bulk-revocation guards + batch restore, G7

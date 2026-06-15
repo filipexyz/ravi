@@ -24,7 +24,7 @@ import {
   writeCredentialsFile,
   type CredentialsFile,
 } from "../../runtime/credentials-store.js";
-import { canWithCapabilityContext } from "../../permissions/engine.js";
+import { canWithCapabilityContext } from "../../permissions/provider-runtime.js";
 import { authorizeRuntimeContext } from "../../approval/service.js";
 import type { ContextCapability } from "../../router/router-db.js";
 import { buildPreToolUseDenyResult, emitBashDeniedAudit, evaluateBashPermission } from "../../bash/hook.js";

@@ -4,21 +4,15 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   canWithCapabilities,
   canWithCapabilityContext,
-  isAgentSuperadmin,
   isDelegatedAuthorityContext,
   matchPattern,
   type CapabilityContextLike,
 } from "./capability-context.js";
-import { grantRelation } from "./relations.js";
 
 let stateDir: string | null = null;
 
 function cap(permission: string, objectType: string, objectId: string): ContextCapability {
   return { permission, objectType, objectId };
-}
-
-function grant(subjectId: string, relation: string, objectType: string, objectId: string) {
-  grantRelation("agent", subjectId, relation, objectType, objectId, "manual", { permanent: true });
 }
 
 describe("capability-context snapshot matcher", () => {
@@ -77,61 +71,41 @@ describe("capability-context snapshot matcher", () => {
     });
   });
 
-  describe("canWithCapabilityContext superadmin boundary", () => {
-    it("lets a live superadmin grant win for a non-delegated agent context", () => {
-      grant("admin-agent", "admin", "system", "*");
+  describe("canWithCapabilityContext", () => {
+    it("uses only capabilities already present in the context snapshot", () => {
       const context: CapabilityContextLike = {
-        agentId: "admin-agent",
+        agentId: "dev",
         kind: "agent-runtime",
-        capabilities: [],
-      };
-      expect(canWithCapabilityContext(context, "use", "tool", "Bash")).toBe(true);
-    });
-
-    it("does NOT let a live superadmin grant widen a delegated context", () => {
-      grant("admin-agent", "admin", "system", "*");
-      const context: CapabilityContextLike = {
-        agentId: "admin-agent",
-        kind: "turn-runtime",
         capabilities: [cap("use", "tool", "Read")],
-        metadata: { authorityMode: "delegated" },
       };
-      // Read is in the effective snapshot, Bash is not; live superadmin must not widen.
+
       expect(canWithCapabilityContext(context, "use", "tool", "Read")).toBe(true);
       expect(canWithCapabilityContext(context, "use", "tool", "Bash")).toBe(false);
     });
 
-    it("picks up a live grant added after an agent-runtime context was issued", () => {
+    it("treats admin system:* as a snapshot capability, not a live lookup", () => {
+      const context: CapabilityContextLike = {
+        agentId: "admin-agent",
+        kind: "agent-runtime",
+        capabilities: [cap("admin", "system", "*")],
+      };
+
+      expect(canWithCapabilityContext(context, "use", "tool", "Bash")).toBe(true);
+      expect(canWithCapabilityContext(context, "execute", "group", "daemon")).toBe(true);
+    });
+
+    it("keeps agent-runtime contexts bounded to the issued snapshot", () => {
       const context: CapabilityContextLike = {
         agentId: "dev",
         kind: "agent-runtime",
         capabilities: [],
       };
-      expect(canWithCapabilityContext(context, "execute", "group", "sessions_info")).toBe(false);
-      grant("dev", "execute", "group", "sessions_info");
-      expect(canWithCapabilityContext(context, "execute", "group", "sessions_info")).toBe(true);
-    });
 
-    it("does not consult live grants for a delegated context (snapshot is the bound)", () => {
-      const context: CapabilityContextLike = {
-        agentId: "dev",
-        kind: "turn-runtime",
-        capabilities: [],
-        metadata: { authorityMode: "delegated" },
-      };
-      grant("dev", "execute", "group", "sessions_info");
-      // Delegated contexts ignore live agent grants in the snapshot evaluator.
       expect(canWithCapabilityContext(context, "execute", "group", "sessions_info")).toBe(false);
     });
   });
 
   describe("helpers", () => {
-    it("isAgentSuperadmin reflects the live admin grant", () => {
-      expect(isAgentSuperadmin("x")).toBe(false);
-      grant("x", "admin", "system", "*");
-      expect(isAgentSuperadmin("x")).toBe(true);
-    });
-
     it("matchPattern handles exact and trailing wildcard", () => {
       expect(matchPattern("dev-*", "dev-1")).toBe(true);
       expect(matchPattern("dev-1", "dev-1")).toBe(true);

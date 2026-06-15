@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: explain
 capabilities:
-  - rebac
+  - local-grants
   - delegation
   - audit
   - denials
@@ -23,7 +23,6 @@ applies_to:
   - src/permissions/delegation.ts
   - src/cli/commands/permissions.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true
@@ -34,7 +33,7 @@ normative: true
 ## Intent
 
 Every authority decision Ravi makes MUST be explainable from persisted state
-with one command, without raw SQL and without re-deriving the engine by hand.
+with one command, without raw SQL and without re-deriving provider behavior by hand.
 
 Opacity is a failure mode of the permission system, not a cosmetic issue. A
 denial that can only say "capability count is 0" hides the difference between
@@ -45,8 +44,9 @@ revoked authority).
 
 ## Invariants
 
-- Explain output MUST be produced by the same evaluator used for enforcement.
-  A parallel re-implementation that can disagree with the engine is forbidden.
+- Explain output MUST be produced by the same provider-backed evaluator used for
+  enforcement. A parallel re-implementation that can disagree with the provider
+  runtime is forbidden.
 - Explain MUST cover both authorization paths: direct agent checks
   (`agentCan`) and delegated turn-scoped contexts (agent, actor, surface, turn
   branches, delegation overrides, role expansion).

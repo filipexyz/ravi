@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { agentCan } from "../permissions/engine.js";
+import { agentCan } from "../permissions/provider-runtime.js";
 import { grantRelation } from "../permissions/relations.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
 import type { AgentConfig } from "../router/index.js";
@@ -14,9 +14,9 @@ import type { TaskRuntimeResolution } from "../tasks/types.js";
 let stateDir: string | null = null;
 let previousTurnScopedAuthority: string | undefined;
 
-const agent: AgentConfig = { id: "rebac-agent", cwd: "/tmp/rebac-agent" };
-const sessionKey = "agent:rebac-agent:whatsapp:group:chat_group_1";
-const sessionName = "rebac-group";
+const agent: AgentConfig = { id: "provider-agent", cwd: "/tmp/provider-agent" };
+const sessionKey = "agent:provider-agent:whatsapp:group:chat_group_1";
+const sessionName = "provider-group";
 
 const runtimeResolution: TaskRuntimeResolution = {
   options: {},
@@ -53,6 +53,17 @@ function contactPrompt(contactId: string): RuntimeLaunchPrompt {
   };
 }
 
+function unknownPrompt(): RuntimeLaunchPrompt {
+  const prompt = contactPrompt("unknown");
+  delete prompt.source!.contactId;
+  delete prompt.context!.contactId;
+  prompt.source!.actorType = "unknown";
+  prompt.context!.actorType = "unknown";
+  prompt.context!.senderId = "";
+  prompt.context!.senderName = "Unknown";
+  return prompt;
+}
+
 function cronPrompt(): RuntimeLaunchPrompt {
   return {
     prompt: "scheduled run",
@@ -72,7 +83,7 @@ function turnContext(prompt: RuntimeLaunchPrompt): ToolContext {
   const { toolContext } = buildRuntimeRequestContext({
     dbSessionKey: sessionKey,
     sessionName,
-    sessionCwd: "/tmp/rebac-agent",
+    sessionCwd: "/tmp/provider-agent",
     agent,
     prompt,
     runtimeProviderId: "codex",
@@ -90,7 +101,7 @@ describe("delegated turn enforcement (end-to-end)", () => {
     process.env.RAVI_TURN_SCOPED_AUTHORITY = "1";
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
-    // Powerful executor agent (superadmin ceiling).
+    // Legacy grant-store superadmin must not leak into provider-runtime turns.
     grantRelation("agent", agent.id, "admin", "system", "*");
   });
 
@@ -104,7 +115,7 @@ describe("delegated turn enforcement (end-to-end)", () => {
     stateDir = null;
   });
 
-  it("allows a trusted actor through the real CLI gate", () => {
+  it("allows a resolved actor through the real CLI gate via bootstrap provider", () => {
     grantRelation("contact", "luis", "execute", "group", "sessions_info");
     const ctx = turnContext(contactPrompt("luis"));
 
@@ -112,48 +123,49 @@ describe("delegated turn enforcement (end-to-end)", () => {
     expect(decision.allowed).toBe(true);
   });
 
-  it("denies an untrusted actor in the same powerful agent session", () => {
-    const ctx = turnContext(contactPrompt("estranho"));
+  it("fails closed for an unresolved actor in the same powerful agent session", () => {
+    const ctx = turnContext(unknownPrompt());
 
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
     expect(decision.allowed).toBe(false);
     expect(decision.errorMessage).toContain("execute on group:sessions_info");
   });
 
-  it("does not leak a trusted actor's authority to the next untrusted speaker", () => {
+  it("does not leak a resolved actor's bootstrap authority to the next unresolved speaker", () => {
     grantRelation("contact", "luis", "use", "tool", "Bash");
 
     const trusted = turnContext(contactPrompt("luis"));
     expect(runWithContext(trusted, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(true);
 
-    // Next turn, same session/surface, different (untrusted) speaker.
-    const untrusted = turnContext(contactPrompt("estranho"));
+    // Next turn, same session/surface, but actor identity resolution failed.
+    const untrusted = turnContext(unknownPrompt());
     expect(runWithContext(untrusted, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(false);
   });
 
-  it("denies a cron automation principal even though the executor agent is superadmin", () => {
+  it("runs cron automation with bootstrap authority but without system admin", () => {
     const ctx = turnContext(cronPrompt());
 
-    expect(runWithContext(ctx, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(false);
-    const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
-    expect(decision.allowed).toBe(false);
-  });
-
-  it("covers a cron automation once its principal is granted a role", () => {
-    grantRelation("automation", "cron:job-1", "member", "role", "ops");
-    grantRelation("role", "ops", "execute", "group", "sessions_info");
-    const ctx = turnContext(cronPrompt());
-
+    expect(runWithContext(ctx, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(true);
+    expect(runWithContext(ctx, () => agentCan(agent.id, "admin", "system", "*"))).toBe(false);
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
     expect(decision.allowed).toBe(true);
   });
 
-  it("lets a surface deny veto an otherwise-trusted actor", () => {
+  it("ignores relation-store role grants for cron automation in default runtime materialization", () => {
+    grantRelation("automation", "cron:job-1", "member", "role", "ops");
+    grantRelation("role", "ops", "access", "session", "restricted");
+    const ctx = turnContext(cronPrompt());
+
+    expect(runWithContext(ctx, () => agentCan(agent.id, "execute", "group", "sessions_info"))).toBe(true);
+    expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
+  });
+
+  it("keeps relation-store surface denies out of default provider-runtime turns", () => {
     grantRelation("contact", "luis", "execute", "group", "sessions_info");
     grantRelation("chat", "chat_group_1", "deny_execute", "group", "sessions_info");
     const ctx = turnContext(contactPrompt("luis"));
 
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
-    expect(decision.allowed).toBe(false);
+    expect(decision.allowed).toBe(true);
   });
 });

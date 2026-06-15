@@ -82,10 +82,10 @@ Initial checks:
 
 - `permissions.command_mutation_unclassified`
 - `permissions.command_mutation_without_permission`
-- `permissions.grant_broad`
-- `permissions.grant_permanent_without_reason`
-- `permissions.grant_orphan_subject`
-- `permissions.grant_orphan_object`
+- `permissions.provider_runtime_default_chain`
+- `permissions.provider_runtime_boundaries`
+- `permissions.local_operator_explicit`
+- `permissions.runtime_bootstrap_scope`
 
 The command registry SHOULD expose explicit metadata for:
 
@@ -99,9 +99,10 @@ Until explicit metadata exists, verb/path heuristics MAY mark commands as
 unclassified `warn` findings. They MUST NOT be reported as unsafe `error`
 solely from a name heuristic.
 
-Permanent grants created before the temporary-grant policy MAY be reported as
-legacy drift, not as security errors, unless they grant broad admin/write access
-to unexpected subjects.
+Legacy relation-ledger drift belongs to migration tooling, not the default
+doctor permissions domain. The default doctor MUST validate the active
+Permission Provider Runtime chain, boundary invariants, explicit local-operator
+semantics, and runtime bootstrap scope.
 
 ## Costs
 

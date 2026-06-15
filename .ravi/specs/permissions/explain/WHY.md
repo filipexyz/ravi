@@ -40,9 +40,10 @@ chose not to look at inactive tuples when explaining a zero branch.
 
 ## Why Same-Evaluator
 
-A hand-written explainer drifts from the engine the first time intersection,
-role expansion, override, or veto semantics change. The only explanation that
-can be trusted is the one computed by the code that enforced the decision.
+A hand-written explainer drifts from the provider runtime the first time
+intersection, role expansion, override, or veto semantics change. The only
+explanation that can be trusted is the one computed by the code that enforced
+the decision.
 
 ## Why Revocation Events Are First-Class
 

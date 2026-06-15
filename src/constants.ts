@@ -4,7 +4,7 @@
 
 /**
  * All built-in Claude SDK tools.
- * Used to compute disallowedTools via REBAC.
+ * Used to compute disallowedTools from context capabilities.
  */
 export const ALL_BUILTIN_TOOLS = [
   // Core tools

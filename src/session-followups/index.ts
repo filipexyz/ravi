@@ -2,6 +2,7 @@ export type {
   SessionFollowupCadence,
   SessionFollowupCadenceInput,
   SessionFollowupCadenceStatus,
+  SessionFollowupCadenceUpdateInput,
   SessionFollowupListInput,
   SessionFollowupRun,
   SessionFollowupRunInput,
@@ -28,6 +29,7 @@ export {
   markSessionFollowupRunSent,
   markSessionFollowupRunSkipped,
   retrySessionFollowupRuns,
+  updateSessionFollowupCadence,
   updateSessionFollowupCadenceState,
   updateSessionFollowupRunResolution,
 } from "./db.js";

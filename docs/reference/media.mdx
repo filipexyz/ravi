@@ -277,16 +277,17 @@ When `--send` is used, Ravi delivers the generated image through `omni send` dir
 
 ## Video Analysis
 
-Analyze videos from YouTube URLs or local files using Google Gemini. Extracts title, summary, topics, full transcript, and timestamped visual descriptions.
+Analyze videos from YouTube URLs or local files. YouTube uses subtitles/captions first via `yt-dlp` for fast transcripts and falls back to Google Gemini when subtitles are unavailable or analysis is forced. Local files use Gemini. Extracts title, duration, transcript, and when Gemini is used, summary, topics, and timestamped visual descriptions.
 
 ### Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `GEMINI_API_KEY` | For Gemini | Google Gemini API key |
 | `GEMINI_VIDEO_MODEL` | No | Override the default model |
 
 The default model is `gemini-2.5-flash`.
+YouTube subtitle extraction requires `yt-dlp` in the runtime environment and does not require `GEMINI_API_KEY` when subtitles are found.
 
 ### CLI Usage
 
@@ -299,6 +300,12 @@ ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -o ./analysis.md
 
 # Custom analysis prompt
 ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -p "Focus on the technical arguments"
+
+# Force Gemini analysis instead of the subtitles-first path
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy gemini
+
+# Require subtitles and fail instead of falling back to Gemini
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy subtitles
 
 # Analyze a local video file
 ravi video analyze /path/to/video.mp4
@@ -329,10 +336,12 @@ The analysis is saved as a markdown file with these sections:
 
 - **Title** -- Video title or auto-generated descriptive title
 - **Duration** -- Estimated duration in MM:SS format
-- **Summary** -- 2-3 paragraph comprehensive summary
-- **Topics** -- Bullet list of main topics covered
+- **Strategy** -- `subtitles` or `gemini`
+- **Summary** -- 2-3 paragraph comprehensive summary when Gemini is used
+- **Topics** -- Bullet list of main topics covered when Gemini is used
 - **Transcript** -- Complete transcription of spoken content with speaker labels
-- **Visual Description** -- Timestamped descriptions of visual content (`[MM:SS-MM:SS]` format)
+- **Chapters** -- YouTube chapters when available
+- **Visual Description** -- Timestamped descriptions of visual content (`[MM:SS-MM:SS]` format) when Gemini is used
 
 The output language matches the video's spoken language.
 

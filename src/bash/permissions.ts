@@ -1,7 +1,7 @@
 /**
  * Bash Permission Reference Lists
  *
- * Default allowlist used by REBAC templates (safe-executables).
+ * Default allowlist used by legacy relation-ledger templates.
  */
 
 // ============================================================================
@@ -9,7 +9,7 @@
 // ============================================================================
 
 /**
- * Safe executables for REBAC template "safe-executables".
+ * Safe executables for the legacy template "safe-executables".
  * These are commonly needed for development and are considered low-risk.
  */
 export function getDefaultAllowlist(): string[] {

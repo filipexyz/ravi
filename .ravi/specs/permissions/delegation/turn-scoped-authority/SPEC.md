@@ -6,20 +6,20 @@ domain: permissions
 capability: delegation
 feature: turn-scoped-authority
 capabilities:
-  - rebac
+  - local-grants
   - runtime-context
   - contacts
   - chats
   - host-services
 tags:
   - permissions
-  - rebac
+  - local-grants
   - delegation
   - contacts
   - runtime
   - tools
 applies_to:
-  - src/permissions/engine.ts
+  - src/permissions/provider-runtime.ts
   - src/permissions/capability-context.ts
   - src/permissions/scope.ts
   - src/runtime/runtime-request-context.ts
@@ -30,7 +30,6 @@ applies_to:
   - src/contacts.ts
   - src/router/router-db.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true
@@ -158,7 +157,7 @@ and intersection artifact, not a second source of truth:
 
 ## Superadmin Boundary
 
-Existing engine behavior that lets live `isAgentSuperadmin(agentId)` win is valid only for internal admin contexts.
+Existing local-grants behavior that lets live `isAgentSuperadmin(agentId)` win is valid only for internal admin contexts.
 
 For user-initiated invocation contexts:
 

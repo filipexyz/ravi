@@ -12,7 +12,7 @@ import {
 
 let stateDir: string | null = null;
 
-describe("REBAC relation lifetime", () => {
+describe("local grant relation lifetime", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-relations-test-");
   });

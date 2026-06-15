@@ -1,7 +1,8 @@
 /**
- * REBAC — Relation Store
+ * Local grants provider — Relation Store
  *
- * CRUD operations for the relations table.
+ * CRUD operations for the relation-backed storage used by the local-grants
+ * provider.
  * Relations represent permissions: (subject) has (relation) on (object).
  *
  * Examples:

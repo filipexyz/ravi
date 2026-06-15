@@ -22,15 +22,10 @@ sdk.returns.missing_public
 sdk.returns.weak_public_new
 permissions.command_mutation_unclassified
 permissions.command_mutation_without_permission
-permissions.grant_broad
-permissions.grant_permanent_without_reason
-permissions.grant_orphan_subject
-permissions.grant_orphan_object
-permissions.rebac_zero_capabilities
-permissions.rebac_revoked_backlog
-permissions.rebac_admin_contexts
-permissions.rebac_context_backlog
-permissions.rebac_automation_uncovered
+permissions.provider_runtime_default_chain
+permissions.provider_runtime_boundaries
+permissions.local_operator_explicit
+permissions.runtime_bootstrap_scope
 costs.pricing_unpriced_usage
 costs.pricing_catalog_stale
 costs.event_incomplete_usage
@@ -69,10 +64,16 @@ channels.inbound_contact_unresolved
 - A new public command without a strong return schema emits
   `sdk.returns.weak_public_new`.
 - A public command with no return schema emits `sdk.returns.missing_public`.
-- A broad permanent grant without reason emits
-  `permissions.grant_permanent_without_reason`.
 - A mutating command without explicit registry metadata emits
   `permissions.command_mutation_unclassified`.
+- Provider runtime default providers emit
+  `permissions.provider_runtime_default_chain`.
+- Provider runtime boundary drift emits
+  `permissions.provider_runtime_boundaries`.
+- Hidden local-operator authorization drift emits
+  `permissions.local_operator_explicit`.
+- Runtime bootstrap actor/surface/admin drift emits
+  `permissions.runtime_bootstrap_scope`.
 
 ## False Positive Guards
 

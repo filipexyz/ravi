@@ -4,7 +4,15 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { SQLQueryBindings } from "bun:sqlite";
 import { checkAppManifests, discoverAppManifests } from "../../apps/service.js";
-import { listRelations, type Relation } from "../../permissions/relations.js";
+import {
+  getConfiguredCapabilityMaterializers,
+  getConfiguredPermissionProviders,
+} from "../../permissions/provider-registry.js";
+import {
+  authorizePermission,
+  localOperatorCan,
+  materializeSubjectCapabilities,
+} from "../../permissions/provider-runtime.js";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
 import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime/types.js";
@@ -147,9 +155,13 @@ type DoctorDeps = {
     },
   ) => RuntimeCompatibilityIssue[];
   listRegisteredRuntimeProviderIds: typeof listRegisteredRuntimeProviderIds;
+  getConfiguredPermissionProviders: typeof getConfiguredPermissionProviders;
+  getConfiguredCapabilityMaterializers: typeof getConfiguredCapabilityMaterializers;
+  authorizePermission: typeof authorizePermission;
+  localOperatorCan: typeof localOperatorCan;
+  materializeSubjectCapabilities: typeof materializeSubjectCapabilities;
   checkAppManifests: typeof checkAppManifests;
   discoverAppManifests: typeof discoverAppManifests;
-  listRelations: typeof listRelations;
   getRegistry: typeof getRegistry;
   currentWeakPublicReturnCommands: typeof currentWeakPublicReturnCommands;
   currentCliOnlyCommands: typeof currentCliOnlyCommands;
@@ -187,9 +199,13 @@ const DEFAULT_DEPS: DoctorDeps = {
   listTaskAutomations,
   getRuntimeCompatibilityIssues,
   listRegisteredRuntimeProviderIds,
+  getConfiguredPermissionProviders,
+  getConfiguredCapabilityMaterializers,
+  authorizePermission,
+  localOperatorCan,
+  materializeSubjectCapabilities,
   checkAppManifests,
   discoverAppManifests,
-  listRelations,
   getRegistry,
   currentWeakPublicReturnCommands,
   currentCliOnlyCommands,
@@ -402,16 +418,12 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildDraftSpecProductionCheck(deps));
   addCheck(checks, () => buildSkillSpecReferenceCheck(deps));
   addCheck(checks, () => buildSdkReturnCoverageCheck(deps));
+  addCheck(checks, () => buildCliCommandAccessCoverageCheck(deps));
   addCheck(checks, () => buildCliMutationMetadataCheck(deps));
-  addCheck(checks, () => buildBroadPermissionGrantCheck(deps));
-  addCheck(checks, () => buildPermanentGrantReasonCheck(deps));
-  addCheck(checks, () => buildPermissionGrantOrphanCheck(deps));
-  addCheck(checks, () => buildRebacZeroCapabilitiesCheck(deps));
-  addCheck(checks, () => buildRebacRevokedBacklogCheck(deps));
-  addCheck(checks, () => buildRebacAdminContextCheck(deps));
-  addCheck(checks, () => buildRebacContextBacklogCheck(deps));
-  addCheck(checks, () => buildRebacAutomationCoverageCheck(deps));
-
+  addCheck(checks, () => buildPermissionProviderRuntimeChainCheck(deps));
+  addCheck(checks, () => buildPermissionProviderRuntimeBoundaryCheck(deps));
+  addCheck(checks, () => buildPermissionLocalOperatorExplicitCheck(deps));
+  addCheck(checks, () => buildPermissionBootstrapScopeCheck(deps));
   const filtered = filterChecksByDomain(checks, options.domain);
   return buildReport(filtered, {
     generatedAt: deps.now().toISOString(),
@@ -1690,10 +1702,36 @@ function buildCliMutationMetadataCheck(deps: DoctorDeps): LegacyDoctorCheck {
   };
 }
 
+function buildCliCommandAccessCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const registry = deps.getRegistry();
+  const publicCommands = registry.commands.filter((command) => !command.cliOnly);
+  const missing = publicCommands
+    .filter((command) => !command.access)
+    .map((command) => command.fullName)
+    .sort((a, b) => a.localeCompare(b));
+  const annotated = publicCommands.length - missing.length;
+
+  return {
+    id: "permissions.command_access.coverage",
+    domain: "permissions",
+    title: "CLI command access coverage",
+    status: "ok",
+    summary: `${annotated}/${publicCommands.length} public command(s) declare @CommandAccess`,
+    details: missing.length > 0 ? limitStrings(missing, 12) : [],
+    data: {
+      publicCommands: publicCommands.length,
+      annotated,
+      missing: missing.length,
+      examples: missing.slice(0, 20),
+    },
+  };
+}
+
 function openMutatingCandidates(registry: RegistrySnapshot): string[] {
   return registry.commands
     .filter((command) => !command.cliOnly)
     .filter((command) => command.scope === "open")
+    .filter((command) => !command.access)
     .filter((command) => isLikelyMutatingCommand(command.fullName))
     .map((command) => command.fullName)
     .sort((a, b) => a.localeCompare(b));
@@ -1704,275 +1742,188 @@ function isLikelyMutatingCommand(fullName: string): boolean {
   return parts.some((part) => MUTATING_VERBS.has(part));
 }
 
-function buildBroadPermissionGrantCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const relations = deps.listRelations();
-  const broad = relations.filter(isBroadRelation);
+function buildPermissionProviderRuntimeChainCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const authorizationProviders = deps.getConfiguredPermissionProviders().map((provider) => provider.id);
+  const capabilityMaterializers = deps.getConfiguredCapabilityMaterializers().map((provider) => provider.id);
+  const expectedAuthorization = ["local-operator", "context-capabilities"];
+  const expectedMaterializers = ["runtime-bootstrap"];
+  const authOk = sameStringList(authorizationProviders, expectedAuthorization);
+  const materializersOk = sameStringList(capabilityMaterializers, expectedMaterializers);
 
-  if (broad.length > 0) {
+  if (!authOk || !materializersOk) {
     return {
-      id: "permissions.grant_broad",
+      id: "permissions.provider_runtime_default_chain",
       domain: "permissions",
-      title: "Broad permission grants",
-      status: "warn",
-      summary: `${broad.length} active broad permission grant(s) exist`,
-      details: limitStrings(broad.map(formatRelation), 12),
-      fixHint: "review whether each broad grant is still needed; prefer scoped temporary grants for new access",
+      title: "Permission provider runtime default chain",
+      status: "fail",
+      severity: "error",
+      summary: "default permission provider chain drifted from the provider-runtime contract",
+      details: [
+        `authorization: ${authorizationProviders.join(", ") || "(none)"}`,
+        `materializers: ${capabilityMaterializers.join(", ") || "(none)"}`,
+      ],
+      fixHint: "restore provider-registry defaults or document the explicit production provider configuration",
       data: {
-        total: relations.length,
-        broad: broad.length,
+        authorizationProviders,
+        capabilityMaterializers,
+        expectedAuthorization,
+        expectedMaterializers,
       },
     };
   }
 
   return {
-    id: "permissions.grant_broad",
+    id: "permissions.provider_runtime_default_chain",
     domain: "permissions",
-    title: "Broad permission grants",
+    title: "Permission provider runtime default chain",
     status: "ok",
-    summary: `${relations.length} active permission grant(s) checked for broad scope`,
-    data: { total: relations.length, broad: 0 },
+    summary: "default authorization and capability materializer chains match the provider-runtime contract",
+    data: {
+      authorizationProviders,
+      capabilityMaterializers,
+    },
   };
 }
 
-function buildPermanentGrantReasonCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const relations = deps.listRelations();
-  const permanentWithoutReason = relations.filter(
-    (relation) => relation.source === "manual" && relation.grantMode === "permanent" && !relation.reason,
-  );
+function buildPermissionProviderRuntimeBoundaryCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const providerRuntimePath = join(deps.cwd(), "src", "permissions", "provider-runtime.ts");
+  const enginePath = join(deps.cwd(), "src", "permissions", "engine.ts");
+  const providerRuntimeSource = deps.exists(providerRuntimePath) ? deps.readFile(providerRuntimePath) : "";
+  const forbiddenImportPattern =
+    /from\s+["']\.\/(?:engine|capability-context|relations|local-grants-provider)(?:\.js)?["']/;
+  const failures: string[] = [];
 
-  if (permanentWithoutReason.length > 0) {
+  if (deps.exists(enginePath)) {
+    failures.push("src/permissions/engine.ts still exists");
+  }
+  if (!providerRuntimeSource) {
+    failures.push("src/permissions/provider-runtime.ts is missing or unreadable");
+  } else if (forbiddenImportPattern.test(providerRuntimeSource)) {
+    failures.push("provider-runtime imports a legacy grant evaluator/store directly");
+  }
+
+  if (failures.length > 0) {
     return {
-      id: "permissions.grant_permanent_without_reason",
+      id: "permissions.provider_runtime_boundaries",
       domain: "permissions",
-      title: "Permanent grants without reason",
-      status: "warn",
-      summary: `${permanentWithoutReason.length} manual permanent grant(s) have no reason`,
-      details: limitStrings(permanentWithoutReason.map(formatRelation), 12),
-      fixHint: "replace new permanent grants with temporary grants or add an explicit reason",
+      title: "Permission provider runtime boundaries",
+      status: "fail",
+      severity: "error",
+      summary: "provider-runtime boundary checks failed",
+      details: failures,
+      fixHint: "keep legacy grant stores behind explicit providers and keep deleted native engines out of source",
+      data: { failures },
+    };
+  }
+
+  return {
+    id: "permissions.provider_runtime_boundaries",
+    domain: "permissions",
+    title: "Permission provider runtime boundaries",
+    status: "ok",
+    summary: "provider-runtime facade is isolated from native engines and legacy grant stores",
+    data: { enginePresent: false },
+  };
+}
+
+function buildPermissionLocalOperatorExplicitCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const implicit = deps.authorizePermission({
+    permission: "admin",
+    objectType: "system",
+    objectId: "*",
+  });
+  const explicitAllowed = deps.localOperatorCan("admin", "system", "*");
+
+  if (implicit.allowed || !explicitAllowed) {
+    return {
+      id: "permissions.local_operator_explicit",
+      domain: "permissions",
+      title: "Explicit local operator authorization",
+      status: "fail",
+      severity: "error",
+      summary: "local operator authorization is not explicit and fail-closed",
+      details: [
+        `implicit no-subject decision: ${implicit.allowed ? "allowed" : "denied"} (${implicit.reasonCode})`,
+        `explicit local operator decision: ${explicitAllowed ? "allowed" : "denied"}`,
+      ],
+      fixHint: "missing subject/context requests must deny; direct local CLI must opt into localOperator explicitly",
       data: {
-        total: relations.length,
-        permanentWithoutReason: permanentWithoutReason.length,
+        implicitAllowed: implicit.allowed,
+        implicitReasonCode: implicit.reasonCode,
+        explicitAllowed,
       },
     };
   }
 
   return {
-    id: "permissions.grant_permanent_without_reason",
+    id: "permissions.local_operator_explicit",
     domain: "permissions",
-    title: "Permanent grants without reason",
+    title: "Explicit local operator authorization",
     status: "ok",
-    summary: `${relations.length} active permission grant(s) checked for permanent manual drift`,
-    data: { total: relations.length, permanentWithoutReason: 0 },
+    summary: "missing subject/context denies unless the caller explicitly requests local operator mode",
+    data: {
+      implicitAllowed: false,
+      explicitAllowed: true,
+    },
   };
 }
 
-function buildPermissionGrantOrphanCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const relations = deps.listRelations();
-  const agentIds = new Set(deps.dbListAgents().map((agent) => agent.id));
-  const orphanAgentSubjects = relations.filter(
-    (relation) => relation.subjectType === "agent" && !agentIds.has(relation.subjectId),
+function buildPermissionBootstrapScopeCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const contactCapabilities = deps.materializeSubjectCapabilities("contact", "doctor-contact");
+  const chatCapabilities = deps.materializeSubjectCapabilities("chat", "doctor-chat");
+  const agentCapabilities = deps.materializeSubjectCapabilities("agent", "doctor-agent");
+  const automationCapabilities = deps.materializeSubjectCapabilities("automation", "doctor-automation");
+  const privilegedBootstrap = [...agentCapabilities, ...automationCapabilities].filter(
+    (capability) =>
+      capability.permission === "admin" ||
+      (capability.objectType === "toolgroup" && capability.permission === "admin") ||
+      (capability.objectType === "group" && capability.permission === "admin"),
   );
-  const orphanAgentObjects = relations.filter(
-    (relation) => relation.objectType === "agent" && !agentIds.has(relation.objectId) && relation.objectId !== "*",
-  );
-  const total = orphanAgentSubjects.length + orphanAgentObjects.length;
+  const failures: string[] = [];
 
-  if (total > 0) {
-    return {
-      id: "permissions.grant_orphan_subject",
-      domain: "permissions",
-      title: "Permission orphan grants",
-      status: "warn",
-      summary: `${total} permission grant(s) reference missing agents`,
-      details: limitStrings([...orphanAgentSubjects, ...orphanAgentObjects].map(formatRelation), 12),
-      fixHint: "recreate the missing agent or revoke the stale grant explicitly",
-      data: {
-        orphanAgentSubjects: orphanAgentSubjects.length,
-        orphanAgentObjects: orphanAgentObjects.length,
-      },
-    };
+  if (contactCapabilities.length > 0)
+    failures.push(`contact bootstrap grants ${contactCapabilities.length} capability`);
+  if (chatCapabilities.length > 0) failures.push(`chat bootstrap grants ${chatCapabilities.length} capability`);
+  if (privilegedBootstrap.length > 0) {
+    failures.push(`bootstrap grants ${privilegedBootstrap.length} admin capability`);
   }
 
-  return {
-    id: "permissions.grant_orphan_subject",
-    domain: "permissions",
-    title: "Permission orphan grants",
-    status: "ok",
-    summary: "agent permission subjects and objects resolve",
-    data: { total: 0 },
-  };
-}
-
-function buildRebacZeroCapabilitiesCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const activeSubjects = new Set(deps.listRelations().map((r) => `${r.subjectType}:${r.subjectId}`));
-  const zeroed = new Set<string>();
-  for (const relation of deps.listRelations({ includeInactive: true })) {
-    const subject = `${relation.subjectType}:${relation.subjectId}`;
-    if (!activeSubjects.has(subject)) zeroed.add(subject);
-  }
-  const subjects = [...zeroed].sort();
-
-  if (subjects.length > 0) {
+  if (failures.length > 0) {
     return {
-      id: "permissions.rebac_zero_capabilities",
+      id: "permissions.runtime_bootstrap_scope",
       domain: "permissions",
-      title: "Subjects zeroed by revocation",
-      status: "warn",
-      summary: `${subjects.length} subject(s) have only inactive grants (zero active capabilities)`,
-      details: limitStrings(subjects, 12),
+      title: "Runtime bootstrap scope",
+      status: "fail",
+      severity: "error",
+      summary: "runtime bootstrap still grants actor/surface or admin authority",
+      details: failures,
       fixHint:
-        "likely a bulk revocation; inspect with 'ravi permissions explain' and restore via 'ravi permissions restore-batch --subject <s>' if unintended",
-      data: { zeroed: subjects.length },
+        "bootstrap may bridge executor operation only; actor/surface and admin authority must come from real providers",
+      data: {
+        contactCapabilities: contactCapabilities.length,
+        chatCapabilities: chatCapabilities.length,
+        privilegedBootstrap: privilegedBootstrap.length,
+      },
     };
   }
 
   return {
-    id: "permissions.rebac_zero_capabilities",
+    id: "permissions.runtime_bootstrap_scope",
     domain: "permissions",
-    title: "Subjects zeroed by revocation",
+    title: "Runtime bootstrap scope",
     status: "ok",
-    summary: "every subject with grants has at least one active capability",
-    data: { zeroed: 0 },
+    summary: "runtime bootstrap does not grant actor/surface or admin authority",
+    data: {
+      contactCapabilities: 0,
+      chatCapabilities: 0,
+      privilegedBootstrap: 0,
+    },
   };
 }
 
-function buildRebacRevokedBacklogCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const revoked = deps.listRelations({ includeInactive: true }).filter((r) => r.revokedAt !== null).length;
-  const status: LegacyDoctorCheckStatus = revoked > 10_000 ? "warn" : "ok";
-
-  return {
-    id: "permissions.rebac_revoked_backlog",
-    domain: "permissions",
-    title: "Revoked relation backlog",
-    status,
-    summary:
-      status === "warn"
-        ? `${revoked} revoked relation(s) retained; consider archival/compaction`
-        : `${revoked} revoked relation(s) retained`,
-    ...(status === "warn"
-      ? {
-          fixHint:
-            "compact with 'ravi permissions prune-revoked --apply --confirm prune-revoked' to shrink the hot relation table",
-        }
-      : {}),
-    data: { revoked },
-  };
-}
-
-function buildRebacAdminContextCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  // contexts.expires_at is epoch MILLIseconds (Date.now()), unlike relations
-  // which use epoch seconds. Compare against unixepoch()*1000 so expired
-  // contexts are excluded.
-  const rows = deps.queryRows<{ count: number }>(
-    `SELECT COUNT(*) as count FROM contexts
-       WHERE revoked_at IS NULL
-         AND (expires_at IS NULL OR expires_at > unixepoch() * 1000)
-         AND capabilities_json LIKE '%"permission":"admin"%'
-         AND capabilities_json LIKE '%"objectType":"system"%'
-         AND capabilities_json LIKE '%"objectId":"*"%'`,
-  );
-  const count = Number(rows[0]?.count ?? 0);
-
-  if (count > 0) {
-    return {
-      id: "permissions.rebac_admin_contexts",
-      domain: "permissions",
-      title: "Active contexts carrying admin system:*",
-      status: "ok",
-      severity: "info",
-      summary: `${count} active runtime context(s) carry admin system:* in their capability snapshot`,
-      fixHint: "verify these are internal/admin contexts; delegated turns must not carry ambient admin",
-      data: { adminContexts: count },
-    };
-  }
-
-  return {
-    id: "permissions.rebac_admin_contexts",
-    domain: "permissions",
-    title: "Active contexts carrying admin system:*",
-    status: "ok",
-    summary: "no active runtime context carries admin system:*",
-    data: { adminContexts: 0 },
-  };
-}
-
-function buildRebacContextBacklogCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  // contexts use epoch milliseconds; inactive = revoked or past expiry.
-  const rows = deps.queryRows<{ count: number }>(
-    `SELECT COUNT(*) as count FROM contexts
-       WHERE revoked_at IS NOT NULL
-          OR (expires_at IS NOT NULL AND expires_at <= unixepoch() * 1000)`,
-  );
-  const inactive = Number(rows[0]?.count ?? 0);
-  const status: LegacyDoctorCheckStatus = inactive > 5000 ? "warn" : "ok";
-
-  return {
-    id: "permissions.rebac_context_backlog",
-    domain: "permissions",
-    title: "Inactive runtime context backlog",
-    status,
-    summary:
-      status === "warn"
-        ? `${inactive} inactive runtime context(s) retained; consider compaction`
-        : `${inactive} inactive runtime context(s) retained`,
-    ...(status === "warn"
-      ? {
-          fixHint:
-            "compact with 'ravi context prune --apply --confirm prune-contexts' to delete revoked/expired contexts",
-        }
-      : {}),
-    data: { inactive },
-  };
-}
-
-function buildRebacAutomationCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const rows = deps.queryRows<{ pid: string }>(
-    `SELECT pid FROM (
-        SELECT 'cron:' || id AS pid FROM cron_jobs
-        UNION ALL
-        SELECT 'trigger:' || id AS pid FROM triggers
-      ) automations
-      WHERE NOT EXISTS (
-        SELECT 1 FROM relations r
-         WHERE r.subject_type = 'automation' AND r.subject_id = automations.pid
-           AND r.relation = 'member' AND r.object_type = 'role'
-           AND r.revoked_at IS NULL AND (r.expires_at IS NULL OR r.expires_at > unixepoch())
-      )`,
-  );
-  const uncovered = rows.map((row) => `automation:${row.pid}`);
-
-  if (uncovered.length > 0) {
-    return {
-      id: "permissions.rebac_automation_uncovered",
-      domain: "permissions",
-      title: "Automations without a role",
-      status: "warn",
-      summary: `${uncovered.length} cron/trigger principal(s) carry no active role and are denied under delegated authority`,
-      details: limitStrings(uncovered, 12),
-      fixHint:
-        "restart the daemon to run reconcileAutomationPrincipals, or grant the automation a role; the executor agent must use roles",
-      data: { uncovered: uncovered.length },
-    };
-  }
-
-  return {
-    id: "permissions.rebac_automation_uncovered",
-    domain: "permissions",
-    title: "Automations without a role",
-    status: "ok",
-    summary: "every cron/trigger principal has an active role",
-    data: { uncovered: 0 },
-  };
-}
-
-function isBroadRelation(relation: Relation): boolean {
-  if (relation.objectId === "*") return true;
-  if (relation.objectId.endsWith("*")) return true;
-  return relation.relation === "admin" && relation.objectType === "system";
-}
-
-function formatRelation(relation: Relation): string {
-  return `${relation.subjectType}:${relation.subjectId} ${relation.relation} ${relation.objectType}:${relation.objectId} (${relation.source}, ${relation.grantMode})`;
+function sameStringList(actual: string[], expected: string[]): boolean {
+  if (actual.length !== expected.length) return false;
+  return actual.every((value, index) => value === expected[index]);
 }
 
 function buildUnexpectedFailureCheck(id: string, title: string, error: unknown): LegacyDoctorCheck {

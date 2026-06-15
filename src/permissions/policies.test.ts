@@ -5,7 +5,7 @@ import { createRuntimeContext, resolveRuntimeContext } from "../runtime/context-
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbDeleteTagBinding, dbEnsureTagBinding } from "../tags/tag-db.js";
 import { getDb } from "../router/router-db.js";
-import { can } from "./engine.js";
+import { canSubjectWithLocalGrants } from "./local-grants-provider.js";
 import {
   applyPermissionPolicies,
   dryRunPermissionPolicies,
@@ -149,7 +149,7 @@ describe("permission policies", () => {
     expect(relation.source).toBe("policy:trusted-contacts-role");
     expect(relation.grantMode).toBe("temporary");
     expect(relation.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
-    expect(can("contact", "luis", "use", "tool", "Bash")).toBe(true);
+    expect(canSubjectWithLocalGrants("contact", "luis", "use", "tool", "Bash")).toBe(true);
   });
 
   it("does not overwrite existing manual grants when a policy wants the same tuple", () => {
@@ -552,7 +552,7 @@ describe("permission policies", () => {
 
     grantRelation("role", "trusted-dev", "use", "tool", "*", "manual");
 
-    expect(can("contact", "luis", "use", "tool", "Read")).toBe(false);
+    expect(canSubjectWithLocalGrants("contact", "luis", "use", "tool", "Read")).toBe(false);
     const inactive = listRelations({
       subjectType: "contact",
       subjectId: "luis",

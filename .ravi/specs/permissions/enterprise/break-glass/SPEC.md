@@ -6,7 +6,7 @@ domain: permissions
 capability: enterprise
 feature: break-glass
 capabilities:
-  - rebac
+  - local-grants
   - operator-identity
   - audit
 tags:
@@ -16,11 +16,10 @@ tags:
   - security
 applies_to:
   - src/permissions/scope.ts
-  - src/permissions/engine.ts
+  - src/permissions/provider-runtime.ts
   - src/cli/commands/permissions.ts
   - src/cli/registry.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true
@@ -30,11 +29,12 @@ normative: true
 
 ## Intent
 
-Today, the absence of an agent principal is treated as full authority:
-`agentCan(undefined, …)` returns `true` and `enforceScopeCheck` allows
-superadmin/admin scopes when `ctx.agentId` is unset (`engine.ts:153`,
-`scope.ts`). This is the legitimate local-operator recovery path — and it is
-also an unauthenticated god-mode bypass that a security review fails on.
+Historically, the absence of an agent principal was treated as full authority:
+`agentCan(undefined, …)` and scope checks could allow privileged paths when
+`ctx.agentId` was unset. That silent local-operator recovery path was an
+unauthenticated god-mode bypass. The provider-runtime baseline now fails closed
+for missing principals; break-glass defines the authenticated replacement for
+operator recovery.
 
 Enterprise break-glass replaces "no principal ⇒ allowed" with an **explicit,
 authenticated operator principal** whose every privileged action is recorded.
@@ -53,8 +53,9 @@ removed.
 ## Invariants
 
 - Absence of an agent principal MUST NOT, by itself, authorize an
-  authority-bearing action. The legacy "no agentId ⇒ allow" path MUST be gated
-  by an authenticated operator principal when enterprise mode is enabled.
+  authority-bearing action. `agentCan(undefined, …)` MUST fail closed in all
+  modes. Local-operator authorization MUST be an explicit provider-runtime
+  request, not an implicit caller branch.
 - A break-glass authorization MUST resolve to a concrete `operator:<id>` or
   `system:<id>` principal. An unauthenticated caller MUST be denied (fail
   closed), not granted.
@@ -72,17 +73,17 @@ removed.
 - Operator privilege MUST be revocable and time-bindable like any other grant;
   a standing all-powerful local operator is a configuration, not the default for
   enterprise mode.
-- A compatibility mode MUST exist for the local single-operator developer
-  workflow (`RAVI_ENTERPRISE_MODE` off ⇒ legacy local-operator bypass), but it
-  MUST be OFF by default for enterprise deployments and its state MUST be
-  visible in `ravi doctor`.
+- A compatibility mode MAY exist for local single-operator development, but it
+  MUST still route through an explicit local-operator provider and MUST be
+  visible in `ravi doctor`. It MUST NOT revive hidden `!agentId` allow branches.
 
 ## Operator Resolution
 
 - The runtime MUST resolve an operator principal from the operator credential
   before treating a no-agent invocation as authorized.
 - Resolution order SHOULD be: explicit operator token/credential → bound OS/admin
-  identity → (compatibility mode only) anonymous local operator.
+  identity → explicit local-operator provider request for development/bootstrap
+  only.
 - An invocation with no resolvable operator and no agent principal MUST be
   denied for authority-bearing actions, while non-authoritative read/help paths
   MAY remain available.
@@ -91,8 +92,9 @@ removed.
 
 ## Enforcement Changes
 
-- `agentCan(undefined, …)` and `enforceScopeCheck` MUST consult the resolved
-  operator principal instead of returning allow purely on missing `agentId`.
+- `agentCan(undefined, …)` MUST return deny. `enforceScopeCheck` and other
+  no-agent gates MUST consult an explicit local-operator/operator path instead
+  of returning allow purely on missing `agentId`.
 - The permission-mutating CLI group (`grant`, `init`, `revoke`, `legacy`,
   `restore-batch`, `prune-revoked`, `clear`) MUST require an authenticated
   operator in enterprise mode and MUST record the operator on each mutation
@@ -112,5 +114,6 @@ removed.
   approval and records operator + reason + blast radius.
 - Traces and `ravi.audit.*` distinguish break-glass (operator) from delegated
   (actor) authority.
-- With enterprise mode off, the legacy local-operator workflow still works and
-  `ravi doctor` reports that the unauthenticated bypass is active.
+- With enterprise mode off, any local-operator workflow still uses explicit
+  local-operator authorization and `ravi doctor` verifies that no implicit
+  no-principal bypass is active.

@@ -1,5 +1,5 @@
 import { nats as runtimeNats } from "../nats.js";
-import { canWithCapabilityContext } from "../permissions/engine.js";
+import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
 import { recordPermissionDenial } from "../permissions/denials.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";

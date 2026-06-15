@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: profiles
 capabilities:
-  - rebac
+  - local-grants
   - roles
   - delegated-authority
   - capability-materialization
@@ -24,7 +24,6 @@ applies_to:
   - src/runtime/context-registry.ts
   - src/omni/consumer.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true
@@ -49,8 +48,8 @@ it has any authorization effect.
 ## Invariants
 
 - Profiles MUST be fail-closed allow lists.
-- Profiles MUST be represented in the REBAC graph or in a capability context
-  derived from the graph.
+- Profiles MUST be represented in provider-owned policy state or in a runtime
+  capability context derived from provider decisions.
 - A profile MUST NOT grant authority unless a concrete principal or surface is
   linked to it by an explicit relation.
 - Profile expansion MUST preserve provenance for every materialized

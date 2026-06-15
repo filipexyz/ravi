@@ -5,7 +5,7 @@ kind: capability
 domain: contacts
 capability: authorization
 capabilities:
-  - rebac
+  - provider-runtime
   - visibility
   - crm
   - identity-graph
@@ -21,7 +21,7 @@ applies_to:
   - src/permissions/scope.ts
   - src/runtime/host-services.ts
 owners:
-  - ravi-rebac
+  - ravi-dev
   - ravi-dev
 status: active
 normative: true
@@ -51,7 +51,7 @@ Contacts are central identity records. They MUST be isolated by default.
 - `read_tagged_contacts system:<tag>` grants read only for contacts carrying
   that tag.
 - `read_contact contact:<id>` grants read only for the concrete contact.
-- Contact policy status is intake/reply policy, not REBAC authorization.
+- Contact policy status is intake/reply policy, not Permission Provider Runtime authorization.
 - Raw platform identities MUST NOT bypass canonical contact authorization.
 - Hidden contacts SHOULD appear missing on lookup.
 

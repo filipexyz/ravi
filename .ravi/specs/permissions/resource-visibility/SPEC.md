@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: resource-visibility
 capabilities:
-  - rebac
+  - local-grants
   - least-privilege
   - discovery
   - enumeration-resistance
@@ -25,7 +25,6 @@ applies_to:
   - src/cli/commands/contacts.ts
   - src/cli/commands/crm.ts
 owners:
-  - ravi-rebac
   - ravi-dev
 status: active
 normative: true

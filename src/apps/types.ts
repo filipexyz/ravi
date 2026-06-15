@@ -1,9 +1,26 @@
 export type RaviAppManifestSource = "repo" | "plugin" | "state";
 
+export type RaviAppPermissionProviderInterface = "builtin" | "cli";
+
+export interface RaviAppPermissionProviderDeclaration {
+  id: string;
+  version: string;
+  interface: RaviAppPermissionProviderInterface;
+  operation: string;
+  decisionSchema: unknown;
+  requestSchema: unknown;
+  timeoutMs?: number;
+  cacheTtlSec?: number;
+  failClosed: true;
+  scope?: string[];
+  [key: string]: unknown;
+}
+
 export interface RaviAppPermissions {
   required: string[];
   optional: string[];
   mutating: string[];
+  provider: RaviAppPermissionProviderDeclaration | null;
 }
 
 export interface RaviAppManifest {
@@ -26,6 +43,22 @@ export interface RaviAppManifest {
 
 export type RaviAppOperationInterface = "builtin" | "cli" | "sdk" | "tool" | "stream";
 
+export type RaviAppOperationAuthorizationOwner = "actor" | "surface" | "executorAgent";
+
+export interface RaviAppOperationAuthorizationDeclaration {
+  resource?: {
+    type?: string;
+    id?: string;
+    idFromArg?: number;
+    idFromOption?: string;
+    ownerFrom?: RaviAppOperationAuthorizationOwner;
+  };
+  input?: {
+    includeArgs?: boolean;
+    includeOptions?: string[];
+  };
+}
+
 export interface RaviAppOperationDeclaration {
   interface: RaviAppOperationInterface;
   handler?: string;
@@ -40,6 +73,7 @@ export interface RaviAppOperationDeclaration {
   permissions?: string[];
   inputSchema?: unknown;
   outputSchema?: unknown;
+  authorization?: RaviAppOperationAuthorizationDeclaration;
   json?: boolean;
   [key: string]: unknown;
 }
@@ -201,6 +235,7 @@ export interface RaviAppRunResult {
   exitCode?: number | null;
   stdout?: string;
   stderr?: string;
+  permissionProvider?: RaviAppPermissionProviderAudit;
 }
 
 export interface RaviAppAliasInvocation {
@@ -208,4 +243,25 @@ export interface RaviAppAliasInvocation {
   operation?: string;
   args: string[];
   json: boolean;
+}
+
+export type RaviAppPermissionDecision = "allow" | "deny" | "needs_grant" | "not_applicable";
+
+export interface RaviAppPermissionProviderAudit {
+  providerId: string;
+  providerVersion: string;
+  providerOperationId: string;
+  interface: RaviAppPermissionProviderInterface;
+  requestId: string;
+  decision: RaviAppPermissionDecision | "error" | "invalid";
+  reasonCode: string | null;
+  reason?: string;
+  durationMs: number;
+  cache: {
+    hit: boolean;
+    ttlSec?: number;
+  };
+  grantSuggestion?: unknown;
+  audit?: unknown;
+  error?: string;
 }

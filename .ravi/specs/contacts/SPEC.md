@@ -52,7 +52,7 @@ Contacts participates in Ravi's channel abstraction boundary: Omni supplies raw 
 - Identity linking MUST be auditable and reversible when the evidence is not absolute.
 - Contact discovery, lookup, timeline, profile, and CRM projections MUST be
   authorized through the contact authorization boundary. Contact policy status
-  MUST NOT be treated as REBAC authority.
+  MUST NOT be treated as Permission Provider Runtime authority.
 
 ## Core Concepts
 

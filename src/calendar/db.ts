@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { executeWrite } from "../db/write-retry.js";
-import { grantRelation } from "../permissions/relations.js";
 import { getDb } from "../router/router-db.js";
 import type {
   AddCalendarMemberInput,
@@ -614,9 +613,6 @@ export function addCalendarMember(input: AddCalendarMemberInput): CalendarMember
         now,
         now,
       );
-      if (input.mirrorToRebac !== false) {
-        mirrorMemberToRebac(input.memberType, input.memberId, input.relation, calendar.id);
-      }
       const row = getMemberRow(id) ?? getMemberByTuple(calendar.id, input.memberType, input.memberId, input.relation);
       if (!row) throw new Error("Failed to add calendar member.");
       return rowToMember(row);
@@ -1248,33 +1244,6 @@ function upsertOwnerMember(calendar: CalendarCalendar, now: number): void {
     `,
     )
     .run(id, calendar.id, calendar.ownerType, calendar.ownerId, now, now);
-  mirrorMemberToRebac(calendar.ownerType, calendar.ownerId, "owner", calendar.id);
-}
-
-function mirrorMemberToRebac(
-  memberType: string,
-  memberId: string,
-  relation: CalendarMemberRelation,
-  calendarId: string,
-): void {
-  if (memberType !== "agent") return;
-  for (const permission of permissionsForRelation(relation)) {
-    grantRelation("agent", memberId, permission, "calendar", calendarId, "calendar");
-  }
-}
-
-function permissionsForRelation(relation: CalendarMemberRelation): string[] {
-  switch (relation) {
-    case "owner":
-    case "manager":
-      return ["read", "search", "free-busy", "write", "respond", "manage"];
-    case "writer":
-      return ["read", "search", "free-busy", "write", "respond"];
-    case "reader":
-      return ["read", "search", "free-busy"];
-    case "free_busy":
-      return ["free-busy"];
-  }
 }
 
 function outboxStatusForAccount(accountId: string): CalendarOutboxStatus {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { grantRelation } from "../permissions/relations.js";
 import type { ScopeContext } from "../permissions/scope.js";
+import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { calendarAccessLevel, canUseAnyCalendar, canUseCalendar, canUseCalendarProvider } from "./access.js";
 import type { CalendarCalendar } from "./types.js";
@@ -23,8 +23,21 @@ function calendar(overrides: Partial<Cal> = {}): Cal {
   } as Cal;
 }
 
-function grant(relation: string, objectType: string, objectId: string) {
-  grantRelation("agent", "dev", relation, objectType, objectId, "manual", { permanent: true });
+function cap(permission: string, objectType: string, objectId: string): ContextCapability {
+  return { permission, objectType, objectId };
+}
+
+function ctxWith(capabilities: ContextCapability[]): ScopeContext {
+  const context: ContextRecord = {
+    contextId: "ctx_calendar_access",
+    contextKey: "ctx_key_calendar_access",
+    kind: "test-runtime",
+    agentId: "dev",
+    capabilities,
+    metadata: {},
+    createdAt: 0,
+  };
+  return { agentId: "dev", context };
 }
 
 describe("calendar access gate", () => {
@@ -64,29 +77,24 @@ describe("calendar access gate", () => {
   });
 
   it("honors a grant on the calendar id, name, or provider id", () => {
-    grant("read", "calendar", "cal-1");
-    expect(canUseCalendar(DEV, "read", calendar())).toBe(true);
-    expect(canUseCalendar(DEV, "write", calendar())).toBe(false);
+    const readCtx = ctxWith([cap("read", "calendar", "cal-1")]);
+    expect(canUseCalendar(readCtx, "read", calendar())).toBe(true);
+    expect(canUseCalendar(readCtx, "write", calendar())).toBe(false);
 
-    grant("write", "calendar", "Work");
-    expect(canUseCalendar(DEV, "write", calendar())).toBe(true);
+    expect(canUseCalendar(ctxWith([cap("write", "calendar", "Work")]), "write", calendar())).toBe(true);
 
-    grant("respond", "calendar", "prov-1");
-    expect(canUseCalendar(DEV, "respond", calendar())).toBe(true);
+    expect(canUseCalendar(ctxWith([cap("respond", "calendar", "prov-1")]), "respond", calendar())).toBe(true);
   });
 
   it("reports free-busy level when only read access exists on another calendar's detail", () => {
-    grant("read", "calendar", "cal-1");
-    expect(calendarAccessLevel(DEV, calendar())).toBe("read");
+    expect(calendarAccessLevel(ctxWith([cap("read", "calendar", "cal-1")]), calendar())).toBe("read");
   });
 
   it("checks any-calendar and provider grants", () => {
     expect(canUseAnyCalendar(DEV, "read")).toBe(false);
-    grant("read", "calendar", "*");
-    expect(canUseAnyCalendar(DEV, "read")).toBe(true);
+    expect(canUseAnyCalendar(ctxWith([cap("read", "calendar", "*")]), "read")).toBe(true);
 
     expect(canUseCalendarProvider(DEV, "sync", "google")).toBe(false);
-    grant("sync", "calendar-provider", "google");
-    expect(canUseCalendarProvider(DEV, "sync", "google")).toBe(true);
+    expect(canUseCalendarProvider(ctxWith([cap("sync", "calendar-provider", "google")]), "sync", "google")).toBe(true);
   });
 });

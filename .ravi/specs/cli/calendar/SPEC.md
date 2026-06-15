@@ -32,7 +32,7 @@ without knowing which remote provider, if any, backs the calendar.
 
 - Every agent-consumed command MUST support `--json`.
 - Commands MUST read and write local SQLite state first.
-- Commands MUST enforce calendar REBAC when running in agent/runtime context.
+- Commands MUST enforce calendar authorization through the Permission Provider Runtime when running in agent/runtime context.
 - Commands MUST NOT print provider tokens, sync tokens, raw provider payloads,
   private descriptions, or private locations for unauthorized requesters.
 - Commands that accept relative times SHOULD normalize output to ISO timestamps
