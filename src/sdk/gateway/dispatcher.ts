@@ -22,6 +22,7 @@
 import { ZodError, type ZodTypeAny, type ZodIssue } from "zod";
 import type { CommandRegistryEntry } from "../../cli/registry-snapshot.js";
 import { runWithContext, type ToolContext } from "../../cli/context.js";
+import { enforceCliCommandAccess } from "../../cli/command-access.js";
 import { enforceScopeCheck } from "../../permissions/scope.js";
 import { emitCliAuditEvent } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
@@ -111,9 +112,25 @@ export async function dispatch(
   }
 
   const startedAt = Date.now();
-  const scopeResult = runWithContext(asToolContext(scopeContext, opts.contextRecord ?? null), () =>
-    enforceScopeCheck(cmd.scope, cmd.groupSegments.join("_"), cmd.command),
+  const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null);
+  const group = cmd.groupSegments.join("_");
+  const accessResult = runWithContext(toolContext, () =>
+    enforceCliCommandAccess({
+      group,
+      command: cmd.command,
+      access: cmd.access,
+      input: validation.inputForAudit,
+      source: "gateway",
+    }),
   );
+  if (!accessResult.allowed) {
+    const response = permissionDenied(accessResult.errorMessage);
+    const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
+    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    return { response, audit: auditEmitted ? audit : null };
+  }
+
+  const scopeResult = runWithContext(toolContext, () => enforceScopeCheck(cmd.scope, group, cmd.command));
   if (!scopeResult.allowed) {
     const response = permissionDenied(scopeResult.errorMessage);
     const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
@@ -127,7 +144,7 @@ export async function dispatch(
 
   try {
     returnValue = await runWithContext(
-      asToolContext(scopeContext, opts.contextRecord ?? null),
+      toolContext,
       () =>
         new Promise<unknown>((resolve, reject) => {
           try {
@@ -372,9 +389,9 @@ function checkReturnShape(schema: ZodTypeAny, value: unknown): JsonIssue[] | nul
 
 function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolContext {
   const ctx: ToolContext = { suppressCliOutput: true };
-  if (scope.agentId) ctx.agentId = scope.agentId;
-  if (scope.sessionKey) ctx.sessionKey = scope.sessionKey;
-  if (scope.sessionName) ctx.sessionName = scope.sessionName;
+  if (scope.agentId ?? record?.agentId) ctx.agentId = scope.agentId ?? record?.agentId;
+  if (scope.sessionKey ?? record?.sessionKey) ctx.sessionKey = scope.sessionKey ?? record?.sessionKey;
+  if (scope.sessionName ?? record?.sessionName) ctx.sessionName = scope.sessionName ?? record?.sessionName;
   if (record) {
     ctx.contextId = record.contextId;
     ctx.context = record;

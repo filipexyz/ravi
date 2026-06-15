@@ -31,7 +31,6 @@ export const WEAK_PUBLIC_RETURN_COMMANDS_BASELINE = [
   "artifacts.event",
   "artifacts.events",
   "artifacts.list",
-  "artifacts.publish",
   "artifacts.release.activate",
   "artifacts.restore",
   "artifacts.show",

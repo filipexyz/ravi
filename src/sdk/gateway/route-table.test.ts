@@ -1,13 +1,14 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 
-import { Arg, CliOnly, Command, Group } from "../../cli/decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group } from "../../cli/decorators.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { buildMetaPayload, buildRouteTable, commandUrlPath } from "./route-table.js";
 
 @Group({ name: "alpha", description: "alpha group", scope: "open" })
 class AlphaCommands {
   @Command({ name: "ping", description: "ping" })
+  @CommandAccess({ kind: "read", resource: "alpha", action: "ping", risk: "low" })
   ping() {
     return { ok: true };
   }
@@ -16,6 +17,7 @@ class AlphaCommands {
 @Group({ name: "alpha.beta", description: "nested alpha", scope: "open" })
 class AlphaBetaCommands {
   @Command({ name: "show", description: "show" })
+  @CommandAccess({ kind: "read", resource: "alpha.beta", action: "show", risk: "low", input: ["id"] })
   show(@Arg("id") id: string) {
     return { id };
   }
@@ -24,6 +26,7 @@ class AlphaBetaCommands {
 @Group({ name: "local", description: "local only", scope: "open" })
 class LocalOnlyCommands {
   @Command({ name: "watch", description: "watch" })
+  @CommandAccess({ kind: "read", resource: "local", action: "watch", risk: "low" })
   @CliOnly()
   watch() {
     return { ok: true };
@@ -33,6 +36,7 @@ class LocalOnlyCommands {
 @Group({ name: "_stream", description: "reserved", scope: "open" })
 class ReservedStreamCommands {
   @Command({ name: "events", description: "reserved events" })
+  @CommandAccess({ kind: "read", resource: "stream", action: "events", risk: "low" })
   events() {
     return { ok: true };
   }
@@ -91,6 +95,7 @@ describe("buildMetaPayload", () => {
     @Group({ name: "tasks", description: "tasks", scope: "open" })
     class GatedTasksCommands {
       @Command({ name: "list", description: "list tasks" })
+      @CommandAccess({ kind: "read", resource: "tasks", action: "list", risk: "low" })
       list() {
         return { ok: true };
       }

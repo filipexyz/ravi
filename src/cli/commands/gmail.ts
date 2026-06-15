@@ -117,6 +117,14 @@ export class GmailCommands {
   }
 
   @Command({ name: "send", description: "Send an email through Gmail" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "gmail",
+    action: "send",
+    risk: "high",
+    input: ["to", "cc", "bcc", "subject", "body", "html", "connector"],
+    redactions: ["body", "html"],
+  })
   @CliOnly()
   async send(
     @Option({ flags: "--to <addr>", description: "Recipient address; repeat or comma-separate for multiple" })

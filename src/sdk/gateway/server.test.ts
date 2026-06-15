@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { z } from "zod";
 
-import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { startGateway, type GatewayHandle } from "./server.js";
 import { ADMIN_BOOTSTRAP_KIND, createRuntimeContext } from "../../runtime/context-registry.js";
@@ -12,6 +12,7 @@ import type { StreamAuditEvent, StreamChannel } from "./streaming/types.js";
 @Group({ name: "demo", description: "Server demo", scope: "open" })
 class ServerDemoCommands {
   @Command({ name: "echo", description: "Echo" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "echo", risk: "low", input: ["name"] })
   @Returns(z.object({ ok: z.literal(true), name: z.string() }))
   echo(@Arg("name") name: string, @Option({ flags: "--shout" }) shout?: boolean) {
     void shout;
@@ -22,6 +23,7 @@ class ServerDemoCommands {
 @Group({ name: "tasks", description: "Server task reads", scope: "open" })
 class ServerTasksCommands {
   @Command({ name: "list", description: "List tasks" })
+  @CommandAccess({ kind: "read", resource: "tasks", action: "list", risk: "low" })
   list() {
     return { ok: true };
   }
@@ -40,6 +42,7 @@ const allowedContext: ContextRecord = {
   agentId: "stream-agent",
   capabilities: [
     { permission: "view", objectType: "system", objectId: "events" },
+    { permission: "execute", objectType: "group", objectId: "demo" },
     { permission: "execute", objectType: "group", objectId: "tasks" },
   ],
   metadata: { authorityMode: "delegated" },
@@ -168,12 +171,27 @@ describe("gateway server — dispatch over HTTP", () => {
   it("POST to a real command returns 200 with the handler payload (flat body)", async () => {
     const res = await fetch(`${handle.url}/api/v1/demo/echo`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${allowedContext.contextKey}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ name: "luis" }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; name: string };
     expect(body).toEqual({ ok: true, name: "luis" });
+  });
+
+  it("POST to a command without runtime context fails closed", async () => {
+    const res = await fetch(`${handle.url}/api/v1/demo/echo`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "luis" }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string; reason: string };
+    expect(body.error).toBe("PermissionDenied");
+    expect(body.reason).toContain("runtime principal");
   });
 
   it("does not enforce runtime skill gates for API routes", async () => {

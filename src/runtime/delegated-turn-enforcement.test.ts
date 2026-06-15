@@ -115,12 +115,13 @@ describe("delegated turn enforcement (end-to-end)", () => {
     stateDir = null;
   });
 
-  it("allows a resolved actor through the real CLI gate via bootstrap provider", () => {
+  it("does not authorize a resolved actor from relation-store grants alone", () => {
     grantRelation("contact", "luis", "execute", "group", "sessions_info");
     const ctx = turnContext(contactPrompt("luis"));
 
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
-    expect(decision.allowed).toBe(true);
+    expect(decision.allowed).toBe(false);
+    expect(decision.errorMessage).toContain("execute on group:sessions_info");
   });
 
   it("fails closed for an unresolved actor in the same powerful agent session", () => {
@@ -131,11 +132,11 @@ describe("delegated turn enforcement (end-to-end)", () => {
     expect(decision.errorMessage).toContain("execute on group:sessions_info");
   });
 
-  it("does not leak a resolved actor's bootstrap authority to the next unresolved speaker", () => {
+  it("does not resolve actor authority from legacy grants or leak it to the next unresolved speaker", () => {
     grantRelation("contact", "luis", "use", "tool", "Bash");
 
     const trusted = turnContext(contactPrompt("luis"));
-    expect(runWithContext(trusted, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(true);
+    expect(runWithContext(trusted, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(false);
 
     // Next turn, same session/surface, but actor identity resolution failed.
     const untrusted = turnContext(unknownPrompt());
@@ -160,12 +161,12 @@ describe("delegated turn enforcement (end-to-end)", () => {
     expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
   });
 
-  it("keeps relation-store surface denies out of default provider-runtime turns", () => {
+  it("keeps relation-store grants and surface denies out of default provider-runtime turns", () => {
     grantRelation("contact", "luis", "execute", "group", "sessions_info");
     grantRelation("chat", "chat_group_1", "deny_execute", "group", "sessions_info");
     const ctx = turnContext(contactPrompt("luis"));
 
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
-    expect(decision.allowed).toBe(true);
+    expect(decision.allowed).toBe(false);
   });
 });

@@ -299,12 +299,13 @@ export interface ScopeContext {
  */
 export function getScopeContext(): ScopeContext {
   const ctx = getContext();
+  const hasToolContext = ctx !== undefined;
   return {
     contextId: ctx?.contextId,
     context: ctx?.context,
-    agentId: ctx?.agentId ?? process.env.RAVI_AGENT_ID,
-    sessionKey: ctx?.sessionKey ?? process.env.RAVI_SESSION_KEY,
-    sessionName: ctx?.sessionName ?? process.env.RAVI_SESSION_NAME,
+    agentId: hasToolContext ? (ctx.agentId ?? ctx.context?.agentId) : process.env.RAVI_AGENT_ID,
+    sessionKey: hasToolContext ? (ctx.sessionKey ?? ctx.context?.sessionKey) : process.env.RAVI_SESSION_KEY,
+    sessionName: hasToolContext ? (ctx.sessionName ?? ctx.context?.sessionName) : process.env.RAVI_SESSION_NAME,
     source: ctx?.source,
   };
 }

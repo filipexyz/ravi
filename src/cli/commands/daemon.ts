@@ -829,6 +829,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "run", description: "Run daemon in foreground (used by PM2)" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "run", risk: "high" })
   @CliOnly()
   async run() {
     const { startDaemon } = await import("../../daemon.js");
@@ -836,6 +837,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "dev", description: "Run daemon in dev mode with auto-rebuild on file changes" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "dev", risk: "high" })
   @CliOnly()
   async dev() {
     const projectRoot = this.requireSourceProjectRoot();

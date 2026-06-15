@@ -1735,12 +1735,12 @@ function buildCliMutationMetadataCheck(deps: DoctorDeps): LegacyDoctorCheck {
 
 function buildCliCommandAccessCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck {
   const registry = deps.getRegistry();
-  const publicCommands = registry.commands.filter((command) => !command.cliOnly);
-  const missing = publicCommands
+  const executableCommands = registry.commands;
+  const missing = executableCommands
     .filter((command) => !command.access)
     .map((command) => command.fullName)
     .sort((a, b) => a.localeCompare(b));
-  const annotated = publicCommands.length - missing.length;
+  const annotated = executableCommands.length - missing.length;
 
   if (missing.length > 0) {
     return {
@@ -1748,11 +1748,13 @@ function buildCliCommandAccessCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck
       domain: "permissions",
       title: "CLI command access coverage",
       status: "fail",
-      summary: `${missing.length} public command(s) lack @CommandAccess`,
+      summary: `${missing.length} executable command(s) lack @CommandAccess`,
       details: limitStrings(missing, 12),
-      fixHint: "add @CommandAccess to every public non-CLI-only command before treating CLI authorization as complete",
+      fixHint: "add @CommandAccess to every CLI command before treating CLI authorization as complete",
       data: {
-        publicCommands: publicCommands.length,
+        executableCommands: executableCommands.length,
+        publicCommands: executableCommands.filter((command) => !command.cliOnly).length,
+        cliOnlyCommands: executableCommands.filter((command) => command.cliOnly).length,
         annotated,
         missing: missing.length,
         examples: missing.slice(0, 20),
@@ -1765,9 +1767,11 @@ function buildCliCommandAccessCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck
     domain: "permissions",
     title: "CLI command access coverage",
     status: "ok",
-    summary: `${annotated}/${publicCommands.length} public command(s) declare @CommandAccess`,
+    summary: `${annotated}/${executableCommands.length} executable command(s) declare @CommandAccess`,
     data: {
-      publicCommands: publicCommands.length,
+      executableCommands: executableCommands.length,
+      publicCommands: executableCommands.filter((command) => !command.cliOnly).length,
+      cliOnlyCommands: executableCommands.filter((command) => command.cliOnly).length,
       annotated,
       missing: 0,
       examples: [],
@@ -1777,7 +1781,6 @@ function buildCliCommandAccessCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck
 
 function openMutatingCandidates(registry: RegistrySnapshot): string[] {
   return registry.commands
-    .filter((command) => !command.cliOnly)
     .filter((command) => command.scope === "open")
     .filter((command) => !command.access)
     .filter((command) => isLikelyMutatingCommand(command.fullName))
@@ -1787,7 +1790,6 @@ function openMutatingCandidates(registry: RegistrySnapshot): string[] {
 
 function readAccessMutatingCandidates(registry: RegistrySnapshot): string[] {
   return registry.commands
-    .filter((command) => !command.cliOnly)
     .filter((command) => command.access?.kind === "read")
     .filter((command) => !READ_COMMAND_ACCESS_MUTATION_ALLOWLIST.has(command.fullName))
     .filter((command) => isLikelyMutatingCommand(command.access?.action ?? command.fullName))

@@ -3654,6 +3654,7 @@ export class SessionCommands {
     name: "debug",
     description: "Tail live runtime events for a session (defaults to current session when available)",
   })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "debug", risk: "low", input: ["nameOrKey"] })
   @CliOnly()
   async debug(
     @Arg("nameOrKey", { description: "Session name or key", required: false }) nameOrKey?: string,

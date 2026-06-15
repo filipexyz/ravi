@@ -31,6 +31,7 @@ export class ConnectorsCommands {
     description: "Connect a new external service via OAuth",
     aliases: ["add", "link"],
   })
+  @CommandAccess({ kind: "mutate", resource: "connectors", action: "connect", risk: "high" })
   @CliOnly()
   async connect(
     @Arg("provider", { description: "Provider id (e.g. google)" }) provider: string,

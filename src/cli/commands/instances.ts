@@ -1224,6 +1224,7 @@ export class InstancesCommands {
   // connect
   // --------------------------------------------------------------------------
   @Command({ name: "connect", description: "Connect an instance to omni (QR code for WhatsApp)" })
+  @CommandAccess({ kind: "mutate", resource: "instances", action: "connect", risk: "high", input: ["name"] })
   @CliOnly()
   async connect(
     @Arg("name", { description: "Instance name" }) name: string,

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ZodTypeAny } from "zod";
 import { Returns } from "../decorators.js";
-import { jsonValueSchema } from "../return-schemas.js";
+import { jsonObjectSchema, jsonValueSchema } from "../return-schemas.js";
 
 export const looseObjectSchema = z.object({}).passthrough();
 export const looseObjectOrNullSchema = looseObjectSchema.nullable();
@@ -333,16 +333,43 @@ export const artifactEventsReturnSchema = z
 
 export const artifactPublishReturnSchema = z
   .object({
-    artifact: z.unknown(),
-    artifactVersion: z.unknown(),
-    publish: z.unknown(),
-    release: z.unknown(),
-    routes: unknownArraySchema,
+    success: z.literal(true),
+    consoleUrl: z.string(),
+    authenticated: z.literal(true),
+    uploadSession: jsonObjectSchema.nullable(),
+    upload: z.object({
+      attempted: z.number(),
+      skipped: z.number(),
+    }),
+    artifact: jsonValueSchema,
+    artifactVersion: jsonValueSchema,
+    site: jsonValueSchema,
+    publish: jsonValueSchema,
+    release: jsonValueSchema,
+    routes: z.array(jsonObjectSchema),
     url: z.string().nullable(),
-    upload: looseObjectSchema,
-    localSync: looseObjectSchema.optional(),
+    localSync: z.union([
+      z.object({
+        status: z.literal("skipped"),
+        reason: z.literal("package_source"),
+      }),
+      z.object({
+        status: z.literal("recorded"),
+        artifactId: z.string(),
+        versionId: z.string(),
+        versionNumber: z.number(),
+        eventType: z.literal("published"),
+      }),
+      z.object({
+        status: z.literal("failed"),
+        artifactId: z.string(),
+        versionId: z.string(),
+        versionNumber: z.number(),
+        error: z.string(),
+      }),
+    ]),
   })
-  .passthrough();
+  .strict();
 
 export const artifactReleaseActivateReturnSchema = z
   .object({

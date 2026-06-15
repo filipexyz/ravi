@@ -14,6 +14,35 @@ export interface PermissionProviderSubject {
   id: string;
 }
 
+export type PermissionProviderCommandAccessKind = "read" | "mutate";
+export type PermissionProviderCommandAccessRisk = "low" | "medium" | "high" | "destructive";
+
+export interface PermissionProviderCommandAccess {
+  kind: PermissionProviderCommandAccessKind;
+  resource: string;
+  action: string;
+  risk: PermissionProviderCommandAccessRisk;
+  requiresContext?: string[];
+  resourceId?: string;
+  input?: string[];
+  redactions?: string[];
+  localOperator?: boolean;
+  requiresConfirmation?: boolean;
+  notes?: string;
+}
+
+export interface PermissionProviderCliCommandOperation {
+  kind: "cli-command";
+  source: "cli" | "tool" | "gateway";
+  group: string;
+  command: string;
+  fullName: string;
+  access: PermissionProviderCommandAccess;
+  input?: Record<string, unknown>;
+}
+
+export type PermissionProviderOperation = PermissionProviderCliCommandOperation;
+
 export interface PermissionProviderCapabilityOptions {
   includeRoles?: boolean;
   includeConstraints?: boolean;
@@ -31,6 +60,7 @@ export interface PermissionProviderRequest {
   subject?: PermissionProviderSubject | null;
   context?: CapabilityContextLike | null;
   capabilities?: ContextCapability[] | null;
+  operation?: PermissionProviderOperation;
   permission: string;
   objectType: string;
   objectId: string;

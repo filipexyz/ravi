@@ -1994,6 +1994,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "watch", description: "Watch task events live" })
+  @CommandAccess({ kind: "read", resource: "tasks", action: "watch", risk: "low", input: ["taskId"] })
   @CliOnly()
   async watch(
     @Arg("taskId", { description: "Task ID (optional)", required: false }) taskId?: string,

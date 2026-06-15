@@ -3,9 +3,9 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runWithContext } from "../context.js";
-import { grantRelation } from "../../permissions/relations.js";
 import { cleanupIsolatedRaviState } from "../../test/ravi-state.js";
 import { AppsCommands } from "./apps.js";
+import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
 
 const tempRoots: string[] = [];
 const tempStateDirs: string[] = [];
@@ -75,6 +75,14 @@ function captureJson(fn: () => unknown): unknown {
   } finally {
     console.log = originalLog;
   }
+}
+
+function contextWithCapabilities(capabilities: ContextCapability[]): ContextRecord {
+  return {
+    kind: "test-runtime",
+    agentId: "app-agent",
+    capabilities,
+  } as ContextRecord;
 }
 
 async function captureJsonAsync(fn: () => Promise<unknown>): Promise<unknown> {
@@ -156,9 +164,11 @@ describe("AppsCommands", () => {
       runWithContext({ agentId: "app-agent" }, () => captureJson(() => commands.show("apps", true))),
     ).toThrow(/App not found: apps/);
 
-    grantRelation("agent", "app-agent", "use", "app", "apps", "test");
+    const appContext = contextWithCapabilities([
+      { permission: "use", objectType: "app", objectId: "apps", source: "test" },
+    ]);
 
-    const visibleList = runWithContext({ agentId: "app-agent" }, () =>
+    const visibleList = runWithContext({ agentId: "app-agent", context: appContext }, () =>
       captureJson(() => commands.list(undefined, true)),
     ) as {
       total: number;
@@ -167,7 +177,7 @@ describe("AppsCommands", () => {
     expect(visibleList.total).toBe(1);
     expect(visibleList.apps.map((app) => app.id)).toEqual(["apps"]);
 
-    const visibleCheck = runWithContext({ agentId: "app-agent" }, () =>
+    const visibleCheck = runWithContext({ agentId: "app-agent", context: appContext }, () =>
       captureJson(() => commands.check(undefined, true)),
     ) as {
       checked: number;

@@ -1,18 +1,20 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { Command as CommanderCommand } from "commander";
-import { Arg, Command, Group, Option } from "./decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "./decorators.js";
 import { registerCommands } from "./registry.js";
 
 @Group({ name: "demo.child", description: "Nested child", scope: "open" })
 class NestedChildCommands {
   @Command({ name: "show", description: "Show child" })
+  @CommandAccess({ kind: "read", resource: "demo.child", action: "show", risk: "low", input: ["id"] })
   show(@Arg("id") _id: string) {}
 }
 
 @Group({ name: "demo", description: "Demo", scope: "open" })
 class DemoCommands {
   @Command({ name: "child", description: "Show child directly" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "child", risk: "low", input: ["id"] })
   child(@Arg("id") _id: string) {}
 }
 
@@ -27,6 +29,7 @@ const capturedNested: CapturedCall[] = [];
 @Group({ name: "shadow", description: "Direct command + nested group with --json", scope: "open" })
 class ShadowDirectCommands {
   @Command({ name: "item", description: "Show item directly" })
+  @CommandAccess({ kind: "read", resource: "shadow", action: "item", risk: "low", input: ["id"] })
   item(@Arg("id") id: string, @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     capturedDirect.push({ id, json: asJson });
   }
@@ -35,6 +38,7 @@ class ShadowDirectCommands {
 @Group({ name: "shadow.item", description: "Nested item operations", scope: "open" })
 class ShadowNestedCommands {
   @Command({ name: "show", description: "Show nested item" })
+  @CommandAccess({ kind: "read", resource: "shadow.item", action: "show", risk: "low", input: ["id"] })
   show(@Arg("id") id: string, @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     capturedNested.push({ id, json: asJson });
   }

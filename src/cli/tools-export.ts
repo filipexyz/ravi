@@ -17,6 +17,7 @@ import {
 import { extractOptionName, inferOptionType } from "./utils.js";
 import { nats } from "../nats.js";
 import { getContext } from "./context.js";
+import { enforceCliCommandAccess } from "./command-access.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
 
@@ -112,6 +113,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           normalizedGroup,
           cmdMeta.name,
           effectiveScope,
+          access,
         ),
         metadata: {
           group: normalizedGroup,
@@ -196,8 +198,23 @@ function buildHandler(
   group: string,
   command: string,
   scope: ScopeType,
+  access: CommandAccessOptions | undefined,
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
+    const accessResult = enforceCliCommandAccess({
+      group,
+      command,
+      access,
+      input: toolArgs,
+      source: "tool",
+    });
+    if (!accessResult.allowed) {
+      return {
+        content: [{ type: "text", text: accessResult.errorMessage }],
+        isError: true,
+      };
+    }
+
     // Scope enforcement (before method execution)
     const scopeResult = enforceScopeCheck(scope, group, command);
     if (!scopeResult.allowed) {

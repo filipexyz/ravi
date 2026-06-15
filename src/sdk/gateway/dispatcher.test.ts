@@ -2,17 +2,17 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
-import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
-import { createRuntimeContext } from "../../runtime/context-registry.js";
-import { createAgent } from "../../router/index.js";
+import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
 
 @Group({ name: "demo", description: "Gateway demo commands", scope: "open" })
 class GatewayDemoCommands {
   @Command({ name: "echo", description: "Echo a name" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "echo", risk: "low", input: ["name", "limit"] })
   @Returns(
     z.object({
       ok: z.literal(true),
@@ -36,28 +36,33 @@ class GatewayDemoCommands {
   }
 
   @Command({ name: "void", description: "Returns nothing" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "void", risk: "low" })
   voidNoop(): void {
     return;
   }
 
   @Command({ name: "context", description: "Inspect gateway tool context" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "context", risk: "low" })
   context() {
     console.log("human CLI output should not leak through the SDK gateway");
     return { suppressCliOutput: getContext()?.suppressCliOutput === true };
   }
 
   @Command({ name: "broken", description: "Returns wrong shape" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "broken", risk: "low" })
   @Returns(z.object({ ok: z.literal(true) }))
   broken() {
     return { ok: false } as unknown as { ok: true };
   }
 
   @Command({ name: "boom", description: "Throws" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "boom", risk: "low" })
   boom() {
     throw new Error("kaboom");
   }
 
   @Command({ name: "blob", description: "Returns raw binary Response" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "blob", risk: "low" })
   @Returns.binary()
   blob() {
     return new Response(new Uint8Array([0xff, 0x00, 0x42]), {
@@ -73,6 +78,7 @@ class GatewayDemoCommands {
     name: "wrong-blob",
     description: "Marked binary but returns plain object",
   })
+  @CommandAccess({ kind: "read", resource: "demo", action: "wrong-blob", risk: "low" })
   @Returns.binary()
   wrongBlob() {
     return { not: "a response" };
@@ -86,6 +92,7 @@ class GatewayDemoCommands {
 })
 class GatewaySuperadminCommands {
   @Command({ name: "ping", description: "Should be hidden by default" })
+  @CommandAccess({ kind: "read", resource: "secret", action: "ping", risk: "low" })
   ping() {
     return { ok: true };
   }
@@ -98,6 +105,7 @@ class GatewaySuperadminCommands {
 })
 class GatewaySessionsCommands {
   @Command({ name: "list", description: "Noisy polling read" })
+  @CommandAccess({ kind: "read", resource: "sessions", action: "list", risk: "low" })
   list() {
     return { ok: true };
   }
@@ -110,11 +118,13 @@ class GatewaySessionsCommands {
 })
 class GatewayTasksCommands {
   @Command({ name: "list", description: "Noisy polling read" })
+  @CommandAccess({ kind: "read", resource: "tasks", action: "list", risk: "low" })
   list() {
     return { ok: true };
   }
 
   @Command({ name: "show", description: "Noisy polling read" })
+  @CommandAccess({ kind: "read", resource: "tasks", action: "show", risk: "low", input: ["taskId"] })
   show(@Arg("taskId", { description: "Task id" }) taskId: string) {
     if (taskId === "boom") throw new Error("task exploded");
     return { taskId };
@@ -128,6 +138,7 @@ class GatewayTasksCommands {
 })
 class GatewayGatedCommands {
   @Command({ name: "ping", description: "Gated ping" })
+  @CommandAccess({ kind: "read", resource: "gated", action: "ping", risk: "low" })
   ping() {
     return { ok: true };
   }
@@ -155,6 +166,31 @@ function captureAudits(): {
   return { events, emit: (e) => events.push(e) };
 }
 
+function gatewayContext(capabilities: ContextCapability[], agentId = "gateway-agent"): ContextRecord {
+  return {
+    contextId: `ctx_${agentId}`,
+    contextKey: `rctx_${agentId}`,
+    kind: "test-runtime",
+    agentId,
+    capabilities,
+    metadata: { authorityMode: "delegated" },
+    createdAt: Date.now(),
+  };
+}
+
+function executeGroup(objectId: string): ContextCapability {
+  return { permission: "execute", objectType: "group", objectId, source: "test" };
+}
+
+function adminSystem(): ContextCapability {
+  return { permission: "admin", objectType: "system", objectId: "*", source: "test" };
+}
+
+const demoContext = gatewayContext([executeGroup("demo")]);
+const sessionsContext = gatewayContext([executeGroup("sessions")]);
+const tasksContext = gatewayContext([executeGroup("tasks")]);
+const secretContext = gatewayContext([executeGroup("secret"), adminSystem()]);
+
 describe("dispatch — body shape (flat-only)", () => {
   it("accepts a flat body with args + options merged at top level", async () => {
     const audits = captureAudits();
@@ -162,7 +198,7 @@ describe("dispatch — body shape (flat-only)", () => {
       findCmd("demo.echo"),
       { name: "rafa", shout: true, limit: "5" },
       {},
-      { emitAudit: audits.emit },
+      { contextRecord: demoContext, emitAudit: audits.emit },
     );
     expect(result.response.status).toBe(200);
     const body = (await result.response.json()) as {
@@ -240,7 +276,12 @@ describe("dispatch — validation", () => {
 
   it("returns 500 ReturnShapeError when handler return shape is wrong", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("demo.broken"), {}, {}, { emitAudit: audits.emit });
+    const result = await dispatch(
+      findCmd("demo.broken"),
+      {},
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
     expect(result.response.status).toBe(500);
     const body = (await result.response.json()) as { error: string };
     expect(body.error).toBe("ReturnShapeError");
@@ -252,7 +293,7 @@ describe("dispatch — validation", () => {
 describe("dispatch — error path", () => {
   it("returns 500 InternalError when handler throws", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("demo.boom"), {}, {}, { emitAudit: audits.emit });
+    const result = await dispatch(findCmd("demo.boom"), {}, {}, { contextRecord: demoContext, emitAudit: audits.emit });
     expect(result.response.status).toBe(500);
     const body = (await result.response.json()) as {
       error: string;
@@ -266,7 +307,7 @@ describe("dispatch — error path", () => {
 
   it("returns 200 with empty object when handler returns undefined and no @Returns", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("demo.void"), {}, {}, { emitAudit: audits.emit });
+    const result = await dispatch(findCmd("demo.void"), {}, {}, { contextRecord: demoContext, emitAudit: audits.emit });
     expect(result.response.status).toBe(200);
     const body = await result.response.json();
     expect(body).toEqual({});
@@ -289,41 +330,46 @@ describe("dispatch — scope and superadmin gating", () => {
     expect(audits.events).toHaveLength(0);
   });
 
-  it("admits superadmin commands when allowSuperadmin is on (anonymous local-host bypass)", async () => {
+  it("admits superadmin commands when allowSuperadmin is on and context has system admin", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("secret.ping"), {}, {}, { allowSuperadmin: true, emitAudit: audits.emit });
+    const result = await dispatch(
+      findCmd("secret.ping"),
+      {},
+      {},
+      {
+        allowSuperadmin: true,
+        contextRecord: secretContext,
+        emitAudit: audits.emit,
+      },
+    );
     expect(result.response.status).toBe(200);
     expect(audits.events).toHaveLength(1);
   });
 
-  it("checks scope before invoking the handler", async () => {
-    const stateDir = await createIsolatedRaviState("gateway-scope-check-");
-    try {
-      createAgent({ id: "locked", cwd: stateDir });
-      const audits = captureAudits();
-      const result = await dispatch(findCmd("gated.ping"), {}, { agentId: "locked" }, { emitAudit: audits.emit });
+  it("denies unauthorized gateway calls before invoking the handler", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("gated.ping"),
+      {},
+      {},
+      { contextRecord: gatewayContext([], "locked"), emitAudit: audits.emit },
+    );
 
-      expect(result.response.status).toBe(403);
-      const body = (await result.response.json()) as {
-        error: string;
-        reason: string;
-      };
-      expect(body.error).toBe("PermissionDenied");
-      expect(body.reason).toContain("requires execute");
-      expect(audits.events).toHaveLength(1);
-      expect(audits.events[0]?.tool).toBe("gated_ping");
-    } finally {
-      await cleanupIsolatedRaviState(stateDir);
-    }
+    expect(result.response.status).toBe(403);
+    const body = (await result.response.json()) as {
+      error: string;
+      reason: string;
+    };
+    expect(body.error).toBe("PermissionDenied");
+    expect(body.reason).toContain("cannot execute");
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.tool).toBe("gated_ping");
   });
 
   it("does not enforce runtime skill gates for API dispatches", async () => {
     const stateDir = await createIsolatedRaviState("gateway-api-no-skill-gate-");
     try {
-      const context = createRuntimeContext({
-        kind: "admin-bootstrap",
-        capabilities: [{ permission: "execute", objectType: "group", objectId: "tasks" }],
-      });
+      const context = gatewayContext([executeGroup("tasks")], "gateway-agent");
 
       const audits = captureAudits();
       const result = await dispatch(findCmd("tasks.list"), {}, {}, { contextRecord: context, emitAudit: audits.emit });
@@ -341,7 +387,7 @@ describe("dispatch — scope and superadmin gating", () => {
 describe("dispatch — audit", () => {
   it("emits exactly one audit per request, with tool=<group>_<command>", async () => {
     const audits = captureAudits();
-    await dispatch(findCmd("demo.echo"), { name: "x" }, {}, { emitAudit: audits.emit });
+    await dispatch(findCmd("demo.echo"), { name: "x" }, {}, { contextRecord: demoContext, emitAudit: audits.emit });
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]?.tool).toBe("demo_echo");
     expect(audits.events[0]?.group).toBe("demo");
@@ -350,7 +396,7 @@ describe("dispatch — audit", () => {
 
   it("emits exactly one audit even on internal error", async () => {
     const audits = captureAudits();
-    await dispatch(findCmd("demo.boom"), {}, {}, { emitAudit: audits.emit });
+    await dispatch(findCmd("demo.boom"), {}, {}, { contextRecord: demoContext, emitAudit: audits.emit });
     expect(audits.events).toHaveLength(1);
   });
 
@@ -362,14 +408,30 @@ describe("dispatch — audit", () => {
 
   it("suppresses successful high-frequency read audits", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("sessions.list"), {}, {}, { emitAudit: audits.emit });
+    const result = await dispatch(
+      findCmd("sessions.list"),
+      {},
+      {},
+      {
+        contextRecord: sessionsContext,
+        emitAudit: audits.emit,
+      },
+    );
     expect(result.audit).toBeNull();
     expect(audits.events).toHaveLength(0);
   });
 
   it("still emits audit when a high-frequency read fails", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("tasks.show"), { taskId: "boom" }, {}, { emitAudit: audits.emit });
+    const result = await dispatch(
+      findCmd("tasks.show"),
+      { taskId: "boom" },
+      {},
+      {
+        contextRecord: tasksContext,
+        emitAudit: audits.emit,
+      },
+    );
     expect(result.response.status).toBe(500);
     expect(result.audit?.tool).toBe("tasks_show");
     expect(audits.events).toHaveLength(1);
@@ -380,7 +442,12 @@ describe("dispatch — audit", () => {
 describe("dispatch — CLI output", () => {
   it("marks gateway command context to suppress human CLI output", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("demo.context"), {}, {}, { emitAudit: audits.emit });
+    const result = await dispatch(
+      findCmd("demo.context"),
+      {},
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
     const body = (await result.response.json()) as {
       suppressCliOutput: boolean;
     };
@@ -391,7 +458,7 @@ describe("dispatch — CLI output", () => {
 describe("dispatch — @Returns.binary() escape hatch", () => {
   it("passes through a raw Response without JSON serialization", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("demo.blob"), {}, {}, { emitAudit: audits.emit });
+    const result = await dispatch(findCmd("demo.blob"), {}, {}, { contextRecord: demoContext, emitAudit: audits.emit });
 
     expect(result.response.status).toBe(200);
     expect(result.response.headers.get("content-type")).toBe("application/octet-stream");
@@ -413,7 +480,15 @@ describe("dispatch — @Returns.binary() escape hatch", () => {
 
   it("rejects handlers marked binary that return non-Response values", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("demo.wrong-blob"), {}, {}, { emitAudit: audits.emit });
+    const result = await dispatch(
+      findCmd("demo.wrong-blob"),
+      {},
+      {},
+      {
+        contextRecord: demoContext,
+        emitAudit: audits.emit,
+      },
+    );
 
     expect(result.response.status).toBe(500);
     const body = (await result.response.json()) as {

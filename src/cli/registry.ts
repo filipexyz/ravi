@@ -8,13 +8,16 @@ import { Command as CommanderCommand } from "commander";
 import {
   getGroupMetadata,
   getCommandsMetadata,
+  getCommandAccessMetadata,
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
+  type CommandAccessOptions,
   type CommandMetadata,
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
+import { enforceCliCommandAccess } from "./command-access.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
 import { emitCliAuditEvent } from "./audit.js";
 import {
@@ -94,10 +97,11 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
 
     // Resolve scope: command-level > group-level > "admin" (fail-secure default)
     const scopeMap = getScopeMetadata(cls);
+    const commandAccessMap = getCommandAccessMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
-      registerCommand(group, instance, cmdMeta, toolGroupName, effectiveScope);
+      registerCommand(group, instance, cmdMeta, toolGroupName, effectiveScope, commandAccessMap.get(cmdMeta.method));
     }
   }
 }
@@ -108,6 +112,7 @@ function registerCommand(
   cmdMeta: CommandMetadata,
   groupName: string,
   scope: ScopeType,
+  access: CommandAccessOptions | undefined,
 ): void {
   // A command can also be an intermediate group when it has nested subcommands:
   // e.g. `ravi crm account <id>` and `ravi crm account create ...`.
@@ -183,6 +188,19 @@ function registerCommand(
           input[optName] = options[optName];
         }
       }
+    }
+
+    const accessResult = enforceCliCommandAccess({
+      group: groupName,
+      command: cmdMeta.name,
+      access,
+      input,
+      source: "cli",
+    });
+    if (!accessResult.allowed) {
+      console.error(accessResult.errorMessage);
+      const { flushAuditAndExit } = await import("../permissions/scope.js");
+      await flushAuditAndExit(1);
     }
 
     // Remote gateway mode: forward the invocation to the configured gateway

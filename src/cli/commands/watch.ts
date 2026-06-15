@@ -315,6 +315,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "run", description: "Run a local watch once (debug)" })
+  @CommandAccess({ kind: "mutate", resource: "watch", action: "run", risk: "high", input: ["id"] })
   @CliOnly()
   run(
     @Arg("id", { description: "Watch id" }) id: string,
