@@ -931,13 +931,35 @@ export type ArtifactsPublishInput = {
 export type ArtifactsPublishReturn = {
   artifact: unknown;
   artifactVersion: unknown;
-  localSync?: Record<string, unknown>;
+  authenticated: true;
+  consoleUrl: string;
+  localSync: ({
+    reason: "package_source";
+    status: "skipped";
+  }) | ({
+    artifactId: string;
+    eventType: "published";
+    status: "recorded";
+    versionId: string;
+    versionNumber: number;
+  }) | ({
+    artifactId: string;
+    error: string;
+    status: "failed";
+    versionId: string;
+    versionNumber: number;
+  });
   publish: unknown;
   release: unknown;
-  routes: unknown[];
-  upload: Record<string, unknown>;
+  routes: Array<Record<string, unknown>>;
+  site: unknown;
+  success: true;
+  upload: {
+    attempted: number;
+    skipped: number;
+  };
+  uploadSession: (Record<string, unknown>) | null;
   url: string | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.release.activate`. */
@@ -6773,6 +6795,7 @@ export type PagesCreateInput = {
 /** Return shape for `pages.create`. */
 export type PagesCreateReturn = {
   consoleUrl: string;
+  contentPublishCommand: string | null;
   projectRef: string;
   site: Record<string, unknown>;
   success: true;
@@ -6825,6 +6848,63 @@ export type PagesListReturn = {
   sites: Array<Record<string, unknown>>;
   success: true;
   total: number;
+};
+
+/** Input shape for `pages.publish`. */
+export type PagesPublishInput = {
+  artifactSlug?: string;
+  artifactVersion?: string;
+  assetBase?: string;
+  basePath?: string;
+  console?: string;
+  description?: string;
+  entrypoint?: string;
+  idempotencyKey?: string;
+  noActivate?: boolean;
+  project: string;
+  reason?: string;
+  replaceRelease?: boolean;
+  route?: string;
+  site: string;
+  source: string;
+  title?: string;
+  uploadSession?: string;
+  visibility?: string;
+};
+
+/** Return shape for `pages.publish`. */
+export type PagesPublishReturn = {
+  artifact: unknown;
+  artifactVersion: unknown;
+  authenticated: true;
+  consoleUrl: string;
+  localSync: ({
+    reason: "package_source";
+    status: "skipped";
+  }) | ({
+    artifactId: string;
+    eventType: "published";
+    status: "recorded";
+    versionId: string;
+    versionNumber: number;
+  }) | ({
+    artifactId: string;
+    error: string;
+    status: "failed";
+    versionId: string;
+    versionNumber: number;
+  });
+  publish: unknown;
+  release: unknown;
+  routes: Array<Record<string, unknown>>;
+  site: unknown;
+  success: true;
+  upload: {
+    attempted: number;
+    skipped: number;
+  };
+  uploadSession: (Record<string, unknown>) | null;
+  url: string | null;
 };
 
 /** Input shape for `pages.update`. */
@@ -8694,6 +8774,60 @@ export type SessionsFollowupsSnoozeInput = {
 
 /** Return shape for `sessions.followups.snooze`. */
 export type SessionsFollowupsSnoozeReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.followups.update`. */
+export type SessionsFollowupsUpdateInput = {
+  barrier?: string;
+  description?: string;
+  id: string;
+  message?: string;
+  name?: string;
+  recalculateNext?: boolean;
+  step?: string[];
+};
+
+/** Return shape for `sessions.followups.update`. */
+export type SessionsFollowupsUpdateReturn = {
+  followup: {
+    createdAt: number;
+    deliveryBarrier: "immediate_interrupt" | "after_tool" | "after_response" | "after_task";
+    description?: string;
+    enabled: boolean;
+    id: string;
+    lastError?: string;
+    lastRunAt?: number;
+    lastRunAtIso: string | null;
+    lastStatus?: "ok" | "skipped" | "failed";
+    messageTemplate: string;
+    metadata?: Record<string, unknown>;
+    name: string;
+    nextRunAt?: number;
+    nextRunAtIso: string | null;
+    ownerId: string;
+    ownerType: string;
+    schedule: {
+      at?: number;
+      cron?: string;
+      every?: number;
+      steps?: Array<{
+        afterMs: number;
+        label?: string;
+        messageTemplate: string;
+      }>;
+      timezone?: string;
+      type: "every" | "at" | "cron";
+    };
+    scheduleDescription: string;
+    steps?: Array<{
+      afterMs: number;
+      label?: string;
+      messageTemplate: string;
+    }>;
+    targetRef: string;
+    targetType: "session" | "chat" | "reading_list";
+    updatedAt: number;
+  };
+};
 
 /** Input shape for `sessions.goal`. */
 export type SessionsGoalInput = {

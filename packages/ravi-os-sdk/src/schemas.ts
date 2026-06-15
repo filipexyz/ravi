@@ -4624,7 +4624,7 @@ export const ArtifactsPublishInputSchema = {
       "type": "string"
     },
     "target": {
-      "description": "Local artifact id, file, or directory",
+      "description": "Local artifact id, file, or directory; use a directory with index.html for Pages",
       "type": "string"
     },
     "uploadSession": {
@@ -4644,25 +4644,195 @@ export const ArtifactsPublishInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.publish`. */
 export const ArtifactsPublishReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "artifact": {},
-    "artifactVersion": {},
-    "localSync": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
+    "artifact": {
+      "$ref": "#/$defs/__schema0"
     },
-    "publish": {},
-    "release": {},
+    "artifactVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "authenticated": {
+      "const": true,
+      "type": "boolean"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "localSync": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "const": "package_source",
+              "type": "string"
+            },
+            "status": {
+              "const": "skipped",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "type": "string"
+            },
+            "eventType": {
+              "const": "published",
+              "type": "string"
+            },
+            "status": {
+              "const": "recorded",
+              "type": "string"
+            },
+            "versionId": {
+              "type": "string"
+            },
+            "versionNumber": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "artifactId",
+            "versionId",
+            "versionNumber",
+            "eventType"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "status": {
+              "const": "failed",
+              "type": "string"
+            },
+            "versionId": {
+              "type": "string"
+            },
+            "versionNumber": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "artifactId",
+            "versionId",
+            "versionNumber",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "publish": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "release": {
+      "$ref": "#/$defs/__schema0"
+    },
     "routes": {
-      "items": {},
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
       "type": "array"
     },
+    "site": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
     "upload": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "number"
+        },
+        "skipped": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "attempted",
+        "skipped"
+      ],
       "type": "object"
+    },
+    "uploadSession": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "url": {
       "anyOf": [
@@ -4676,13 +4846,19 @@ export const ArtifactsPublishReturnSchema = {
     }
   },
   "required": [
+    "success",
+    "consoleUrl",
+    "authenticated",
+    "uploadSession",
+    "upload",
     "artifact",
     "artifactVersion",
+    "site",
     "publish",
     "release",
     "routes",
     "url",
-    "upload"
+    "localSync"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -33171,6 +33347,16 @@ export const PagesCreateReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "contentPublishCommand": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "projectRef": {
       "type": "string"
     },
@@ -33200,6 +33386,7 @@ export const PagesCreateReturnSchema = {
   },
   "required": [
     "success",
+    "contentPublishCommand",
     "consoleUrl",
     "projectRef",
     "site",
@@ -33503,6 +33690,313 @@ export const PagesListReturnSchema = {
     "pagination",
     "sites",
     "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pages.publish`. */
+export const PagesPublishInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifactSlug": {
+      "description": "Published artifact slug",
+      "type": "string"
+    },
+    "artifactVersion": {
+      "description": "Local artifact version number (default: latest)",
+      "type": "string"
+    },
+    "assetBase": {
+      "description": "Package asset base intent",
+      "type": "string"
+    },
+    "basePath": {
+      "description": "Package base path intent",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "description": {
+      "description": "Published artifact description",
+      "type": "string"
+    },
+    "entrypoint": {
+      "description": "Package entrypoint path, usually index.html",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for Console retries",
+      "type": "string"
+    },
+    "noActivate": {
+      "default": true,
+      "description": "Create publish records without activating a site release",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Release reason sent to Console",
+      "type": "string"
+    },
+    "replaceRelease": {
+      "description": "Replace the full active route map instead of merging",
+      "type": "boolean"
+    },
+    "route": {
+      "description": "Pages route path to mount content at (default: /)",
+      "type": "string"
+    },
+    "site": {
+      "description": "Pages site id or slug",
+      "type": "string"
+    },
+    "source": {
+      "description": "Local directory, file, or artifact id to publish",
+      "type": "string"
+    },
+    "title": {
+      "description": "Published artifact title",
+      "type": "string"
+    },
+    "uploadSession": {
+      "description": "Use an existing Console upload session",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "Pages visibility: private|protected_link|public",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project",
+    "site",
+    "source"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.publish`. */
+export const PagesPublishReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "artifactVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "authenticated": {
+      "const": true,
+      "type": "boolean"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "localSync": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "const": "package_source",
+              "type": "string"
+            },
+            "status": {
+              "const": "skipped",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "type": "string"
+            },
+            "eventType": {
+              "const": "published",
+              "type": "string"
+            },
+            "status": {
+              "const": "recorded",
+              "type": "string"
+            },
+            "versionId": {
+              "type": "string"
+            },
+            "versionNumber": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "artifactId",
+            "versionId",
+            "versionNumber",
+            "eventType"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "status": {
+              "const": "failed",
+              "type": "string"
+            },
+            "versionId": {
+              "type": "string"
+            },
+            "versionNumber": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "artifactId",
+            "versionId",
+            "versionNumber",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "publish": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "release": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "routes": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "site": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "upload": {
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "number"
+        },
+        "skipped": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "attempted",
+        "skipped"
+      ],
+      "type": "object"
+    },
+    "uploadSession": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "authenticated",
+    "uploadSession",
+    "upload",
+    "artifact",
+    "artifactVersion",
+    "site",
+    "publish",
+    "release",
+    "routes",
+    "url",
+    "localSync"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -40360,6 +40854,288 @@ export const SessionsFollowupsSnoozeInputSchema = {
 export const SessionsFollowupsSnoozeReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.followups.update`. */
+export const SessionsFollowupsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "barrier": {
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
+      "type": "string"
+    },
+    "description": {
+      "description": "Update description; pass empty string to clear",
+      "type": "string"
+    },
+    "id": {
+      "description": "Followup cadence id",
+      "type": "string"
+    },
+    "message": {
+      "description": "Update default followup message template",
+      "type": "string"
+    },
+    "name": {
+      "description": "Update cadence name",
+      "type": "string"
+    },
+    "recalculateNext": {
+      "description": "Recalculate next run from the updated schedule",
+      "type": "boolean"
+    },
+    "step": {
+      "description": "Replace idle followup steps; repeat or quote, e.g. --step '2h=First' --step '3h=Second'",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.update`. */
+export const SessionsFollowupsUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "followup": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "deliveryBarrier": {
+          "enum": [
+            "immediate_interrupt",
+            "after_tool",
+            "after_response",
+            "after_task"
+          ],
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastError": {
+          "type": "string"
+        },
+        "lastRunAt": {
+          "type": "number"
+        },
+        "lastRunAtIso": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastStatus": {
+          "enum": [
+            "ok",
+            "skipped",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "messageTemplate": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nextRunAt": {
+          "type": "number"
+        },
+        "nextRunAtIso": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "schedule": {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "type": "number"
+            },
+            "cron": {
+              "type": "string"
+            },
+            "every": {
+              "type": "number"
+            },
+            "steps": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "afterMs": {
+                    "type": "number"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "messageTemplate": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "afterMs",
+                  "messageTemplate"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "timezone": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "every",
+                "at",
+                "cron"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        "scheduleDescription": {
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "afterMs": {
+                "type": "number"
+              },
+              "label": {
+                "type": "string"
+              },
+              "messageTemplate": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "afterMs",
+              "messageTemplate"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "targetRef": {
+          "type": "string"
+        },
+        "targetType": {
+          "enum": [
+            "session",
+            "chat",
+            "reading_list"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "enabled",
+        "ownerType",
+        "ownerId",
+        "targetType",
+        "targetRef",
+        "schedule",
+        "deliveryBarrier",
+        "messageTemplate",
+        "createdAt",
+        "updatedAt",
+        "scheduleDescription",
+        "nextRunAtIso",
+        "lastRunAtIso"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "followup"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

@@ -8,7 +8,7 @@
  *   - 2xx JSON response surfaced unchanged to the caller
  *   - 4xx ValidationError mapped through `errors.ts`
  *
- * `artifacts.show` is the open-route piloto and matches the existing gateway
+ * `artifacts.show` is the gateway piloto and matches the existing gateway
  * smoke test, so any drift here also bubbles in the gateway test.
  */
 
@@ -23,6 +23,7 @@ import {
   createIsolatedRaviState,
   RAVI_RUNTIME_CONTEXT_ENV_KEYS,
 } from "../../src/test/ravi-state.js";
+import type { ContextRecord } from "../../src/router/router-db.js";
 import { startGateway, type GatewayHandle } from "../../src/sdk/gateway/server.js";
 
 import { RaviClient } from "../../packages/ravi-os-sdk/src/index.js";
@@ -30,6 +31,15 @@ import { createHttpTransport } from "../../packages/ravi-os-sdk/src/transport/ht
 import { RaviValidationError } from "../../packages/ravi-os-sdk/src/errors.js";
 
 const registry = buildRegistry([ArtifactsCommands]);
+const allowedContext: ContextRecord = {
+  contextId: "ctx_sdk_roundtrip",
+  contextKey: "rctx_sdk_roundtrip",
+  kind: "test-runtime",
+  agentId: "sdk-roundtrip-agent",
+  capabilities: [{ permission: "execute", objectType: "group", objectId: "artifacts", source: "test" }],
+  metadata: { authorityMode: "delegated" },
+  createdAt: Date.now(),
+};
 
 let stateDir: string | null = null;
 let handle: GatewayHandle | null = null;
@@ -38,7 +48,16 @@ const originalRuntimeContextEnv = new Map(RAVI_RUNTIME_CONTEXT_ENV_KEYS.map((key
 beforeEach(async () => {
   for (const key of RAVI_RUNTIME_CONTEXT_ENV_KEYS) delete process.env[key];
   stateDir = await createIsolatedRaviState("ravi-sdk-roundtrip-");
-  handle = startGateway({ host: "127.0.0.1", port: 0, registry });
+  handle = startGateway({
+    host: "127.0.0.1",
+    port: 0,
+    registry,
+    auth: {
+      resolveContext(token) {
+        return token === allowedContext.contextKey ? { ...allowedContext } : null;
+      },
+    },
+  });
 });
 
 afterEach(async () => {
@@ -58,13 +77,13 @@ afterEach(async () => {
 function buildClient(): RaviClient {
   const transport = createHttpTransport({
     baseUrl: handle!.url,
-    contextKey: "rctx_test_open_route",
+    contextKey: allowedContext.contextKey,
   });
   return new RaviClient(transport);
 }
 
 describe("SDK round-trip — RaviClient over http transport", () => {
-  it("artifacts.show returns the artifact payload (open route, no auth required)", async () => {
+  it("artifacts.show returns the artifact payload with an authorized runtime context", async () => {
     const artifact = createArtifact({
       kind: "report",
       title: "SDK round-trip smoke",
@@ -92,7 +111,7 @@ describe("SDK round-trip — RaviClient over http transport", () => {
     // error mapping lives, and that's what we're verifying.
     const transport = createHttpTransport({
       baseUrl: handle!.url,
-      contextKey: "rctx_test_open_route",
+      contextKey: allowedContext.contextKey,
     });
     let caught: unknown;
     try {
