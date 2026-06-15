@@ -974,6 +974,8 @@ export class GroupCommands {
       text: cleanMessage,
       explicitTargets: mentionTargets,
       participants: metadata?.participants,
+      autoResolvePhoneNumbers: true,
+      placeholderMode: "native",
     });
 
     const sender = new OmniSender(connection.apiUrl, connection.apiKey);

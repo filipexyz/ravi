@@ -293,6 +293,8 @@ export class Gateway {
     const prepared = prepareOmniMentionMessage({
       text: input.text,
       participants: metadata?.participants,
+      autoResolvePhoneNumbers: true,
+      placeholderMode: "native",
     });
 
     return {

@@ -506,7 +506,7 @@ describe("Gateway session trace instrumentation", () => {
         gateway,
         sessionName,
         makeResponse({
-          response: "oi @Luis @RaviBot @Luisalgo @12345678901234",
+          response: "oi @Luis @RaviBot @Luisalgo @12345",
           target: {
             channel: "whatsapp-baileys",
             accountId: "main",
@@ -518,12 +518,117 @@ describe("Gateway session trace instrumentation", () => {
 
       expect(send).toHaveBeenCalledTimes(1);
       const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
-      expect(text).toBe("oi @Luís Filipe @Ravi Bot @Luisalgo @12345678901234");
+      expect(text).toBe("oi @5511947879044 @91015272759397 @Luisalgo @12345");
       expect(options).toMatchObject({
         mentions: expect.arrayContaining([
           { id: "5511947879044@s.whatsapp.net", type: "user" },
           { id: "91015272759397@lid", type: "user" },
         ]),
+      });
+    } finally {
+      if (oldApiUrl === undefined) delete process.env.OMNI_API_URL;
+      else process.env.OMNI_API_URL = oldApiUrl;
+      if (oldApiKey === undefined) delete process.env.OMNI_API_KEY;
+      else process.env.OMNI_API_KEY = oldApiKey;
+    }
+  });
+
+  it("uses native LID mentions for inline phone placeholders when group metadata maps phone to LID", async () => {
+    const oldApiUrl = process.env.OMNI_API_URL;
+    const oldApiKey = process.env.OMNI_API_KEY;
+    process.env.OMNI_API_URL = "http://omni.local";
+    process.env.OMNI_API_KEY = "test-key";
+
+    try {
+      const { sessionName } = seedSession();
+      const groupJid = "120363000000000002@g.us";
+      upsertOmniGroupMetadata({
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: groupJid,
+        channel: "whatsapp",
+        name: "Ravi - Dev",
+        participants: [
+          {
+            platformUserId: "178035101794451",
+            normalizedPlatformUserId: "5511947879044",
+            mentionUserId: "5511947879044@s.whatsapp.net",
+            displayName: "Luís Filipe",
+          },
+        ],
+        fetchedAt: Date.now(),
+      });
+      const send = mock(async (..._args: Parameters<GatewaySend>) => ({ messageId: "outbound-lid-mention" }));
+      const gateway = makeGateway(send);
+
+      await handleResponse(
+        gateway,
+        sessionName,
+        makeResponse({
+          response: "@5511947879044, testa agora",
+          target: {
+            channel: "whatsapp-baileys",
+            accountId: "main",
+            chatId: groupJid,
+            sourceMessageId: "inbound-group-lid-mention",
+          },
+        }),
+      );
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
+      expect(text).toBe("@178035101794451, testa agora");
+      expect(options).toMatchObject({
+        mentions: [{ id: "178035101794451@lid", type: "user" }],
+      });
+    } finally {
+      if (oldApiUrl === undefined) delete process.env.OMNI_API_URL;
+      else process.env.OMNI_API_URL = oldApiUrl;
+      if (oldApiKey === undefined) delete process.env.OMNI_API_KEY;
+      else process.env.OMNI_API_KEY = oldApiKey;
+    }
+  });
+
+  it("falls back to native WhatsApp mention metadata for inline phone placeholders", async () => {
+    const oldApiUrl = process.env.OMNI_API_URL;
+    const oldApiKey = process.env.OMNI_API_KEY;
+    process.env.OMNI_API_URL = "http://omni.local";
+    process.env.OMNI_API_KEY = "test-key";
+
+    try {
+      const { sessionName } = seedSession();
+      const groupJid = "120363000000000001@g.us";
+      upsertOmniGroupMetadata({
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: groupJid,
+        channel: "whatsapp",
+        name: "Ravi - Dev",
+        participants: [],
+        fetchedAt: Date.now(),
+      });
+      const send = mock(async (..._args: Parameters<GatewaySend>) => ({ messageId: "outbound-phone-mention" }));
+      const gateway = makeGateway(send);
+
+      await handleResponse(
+        gateway,
+        sessionName,
+        makeResponse({
+          response: "@5511947879044, cola isso no terminal pra ver:",
+          target: {
+            channel: "whatsapp-baileys",
+            accountId: "main",
+            chatId: groupJid,
+            sourceMessageId: "inbound-group-phone-mention",
+          },
+        }),
+      );
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
+      expect(text).toBe("@5511947879044, cola isso no terminal pra ver:");
+      expect(options).toMatchObject({
+        mentions: [{ id: "5511947879044@s.whatsapp.net", type: "user" }],
       });
     } finally {
       if (oldApiUrl === undefined) delete process.env.OMNI_API_URL;
