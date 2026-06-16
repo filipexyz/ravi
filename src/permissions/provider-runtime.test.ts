@@ -250,7 +250,10 @@ describe("Permission Provider Runtime boundaries", () => {
       "local-operator",
       "context-capabilities",
     ]);
-    expect(getConfiguredCapabilityMaterializers().map((provider) => provider.id)).toEqual(["runtime-bootstrap"]);
+    expect(getConfiguredCapabilityMaterializers().map((provider) => provider.id)).toEqual([
+      "runtime-bootstrap",
+      "local-grants",
+    ]);
   });
 
   it("keeps production authorization callers off direct grant engines and stores", () => {

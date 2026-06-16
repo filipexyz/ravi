@@ -1806,7 +1806,7 @@ function buildPermissionProviderRuntimeChainCheck(deps: DoctorDeps): LegacyDocto
   const authorizationProviders = deps.getConfiguredPermissionProviders().map((provider) => provider.id);
   const capabilityMaterializers = deps.getConfiguredCapabilityMaterializers().map((provider) => provider.id);
   const expectedAuthorization = ["local-operator", "context-capabilities"];
-  const expectedMaterializers = ["runtime-bootstrap"];
+  const expectedMaterializers = ["runtime-bootstrap", "local-grants"];
   const authOk = sameStringList(authorizationProviders, expectedAuthorization);
   const materializersOk = sameStringList(capabilityMaterializers, expectedMaterializers);
 
