@@ -193,7 +193,7 @@ describe("createBashPermissionHook", () => {
       expect(decision.allowed).toBe(true);
     });
 
-    it("does not honor relation-store executable grants added after a stale context was issued", () => {
+    it("honors relation-store executable grants via the materializer even on stale contexts", () => {
       const decision = evaluateBashPermission("python3 --version", {
         agentId: "dev",
         kind: "agent-runtime",
@@ -210,7 +210,7 @@ describe("createBashPermissionHook", () => {
         capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
       });
 
-      expect(liveGrantDecision.allowed).toBe(false);
+      expect(liveGrantDecision.allowed).toBe(true);
     });
   });
 
@@ -343,15 +343,15 @@ describe("createToolPermissionHook", () => {
     expect(isDenied(await callToolHook("Write", "main", context))).toBe(false);
   });
 
-  it("does not expand scoped contexts from relation-store superadmin grants", async () => {
+  it("expands scoped contexts via relation-store superadmin grants surfaced by the materializer", async () => {
     const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Read" }]);
 
     expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
 
     grant("agent", "dev", "admin", "system", "*");
 
-    expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
+    expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(false);
     expect(isDenied(await callToolHook("Read", "dev", context))).toBe(false);
-    expect(isDenied(await callToolHook("Write", "dev", context))).toBe(true);
+    expect(isDenied(await callToolHook("Write", "dev", context))).toBe(false);
   });
 });
