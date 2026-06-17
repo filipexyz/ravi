@@ -68,6 +68,7 @@ function parseHoursRange(range: string): { start: number; end: number } | null {
 interface TzParts {
   hour: number;
   weekdayIndex: number;
+  invalidTz?: boolean;
 }
 
 function getZonedParts(date: Date, timezone: string): TzParts {
@@ -88,13 +89,21 @@ function getZonedParts(date: Date, timezone: string): TzParts {
       weekdayIndex,
     };
   } catch {
-    // Invalid timezone — return UTC parts as fallback (caller will surface
-    // the error via reason but engine should not throw).
+    // Invalid timezone — fall back to UTC but mark for caller to surface a
+    // distinct reason (review m2). Engine still never throws.
     return {
       hour: date.getUTCHours(),
       weekdayIndex: date.getUTCDay(),
+      invalidTz: true,
     };
   }
+}
+
+function hourInRange(hour: number, start: number, end: number): boolean {
+  // Supports midnight-wrap windows like 22-6 (10pm-6am) by treating end<=start
+  // as "[start..24) ∪ [0..end)" (review M3 midnight-wrap).
+  if (end > start) return hour >= start && hour < end;
+  return hour >= start || hour < end;
 }
 
 /**
@@ -134,8 +143,17 @@ export function evaluateSendWindow(
   const allowedDays = window.days ? parseDaysRange(window.days) : null;
   const parts = getZonedParts(evaluatedAt, timezone);
 
+  if (parts.invalidTz) {
+    return {
+      allowed: true,
+      reason: "invalid_timezone_failopen",
+      evaluatedAtIso: evaluatedAt.toISOString(),
+      timezone,
+    };
+  }
+
   const dayOk = allowedDays === null || allowedDays.has(parts.weekdayIndex);
-  const hourOk = parts.hour >= hours.start && parts.hour < hours.end;
+  const hourOk = hourInRange(parts.hour, hours.start, hours.end);
 
   if (dayOk && hourOk) {
     return {
@@ -150,8 +168,9 @@ export function evaluateSendWindow(
   for (let bump = 1; bump <= 24 * 7; bump++) {
     const candidate = new Date(evaluatedAt.getTime() + bump * 60 * 60 * 1000);
     const cParts = getZonedParts(candidate, timezone);
+    if (cParts.invalidTz) break;
     const cDayOk = allowedDays === null || allowedDays.has(cParts.weekdayIndex);
-    const cHourOk = cParts.hour >= hours.start && cParts.hour < hours.end;
+    const cHourOk = hourInRange(cParts.hour, hours.start, hours.end);
     if (cDayOk && cHourOk) {
       return {
         allowed: false,

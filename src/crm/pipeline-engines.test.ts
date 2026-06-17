@@ -55,6 +55,36 @@ describe("evaluateSendWindow", () => {
     const result = evaluateSendWindow({ hours: "9-21", days: "wed", timezone: "America/Sao_Paulo" }, at);
     expect(result.allowed).toBe(true);
   });
+
+  test("midnight wrap (22-6) treats 02:00 as within window", () => {
+    // 2026-06-17T05:00:00Z = 02:00 BRT (Tue). 22-6 wraps midnight.
+    const at = new Date("2026-06-17T05:00:00Z");
+    const result = evaluateSendWindow({ hours: "22-6", timezone: "America/Sao_Paulo" }, at);
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toBe("within_window");
+  });
+
+  test("midnight wrap (22-6) treats 12:00 as outside window", () => {
+    // 2026-06-17T15:00:00Z = 12:00 BRT (Wed) — outside 22-6 wrap.
+    const at = new Date("2026-06-17T15:00:00Z");
+    const result = evaluateSendWindow({ hours: "22-6", timezone: "America/Sao_Paulo" }, at);
+    expect(result.allowed).toBe(false);
+    expect(result.releaseAtIso).toBeTruthy();
+  });
+
+  test("invalid timezone string = fail-open with distinct reason", () => {
+    const at = new Date("2026-06-17T15:00:00Z");
+    const result = evaluateSendWindow({ hours: "9-21", timezone: "Bogus/Zone" }, at);
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toBe("invalid_timezone_failopen");
+    expect(result.timezone).toBe("Bogus/Zone");
+  });
+
+  test("null window = fail-open allowed", () => {
+    const result = evaluateSendWindow(null, new Date("2026-06-17T15:00:00Z"));
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toBe("no_send_window_declared");
+  });
 });
 
 describe("evaluateHitlRequiredWhen", () => {

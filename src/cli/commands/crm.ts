@@ -17,10 +17,12 @@ import {
 } from "./operational-return-schemas.js";
 import {
   getPipelineMetadataJsonSchema,
+  type PipelineMetadata,
   type PipelineReviewFieldStatus,
   reviewPipelineMetadata,
   validatePipelineMetadata,
 } from "../../crm/pipeline-metadata.js";
+import { evaluateHitlRequiredWhen, evaluateSendWindow } from "../../crm/pipeline-engines.js";
 import {
   archiveCrmPipelineStage,
   archiveCrmPipelineStageTopic,
@@ -1434,6 +1436,109 @@ export class CrmPipelineCommands {
       printJson(payload);
     } else {
       console.log(`✓ CRM pipeline updated: ${pipeline.id} ${pipeline.name}`);
+    }
+    return payload;
+  }
+}
+
+@Group({
+  name: "crm.pipeline.policy",
+  description: "Evaluate pipeline metadata policies (engine consumers: send_window, hitl_required_when)",
+})
+export class CrmPipelinePolicyCommands {
+  @Scope("open")
+  @Command({
+    name: "send-window-check",
+    description: "Evaluate metadata.send_window for a pipeline at a given instant (allow / releaseAt)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "crm.pipeline.policy",
+    action: "send-window-check",
+    risk: "low",
+  })
+  @Returns(crmPipelineValidationReturnSchema)
+  sendWindowCheck(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({
+      flags: "--at <iso>",
+      description: "Instant to evaluate (ISO 8601, default: now)",
+    })
+    atIso?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const meta = pipeline.pipeline.metadata as Record<string, unknown> | null | undefined;
+    const sendWindow = meta?.send_window as PipelineMetadata["send_window"];
+    const at = atIso ? new Date(atIso) : new Date();
+    if (atIso && Number.isNaN(at.getTime())) fail(`Invalid --at: ${atIso}`);
+    const decision = evaluateSendWindow(sendWindow, at);
+    const payload = {
+      pipelineId: pipeline.pipeline.id,
+      ok: decision.allowed,
+      errors: [],
+      warnings: [],
+      decision,
+    };
+    if (asJson) {
+      printJson(payload);
+      if (!decision.allowed) process.exitCode = 1;
+      return payload;
+    }
+    console.log(`\nSend-window check: ${pipeline.pipeline.name} (${pipeline.pipeline.id})`);
+    console.log(`Evaluated at: ${decision.evaluatedAtIso} (tz=${decision.timezone})`);
+    console.log(`Allowed: ${decision.allowed ? "YES" : "NO"} (${decision.reason})`);
+    if (!decision.allowed && decision.releaseAtIso) {
+      console.log(`Release at: ${decision.releaseAtIso}`);
+    }
+    if (!decision.allowed) process.exitCode = 1;
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({
+    name: "hitl-check",
+    description: "Evaluate metadata.hitl_required_when against a JSON context (decide if send needs human approval)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "crm.pipeline.policy",
+    action: "hitl-check",
+    risk: "low",
+  })
+  @Returns(crmPipelineValidationReturnSchema)
+  hitlCheck(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({
+      flags: "--context <json>",
+      description: "JSON object with context (tags, contact_value, ltv)",
+    })
+    contextJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const meta = pipeline.pipeline.metadata as Record<string, unknown> | null | undefined;
+    const rules = meta?.hitl_required_when as PipelineMetadata["hitl_required_when"];
+    const context = contextJson ? (parseJsonObjectArg(contextJson) ?? {}) : {};
+    const decision = evaluateHitlRequiredWhen(rules, context);
+    const payload = {
+      pipelineId: pipeline.pipeline.id,
+      ok: !decision.hitlRequired,
+      errors: [],
+      warnings: [],
+      decision,
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`\nHITL check: ${pipeline.pipeline.name} (${pipeline.pipeline.id})`);
+    console.log(`HITL required: ${decision.hitlRequired ? "YES" : "NO"}`);
+    if (decision.matchedConditions > 0) {
+      console.log(`Matched conditions (${decision.matchedConditions}):`);
+      for (const r of decision.reasons) console.log(`  - ${r}`);
     }
     return payload;
   }

@@ -3772,6 +3772,36 @@ export type CrmPipelineListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `crm.pipeline.policy.hitl-check`. */
+export type CrmPipelinePolicyHitlCheckInput = {
+  context?: string;
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.policy.hitl-check`. */
+export type CrmPipelinePolicyHitlCheckReturn = {
+  errors: Array<Record<string, unknown>>;
+  ok: boolean;
+  pipelineId: string;
+  warnings: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
+
+/** Input shape for `crm.pipeline.policy.send-window-check`. */
+export type CrmPipelinePolicySendWindowCheckInput = {
+  at?: string;
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.policy.send-window-check`. */
+export type CrmPipelinePolicySendWindowCheckReturn = {
+  errors: Array<Record<string, unknown>>;
+  ok: boolean;
+  pipelineId: string;
+  warnings: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+};
+
 /** Input shape for `crm.pipeline.review`. */
 export type CrmPipelineReviewInput = {
   pipeline: string;

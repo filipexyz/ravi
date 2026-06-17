@@ -84,9 +84,20 @@ export const sendWindowSchema = z
 
 export type SendWindow = z.infer<typeof sendWindowSchema>;
 
+/**
+ * Free-form condition atom evaluated at runtime by the engine.
+ *
+ * ENGINE CONTRACT (review M2): consumers MUST validate atom shape before use
+ * — atoms with unknown keys are ignored (fail-open). See
+ * `evaluateHitlRequiredWhen` in `./pipeline-engines.ts` for supported atoms
+ * (has_tag, lacks_tag, contact_value_above, ltv_above). New engine
+ * implementations MUST preserve fail-open semantics (no throw on unknown).
+ */
 const conditionAtomSchema = z
   .record(z.string(), z.unknown())
-  .describe("Condition atom (free-form key/value evaluated by engine)");
+  .describe(
+    "Condition atom evaluated at runtime. Engine consumers MUST validate atom shape before use; unknown atoms are ignored (fail-open).",
+  );
 
 export const hitlRequiredWhenSchema = z
   .object({

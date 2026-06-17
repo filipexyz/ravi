@@ -117,6 +117,39 @@ describe("validatePipelineMetadata", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  test("null input rejected", () => {
+    const result = validatePipelineMetadata(null);
+    expect(result.ok).toBe(false);
+  });
+
+  test("undefined input rejected", () => {
+    const result = validatePipelineMetadata(undefined);
+    expect(result.ok).toBe(false);
+  });
+
+  test("negative ltv_threshold rejected", () => {
+    const result = validatePipelineMetadata({
+      vip_guard: { tag_triggers: [], ltv_threshold: -1, action: "hitl" },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e: PipelineValidationIssue) => e.path.startsWith("vip_guard"))).toBe(true);
+  });
+
+  test("negative priority_global rejected", () => {
+    const result = validatePipelineMetadata({ priority_global: -1 });
+    expect(result.ok).toBe(false);
+  });
+
+  test("zero ttl_days rejected (must be positive)", () => {
+    const result = validatePipelineMetadata({ stages: [{ key: "1-novo", ttl_days: 0 }] });
+    expect(result.ok).toBe(false);
+  });
+
+  test("uppercase consumer id rejected", () => {
+    const result = validatePipelineMetadata({ consumers: ["UPPERCASE"] });
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe("reviewPipelineMetadata", () => {

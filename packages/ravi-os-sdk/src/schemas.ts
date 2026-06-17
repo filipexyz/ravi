@@ -18526,6 +18526,116 @@ export const CrmPipelineListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.pipeline.policy.hitl-check`. */
+export const CrmPipelinePolicyHitlCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "context": {
+      "description": "JSON object with context (tags, contact_value, ltv)",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.policy.hitl-check`. */
+export const CrmPipelinePolicyHitlCheckReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "errors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "ok",
+    "errors",
+    "warnings"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.policy.send-window-check`. */
+export const CrmPipelinePolicySendWindowCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "at": {
+      "description": "Instant to evaluate (ISO 8601, default: now)",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.policy.send-window-check`. */
+export const CrmPipelinePolicySendWindowCheckReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "errors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "ok",
+    "errors",
+    "warnings"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.review`. */
 export const CrmPipelineReviewInputSchema = {
   "additionalProperties": false,
