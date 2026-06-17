@@ -3714,11 +3714,30 @@ export type CrmOpportunityShowReturn = {
 
 /** Input shape for `crm.pipeline.create`. */
 export type CrmPipelineCreateInput = {
+  analystAvoid?: string;
+  analystMentions?: string;
+  analystTone?: string;
+  consumer?: string;
   default?: boolean;
   entityType?: string;
+  hitlRequiredWhen?: string;
   idempotencyKey?: string;
+  messagePrefix?: string;
+  messageSuffix?: string;
   metadata?: string;
   name: string;
+  objetivo?: string;
+  priorityGlobal?: string;
+  producer?: string;
+  readingListId?: string;
+  reguaTag?: string[];
+  relatedCron?: string;
+  relatedTrigger?: string;
+  sendWindow?: string;
+  versao?: string;
+  vipGuardAction?: string;
+  vipGuardLtv?: string;
+  vipGuardTag?: string;
 };
 
 /** Return shape for `crm.pipeline.create`. */
@@ -3770,9 +3789,28 @@ export type CrmPipelineReviewReturn = {
 
 /** Input shape for `crm.pipeline.set`. */
 export type CrmPipelineSetInput = {
+  analystAvoid?: string;
+  analystMentions?: string;
+  analystTone?: string;
+  consumer?: string;
   field: string;
+  hitlRequiredWhen?: string;
+  messagePrefix?: string;
+  messageSuffix?: string;
+  objetivo?: string;
   pipeline: string;
+  priorityGlobal?: string;
+  producer?: string;
+  readingListId?: string;
+  reguaTag?: string[];
+  relatedCron?: string;
+  relatedTrigger?: string;
+  sendWindow?: string;
   value: string;
+  versao?: string;
+  vipGuardAction?: string;
+  vipGuardLtv?: string;
+  vipGuardTag?: string;
 };
 
 /** Return shape for `crm.pipeline.set`. */

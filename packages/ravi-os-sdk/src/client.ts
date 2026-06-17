@@ -1869,12 +1869,31 @@ export class RaviClient {
       });
     },
     pipeline: {
-      /** Create a CRM pipeline */
+      /** Create a CRM pipeline (with optional declarative metadata) */
       create: async (name: string, options?: {
+        analystAvoid?: string;
+        analystMentions?: string;
+        analystTone?: string;
+        consumer?: string;
         default?: boolean;
         entityType?: string;
+        hitlRequiredWhen?: string;
         idempotencyKey?: string;
+        messagePrefix?: string;
+        messageSuffix?: string;
         metadata?: string;
+        objetivo?: string;
+        priorityGlobal?: string;
+        producer?: string;
+        readingListId?: string;
+        reguaTag?: string[];
+        relatedCron?: string;
+        relatedTrigger?: string;
+        sendWindow?: string;
+        versao?: string;
+        vipGuardAction?: string;
+        vipGuardLtv?: string;
+        vipGuardTag?: string;
       }): Promise<CrmPipelineCreateReturn> => {
         return this.transport.call({
           groupSegments: ["crm","pipeline"],
@@ -1903,12 +1922,32 @@ export class RaviClient {
           body: { pipeline },
         });
       },
-      /** Set a CRM pipeline field */
-      set: async (pipeline: string, field: string, value: string): Promise<CrmPipelineSetReturn> => {
+      /** Set a CRM pipeline field (or patch metadata via structured flags) */
+      set: async (pipeline: string, field: string, value: string, options?: {
+        analystAvoid?: string;
+        analystMentions?: string;
+        analystTone?: string;
+        consumer?: string;
+        hitlRequiredWhen?: string;
+        messagePrefix?: string;
+        messageSuffix?: string;
+        objetivo?: string;
+        priorityGlobal?: string;
+        producer?: string;
+        readingListId?: string;
+        reguaTag?: string[];
+        relatedCron?: string;
+        relatedTrigger?: string;
+        sendWindow?: string;
+        versao?: string;
+        vipGuardAction?: string;
+        vipGuardLtv?: string;
+        vipGuardTag?: string;
+      }): Promise<CrmPipelineSetReturn> => {
         return this.transport.call({
           groupSegments: ["crm","pipeline"],
           command: "set",
-          body: { pipeline, field, value },
+          body: { pipeline, field, value, ...(options ?? {}) },
         });
       },
       /** Show one CRM pipeline with stages and topics */

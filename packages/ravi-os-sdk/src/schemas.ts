@@ -18304,6 +18304,22 @@ export const CrmOpportunityShowReturnSchema = {
 export const CrmPipelineCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "analystAvoid": {
+      "description": "Comma list of forbidden topics",
+      "type": "string"
+    },
+    "analystMentions": {
+      "description": "Comma list of mandatory mentions in analyst messages",
+      "type": "string"
+    },
+    "analystTone": {
+      "description": "Tone for analyst-drafted messages",
+      "type": "string"
+    },
+    "consumer": {
+      "description": "Comma list of consumer agent ids",
+      "type": "string"
+    },
     "default": {
       "description": "Mark as default pipeline for the entity type",
       "type": "boolean"
@@ -18312,16 +18328,79 @@ export const CrmPipelineCreateInputSchema = {
       "description": "CRM entity type (default: opportunity)",
       "type": "string"
     },
+    "hitlRequiredWhen": {
+      "description": "JSON {conditions:[...]}",
+      "type": "string"
+    },
     "idempotencyKey": {
       "description": "Deduplicate repeated create attempts",
       "type": "string"
     },
+    "messagePrefix": {
+      "description": "Outbound message prefix",
+      "type": "string"
+    },
+    "messageSuffix": {
+      "description": "Outbound message suffix",
+      "type": "string"
+    },
     "metadata": {
-      "description": "Metadata JSON object",
+      "description": "Raw metadata JSON object (structured flags merge on top)",
       "type": "string"
     },
     "name": {
       "description": "Pipeline name",
+      "type": "string"
+    },
+    "objetivo": {
+      "description": "One-paragraph pipeline purpose",
+      "type": "string"
+    },
+    "priorityGlobal": {
+      "description": "Cross-pipeline arbitration priority (1=highest, 5=lowest)",
+      "type": "string"
+    },
+    "producer": {
+      "description": "Comma list of producer agent ids",
+      "type": "string"
+    },
+    "readingListId": {
+      "description": "Reading list slug bound to this pipeline",
+      "type": "string"
+    },
+    "reguaTag": {
+      "description": "Repeatable regua tag JSON {tag,apply_when,linked_stage,apply_by}",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "relatedCron": {
+      "description": "Comma list of related CRON ids",
+      "type": "string"
+    },
+    "relatedTrigger": {
+      "description": "Comma list of related trigger ids",
+      "type": "string"
+    },
+    "sendWindow": {
+      "description": "Send window 'hours[,days],timezone' (e.g. 9-21,mon-sat,America/Sao_Paulo)",
+      "type": "string"
+    },
+    "versao": {
+      "description": "Semver of this metadata document",
+      "type": "string"
+    },
+    "vipGuardAction": {
+      "description": "hitl | block | tag_only",
+      "type": "string"
+    },
+    "vipGuardLtv": {
+      "description": "Lifetime value threshold for VIP",
+      "type": "string"
+    },
+    "vipGuardTag": {
+      "description": "Comma list of VIP tag triggers",
       "type": "string"
     }
   },
@@ -18501,16 +18580,95 @@ export const CrmPipelineReviewReturnSchema = {
 export const CrmPipelineSetInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "analystAvoid": {
+      "description": "Patch metadata.analyst_guidance.avoid (comma)",
+      "type": "string"
+    },
+    "analystMentions": {
+      "description": "Patch metadata.analyst_guidance.mandatory_mentions (comma)",
+      "type": "string"
+    },
+    "analystTone": {
+      "description": "Patch metadata.analyst_guidance.tone",
+      "type": "string"
+    },
+    "consumer": {
+      "description": "Patch metadata.consumers (comma list)",
+      "type": "string"
+    },
     "field": {
       "description": "name|entity-type|default|status|metadata",
+      "type": "string"
+    },
+    "hitlRequiredWhen": {
+      "description": "Patch metadata.hitl_required_when",
+      "type": "string"
+    },
+    "messagePrefix": {
+      "description": "Patch metadata.message_rule.prefix",
+      "type": "string"
+    },
+    "messageSuffix": {
+      "description": "Patch metadata.message_rule.suffix",
+      "type": "string"
+    },
+    "objetivo": {
+      "description": "Patch metadata.objetivo",
       "type": "string"
     },
     "pipeline": {
       "description": "CRM pipeline ID or name",
       "type": "string"
     },
+    "priorityGlobal": {
+      "description": "Patch metadata.priority_global (1-5)",
+      "type": "string"
+    },
+    "producer": {
+      "description": "Patch metadata.producers (comma list)",
+      "type": "string"
+    },
+    "readingListId": {
+      "description": "Patch metadata.reading_list_id",
+      "type": "string"
+    },
+    "reguaTag": {
+      "description": "Repeatable regua tag JSON (replaces existing list)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "relatedCron": {
+      "description": "Patch metadata.related_crons (comma)",
+      "type": "string"
+    },
+    "relatedTrigger": {
+      "description": "Patch metadata.related_triggers (comma)",
+      "type": "string"
+    },
+    "sendWindow": {
+      "description": "Patch metadata.send_window",
+      "type": "string"
+    },
     "value": {
-      "description": "New value",
+      "description": "New value (use '-' to patch metadata via structured flags)",
+      "type": "string"
+    },
+    "versao": {
+      "description": "Patch metadata.versao",
+      "type": "string"
+    },
+    "vipGuardAction": {
+      "description": "Patch metadata.vip_guard.action (hitl|block|tag_only)",
+      "type": "string"
+    },
+    "vipGuardLtv": {
+      "description": "Patch metadata.vip_guard.ltv_threshold",
+      "type": "string"
+    },
+    "vipGuardTag": {
+      "description": "Patch metadata.vip_guard.tag_triggers",
       "type": "string"
     }
   },
