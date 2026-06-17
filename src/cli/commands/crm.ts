@@ -8,11 +8,19 @@ import {
   crmOpportunityContactsReturnSchema,
   crmOpportunityReturnSchema,
   crmPipelineDetailsReturnSchema,
+  crmPipelineReviewReturnSchema,
   crmPipelineStageDetailsReturnSchema,
+  crmPipelineValidationReturnSchema,
   crmProfileReturnSchema,
   crmTaskReturnSchema,
   pagedItemsReturnSchema,
 } from "./operational-return-schemas.js";
+import {
+  getPipelineMetadataJsonSchema,
+  type PipelineReviewFieldStatus,
+  reviewPipelineMetadata,
+  validatePipelineMetadata,
+} from "../../crm/pipeline-metadata.js";
 import {
   archiveCrmPipelineStage,
   archiveCrmPipelineStageTopic,
@@ -787,6 +795,8 @@ export class CrmPipelineCommands {
   show(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--explain", description: "Render metadata field-by-field with operational impact" })
+    explain?: boolean,
   ) {
     const pipeline = getCrmPipeline(pipelineRef);
     if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
@@ -806,6 +816,145 @@ export class CrmPipelineCommands {
         `- ${stage.key} ${stage.name} order=${stage.sortOrder} status=${stage.status} topics=${topics.length}`,
       );
     }
+    if (explain) {
+      console.log("\nMetadata (canonical fields):");
+      const review = reviewPipelineMetadata(
+        {
+          id: pipeline.pipeline.id,
+          name: pipeline.pipeline.name,
+          metadata: pipeline.pipeline.metadata ?? {},
+        },
+        { runtimeStageKeys: pipeline.stages.map((s) => s.key) },
+      );
+      const groupOrder = ["identidade", "estrutura", "politicas", "comunicacao", "tags", "integracoes"] as const;
+      for (const group of groupOrder) {
+        const items = review.fields.filter((f) => f.group === group);
+        if (items.length === 0) continue;
+        console.log(`\n  [${group.toUpperCase()}]`);
+        for (const f of items) {
+          const icon = f.present === "present" ? "✓" : f.present === "partial" ? "⚠" : "✗";
+          console.log(`    ${icon} ${f.field}: ${f.detail}`);
+          if (f.suggestion) console.log(`      → ${f.suggestion}`);
+        }
+      }
+      console.log(
+        `\n  Gaps: ${review.totalGaps} total (${review.highSeverityGaps} high severity). Use \`ravi crm pipeline review ${pipeline.pipeline.id}\` for structured report.`,
+      );
+    }
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({
+    name: "review",
+    description: "Review pipeline metadata against canonical schema (12 fields, ✓/⚠/✗ + suggestions)",
+  })
+  @CommandAccess({ kind: "read", resource: "crm.pipeline", action: "review", risk: "low" })
+  @Returns(crmPipelineReviewReturnSchema)
+  review(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const report = reviewPipelineMetadata(
+      {
+        id: pipeline.pipeline.id,
+        name: pipeline.pipeline.name,
+        metadata: pipeline.pipeline.metadata ?? {},
+      },
+      { runtimeStageKeys: pipeline.stages.map((s) => s.key) },
+    );
+    if (asJson) {
+      printJson(report);
+      return report;
+    }
+    console.log(`\nReview: ${report.pipelineName} (${report.pipelineId})`);
+    console.log(`Gaps: ${report.totalGaps} total / ${report.highSeverityGaps} high severity\n`);
+    const groupOrder = ["identidade", "estrutura", "politicas", "comunicacao", "tags", "integracoes"] as const;
+    for (const group of groupOrder) {
+      const items = report.fields.filter((f: PipelineReviewFieldStatus) => f.group === group);
+      if (items.length === 0) continue;
+      console.log(`[${group.toUpperCase()}]`);
+      for (const f of items) {
+        const icon = f.present === "present" ? "✓" : f.present === "partial" ? "⚠" : "✗";
+        console.log(`  ${icon} ${f.field}: ${f.detail}`);
+        if (f.suggestion) console.log(`    → ${f.suggestion}`);
+      }
+      console.log("");
+    }
+    if (report.highSeverityGaps > 0) {
+      process.exitCode = 1;
+    }
+    return report;
+  }
+
+  @Scope("open")
+  @Command({
+    name: "validate",
+    description: "Validate pipeline metadata against canonical JSON Schema (PASS/WARN/FAIL)",
+  })
+  @CommandAccess({ kind: "read", resource: "crm.pipeline", action: "validate", risk: "low" })
+  @Returns(crmPipelineValidationReturnSchema)
+  validate(
+    @Arg("pipeline", {
+      description: "CRM pipeline ID or name (omit when using --schema-json)",
+      required: false,
+    })
+    pipelineRef: string | undefined,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--schema-json",
+      description: "Print canonical JSON Schema (Draft-07) and exit",
+    })
+    schemaJson?: boolean,
+  ) {
+    if (schemaJson) {
+      const schema = getPipelineMetadataJsonSchema();
+      printJson(schema);
+      return {
+        pipelineId: "",
+        ok: true,
+        errors: [],
+        warnings: [],
+        schema,
+      };
+    }
+    if (!pipelineRef) fail("pipeline argument required (or pass --schema-json)");
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const result = validatePipelineMetadata(pipeline.pipeline.metadata ?? {}, {
+      runtimeStageKeys: pipeline.stages.map((s) => s.key),
+    });
+    const payload = {
+      pipelineId: pipeline.pipeline.id,
+      ok: result.ok,
+      errors: result.errors,
+      warnings: result.warnings,
+    };
+    if (asJson) {
+      printJson(payload);
+      if (!result.ok) process.exitCode = 1;
+      return payload;
+    }
+    console.log(`\nValidate: ${pipeline.pipeline.name} (${pipeline.pipeline.id})`);
+    console.log(`Result: ${result.ok ? "PASS" : "FAIL"}`);
+    if (result.errors.length > 0) {
+      console.log(`\nErrors (${result.errors.length}):`);
+      for (const e of result.errors) {
+        console.log(`  ✗ ${e.path}: ${e.message}`);
+      }
+    }
+    if (result.warnings.length > 0) {
+      console.log(`\nWarnings (${result.warnings.length}):`);
+      for (const w of result.warnings) {
+        console.log(`  ⚠ ${w.path}: ${w.message}`);
+      }
+    }
+    if (result.ok && result.warnings.length === 0) {
+      console.log("\nNo issues found.");
+    }
+    if (!result.ok) process.exitCode = 1;
     return payload;
   }
 

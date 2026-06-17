@@ -18447,6 +18447,56 @@ export const CrmPipelineListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.pipeline.review`. */
+export const CrmPipelineReviewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.review`. */
+export const CrmPipelineReviewReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "fields": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "highSeverityGaps": {
+      "type": "number"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "pipelineName": {
+      "type": "string"
+    },
+    "totalGaps": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "pipelineName",
+    "highSeverityGaps",
+    "totalGaps",
+    "fields"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.set`. */
 export const CrmPipelineSetInputSchema = {
   "additionalProperties": false,
@@ -18494,6 +18544,10 @@ export const CrmPipelineSetReturnSchema = {
 export const CrmPipelineShowInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "explain": {
+      "description": "Render metadata field-by-field with operational impact",
+      "type": "boolean"
+    },
     "pipeline": {
       "description": "CRM pipeline ID or name",
       "type": "string"
@@ -19057,6 +19111,58 @@ export const CrmPipelineStageTopicsReturnSchema = {
     "total",
     "pagination",
     "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.validate`. */
+export const CrmPipelineValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name (omit when using --schema-json)",
+      "type": "string"
+    },
+    "schemaJson": {
+      "description": "Print canonical JSON Schema (Draft-07) and exit",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.validate`. */
+export const CrmPipelineValidateReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "errors": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "ok",
+    "errors",
+    "warnings"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

@@ -81,6 +81,25 @@ export const crmBoardReturnSchema = z
 export const crmPipelineDetailsReturnSchema = looseObjectSchema;
 export const crmPipelineStageDetailsReturnSchema = looseObjectSchema;
 
+export const crmPipelineValidationReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    ok: z.boolean(),
+    errors: z.array(looseObjectSchema),
+    warnings: z.array(looseObjectSchema),
+  })
+  .passthrough();
+
+export const crmPipelineReviewReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    pipelineName: z.string(),
+    highSeverityGaps: z.number(),
+    totalGaps: z.number(),
+    fields: z.array(looseObjectSchema),
+  })
+  .passthrough();
+
 export const crmOpportunityContactsReturnSchema = z
   .object({
     total: z.number(),

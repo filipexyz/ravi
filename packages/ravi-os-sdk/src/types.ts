@@ -3753,6 +3753,21 @@ export type CrmPipelineListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `crm.pipeline.review`. */
+export type CrmPipelineReviewInput = {
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.review`. */
+export type CrmPipelineReviewReturn = {
+  fields: Array<Record<string, unknown>>;
+  highSeverityGaps: number;
+  pipelineId: string;
+  pipelineName: string;
+  totalGaps: number;
+  [k: string]: unknown;
+};
+
 /** Input shape for `crm.pipeline.set`. */
 export type CrmPipelineSetInput = {
   field: string;
@@ -3769,6 +3784,7 @@ export type CrmPipelineSetReturn = {
 
 /** Input shape for `crm.pipeline.show`. */
 export type CrmPipelineShowInput = {
+  explain?: boolean;
   pipeline: string;
 };
 
@@ -3930,6 +3946,21 @@ export type CrmPipelineStageTopicsReturn = {
     [k: string]: unknown;
   };
   total: number;
+  [k: string]: unknown;
+};
+
+/** Input shape for `crm.pipeline.validate`. */
+export type CrmPipelineValidateInput = {
+  pipeline?: string;
+  schemaJson?: boolean;
+};
+
+/** Return shape for `crm.pipeline.validate`. */
+export type CrmPipelineValidateReturn = {
+  errors: Array<Record<string, unknown>>;
+  ok: boolean;
+  pipelineId: string;
+  warnings: Array<Record<string, unknown>>;
   [k: string]: unknown;
 };
 
