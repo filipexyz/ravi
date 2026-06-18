@@ -8,11 +8,23 @@ import {
   crmOpportunityContactsReturnSchema,
   crmOpportunityReturnSchema,
   crmPipelineDetailsReturnSchema,
+  crmPipelineHitlCheckReturnSchema,
+  crmPipelineReviewReturnSchema,
+  crmPipelineSendWindowCheckReturnSchema,
   crmPipelineStageDetailsReturnSchema,
+  crmPipelineValidationReturnSchema,
   crmProfileReturnSchema,
   crmTaskReturnSchema,
   pagedItemsReturnSchema,
 } from "./operational-return-schemas.js";
+import {
+  getPipelineMetadataJsonSchema,
+  type PipelineMetadata,
+  type PipelineReviewFieldStatus,
+  reviewPipelineMetadata,
+  validatePipelineMetadata,
+} from "../../crm/pipeline-metadata.js";
+import { evaluateHitlRequiredWhen, evaluateSendWindow } from "../../crm/pipeline-engines.js";
 import {
   archiveCrmPipelineStage,
   archiveCrmPipelineStageTopic,
@@ -61,6 +73,247 @@ import { canAccessContact, getScopeContext, isScopeEnforced } from "../../permis
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
+
+// ============================================================
+// Structured-flag helpers for `crm pipeline create / set` (V2+ hybrid).
+// Maps user-facing flags onto pipeline.metadata canonical schema fields.
+// See: src/crm/pipeline-metadata.ts and .ravi/specs/crm/pipeline/SPEC.md
+// ============================================================
+
+interface StructuredPipelineMetadataFlags {
+  objetivo?: string;
+  priorityGlobal?: string;
+  producers?: string;
+  consumers?: string;
+  readingListId?: string;
+  versao?: string;
+  vipGuardTags?: string;
+  vipGuardLtv?: string;
+  vipGuardAction?: string;
+  sendWindow?: string;
+  hitlRequiredWhen?: string;
+  messagePrefix?: string;
+  messageSuffix?: string;
+  analystTone?: string;
+  analystMentions?: string;
+  analystAvoid?: string;
+  reguaTags?: string[];
+  relatedCrons?: string;
+  relatedTriggers?: string;
+}
+
+function splitCommaList(value: string | undefined): string[] | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function cloneObjectField(base: Record<string, unknown>, field: string): Record<string, unknown> {
+  const value = base[field];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return { ...(value as Record<string, unknown>) };
+}
+
+function parseSendWindowFlag(flag: string): { hours: string; days?: string; timezone: string } {
+  // Format: "9-21,mon-sat,America/Sao_Paulo" or "9-21,America/Sao_Paulo" (no days).
+  const parts = flag
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length < 2) fail("--send-window must be 'hours[,days],timezone' (e.g. 9-21,mon-sat,America/Sao_Paulo)");
+  if (parts.length === 2) return { hours: parts[0], timezone: parts[1] };
+  return { hours: parts[0], days: parts[1], timezone: parts[2] };
+}
+
+function buildMetadataFromStructuredFlags(
+  base: Record<string, unknown>,
+  flags: StructuredPipelineMetadataFlags,
+): Record<string, unknown> {
+  const meta: Record<string, unknown> = { ...base };
+
+  if (flags.objetivo !== undefined) meta.objetivo = flags.objetivo;
+  if (flags.priorityGlobal !== undefined) {
+    const n = Number(flags.priorityGlobal);
+    if (!Number.isInteger(n) || n < 1 || n > 5) fail("--priority-global must be 1..5");
+    meta.priority_global = n;
+  }
+  const producers = splitCommaList(flags.producers);
+  if (producers) meta.producers = producers;
+  const consumers = splitCommaList(flags.consumers);
+  if (consumers) meta.consumers = consumers;
+  if (flags.readingListId !== undefined) meta.reading_list_id = flags.readingListId;
+  if (flags.versao !== undefined) meta.versao = flags.versao;
+
+  if (flags.vipGuardTags !== undefined || flags.vipGuardLtv !== undefined || flags.vipGuardAction !== undefined) {
+    const vip = cloneObjectField(meta, "vip_guard");
+    const tagTriggers = splitCommaList(flags.vipGuardTags);
+    if (tagTriggers) vip.tag_triggers = tagTriggers;
+    if (flags.vipGuardLtv !== undefined) {
+      const n = Number(flags.vipGuardLtv);
+      if (!Number.isFinite(n) || n < 0) fail("--vip-guard-ltv must be a non-negative number");
+      vip.ltv_threshold = n;
+    }
+    if (flags.vipGuardAction !== undefined) {
+      const allowed = new Set(["hitl", "block", "tag_only"]);
+      if (!allowed.has(flags.vipGuardAction)) fail("--vip-guard-action must be hitl|block|tag_only");
+      vip.action = flags.vipGuardAction;
+    }
+    meta.vip_guard = vip;
+  }
+
+  if (flags.sendWindow !== undefined) {
+    meta.send_window = parseSendWindowFlag(flags.sendWindow);
+  }
+  if (flags.hitlRequiredWhen !== undefined) {
+    const parsed = parseJsonObjectArg(flags.hitlRequiredWhen);
+    meta.hitl_required_when = parsed ?? {};
+  }
+
+  if (flags.messagePrefix !== undefined || flags.messageSuffix !== undefined) {
+    const mr = cloneObjectField(meta, "message_rule");
+    if (flags.messagePrefix !== undefined) mr.prefix = flags.messagePrefix;
+    if (flags.messageSuffix !== undefined) mr.suffix = flags.messageSuffix;
+    meta.message_rule = mr;
+  }
+
+  if (flags.analystTone !== undefined || flags.analystMentions !== undefined || flags.analystAvoid !== undefined) {
+    const ag = cloneObjectField(meta, "analyst_guidance");
+    if (flags.analystTone !== undefined) ag.tone = flags.analystTone;
+    const mentions = splitCommaList(flags.analystMentions);
+    if (mentions) ag.mandatory_mentions = mentions;
+    const avoid = splitCommaList(flags.analystAvoid);
+    if (avoid) ag.avoid = avoid;
+    meta.analyst_guidance = ag;
+  }
+
+  if (flags.reguaTags && flags.reguaTags.length > 0) {
+    const existing = Array.isArray(meta.regua_tags) ? meta.regua_tags : [];
+    const additions = flags.reguaTags.map((raw, i) => {
+      const parsed = parseJsonObjectArg(raw);
+      if (!parsed) fail(`--regua-tag #${i + 1} must be a non-null JSON object`);
+      return parsed;
+    });
+    meta.regua_tags = [...existing, ...additions];
+  }
+
+  const crons = splitCommaList(flags.relatedCrons);
+  if (crons) meta.related_crons = crons;
+  const triggers = splitCommaList(flags.relatedTriggers);
+  if (triggers) meta.related_triggers = triggers;
+
+  return meta;
+}
+
+function assertValidPipelineMetadata(metadata: Record<string, unknown>, context: string): void {
+  const validation = validatePipelineMetadata(metadata);
+  if (validation.ok) return;
+  const details = validation.errors.map((error) => `${error.path || "<root>"}: ${error.message}`).join("; ");
+  fail(`${context} produced invalid pipeline.metadata: ${details}`);
+}
+
+const PIPELINE_CREATE_HELP_AFTER = `
+The structured flags below map onto pipeline.metadata canonical schema fields.
+All groups optional — pipelines without these fields keep working identically
+to legacy. Validate via: ravi crm pipeline validate <id>
+
+IDENTIDADE
+  --objetivo <text>           One-paragraph statement of the pipeline purpose
+  --priority-global <1-5>     Cross-pipeline arbitration priority (1=highest)
+  --producer <ids>            Comma list of agents that CREATE opportunities here
+  --consumer <ids>            Comma list of agents that READ/act on opportunities
+  --reading-list-id <slug>    Reading list slug bound to this pipeline
+  --versao <semver>           Metadata document version (for change tracking)
+
+POLITICAS
+  --send-window 'H,D,TZ'      Allowed send window. Examples:
+                                '9-21,mon-sat,America/Sao_Paulo'
+                                '9-21,UTC' (omitting days = every day)
+  --vip-guard-tag <tags>      Comma list of tags marking contact as VIP
+  --vip-guard-ltv <n>         Lifetime value threshold above which contact is VIP
+  --vip-guard-action <act>    hitl | block | tag_only (default: hitl)
+  --hitl-required-when <json> JSON object {conditions:[...]} — declarative HITL rules
+
+COMUNICACAO
+  --message-prefix <text>     String prepended to every outbound message
+  --message-suffix <text>     String appended to every outbound message
+  --analyst-tone <text>       Tone description for analyst agents drafting messages
+  --analyst-mentions <list>   Comma list of strings ALWAYS to include
+  --analyst-avoid <list>      Comma list of strings NEVER to include
+
+TAGS
+  --regua-tag '<json>'        Repeatable. JSON object: {tag,apply_when,linked_stage,apply_by}
+
+INTEGRACOES
+  --related-cron <ids>        Comma list of CRON ids that drive this pipeline
+  --related-trigger <ids>     Comma list of trigger ids that drive this pipeline
+
+ESCAPE HATCH
+  --metadata <json>           Raw metadata JSON object. Structured flags merge
+                              on top (structured flags WIN per field).
+
+INSPECT
+  ravi crm pipeline review <id>            12-field structured report (✓/⚠/✗)
+  ravi crm pipeline validate <id>          PASS/FAIL against canonical schema
+  ravi crm pipeline show <id> --explain    Metadata field-by-field with impact
+
+EXAMPLES
+
+  # 1) Simple pipeline ('leads-prospect') — minimum useful metadata
+  ravi crm pipeline create leads-prospect \\
+    --objetivo 'Qualify anonymous lead until first qualified conversation' \\
+    --priority-global 5 \\
+    --producer lead-capture \\
+    --consumer salesrep \\
+    --versao 1.0.0
+
+  # 2) Rich pipeline ('subscription-renewal') — lifecycle + policies + regua tags
+  ravi crm pipeline create subscription-renewal \\
+    --objetivo 'Secure recurring subscription renewal before expiry' \\
+    --priority-global 2 \\
+    --producer billing \\
+    --consumer salesrep,dispatcher \\
+    --send-window '9-19,mon-fri,America/New_York' \\
+    --vip-guard-tag perfil:vip,plan:enterprise \\
+    --vip-guard-ltv 50000 \\
+    --vip-guard-action hitl \\
+    --message-prefix '[Subscription Renewal]' \\
+    --analyst-tone 'cordial, concise, no emojis' \\
+    --analyst-mentions 'renewal date,plan benefits' \\
+    --analyst-avoid 'discount,urgency' \\
+    --regua-tag '{"tag":"renewal:30d-out","apply_when":{"days_until_renewal":30},"linked_stage":"1-aviso-cedo","apply_by":"cron-renewal-sync"}' \\
+    --regua-tag '{"tag":"renewal:7d-out","apply_when":{"days_until_renewal":7},"linked_stage":"2-aviso-urgente","apply_by":"cron-renewal-sync"}' \\
+    --related-cron cron-renewal-sync,cron-renewal-followup \\
+    --versao 1.0.0
+`;
+
+const PIPELINE_SET_HELP_AFTER = `
+Two modes:
+
+  1) Single-field mode (legacy, unchanged)
+       ravi crm pipeline set <pipeline> <field> <value>
+       Where <field> = name | entity-type | default | status | metadata
+       (metadata replaces the whole JSON blob)
+
+  2) Structured-flags mode (new — incremental metadata patching)
+       ravi crm pipeline set <pipeline> metadata - --objetivo '...' --priority-global 2 ...
+       Pass '-' as <value> to indicate "ignore positional, use flags".
+       Each flag set updates ONLY that field in pipeline.metadata; other
+       fields are preserved. Unknown keys in existing metadata are kept
+       (passthrough). See \`ravi crm pipeline create --help\` for the full
+       flag list.
+
+EXAMPLES
+
+  # Patch only the send window
+  ravi crm pipeline set leads-prospect metadata - --send-window '9-19,mon-fri,America/New_York'
+
+  # Bump priority + add new regua tag (keeps existing ones)
+  ravi crm pipeline set subscription-renewal metadata - \\
+    --priority-global 1 \\
+    --regua-tag '{"tag":"renewal:1d-out","apply_when":{"days_until_renewal":1},"linked_stage":"3-vencendo","apply_by":"cron-renewal-sync"}'
+`;
 
 function formatCrmTaskForJson<T extends Partial<CrmTask>>(task: T): T & Record<string, unknown> {
   return {
@@ -787,6 +1040,8 @@ export class CrmPipelineCommands {
   show(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--explain", description: "Render metadata field-by-field with operational impact" })
+    explain?: boolean,
   ) {
     const pipeline = getCrmPipeline(pipelineRef);
     if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
@@ -806,11 +1061,154 @@ export class CrmPipelineCommands {
         `- ${stage.key} ${stage.name} order=${stage.sortOrder} status=${stage.status} topics=${topics.length}`,
       );
     }
+    if (explain) {
+      console.log("\nMetadata (canonical fields):");
+      const review = reviewPipelineMetadata(
+        {
+          id: pipeline.pipeline.id,
+          name: pipeline.pipeline.name,
+          metadata: pipeline.pipeline.metadata ?? {},
+        },
+        { runtimeStageKeys: pipeline.stages.map((s) => s.key) },
+      );
+      const groupOrder = ["identidade", "estrutura", "politicas", "comunicacao", "tags", "integracoes"] as const;
+      for (const group of groupOrder) {
+        const items = review.fields.filter((f) => f.group === group);
+        if (items.length === 0) continue;
+        console.log(`\n  [${group.toUpperCase()}]`);
+        for (const f of items) {
+          const icon = f.present === "present" ? "✓" : f.present === "partial" ? "⚠" : "✗";
+          console.log(`    ${icon} ${f.field}: ${f.detail}`);
+          if (f.suggestion) console.log(`      → ${f.suggestion}`);
+        }
+      }
+      console.log(
+        `\n  Gaps: ${review.totalGaps} total (${review.highSeverityGaps} high severity). Use \`ravi crm pipeline review ${pipeline.pipeline.id}\` for structured report.`,
+      );
+    }
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({
+    name: "review",
+    description: "Review pipeline metadata against canonical schema (12 fields, ✓/⚠/✗ + suggestions)",
+  })
+  @CommandAccess({ kind: "read", resource: "crm.pipeline", action: "review", risk: "low" })
+  @Returns(crmPipelineReviewReturnSchema)
+  review(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const report = reviewPipelineMetadata(
+      {
+        id: pipeline.pipeline.id,
+        name: pipeline.pipeline.name,
+        metadata: pipeline.pipeline.metadata ?? {},
+      },
+      { runtimeStageKeys: pipeline.stages.map((s) => s.key) },
+    );
+    if (asJson) {
+      printJson(report);
+      return report;
+    }
+    console.log(`\nReview: ${report.pipelineName} (${report.pipelineId})`);
+    console.log(`Gaps: ${report.totalGaps} total / ${report.highSeverityGaps} high severity\n`);
+    const groupOrder = ["identidade", "estrutura", "politicas", "comunicacao", "tags", "integracoes"] as const;
+    for (const group of groupOrder) {
+      const items = report.fields.filter((f: PipelineReviewFieldStatus) => f.group === group);
+      if (items.length === 0) continue;
+      console.log(`[${group.toUpperCase()}]`);
+      for (const f of items) {
+        const icon = f.present === "present" ? "✓" : f.present === "partial" ? "⚠" : "✗";
+        console.log(`  ${icon} ${f.field}: ${f.detail}`);
+        if (f.suggestion) console.log(`    → ${f.suggestion}`);
+      }
+      console.log("");
+    }
+    if (report.highSeverityGaps > 0) {
+      process.exitCode = 1;
+    }
+    return report;
+  }
+
+  @Scope("open")
+  @Command({
+    name: "validate",
+    description: "Validate pipeline metadata against canonical JSON Schema (PASS/WARN/FAIL)",
+  })
+  @CommandAccess({ kind: "read", resource: "crm.pipeline", action: "validate", risk: "low" })
+  @Returns(crmPipelineValidationReturnSchema)
+  validate(
+    @Arg("pipeline", {
+      description: "CRM pipeline ID or name (omit when using --schema-json)",
+      required: false,
+    })
+    pipelineRef: string | undefined,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--schema-json",
+      description: "Print canonical JSON Schema (Draft-07) and exit",
+    })
+    schemaJson?: boolean,
+  ) {
+    if (schemaJson) {
+      const schema = getPipelineMetadataJsonSchema();
+      printJson(schema);
+      return {
+        pipelineId: "",
+        ok: true,
+        errors: [],
+        warnings: [],
+        schema,
+      };
+    }
+    if (!pipelineRef) fail("pipeline argument required (or pass --schema-json)");
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const result = validatePipelineMetadata(pipeline.pipeline.metadata ?? {}, {
+      runtimeStageKeys: pipeline.stages.map((s) => s.key),
+    });
+    const payload = {
+      pipelineId: pipeline.pipeline.id,
+      ok: result.ok,
+      errors: result.errors,
+      warnings: result.warnings,
+    };
+    if (asJson) {
+      printJson(payload);
+      if (!result.ok) process.exitCode = 1;
+      return payload;
+    }
+    console.log(`\nValidate: ${pipeline.pipeline.name} (${pipeline.pipeline.id})`);
+    console.log(`Result: ${result.ok ? "PASS" : "FAIL"}`);
+    if (result.errors.length > 0) {
+      console.log(`\nErrors (${result.errors.length}):`);
+      for (const e of result.errors) {
+        console.log(`  ✗ ${e.path}: ${e.message}`);
+      }
+    }
+    if (result.warnings.length > 0) {
+      console.log(`\nWarnings (${result.warnings.length}):`);
+      for (const w of result.warnings) {
+        console.log(`  ⚠ ${w.path}: ${w.message}`);
+      }
+    }
+    if (result.ok && result.warnings.length === 0) {
+      console.log("\nNo issues found.");
+    }
+    if (!result.ok) process.exitCode = 1;
     return payload;
   }
 
   @Scope("writeContacts")
-  @Command({ name: "create", description: "Create a CRM pipeline" })
+  @Command({
+    name: "create",
+    description: "Create a CRM pipeline (with optional declarative metadata)",
+    helpAfter: PIPELINE_CREATE_HELP_AFTER,
+  })
   @CommandAccess({ kind: "mutate", resource: "crm.pipeline", action: "create", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   create(
@@ -818,16 +1216,95 @@ export class CrmPipelineCommands {
     @Option({ flags: "--entity-type <type>", description: "CRM entity type (default: opportunity)" })
     entityType?: string,
     @Option({ flags: "--default", description: "Mark as default pipeline for the entity type" }) isDefault?: boolean,
-    @Option({ flags: "--metadata <json>", description: "Metadata JSON object" }) metadataJson?: string,
+    @Option({
+      flags: "--metadata <json>",
+      description: "Raw metadata JSON object (structured flags merge on top)",
+    })
+    metadataJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated create attempts" })
     idempotencyKey?: string,
+    @Option({ flags: "--objetivo <text>", description: "One-paragraph pipeline purpose" })
+    objetivo?: string,
+    @Option({
+      flags: "--priority-global <n>",
+      description: "Cross-pipeline arbitration priority (1=highest, 5=lowest)",
+    })
+    priorityGlobal?: string,
+    @Option({ flags: "--producer <ids>", description: "Comma list of producer agent ids" })
+    producers?: string,
+    @Option({ flags: "--consumer <ids>", description: "Comma list of consumer agent ids" })
+    consumers?: string,
+    @Option({ flags: "--reading-list-id <slug>", description: "Reading list slug bound to this pipeline" })
+    readingListId?: string,
+    @Option({ flags: "--versao <semver>", description: "Semver of this metadata document" })
+    versao?: string,
+    @Option({ flags: "--vip-guard-tag <tags>", description: "Comma list of VIP tag triggers" })
+    vipGuardTags?: string,
+    @Option({ flags: "--vip-guard-ltv <n>", description: "Lifetime value threshold for VIP" })
+    vipGuardLtv?: string,
+    @Option({ flags: "--vip-guard-action <act>", description: "hitl | block | tag_only" })
+    vipGuardAction?: string,
+    @Option({
+      flags: "--send-window <hdtz>",
+      description: "Send window 'hours[,days],timezone' (e.g. 9-21,mon-sat,America/Sao_Paulo)",
+    })
+    sendWindow?: string,
+    @Option({ flags: "--hitl-required-when <json>", description: "JSON {conditions:[...]}" })
+    hitlRequiredWhen?: string,
+    @Option({ flags: "--message-prefix <text>", description: "Outbound message prefix" })
+    messagePrefix?: string,
+    @Option({ flags: "--message-suffix <text>", description: "Outbound message suffix" })
+    messageSuffix?: string,
+    @Option({ flags: "--analyst-tone <text>", description: "Tone for analyst-drafted messages" })
+    analystTone?: string,
+    @Option({
+      flags: "--analyst-mentions <list>",
+      description: "Comma list of mandatory mentions in analyst messages",
+    })
+    analystMentions?: string,
+    @Option({ flags: "--analyst-avoid <list>", description: "Comma list of forbidden topics" })
+    analystAvoid?: string,
+    @Option({
+      flags: "--regua-tag <json...>",
+      description: "Repeatable regua tag JSON {tag,apply_when,linked_stage,apply_by}",
+    })
+    reguaTags?: string[],
+    @Option({ flags: "--related-cron <ids>", description: "Comma list of related CRON ids" })
+    relatedCrons?: string,
+    @Option({ flags: "--related-trigger <ids>", description: "Comma list of related trigger ids" })
+    relatedTriggers?: string,
   ) {
+    const base = parseOptionalJsonObject(metadataJson, "--metadata") ?? {};
+    const metadata = buildMetadataFromStructuredFlags(base, {
+      objetivo,
+      priorityGlobal,
+      producers,
+      consumers,
+      readingListId,
+      versao,
+      vipGuardTags,
+      vipGuardLtv,
+      vipGuardAction,
+      sendWindow,
+      hitlRequiredWhen,
+      messagePrefix,
+      messageSuffix,
+      analystTone,
+      analystMentions,
+      analystAvoid,
+      reguaTags,
+      relatedCrons,
+      relatedTriggers,
+    });
+    if (Object.keys(metadata).length > 0) {
+      assertValidPipelineMetadata(metadata, "crm pipeline create");
+    }
     const pipeline = createCrmPipeline({
       name,
       entityType,
       isDefault: isDefault === true,
-      metadata: parseOptionalJsonObject(metadataJson, "--metadata"),
+      metadata: Object.keys(metadata).length > 0 ? metadata : null,
       source: "cli",
       actorType: "user",
       idempotencyKey,
@@ -842,14 +1319,74 @@ export class CrmPipelineCommands {
   }
 
   @Scope("writeContacts")
-  @Command({ name: "set", description: "Set a CRM pipeline field" })
+  @Command({
+    name: "set",
+    description: "Set a CRM pipeline field (or patch metadata via structured flags)",
+    helpAfter: PIPELINE_SET_HELP_AFTER,
+  })
   @CommandAccess({ kind: "mutate", resource: "crm.pipeline", action: "set", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   set(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
     @Arg("field", { description: "name|entity-type|default|status|metadata" }) field: string,
-    @Arg("value", { description: "New value" }) value: string,
+    @Arg("value", { description: "New value (use '-' to patch metadata via structured flags)" })
+    value: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--objetivo <text>", description: "Patch metadata.objetivo" }) objetivo?: string,
+    @Option({ flags: "--priority-global <n>", description: "Patch metadata.priority_global (1-5)" })
+    priorityGlobal?: string,
+    @Option({ flags: "--producer <ids>", description: "Patch metadata.producers (comma list)" })
+    producers?: string,
+    @Option({ flags: "--consumer <ids>", description: "Patch metadata.consumers (comma list)" })
+    consumers?: string,
+    @Option({ flags: "--reading-list-id <slug>", description: "Patch metadata.reading_list_id" })
+    readingListId?: string,
+    @Option({ flags: "--versao <semver>", description: "Patch metadata.versao" })
+    versao?: string,
+    @Option({ flags: "--vip-guard-tag <tags>", description: "Patch metadata.vip_guard.tag_triggers" })
+    vipGuardTags?: string,
+    @Option({ flags: "--vip-guard-ltv <n>", description: "Patch metadata.vip_guard.ltv_threshold" })
+    vipGuardLtv?: string,
+    @Option({
+      flags: "--vip-guard-action <act>",
+      description: "Patch metadata.vip_guard.action (hitl|block|tag_only)",
+    })
+    vipGuardAction?: string,
+    @Option({ flags: "--send-window <hdtz>", description: "Patch metadata.send_window" })
+    sendWindow?: string,
+    @Option({
+      flags: "--hitl-required-when <json>",
+      description: "Patch metadata.hitl_required_when",
+    })
+    hitlRequiredWhen?: string,
+    @Option({ flags: "--message-prefix <text>", description: "Patch metadata.message_rule.prefix" })
+    messagePrefix?: string,
+    @Option({ flags: "--message-suffix <text>", description: "Patch metadata.message_rule.suffix" })
+    messageSuffix?: string,
+    @Option({ flags: "--analyst-tone <text>", description: "Patch metadata.analyst_guidance.tone" })
+    analystTone?: string,
+    @Option({
+      flags: "--analyst-mentions <list>",
+      description: "Patch metadata.analyst_guidance.mandatory_mentions (comma)",
+    })
+    analystMentions?: string,
+    @Option({
+      flags: "--analyst-avoid <list>",
+      description: "Patch metadata.analyst_guidance.avoid (comma)",
+    })
+    analystAvoid?: string,
+    @Option({
+      flags: "--regua-tag <json...>",
+      description: "Repeatable regua tag JSON (appends to existing list)",
+    })
+    reguaTags?: string[],
+    @Option({ flags: "--related-cron <ids>", description: "Patch metadata.related_crons (comma)" })
+    relatedCrons?: string,
+    @Option({
+      flags: "--related-trigger <ids>",
+      description: "Patch metadata.related_triggers (comma)",
+    })
+    relatedTriggers?: string,
   ) {
     const normalizedField = field.trim().toLowerCase();
     const input: Parameters<typeof updateCrmPipeline>[0] = {
@@ -857,7 +1394,56 @@ export class CrmPipelineCommands {
       source: "cli",
       actorType: "user",
     };
-    if (normalizedField === "name") input.name = value;
+
+    const hasStructuredFlag =
+      objetivo !== undefined ||
+      priorityGlobal !== undefined ||
+      producers !== undefined ||
+      consumers !== undefined ||
+      readingListId !== undefined ||
+      versao !== undefined ||
+      vipGuardTags !== undefined ||
+      vipGuardLtv !== undefined ||
+      vipGuardAction !== undefined ||
+      sendWindow !== undefined ||
+      hitlRequiredWhen !== undefined ||
+      messagePrefix !== undefined ||
+      messageSuffix !== undefined ||
+      analystTone !== undefined ||
+      analystMentions !== undefined ||
+      analystAvoid !== undefined ||
+      (reguaTags && reguaTags.length > 0) ||
+      relatedCrons !== undefined ||
+      relatedTriggers !== undefined;
+
+    if (normalizedField === "metadata" && hasStructuredFlag && (value === "-" || value === "")) {
+      // Structured-patch mode: merge flags onto existing metadata.
+      const current = getCrmPipeline(pipelineRef);
+      if (!current) fail(`CRM pipeline not found: ${pipelineRef}`);
+      const base = (current.pipeline.metadata as Record<string, unknown> | null) ?? {};
+      input.metadata = buildMetadataFromStructuredFlags(base, {
+        objetivo,
+        priorityGlobal,
+        producers,
+        consumers,
+        readingListId,
+        versao,
+        vipGuardTags,
+        vipGuardLtv,
+        vipGuardAction,
+        sendWindow,
+        hitlRequiredWhen,
+        messagePrefix,
+        messageSuffix,
+        analystTone,
+        analystMentions,
+        analystAvoid,
+        reguaTags,
+        relatedCrons,
+        relatedTriggers,
+      });
+      assertValidPipelineMetadata(input.metadata, "crm pipeline set");
+    } else if (normalizedField === "name") input.name = value;
     else if (normalizedField === "entity-type" || normalizedField === "entitytype") input.entityType = value;
     else if (normalizedField === "default" || normalizedField === "is-default")
       input.isDefault = parseBooleanValue(value, field);
@@ -871,6 +1457,109 @@ export class CrmPipelineCommands {
       printJson(payload);
     } else {
       console.log(`✓ CRM pipeline updated: ${pipeline.id} ${pipeline.name}`);
+    }
+    return payload;
+  }
+}
+
+@Group({
+  name: "crm.pipeline.policy",
+  description: "Evaluate pipeline metadata policies (engine consumers: send_window, hitl_required_when)",
+})
+export class CrmPipelinePolicyCommands {
+  @Scope("open")
+  @Command({
+    name: "send-window-check",
+    description: "Evaluate metadata.send_window for a pipeline at a given instant (allow / releaseAt)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "crm.pipeline.policy",
+    action: "send-window-check",
+    risk: "low",
+  })
+  @Returns(crmPipelineSendWindowCheckReturnSchema)
+  sendWindowCheck(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({
+      flags: "--at <iso>",
+      description: "Instant to evaluate (ISO 8601, default: now)",
+    })
+    atIso?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const meta = pipeline.pipeline.metadata as Record<string, unknown> | null | undefined;
+    const sendWindow = meta?.send_window as PipelineMetadata["send_window"];
+    const at = atIso ? new Date(atIso) : new Date();
+    if (atIso && Number.isNaN(at.getTime())) fail(`Invalid --at: ${atIso}`);
+    const decision = evaluateSendWindow(sendWindow, at);
+    const payload = {
+      pipelineId: pipeline.pipeline.id,
+      ok: decision.allowed,
+      errors: [],
+      warnings: [],
+      decision,
+    };
+    if (asJson) {
+      printJson(payload);
+      if (!decision.allowed) process.exitCode = 1;
+      return payload;
+    }
+    console.log(`\nSend-window check: ${pipeline.pipeline.name} (${pipeline.pipeline.id})`);
+    console.log(`Evaluated at: ${decision.evaluatedAtIso} (tz=${decision.timezone})`);
+    console.log(`Allowed: ${decision.allowed ? "YES" : "NO"} (${decision.reason})`);
+    if (!decision.allowed && decision.releaseAtIso) {
+      console.log(`Release at: ${decision.releaseAtIso}`);
+    }
+    if (!decision.allowed) process.exitCode = 1;
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({
+    name: "hitl-check",
+    description: "Evaluate metadata.hitl_required_when against a JSON context (decide if send needs human approval)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "crm.pipeline.policy",
+    action: "hitl-check",
+    risk: "low",
+  })
+  @Returns(crmPipelineHitlCheckReturnSchema)
+  hitlCheck(
+    @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
+    @Option({
+      flags: "--context <json>",
+      description: "JSON object with context (tags, contact_value, ltv)",
+    })
+    contextJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const pipeline = getCrmPipeline(pipelineRef);
+    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    const meta = pipeline.pipeline.metadata as Record<string, unknown> | null | undefined;
+    const rules = meta?.hitl_required_when as PipelineMetadata["hitl_required_when"];
+    const context = contextJson ? (parseJsonObjectArg(contextJson) ?? {}) : {};
+    const decision = evaluateHitlRequiredWhen(rules, context);
+    const payload = {
+      pipelineId: pipeline.pipeline.id,
+      ok: !decision.hitlRequired,
+      errors: [],
+      warnings: [],
+      decision,
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`\nHITL check: ${pipeline.pipeline.name} (${pipeline.pipeline.id})`);
+    console.log(`HITL required: ${decision.hitlRequired ? "YES" : "NO"}`);
+    if (decision.matchedConditions > 0) {
+      console.log(`Matched conditions (${decision.matchedConditions}):`);
+      for (const r of decision.reasons) console.log(`  - ${r}`);
     }
     return payload;
   }

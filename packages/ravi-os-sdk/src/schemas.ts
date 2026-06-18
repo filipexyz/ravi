@@ -18304,6 +18304,22 @@ export const CrmOpportunityShowReturnSchema = {
 export const CrmPipelineCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "analystAvoid": {
+      "description": "Comma list of forbidden topics",
+      "type": "string"
+    },
+    "analystMentions": {
+      "description": "Comma list of mandatory mentions in analyst messages",
+      "type": "string"
+    },
+    "analystTone": {
+      "description": "Tone for analyst-drafted messages",
+      "type": "string"
+    },
+    "consumer": {
+      "description": "Comma list of consumer agent ids",
+      "type": "string"
+    },
     "default": {
       "description": "Mark as default pipeline for the entity type",
       "type": "boolean"
@@ -18312,16 +18328,79 @@ export const CrmPipelineCreateInputSchema = {
       "description": "CRM entity type (default: opportunity)",
       "type": "string"
     },
+    "hitlRequiredWhen": {
+      "description": "JSON {conditions:[...]}",
+      "type": "string"
+    },
     "idempotencyKey": {
       "description": "Deduplicate repeated create attempts",
       "type": "string"
     },
+    "messagePrefix": {
+      "description": "Outbound message prefix",
+      "type": "string"
+    },
+    "messageSuffix": {
+      "description": "Outbound message suffix",
+      "type": "string"
+    },
     "metadata": {
-      "description": "Metadata JSON object",
+      "description": "Raw metadata JSON object (structured flags merge on top)",
       "type": "string"
     },
     "name": {
       "description": "Pipeline name",
+      "type": "string"
+    },
+    "objetivo": {
+      "description": "One-paragraph pipeline purpose",
+      "type": "string"
+    },
+    "priorityGlobal": {
+      "description": "Cross-pipeline arbitration priority (1=highest, 5=lowest)",
+      "type": "string"
+    },
+    "producer": {
+      "description": "Comma list of producer agent ids",
+      "type": "string"
+    },
+    "readingListId": {
+      "description": "Reading list slug bound to this pipeline",
+      "type": "string"
+    },
+    "reguaTag": {
+      "description": "Repeatable regua tag JSON {tag,apply_when,linked_stage,apply_by}",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "relatedCron": {
+      "description": "Comma list of related CRON ids",
+      "type": "string"
+    },
+    "relatedTrigger": {
+      "description": "Comma list of related trigger ids",
+      "type": "string"
+    },
+    "sendWindow": {
+      "description": "Send window 'hours[,days],timezone' (e.g. 9-21,mon-sat,America/Sao_Paulo)",
+      "type": "string"
+    },
+    "versao": {
+      "description": "Semver of this metadata document",
+      "type": "string"
+    },
+    "vipGuardAction": {
+      "description": "hitl | block | tag_only",
+      "type": "string"
+    },
+    "vipGuardLtv": {
+      "description": "Lifetime value threshold for VIP",
+      "type": "string"
+    },
+    "vipGuardTag": {
+      "description": "Comma list of VIP tag triggers",
       "type": "string"
     }
   },
@@ -18447,20 +18526,434 @@ export const CrmPipelineListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.pipeline.policy.hitl-check`. */
+export const CrmPipelinePolicyHitlCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "context": {
+      "description": "JSON object with context (tags, contact_value, ltv)",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.policy.hitl-check`. */
+export const CrmPipelinePolicyHitlCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "hitlRequired": {
+          "type": "boolean"
+        },
+        "matchedConditions": {
+          "type": "number"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "hitlRequired",
+        "matchedConditions",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "ok",
+    "errors",
+    "warnings",
+    "decision"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.policy.send-window-check`. */
+export const CrmPipelinePolicySendWindowCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "at": {
+      "description": "Instant to evaluate (ISO 8601, default: now)",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.policy.send-window-check`. */
+export const CrmPipelinePolicySendWindowCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "evaluatedAtIso": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "releaseAtIso": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed",
+        "reason",
+        "evaluatedAtIso",
+        "timezone"
+      ],
+      "type": "object"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "ok",
+    "errors",
+    "warnings",
+    "decision"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.review`. */
+export const CrmPipelineReviewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.review`. */
+export const CrmPipelineReviewReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fields": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "group": {
+            "enum": [
+              "identidade",
+              "estrutura",
+              "politicas",
+              "tags",
+              "comunicacao",
+              "integracoes"
+            ],
+            "type": "string"
+          },
+          "present": {
+            "enum": [
+              "present",
+              "absent",
+              "partial"
+            ],
+            "type": "string"
+          },
+          "suggestion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "field",
+          "present",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "highSeverityGaps": {
+      "type": "number"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "pipelineName": {
+      "type": "string"
+    },
+    "totalGaps": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "pipelineName",
+    "highSeverityGaps",
+    "totalGaps",
+    "fields"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.set`. */
 export const CrmPipelineSetInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "analystAvoid": {
+      "description": "Patch metadata.analyst_guidance.avoid (comma)",
+      "type": "string"
+    },
+    "analystMentions": {
+      "description": "Patch metadata.analyst_guidance.mandatory_mentions (comma)",
+      "type": "string"
+    },
+    "analystTone": {
+      "description": "Patch metadata.analyst_guidance.tone",
+      "type": "string"
+    },
+    "consumer": {
+      "description": "Patch metadata.consumers (comma list)",
+      "type": "string"
+    },
     "field": {
       "description": "name|entity-type|default|status|metadata",
+      "type": "string"
+    },
+    "hitlRequiredWhen": {
+      "description": "Patch metadata.hitl_required_when",
+      "type": "string"
+    },
+    "messagePrefix": {
+      "description": "Patch metadata.message_rule.prefix",
+      "type": "string"
+    },
+    "messageSuffix": {
+      "description": "Patch metadata.message_rule.suffix",
+      "type": "string"
+    },
+    "objetivo": {
+      "description": "Patch metadata.objetivo",
       "type": "string"
     },
     "pipeline": {
       "description": "CRM pipeline ID or name",
       "type": "string"
     },
+    "priorityGlobal": {
+      "description": "Patch metadata.priority_global (1-5)",
+      "type": "string"
+    },
+    "producer": {
+      "description": "Patch metadata.producers (comma list)",
+      "type": "string"
+    },
+    "readingListId": {
+      "description": "Patch metadata.reading_list_id",
+      "type": "string"
+    },
+    "reguaTag": {
+      "description": "Repeatable regua tag JSON (appends to existing list)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "relatedCron": {
+      "description": "Patch metadata.related_crons (comma)",
+      "type": "string"
+    },
+    "relatedTrigger": {
+      "description": "Patch metadata.related_triggers (comma)",
+      "type": "string"
+    },
+    "sendWindow": {
+      "description": "Patch metadata.send_window",
+      "type": "string"
+    },
     "value": {
-      "description": "New value",
+      "description": "New value (use '-' to patch metadata via structured flags)",
+      "type": "string"
+    },
+    "versao": {
+      "description": "Patch metadata.versao",
+      "type": "string"
+    },
+    "vipGuardAction": {
+      "description": "Patch metadata.vip_guard.action (hitl|block|tag_only)",
+      "type": "string"
+    },
+    "vipGuardLtv": {
+      "description": "Patch metadata.vip_guard.ltv_threshold",
+      "type": "string"
+    },
+    "vipGuardTag": {
+      "description": "Patch metadata.vip_guard.tag_triggers",
       "type": "string"
     }
   },
@@ -18494,6 +18987,10 @@ export const CrmPipelineSetReturnSchema = {
 export const CrmPipelineShowInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "explain": {
+      "description": "Render metadata field-by-field with operational impact",
+      "type": "boolean"
+    },
     "pipeline": {
       "description": "CRM pipeline ID or name",
       "type": "string"
@@ -19057,6 +19554,148 @@ export const CrmPipelineStageTopicsReturnSchema = {
     "total",
     "pagination",
     "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.validate`. */
+export const CrmPipelineValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name (omit when using --schema-json)",
+      "type": "string"
+    },
+    "schemaJson": {
+      "description": "Print canonical JSON Schema (Draft-07) and exit",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.validate`. */
+export const CrmPipelineValidateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "schema": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "ok",
+    "errors",
+    "warnings"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

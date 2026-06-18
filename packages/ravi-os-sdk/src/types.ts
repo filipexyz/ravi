@@ -3714,11 +3714,30 @@ export type CrmOpportunityShowReturn = {
 
 /** Input shape for `crm.pipeline.create`. */
 export type CrmPipelineCreateInput = {
+  analystAvoid?: string;
+  analystMentions?: string;
+  analystTone?: string;
+  consumer?: string;
   default?: boolean;
   entityType?: string;
+  hitlRequiredWhen?: string;
   idempotencyKey?: string;
+  messagePrefix?: string;
+  messageSuffix?: string;
   metadata?: string;
   name: string;
+  objetivo?: string;
+  priorityGlobal?: string;
+  producer?: string;
+  readingListId?: string;
+  reguaTag?: string[];
+  relatedCron?: string;
+  relatedTrigger?: string;
+  sendWindow?: string;
+  versao?: string;
+  vipGuardAction?: string;
+  vipGuardLtv?: string;
+  vipGuardTag?: string;
 };
 
 /** Return shape for `crm.pipeline.create`. */
@@ -3753,11 +3772,110 @@ export type CrmPipelineListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `crm.pipeline.policy.hitl-check`. */
+export type CrmPipelinePolicyHitlCheckInput = {
+  context?: string;
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.policy.hitl-check`. */
+export type CrmPipelinePolicyHitlCheckReturn = {
+  decision: {
+    hitlRequired: boolean;
+    matchedConditions: number;
+    reasons: string[];
+  };
+  errors: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+  ok: boolean;
+  pipelineId: string;
+  warnings: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+};
+
+/** Input shape for `crm.pipeline.policy.send-window-check`. */
+export type CrmPipelinePolicySendWindowCheckInput = {
+  at?: string;
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.policy.send-window-check`. */
+export type CrmPipelinePolicySendWindowCheckReturn = {
+  decision: {
+    allowed: boolean;
+    evaluatedAtIso: string;
+    reason: string;
+    releaseAtIso?: string;
+    timezone: string;
+  };
+  errors: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+  ok: boolean;
+  pipelineId: string;
+  warnings: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+};
+
+/** Input shape for `crm.pipeline.review`. */
+export type CrmPipelineReviewInput = {
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.review`. */
+export type CrmPipelineReviewReturn = {
+  fields: Array<{
+    detail: string;
+    field: string;
+    group: "identidade" | "estrutura" | "politicas" | "tags" | "comunicacao" | "integracoes";
+    present: "present" | "absent" | "partial";
+    suggestion?: string;
+  }>;
+  highSeverityGaps: number;
+  pipelineId: string;
+  pipelineName: string;
+  totalGaps: number;
+};
+
 /** Input shape for `crm.pipeline.set`. */
 export type CrmPipelineSetInput = {
+  analystAvoid?: string;
+  analystMentions?: string;
+  analystTone?: string;
+  consumer?: string;
   field: string;
+  hitlRequiredWhen?: string;
+  messagePrefix?: string;
+  messageSuffix?: string;
+  objetivo?: string;
   pipeline: string;
+  priorityGlobal?: string;
+  producer?: string;
+  readingListId?: string;
+  reguaTag?: string[];
+  relatedCron?: string;
+  relatedTrigger?: string;
+  sendWindow?: string;
   value: string;
+  versao?: string;
+  vipGuardAction?: string;
+  vipGuardLtv?: string;
+  vipGuardTag?: string;
 };
 
 /** Return shape for `crm.pipeline.set`. */
@@ -3769,6 +3887,7 @@ export type CrmPipelineSetReturn = {
 
 /** Input shape for `crm.pipeline.show`. */
 export type CrmPipelineShowInput = {
+  explain?: boolean;
   pipeline: string;
 };
 
@@ -3931,6 +4050,31 @@ export type CrmPipelineStageTopicsReturn = {
   };
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `crm.pipeline.validate`. */
+export type CrmPipelineValidateInput = {
+  pipeline?: string;
+  schemaJson?: boolean;
+};
+
+/** Return shape for `crm.pipeline.validate`. */
+export type CrmPipelineValidateReturn = {
+  errors: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+  ok: boolean;
+  pipelineId: string;
+  schema?: Record<string, unknown>;
+  warnings: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
 };
 
 /** Input shape for `crm.task.cancel`. */

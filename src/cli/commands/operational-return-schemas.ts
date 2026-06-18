@@ -81,6 +81,79 @@ export const crmBoardReturnSchema = z
 export const crmPipelineDetailsReturnSchema = looseObjectSchema;
 export const crmPipelineStageDetailsReturnSchema = looseObjectSchema;
 
+const crmPipelineValidationIssueReturnSchema = z
+  .object({
+    path: z.string(),
+    message: z.string(),
+    severity: z.enum(["warning", "error"]),
+    code: z.string().optional(),
+  })
+  .strict();
+
+export const crmPipelineValidationReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    ok: z.boolean(),
+    errors: z.array(crmPipelineValidationIssueReturnSchema),
+    warnings: z.array(crmPipelineValidationIssueReturnSchema),
+    schema: jsonObjectSchema.optional(),
+  })
+  .strict();
+
+const crmPipelineReviewFieldReturnSchema = z
+  .object({
+    group: z.enum(["identidade", "estrutura", "politicas", "tags", "comunicacao", "integracoes"]),
+    field: z.string(),
+    present: z.enum(["present", "absent", "partial"]),
+    detail: z.string(),
+    suggestion: z.string().optional(),
+  })
+  .strict();
+
+export const crmPipelineReviewReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    pipelineName: z.string(),
+    highSeverityGaps: z.number(),
+    totalGaps: z.number(),
+    fields: z.array(crmPipelineReviewFieldReturnSchema),
+  })
+  .strict();
+
+export const crmPipelineSendWindowCheckReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    ok: z.boolean(),
+    errors: z.array(crmPipelineValidationIssueReturnSchema),
+    warnings: z.array(crmPipelineValidationIssueReturnSchema),
+    decision: z
+      .object({
+        allowed: z.boolean(),
+        reason: z.string(),
+        releaseAtIso: z.string().optional(),
+        evaluatedAtIso: z.string(),
+        timezone: z.string(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const crmPipelineHitlCheckReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    ok: z.boolean(),
+    errors: z.array(crmPipelineValidationIssueReturnSchema),
+    warnings: z.array(crmPipelineValidationIssueReturnSchema),
+    decision: z
+      .object({
+        hitlRequired: z.boolean(),
+        matchedConditions: z.number(),
+        reasons: z.array(z.string()),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const crmOpportunityContactsReturnSchema = z
   .object({
     total: z.number(),
