@@ -6362,6 +6362,7 @@ export class RaviClient {
       cooldown?: string;
       filter?: string;
       message?: string;
+      replySession?: string;
       session?: string;
       topic?: string;
     }): Promise<TriggersAddReturn> => {

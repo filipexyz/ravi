@@ -223,6 +223,7 @@ describe("TriggersCommands topic guidance", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         true,
       ),
     );
@@ -318,6 +319,7 @@ describe("TriggersCommands topic guidance", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         true,
       ),
     );
@@ -380,5 +382,55 @@ describe("TriggersCommands topic guidance", () => {
 
     await expect(commands.set("trg_1", "filter", `data.ok == "true" &&`)).rejects.toThrow("Invalid filter");
     expect(updatedTriggers).toEqual([]);
+  });
+
+  it("captures --reply-session override on add", async () => {
+    const commands = new TriggersCommands();
+
+    await commands.add(
+      "override",
+      "ravi.external.topic",
+      "hello",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "target-session-name",
+    );
+
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "override",
+        replySession: "target-session-name",
+      }),
+    );
+  });
+
+  it("sets replySession on existing trigger", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(() => commands.set("trg_1", "replySession", "gest-o-financeira-sde", true));
+
+    expect(updatedTriggers).toContainEqual({
+      id: "trg_1",
+      patch: { replySession: "gest-o-financeira-sde" },
+    });
+    expect(payload).toMatchObject({
+      status: "updated",
+      property: "replySession",
+      value: "gest-o-financeira-sde",
+    });
+  });
+
+  it("clears replySession when value is null", async () => {
+    const commands = new TriggersCommands();
+
+    await commands.set("trg_1", "replySession", "null");
+
+    expect(updatedTriggers).toContainEqual({
+      id: "trg_1",
+      patch: { replySession: undefined },
+    });
   });
 });

@@ -11074,6 +11074,7 @@ export type TriggersAddInput = {
   filter?: string;
   message?: string;
   name: string;
+  replySession?: string;
   session?: string;
   topic?: string;
 };

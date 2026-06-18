@@ -50252,6 +50252,10 @@ export const TriggersAddInputSchema = {
       "description": "Trigger name",
       "type": "string"
     },
+    "replySession": {
+      "description": "Override the session used for outbound delivery (defaults to caller session)",
+      "type": "string"
+    },
     "session": {
       "description": "Session: main or isolated (default: isolated)",
       "type": "string"
@@ -50600,7 +50604,7 @@ export const TriggersSetInputSchema = {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, topic, agent, account, session, cooldown",
+      "description": "Property: name, message, topic, agent, account, session, cooldown, filter, replySession",
       "type": "string"
     },
     "value": {
