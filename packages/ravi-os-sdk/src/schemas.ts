@@ -18547,12 +18547,57 @@ export const CrmPipelinePolicyHitlCheckInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.policy.hitl-check`. */
 export const CrmPipelinePolicyHitlCheckReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "hitlRequired": {
+          "type": "boolean"
+        },
+        "matchedConditions": {
+          "type": "number"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "hitlRequired",
+        "matchedConditions",
+        "reasons"
+      ],
+      "type": "object"
+    },
     "errors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -18565,8 +18610,30 @@ export const CrmPipelinePolicyHitlCheckReturnSchema = {
     },
     "warnings": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -18576,7 +18643,8 @@ export const CrmPipelinePolicyHitlCheckReturnSchema = {
     "pipelineId",
     "ok",
     "errors",
-    "warnings"
+    "warnings",
+    "decision"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -18602,12 +18670,61 @@ export const CrmPipelinePolicySendWindowCheckInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.policy.send-window-check`. */
 export const CrmPipelinePolicySendWindowCheckReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "evaluatedAtIso": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "releaseAtIso": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed",
+        "reason",
+        "evaluatedAtIso",
+        "timezone"
+      ],
+      "type": "object"
+    },
     "errors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -18620,8 +18737,30 @@ export const CrmPipelinePolicySendWindowCheckReturnSchema = {
     },
     "warnings": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -18631,7 +18770,8 @@ export const CrmPipelinePolicySendWindowCheckReturnSchema = {
     "pipelineId",
     "ok",
     "errors",
-    "warnings"
+    "warnings",
+    "decision"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -18653,12 +18793,47 @@ export const CrmPipelineReviewInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.review`. */
 export const CrmPipelineReviewReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "fields": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "group": {
+            "enum": [
+              "identidade",
+              "estrutura",
+              "politicas",
+              "tags",
+              "comunicacao",
+              "integracoes"
+            ],
+            "type": "string"
+          },
+          "present": {
+            "enum": [
+              "present",
+              "absent",
+              "partial"
+            ],
+            "type": "string"
+          },
+          "suggestion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "field",
+          "present",
+          "detail"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -19401,12 +19576,71 @@ export const CrmPipelineValidateInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.validate`. */
 export const CrmPipelineValidateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "errors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -19417,10 +19651,41 @@ export const CrmPipelineValidateReturnSchema = {
     "pipelineId": {
       "type": "string"
     },
+    "schema": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
     "warnings": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
         "type": "object"
       },
       "type": "array"

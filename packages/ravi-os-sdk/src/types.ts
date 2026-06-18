@@ -3780,11 +3780,25 @@ export type CrmPipelinePolicyHitlCheckInput = {
 
 /** Return shape for `crm.pipeline.policy.hitl-check`. */
 export type CrmPipelinePolicyHitlCheckReturn = {
-  errors: Array<Record<string, unknown>>;
+  decision: {
+    hitlRequired: boolean;
+    matchedConditions: number;
+    reasons: string[];
+  };
+  errors: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
   ok: boolean;
   pipelineId: string;
-  warnings: Array<Record<string, unknown>>;
-  [k: string]: unknown;
+  warnings: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
 };
 
 /** Input shape for `crm.pipeline.policy.send-window-check`. */
@@ -3795,11 +3809,27 @@ export type CrmPipelinePolicySendWindowCheckInput = {
 
 /** Return shape for `crm.pipeline.policy.send-window-check`. */
 export type CrmPipelinePolicySendWindowCheckReturn = {
-  errors: Array<Record<string, unknown>>;
+  decision: {
+    allowed: boolean;
+    evaluatedAtIso: string;
+    reason: string;
+    releaseAtIso?: string;
+    timezone: string;
+  };
+  errors: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
   ok: boolean;
   pipelineId: string;
-  warnings: Array<Record<string, unknown>>;
-  [k: string]: unknown;
+  warnings: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
 };
 
 /** Input shape for `crm.pipeline.review`. */
@@ -3809,12 +3839,17 @@ export type CrmPipelineReviewInput = {
 
 /** Return shape for `crm.pipeline.review`. */
 export type CrmPipelineReviewReturn = {
-  fields: Array<Record<string, unknown>>;
+  fields: Array<{
+    detail: string;
+    field: string;
+    group: "identidade" | "estrutura" | "politicas" | "tags" | "comunicacao" | "integracoes";
+    present: "present" | "absent" | "partial";
+    suggestion?: string;
+  }>;
   highSeverityGaps: number;
   pipelineId: string;
   pipelineName: string;
   totalGaps: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.set`. */
@@ -4025,11 +4060,21 @@ export type CrmPipelineValidateInput = {
 
 /** Return shape for `crm.pipeline.validate`. */
 export type CrmPipelineValidateReturn = {
-  errors: Array<Record<string, unknown>>;
+  errors: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
   ok: boolean;
   pipelineId: string;
-  warnings: Array<Record<string, unknown>>;
-  [k: string]: unknown;
+  schema?: Record<string, unknown>;
+  warnings: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
 };
 
 /** Input shape for `crm.task.cancel`. */
