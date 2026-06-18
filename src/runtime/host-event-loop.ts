@@ -73,6 +73,11 @@ const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
 const MAX_TURN_FAILURE_RESPONSE = 320;
 const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
+const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
+const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
+const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
+
+const userFacingRuntimeLimitSuppressions = new Map<string, number>();
 
 export type RuntimeSafeEmit = (topic: string, data: Record<string, unknown>) => Promise<void>;
 
@@ -355,6 +360,135 @@ function isRecoverableInterruptionFailure(event: {
     (details.includes("stop_reason=null") || details.includes("stop_reason=tool_use"));
 
   return hasAbortMarker || hasInterruptedDiagnostic;
+}
+
+type UserFacingRuntimeLimitFailure = {
+  kind: "session_limit";
+  windowKey: string;
+  expiresAt: number;
+};
+
+type UserFacingRuntimeLimitSuppressionDecision =
+  | {
+      suppressed: false;
+      classified?: UserFacingRuntimeLimitFailure;
+    }
+  | {
+      suppressed: true;
+      classified: UserFacingRuntimeLimitFailure;
+      previousExpiresAt: number;
+    };
+
+function firstNonEmptyLine(value: string): string {
+  return (
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean) ?? ""
+  );
+}
+
+function normalizeSuppressionText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function extractSessionLimitResetDescriptor(error: string): string | undefined {
+  const firstLine = firstNonEmptyLine(error);
+  const match = firstLine.match(/\breset(?:s|ting)?\s+(.+?)(?:$|[.;])/i);
+  const raw = match?.[1]?.trim();
+  if (!raw) return undefined;
+  return normalizeSuppressionText(raw.replace(/^at\s+/i, "")).slice(0, 120);
+}
+
+function parseResetDescriptorTime(descriptor: string, now: number): number | undefined {
+  const match = descriptor.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (!match) return undefined;
+
+  let hour = Number(match[1]);
+  const minute = match[2] === undefined ? 0 : Number(match[2]);
+  const meridiem = match[3]?.toLowerCase();
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
+    return undefined;
+  }
+
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+
+  const resetAt = new Date(now);
+  resetAt.setHours(hour, minute, 0, 0);
+  if (resetAt.getTime() <= now - USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS) {
+    resetAt.setDate(resetAt.getDate() + 1);
+  }
+  return resetAt.getTime();
+}
+
+export function classifyUserFacingRuntimeLimitFailure(
+  error: string,
+  now = Date.now(),
+): UserFacingRuntimeLimitFailure | undefined {
+  const normalized = normalizeSuppressionText(error);
+  const isExactSessionLimit = /you['’]?ve hit your session limit/i.test(error);
+  const isGenericSessionLimitWithReset = /\bsession limit\b/i.test(error) && /\breset(?:s|ting)?\b/i.test(error);
+  if (!isExactSessionLimit && !isGenericSessionLimitWithReset) return undefined;
+
+  const resetDescriptor = extractSessionLimitResetDescriptor(error);
+  const resetAt = resetDescriptor ? parseResetDescriptorTime(resetDescriptor, now) : undefined;
+  const expiresAt = resetAt
+    ? Math.min(resetAt + USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS, now + USER_FACING_LIMIT_SUPPRESSION_MAX_MS)
+    : now + USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS;
+  const windowKey = resetDescriptor
+    ? `reset:${resetDescriptor}`
+    : `message:${firstNonEmptyLine(normalized).slice(0, 160)}`;
+
+  return {
+    kind: "session_limit",
+    windowKey,
+    expiresAt,
+  };
+}
+
+export function resetUserFacingRuntimeLimitSuppressionsForTest(): void {
+  userFacingRuntimeLimitSuppressions.clear();
+}
+
+function pruneExpiredUserFacingRuntimeLimitSuppressions(now: number): void {
+  for (const [key, expiresAt] of userFacingRuntimeLimitSuppressions.entries()) {
+    if (expiresAt <= now) {
+      userFacingRuntimeLimitSuppressions.delete(key);
+    }
+  }
+}
+
+export function shouldSuppressUserFacingRuntimeLimitFailure(input: {
+  error: string;
+  scope: string;
+  now?: number;
+}): UserFacingRuntimeLimitSuppressionDecision {
+  const now = input.now ?? Date.now();
+  const classified = classifyUserFacingRuntimeLimitFailure(input.error, now);
+  if (!classified) return { suppressed: false };
+
+  pruneExpiredUserFacingRuntimeLimitSuppressions(now);
+  const key = `${input.scope}:${classified.kind}:${classified.windowKey}`;
+  const previousExpiresAt = userFacingRuntimeLimitSuppressions.get(key);
+  if (previousExpiresAt !== undefined && previousExpiresAt > now) {
+    return { suppressed: true, classified, previousExpiresAt };
+  }
+
+  userFacingRuntimeLimitSuppressions.set(key, classified.expiresAt);
+  return { suppressed: false, classified };
+}
+
+function buildUserFacingFailureSuppressionScope(input: {
+  sessionKey: string;
+  provider: RuntimeProviderId;
+  source?: RuntimeHostStreamingSession["currentSource"];
+}): string {
+  const source = input.source;
+  const outputScope = source
+    ? `${source.channel}:${source.accountId ?? ""}:${source.chatId ?? source.canonicalChatId ?? ""}`
+    : input.sessionKey;
+  return `${input.provider}:${outputScope}`;
 }
 
 export function formatUserFacingTurnFailure(error: string): string {
@@ -1897,7 +2031,25 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
         if (streaming.agentMode !== "sentinel") {
-          await emitResponse(formatUserFacingTurnFailure(event.error));
+          const suppression = shouldSuppressUserFacingRuntimeLimitFailure({
+            error: event.error,
+            scope: buildUserFacingFailureSuppressionScope({
+              sessionKey: session.sessionKey,
+              provider: runtimeSession.provider,
+              source: streaming.currentSource,
+            }),
+          });
+          if (suppression.suppressed) {
+            log.info("Suppressing repeated user-facing runtime limit failure", {
+              runId,
+              sessionName,
+              provider: runtimeSession.provider,
+              windowKey: suppression.classified.windowKey,
+              previousExpiresAt: suppression.previousExpiresAt,
+            });
+          } else {
+            await emitResponse(formatUserFacingTurnFailure(event.error));
+          }
         }
         updateRuntimeLiveState(sessionName, {
           activity: "blocked",
