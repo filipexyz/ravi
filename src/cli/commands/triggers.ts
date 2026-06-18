@@ -302,6 +302,11 @@ export class TriggersCommands {
       description: "Filter expression (e.g. 'data.cwd == \"/path/to/workspace\"')",
     })
     filter?: string,
+    @Option({
+      flags: "--reply-session <name|key>",
+      description: "Override the session used for outbound delivery (defaults to caller session)",
+    })
+    replySessionOverride?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!topic) {
@@ -356,7 +361,9 @@ export class TriggersCommands {
     // Prefer the friendly session name when available so `triggers show`
     // surfaces something legible; resolveSession accepts both name and
     // session_key, so resolution at fire time is identical either way.
-    const replySession = ctx?.sessionName ?? ctx?.sessionKey;
+    // --reply-session overrides the auto-capture when the caller knows the
+    // trigger should reply to a different session than the one creating it.
+    const replySession = replySessionOverride?.trim() || (ctx?.sessionName ?? ctx?.sessionKey);
 
     // Freeze the creator's outbound source as a fallback for when the live
     // session can no longer resolve a deliverable target (lastChannel empty,
@@ -493,7 +500,7 @@ export class TriggersCommands {
   async set(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Arg("key", {
-      description: "Property: name, message, topic, agent, account, session, cooldown",
+      description: "Property: name, message, topic, agent, account, session, cooldown, filter, replySession",
     })
     key: string,
     @Arg("value", { description: "Property value" }) value: string,
@@ -582,8 +589,23 @@ export class TriggersCommands {
           break;
         }
 
+        case "replySession": {
+          // null/undefined distinction matters here: dbUpdateTrigger's outer
+          // guard skips fields that are `undefined`, so passing `undefined`
+          // for a clear request would leave the column unchanged. Use `null`
+          // to force the SQL UPDATE to set reply_session = NULL.
+          const cleared = value === "null" || value === "-";
+          const replySession: string | null = cleared ? null : value.trim();
+          updated = dbUpdateTrigger(id, { replySession });
+          normalizedValue = replySession;
+          logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(none)"}`);
+          break;
+        }
+
         default:
-          fail(`Unknown property: ${key}. Valid: name, message, topic, agent, account, session, cooldown, filter`);
+          fail(
+            `Unknown property: ${key}. Valid: name, message, topic, agent, account, session, cooldown, filter, replySession`,
+          );
       }
 
       await nats.emit("ravi.triggers.refresh", {});
