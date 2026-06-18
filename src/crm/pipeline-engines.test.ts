@@ -41,7 +41,6 @@ describe("evaluateSendWindow", () => {
 
   test("invalid hours format = fail-open allowed", () => {
     const result = evaluateSendWindow(
-      // biome-ignore lint/suspicious/noExplicitAny: testing invalid input
       { hours: "invalid", timezone: "America/Sao_Paulo" } as any,
       new Date("2026-06-17T15:00:00Z"),
     );
