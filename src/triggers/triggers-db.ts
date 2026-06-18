@@ -175,7 +175,10 @@ export function dbListTriggers(opts?: { enabledOnly?: boolean }): Trigger[] {
  */
 export function dbUpdateTrigger(
   id: string,
-  updates: Partial<Trigger> & { messageTemplateId?: string | null },
+  updates: Omit<Partial<Trigger>, "replySession"> & {
+    messageTemplateId?: string | null;
+    replySession?: string | null;
+  },
 ): Trigger {
   const db = getDb();
   const existing = dbGetTrigger(id);

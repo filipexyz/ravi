@@ -590,9 +590,14 @@ export class TriggersCommands {
         }
 
         case "replySession": {
-          const replySession = value === "null" || value === "-" ? undefined : value.trim();
+          // null/undefined distinction matters here: dbUpdateTrigger's outer
+          // guard skips fields that are `undefined`, so passing `undefined`
+          // for a clear request would leave the column unchanged. Use `null`
+          // to force the SQL UPDATE to set reply_session = NULL.
+          const cleared = value === "null" || value === "-";
+          const replySession: string | null = cleared ? null : value.trim();
           updated = dbUpdateTrigger(id, { replySession });
-          normalizedValue = replySession ?? null;
+          normalizedValue = replySession;
           logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(none)"}`);
           break;
         }

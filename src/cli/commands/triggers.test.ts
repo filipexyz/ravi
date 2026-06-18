@@ -430,7 +430,7 @@ describe("TriggersCommands topic guidance", () => {
 
     expect(updatedTriggers).toContainEqual({
       id: "trg_1",
-      patch: { replySession: undefined },
+      patch: { replySession: null },
     });
   });
 });
