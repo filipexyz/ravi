@@ -23,7 +23,12 @@ import {
 import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
-import { runRuntimeEventLoop } from "./host-event-loop.js";
+import {
+  classifyUserFacingRuntimeLimitFailure,
+  resetUserFacingRuntimeLimitSuppressionsForTest,
+  runRuntimeEventLoop,
+  shouldSuppressUserFacingRuntimeLimitFailure,
+} from "./host-event-loop.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
 import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
 import type {
@@ -320,9 +325,11 @@ describe("runtime session trace instrumentation", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-trace-test-");
     getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir ?? "/tmp");
+    resetUserFacingRuntimeLimitSuppressionsForTest();
   });
 
   afterEach(async () => {
+    resetUserFacingRuntimeLimitSuppressionsForTest();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
@@ -1019,6 +1026,43 @@ describe("runtime session trace instrumentation", () => {
       rawEvent: { type: "error", message: "provider down" },
     });
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
+  });
+
+  it("deduplicates user-facing provider session limit failures within the same reset window", () => {
+    const now = new Date("2026-06-16T15:56:00-03:00").getTime();
+    const scope = "codex:whatsapp:main:120363424772797713@g.us";
+    const error = "You've hit your session limit - resets 4:20pm (America/Sao_Paulo)";
+
+    const classified = classifyUserFacingRuntimeLimitFailure(error, now);
+    expect(classified?.kind).toBe("session_limit");
+    expect(classified?.windowKey).toContain("4:20pm");
+    expect(classified?.expiresAt ?? 0).toBeGreaterThan(now);
+
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now }).suppressed).toBe(false);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now: now + 1_000 }).suppressed).toBe(true);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "You've hit your session limit - resets 5:20pm (America/Sao_Paulo)",
+        scope,
+        now: now + 2_000,
+      }).suppressed,
+    ).toBe(false);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error,
+        scope: "codex:whatsapp:main:other-chat",
+        now: now + 3_000,
+      }).suppressed,
+    ).toBe(false);
+  });
+
+  it("does not deduplicate ordinary provider failures that mention limits", () => {
+    const scope = "codex:whatsapp:main:120363424772797713@g.us";
+    const error = "Tool output exceeded the size limit.";
+
+    expect(classifyUserFacingRuntimeLimitFailure(error)).toBeUndefined();
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope }).suppressed).toBe(false);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope }).suppressed).toBe(false);
   });
 
   it("times out active provider turns that stop emitting runtime events", async () => {

@@ -57,6 +57,12 @@ export interface CommandOptions {
   name: string;
   description: string;
   aliases?: string[];
+  /**
+   * Optional extended help text rendered after the auto-generated usage section
+   * (`commander addHelpText("after", ...)`). Use for educational examples, flag
+   * groupings, or operational impact notes that go beyond the one-line description.
+   */
+  helpAfter?: string;
 }
 
 export interface ArgOptions {

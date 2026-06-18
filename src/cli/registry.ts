@@ -126,6 +126,11 @@ function registerCommand(
     sub.aliases(cmdMeta.aliases);
   }
 
+  // Educational extended help (rendered after auto-usage section)
+  if (cmdMeta.helpAfter) {
+    sub.addHelpText("after", cmdMeta.helpAfter);
+  }
+
   // Get args and options metadata
   const argsMeta = getArgsMetadata(instance, cmdMeta.method);
   const optionsMeta = getOptionsMetadata(instance, cmdMeta.method);
