@@ -431,6 +431,14 @@ export interface PipelineReviewReport {
   totalGaps: number;
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
 /**
  * Produce a human-readable review of a pipeline.metadata, used by
  * `ravi crm pipeline review`. The 12 fields below cover the canonical
@@ -443,6 +451,15 @@ export function reviewPipelineMetadata(
 ): PipelineReviewReport {
   const validation = validatePipelineMetadata(pipeline.metadata, opts);
   const parsed = validation.parsed ?? (pipeline.metadata as Partial<PipelineMetadata> | null) ?? {};
+  const producers = stringArray(parsed.producers);
+  const consumers = stringArray(parsed.consumers);
+  const stagesArr = Array.isArray(parsed.stages) ? parsed.stages : [];
+  const hitlConditions =
+    parsed.hitl_required_when && typeof parsed.hitl_required_when === "object"
+      ? arrayLength((parsed.hitl_required_when as { conditions?: unknown }).conditions)
+      : 0;
+  const reguaTagsCount = arrayLength(parsed.regua_tags);
+  const relatedCronsCount = arrayLength(parsed.related_crons);
 
   const fields: PipelineReviewFieldStatus[] = [];
   let highSeverityGaps = 0;
@@ -493,16 +510,16 @@ export function reviewPipelineMetadata(
   mark(
     "identidade",
     "producers",
-    Array.isArray(parsed.producers) && parsed.producers.length > 0,
-    `producers: ${(parsed.producers ?? []).join(", ")}`,
+    producers.length > 0,
+    `producers: ${producers.join(", ")}`,
     "producers list empty",
     "Declare agents that create opportunities in this pipeline",
   );
   mark(
     "identidade",
     "consumers",
-    Array.isArray(parsed.consumers) && parsed.consumers.length > 0,
-    `consumers: ${(parsed.consumers ?? []).join(", ")}`,
+    consumers.length > 0,
+    `consumers: ${consumers.join(", ")}`,
     "consumers list empty",
     "Declare agents that read/act on this pipeline (analysts, dispatchers)",
   );
@@ -516,7 +533,6 @@ export function reviewPipelineMetadata(
   );
 
   // ESTRUTURA (1 field: stages)
-  const stagesArr = Array.isArray(parsed.stages) ? parsed.stages : [];
   if (stagesArr.length === 0) {
     mark(
       "estrutura",
@@ -563,8 +579,8 @@ export function reviewPipelineMetadata(
   mark(
     "politicas",
     "hitl_required_when",
-    Boolean(parsed.hitl_required_when && parsed.hitl_required_when.conditions.length > 0),
-    `hitl_required_when conditions: ${parsed.hitl_required_when?.conditions.length}`,
+    hitlConditions > 0,
+    `hitl_required_when conditions: ${hitlConditions}`,
     "hitl_required_when not configured",
     "Optional: declare conditional HITL rules",
   );
@@ -591,8 +607,8 @@ export function reviewPipelineMetadata(
   mark(
     "tags",
     "regua_tags",
-    Array.isArray(parsed.regua_tags) && parsed.regua_tags.length > 0,
-    `regua_tags count: ${(parsed.regua_tags ?? []).length}`,
+    reguaTagsCount > 0,
+    `regua_tags count: ${reguaTagsCount}`,
     "regua_tags empty",
     "Declare régua tag specs if pipeline uses tag-driven stage progression",
   );
@@ -601,8 +617,8 @@ export function reviewPipelineMetadata(
   mark(
     "integracoes",
     "related_crons",
-    Array.isArray(parsed.related_crons) && parsed.related_crons.length > 0,
-    `related_crons: ${(parsed.related_crons ?? []).length}`,
+    relatedCronsCount > 0,
+    `related_crons: ${relatedCronsCount}`,
     "related_crons empty",
     "Reference CRON ids that drive this pipeline",
   );

@@ -18918,7 +18918,7 @@ export const CrmPipelineSetInputSchema = {
       "type": "string"
     },
     "reguaTag": {
-      "description": "Repeatable regua tag JSON (replaces existing list)",
+      "description": "Repeatable regua tag JSON (appends to existing list)",
       "items": {
         "type": "string"
       },

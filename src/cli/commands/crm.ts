@@ -1377,7 +1377,7 @@ export class CrmPipelineCommands {
     analystAvoid?: string,
     @Option({
       flags: "--regua-tag <json...>",
-      description: "Repeatable regua tag JSON (replaces existing list)",
+      description: "Repeatable regua tag JSON (appends to existing list)",
     })
     reguaTags?: string[],
     @Option({ flags: "--related-cron <ids>", description: "Patch metadata.related_crons (comma)" })

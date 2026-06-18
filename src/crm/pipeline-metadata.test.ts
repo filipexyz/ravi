@@ -211,6 +211,25 @@ describe("reviewPipelineMetadata", () => {
     const stageField = report.fields.find((f: PipelineReviewFieldStatus) => f.field === "stages");
     expect(stageField?.present).toBe("partial");
   });
+
+  test("malformed metadata still produces a review instead of crashing", () => {
+    const report = reviewPipelineMetadata({
+      id: "crm_pipeline_bad",
+      name: "Bad",
+      metadata: {
+        producers: 123,
+        consumers: "dispatcher",
+        hitl_required_when: { description: "manual review path without conditions" },
+      },
+    });
+    const producersField = report.fields.find((f: PipelineReviewFieldStatus) => f.field === "producers");
+    const consumersField = report.fields.find((f: PipelineReviewFieldStatus) => f.field === "consumers");
+    const hitlField = report.fields.find((f: PipelineReviewFieldStatus) => f.field === "hitl_required_when");
+    expect(producersField?.present).toBe("absent");
+    expect(consumersField?.present).toBe("absent");
+    expect(hitlField?.present).toBe("absent");
+    expect(hitlField?.detail).toBe("hitl_required_when not configured");
+  });
 });
 
 describe("getPipelineMetadataJsonSchema", () => {
