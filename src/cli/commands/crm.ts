@@ -8,7 +8,9 @@ import {
   crmOpportunityContactsReturnSchema,
   crmOpportunityReturnSchema,
   crmPipelineDetailsReturnSchema,
+  crmPipelineHitlCheckReturnSchema,
   crmPipelineReviewReturnSchema,
+  crmPipelineSendWindowCheckReturnSchema,
   crmPipelineStageDetailsReturnSchema,
   crmPipelineValidationReturnSchema,
   crmProfileReturnSchema,
@@ -1476,7 +1478,7 @@ export class CrmPipelinePolicyCommands {
     action: "send-window-check",
     risk: "low",
   })
-  @Returns(crmPipelineValidationReturnSchema)
+  @Returns(crmPipelineSendWindowCheckReturnSchema)
   sendWindowCheck(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
     @Option({
@@ -1526,7 +1528,7 @@ export class CrmPipelinePolicyCommands {
     action: "hitl-check",
     risk: "low",
   })
-  @Returns(crmPipelineValidationReturnSchema)
+  @Returns(crmPipelineHitlCheckReturnSchema)
   hitlCheck(
     @Arg("pipeline", { description: "CRM pipeline ID or name" }) pipelineRef: string,
     @Option({
