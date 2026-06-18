@@ -45,6 +45,21 @@ const ianaTimezoneSchema = z.string().min(3).describe("IANA timezone (e.g. Ameri
 
 // --------------------------- POLICIES ---------------------------
 
+function isValidSendWindowHours(value: string): boolean {
+  const match = /^(\d{1,2})-(\d{1,2})$/.exec(value);
+  if (!match) return false;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+  return start >= 0 && start <= 23 && end >= 1 && end <= 24;
+}
+
+const sendWindowHoursSchema = z
+  .string()
+  .regex(/^(\d{1,2})-(\d{1,2})$/, "must be HH-HH (e.g. 9-21)")
+  .refine(isValidSendWindowHours, "must use 24h range with start 0..23 and end 1..24")
+  .describe("Allowed send window hours (24h format, inclusive start-exclusive end)");
+
 export const vipGuardSchema = z
   .object({
     tag_triggers: z.array(slugSchema).default([]).describe("Tags that mark a contact as VIP and trigger this guard"),
@@ -65,10 +80,7 @@ export type VipGuard = z.infer<typeof vipGuardSchema>;
 
 export const sendWindowSchema = z
   .object({
-    hours: z
-      .string()
-      .regex(/^(\d{1,2})-(\d{1,2})$/, "must be HH-HH (e.g. 9-21)")
-      .describe("Allowed send window hours (24h format, inclusive start-exclusive end)"),
+    hours: sendWindowHoursSchema,
     days: z
       .string()
       .regex(
@@ -639,7 +651,7 @@ export function getPipelineMetadataJsonSchema(): Record<string, unknown> {
         type: "object",
         required: ["hours", "timezone"],
         properties: {
-          hours: { type: "string", pattern: "^\\d{1,2}-\\d{1,2}$" },
+          hours: { type: "string", pattern: "^(?:[01]?\\d|2[0-3])-(?:0?[1-9]|1\\d|2[0-4])$" },
           days: { type: "string" },
           timezone: { type: "string" },
         },

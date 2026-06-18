@@ -108,6 +108,12 @@ function splitCommaList(value: string | undefined): string[] | undefined {
     .filter(Boolean);
 }
 
+function cloneObjectField(base: Record<string, unknown>, field: string): Record<string, unknown> {
+  const value = base[field];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return { ...(value as Record<string, unknown>) };
+}
+
 function parseSendWindowFlag(flag: string): { hours: string; days?: string; timezone: string } {
   // Format: "9-21,mon-sat,America/Sao_Paulo" or "9-21,America/Sao_Paulo" (no days).
   const parts = flag
@@ -139,7 +145,7 @@ function buildMetadataFromStructuredFlags(
   if (flags.versao !== undefined) meta.versao = flags.versao;
 
   if (flags.vipGuardTags !== undefined || flags.vipGuardLtv !== undefined || flags.vipGuardAction !== undefined) {
-    const vip: Record<string, unknown> = {};
+    const vip = cloneObjectField(meta, "vip_guard");
     const tagTriggers = splitCommaList(flags.vipGuardTags);
     if (tagTriggers) vip.tag_triggers = tagTriggers;
     if (flags.vipGuardLtv !== undefined) {
@@ -164,14 +170,14 @@ function buildMetadataFromStructuredFlags(
   }
 
   if (flags.messagePrefix !== undefined || flags.messageSuffix !== undefined) {
-    const mr: Record<string, unknown> = {};
+    const mr = cloneObjectField(meta, "message_rule");
     if (flags.messagePrefix !== undefined) mr.prefix = flags.messagePrefix;
     if (flags.messageSuffix !== undefined) mr.suffix = flags.messageSuffix;
     meta.message_rule = mr;
   }
 
   if (flags.analystTone !== undefined || flags.analystMentions !== undefined || flags.analystAvoid !== undefined) {
-    const ag: Record<string, unknown> = {};
+    const ag = cloneObjectField(meta, "analyst_guidance");
     if (flags.analystTone !== undefined) ag.tone = flags.analystTone;
     const mentions = splitCommaList(flags.analystMentions);
     if (mentions) ag.mandatory_mentions = mentions;
@@ -181,11 +187,13 @@ function buildMetadataFromStructuredFlags(
   }
 
   if (flags.reguaTags && flags.reguaTags.length > 0) {
-    meta.regua_tags = flags.reguaTags.map((raw, i) => {
+    const existing = Array.isArray(meta.regua_tags) ? meta.regua_tags : [];
+    const additions = flags.reguaTags.map((raw, i) => {
       const parsed = parseJsonObjectArg(raw);
       if (!parsed) fail(`--regua-tag #${i + 1} must be a non-null JSON object`);
       return parsed;
     });
+    meta.regua_tags = [...existing, ...additions];
   }
 
   const crons = splitCommaList(flags.relatedCrons);
@@ -194,6 +202,13 @@ function buildMetadataFromStructuredFlags(
   if (triggers) meta.related_triggers = triggers;
 
   return meta;
+}
+
+function assertValidPipelineMetadata(metadata: Record<string, unknown>, context: string): void {
+  const validation = validatePipelineMetadata(metadata);
+  if (validation.ok) return;
+  const details = validation.errors.map((error) => `${error.path || "<root>"}: ${error.message}`).join("; ");
+  fail(`${context} produced invalid pipeline.metadata: ${details}`);
 }
 
 const PIPELINE_CREATE_HELP_AFTER = `
@@ -247,16 +262,16 @@ EXAMPLES
   ravi crm pipeline create leads-prospect \\
     --objetivo 'Qualify anonymous lead until first qualified conversation' \\
     --priority-global 5 \\
-    --producer agent:lead-capture \\
-    --consumer agent:salesrep \\
+    --producer lead-capture \\
+    --consumer salesrep \\
     --versao 1.0.0
 
   # 2) Rich pipeline ('subscription-renewal') — lifecycle + policies + regua tags
   ravi crm pipeline create subscription-renewal \\
     --objetivo 'Secure recurring subscription renewal before expiry' \\
     --priority-global 2 \\
-    --producer agent:billing \\
-    --consumer agent:salesrep,agent:dispatcher \\
+    --producer billing \\
+    --consumer salesrep,dispatcher \\
     --send-window '9-19,mon-fri,America/New_York' \\
     --vip-guard-tag perfil:vip,plan:enterprise \\
     --vip-guard-ltv 50000 \\
@@ -1280,6 +1295,9 @@ export class CrmPipelineCommands {
       relatedCrons,
       relatedTriggers,
     });
+    if (Object.keys(metadata).length > 0) {
+      assertValidPipelineMetadata(metadata, "crm pipeline create");
+    }
     const pipeline = createCrmPipeline({
       name,
       entityType,
@@ -1422,6 +1440,7 @@ export class CrmPipelineCommands {
         relatedCrons,
         relatedTriggers,
       });
+      assertValidPipelineMetadata(input.metadata, "crm pipeline set");
     } else if (normalizedField === "name") input.name = value;
     else if (normalizedField === "entity-type" || normalizedField === "entitytype") input.entityType = value;
     else if (normalizedField === "default" || normalizedField === "is-default")

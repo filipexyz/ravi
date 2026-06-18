@@ -164,9 +164,14 @@ export function evaluateSendWindow(
     };
   }
 
-  // Compute next allowed instant. Strategy: bump hour-by-hour up to 7 days.
-  for (let bump = 1; bump <= 24 * 7; bump++) {
-    const candidate = new Date(evaluatedAt.getTime() + bump * 60 * 60 * 1000);
+  // Compute next allowed instant. Strategy: scan minute boundaries up to 7 days.
+  const firstCandidate = new Date(evaluatedAt);
+  firstCandidate.setUTCSeconds(0, 0);
+  if (firstCandidate.getTime() <= evaluatedAt.getTime()) {
+    firstCandidate.setUTCMinutes(firstCandidate.getUTCMinutes() + 1);
+  }
+  for (let bump = 0; bump <= 24 * 7 * 60; bump++) {
+    const candidate = new Date(firstCandidate.getTime() + bump * 60 * 1000);
     const cParts = getZonedParts(candidate, timezone);
     if (cParts.invalidTz) break;
     const cDayOk = allowedDays === null || allowedDays.has(cParts.weekdayIndex);

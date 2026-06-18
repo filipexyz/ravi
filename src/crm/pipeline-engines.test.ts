@@ -23,6 +23,13 @@ describe("evaluateSendWindow", () => {
     expect(result.releaseAtIso).toBeTruthy();
   });
 
+  test("releaseAt snaps to first allowed minute instead of preserving current minute", () => {
+    const at = new Date("2026-06-17T11:30:37Z"); // Wed 08:30:37 BRT, before 9-21.
+    const result = evaluateSendWindow({ hours: "9-21", timezone: "America/Sao_Paulo" }, at);
+    expect(result.allowed).toBe(false);
+    expect(result.releaseAtIso).toBe("2026-06-17T12:00:00.000Z");
+  });
+
   test("outside allowed days = not allowed with releaseAt next week", () => {
     // Sun 2026-06-21 15:00 UTC = Sun 12:00 BRT. mon-sat excludes Sun.
     const at = new Date("2026-06-21T15:00:00Z");

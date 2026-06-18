@@ -41,6 +41,14 @@ describe("validatePipelineMetadata", () => {
     expect(result.errors.some((e: PipelineValidationIssue) => e.path.startsWith("send_window"))).toBe(true);
   });
 
+  test("out-of-range send_window hours rejected", () => {
+    const result = validatePipelineMetadata({
+      send_window: { hours: "99-99", timezone: "America/Sao_Paulo" },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e: PipelineValidationIssue) => e.path.startsWith("send_window.hours"))).toBe(true);
+  });
+
   test("invalid agent_id producer rejected", () => {
     const result = validatePipelineMetadata({ producers: ["UPPERCASE_invalid"] });
     expect(result.ok).toBe(false);
