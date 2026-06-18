@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { clearRelations, grantRelation } from "../permissions/relations.js";
 import { dbCreateAgent, dbDeleteAgent, dbGetContext, getDb } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   ADMIN_BOOTSTRAP_KIND,
   createRuntimeContext,
@@ -16,6 +17,7 @@ import {
 } from "./context-registry.js";
 
 const TEST_AGENT_ID = "test-context-agent";
+let stateDir: string | null = null;
 
 function cleanup(): void {
   const db = getDb();
@@ -32,13 +34,16 @@ function createTestSession(sessionKey: string): void {
 }
 
 describe("runtime context registry", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-context-registry-");
     cleanup();
     dbCreateAgent({ id: TEST_AGENT_ID, cwd: "/tmp/test-context-agent" });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
   });
 
   it("creates a context with its own identity and resolves it by key", () => {
