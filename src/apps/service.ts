@@ -51,6 +51,7 @@ const VALID_UI_VIEW_TYPES = new Set([
 ]);
 const VALID_UI_ACTION_PLACEMENTS = new Set(["toolbar", "row", "primary", "inline", "danger", "menu"]);
 const VALID_UI_DENSITIES = new Set(["compact", "comfortable", "spacious"]);
+const VALID_UI_ARTIFACT_KINDS = new Set(["ui.catalog", "ui.component", "ui.spec"]);
 const FORBIDDEN_UI_KEYS = new Set([
   "bundle",
   "className",
@@ -710,6 +711,34 @@ function validateUiView(
   }
   if (view.components !== undefined && !Array.isArray(view.components)) {
     errors.push(`${path}.components must be an array when present.`);
+  }
+  if (view.uiArtifact !== undefined) {
+    validateUiArtifactReference(view.uiArtifact, `${path}.uiArtifact`, errors);
+  }
+}
+
+function validateUiArtifactReference(value: unknown, path: string, errors: string[]): void {
+  if (!isObject(value)) {
+    errors.push(`${path} must be an object when present.`);
+    return;
+  }
+
+  if (typeof value.kind !== "string" || !VALID_UI_ARTIFACT_KINDS.has(value.kind)) {
+    errors.push(`${path}.kind must be one of ${Array.from(VALID_UI_ARTIFACT_KINDS).join("|")}.`);
+  }
+
+  if (typeof value.artifactId !== "string" || !/^art_[A-Za-z0-9_-]+$/.test(value.artifactId)) {
+    errors.push(`${path}.artifactId must be an artifact id such as art_123.`);
+  }
+
+  if (
+    value.version !== undefined &&
+    !(
+      (typeof value.version === "number" && Number.isInteger(value.version) && value.version > 0) ||
+      (typeof value.version === "string" && value.version.trim().length > 0)
+    )
+  ) {
+    errors.push(`${path}.version must be a positive integer or non-empty string when present.`);
   }
 }
 

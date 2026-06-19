@@ -18,6 +18,7 @@ const HANDLERS = {
   "ravi:get-crm": fetchCrm,
   "ravi:get-insights": fetchInsights,
   "ravi:get-artifacts": fetchArtifacts,
+  "ravi:get-artifact-notifications": fetchArtifactNotifications,
   "ravi:get-artifact-blob": fetchArtifactBlob,
   "ravi:tts-voices": fetchTtsVoices,
   "ravi:tts-preview-url": fetchTtsPreviewUrl,
@@ -46,6 +47,7 @@ const GUARDED_HANDLER_POLICIES = {
   "ravi:get-crm": { ttlMs: 12000, staleMs: 30000, slowMs: 5000, backoffMs: 5000, maxBackoffMs: 30000 },
   "ravi:get-insights": { ttlMs: 10000, staleMs: 30000, slowMs: 5000, backoffMs: 5000, maxBackoffMs: 30000 },
   "ravi:get-artifacts": { ttlMs: 10000, staleMs: 30000, slowMs: 5000, backoffMs: 5000, maxBackoffMs: 30000 },
+  "ravi:get-artifact-notifications": { ttlMs: 3500, staleMs: 12000, slowMs: 5000, backoffMs: 4000, maxBackoffMs: 25000 },
   "ravi:get-omni-panel": { ttlMs: 5000, staleMs: 15000, slowMs: 4500, backoffMs: 3000, maxBackoffMs: 25000 },
   "ravi:chat-list-resolve": { ttlMs: 5000, staleMs: 15000, slowMs: 4500, backoffMs: 3000, maxBackoffMs: 25000 },
 };
@@ -348,10 +350,199 @@ async function fetchArtifacts(payload = {}) {
   if (limit) options.limit = limit;
   if (clean(payload.lifecycle)) options.lifecycle = clean(payload.lifecycle);
   if (clean(payload.kind)) options.kind = clean(payload.kind);
-  if (clean(payload.taskId)) options.taskId = clean(payload.taskId);
-  if (clean(payload.sessionId)) options.sessionId = clean(payload.sessionId);
-  if (clean(payload.agentId)) options.agentId = clean(payload.agentId);
+  if (clean(payload.taskId) || clean(payload.task)) options.task = clean(payload.taskId) || clean(payload.task);
+  if (clean(payload.sessionId) || clean(payload.session)) {
+    options.session = clean(payload.sessionId) || clean(payload.session);
+  }
+  if (clean(payload.agentId) || clean(payload.agent)) options.agent = clean(payload.agentId) || clean(payload.agent);
   return await client.artifacts.list(options);
+}
+
+async function fetchArtifactNotifications(payload = {}) {
+  const { client } = await getClient();
+  const limit = normalizeNotificationLimit(payload.limit, 24);
+  const since = normalizeEpochMs(payload.since);
+  const result = await client.artifacts.list({ rich: true, limit: String(limit), orderBy: "updatedAt" });
+  const sourceItems = Array.isArray(result?.items) ? result.items : [];
+  const items = sourceItems
+    .filter((item) => !since || normalizeEpochMs(item?.updatedAt || item?.createdAt) >= since)
+    .map(sanitizeArtifactNotificationItem)
+    .filter(Boolean);
+
+  return {
+    ok: true,
+    generatedAt: Date.now(),
+    counts: {
+      scanned: sourceItems.length,
+      returned: items.length,
+    },
+    items,
+  };
+}
+
+function normalizeNotificationLimit(value, fallback) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : Number.parseInt(typeof value === "string" ? value : "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(60, Math.max(1, Math.floor(parsed)));
+}
+
+function normalizeEpochMs(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+    const date = Date.parse(value);
+    if (Number.isFinite(date)) return date;
+  }
+  return null;
+}
+
+function sanitizeArtifactNotificationItem(item) {
+  if (!item || typeof item !== "object") return null;
+  const id = clean(item.id);
+  if (!id) return null;
+  return {
+    id,
+    kind: clean(item.kind) || "artifact",
+    label: clean(item.label) || clean(item.title) || id,
+    status: clean(item.status) || null,
+    lifecycle: clean(item.lifecycle) || null,
+    summary: clean(item.summary) || null,
+    path: clean(item.path) || null,
+    blobPath: clean(item.blobPath) || null,
+    uri: clean(item.uri) || null,
+    mimeType: clean(item.mimeType) || null,
+    sizeBytes: Number.isFinite(item.sizeBytes) ? item.sizeBytes : null,
+    provider: clean(item.provider) || null,
+    model: clean(item.model) || null,
+    taskId: clean(item.taskId) || null,
+    sessionName: clean(item.sessionName) || null,
+    sessionKey: clean(item.sessionKey) || null,
+    agentId: clean(item.agentId) || null,
+    createdAt: normalizeEpochMs(item.createdAt) || null,
+    updatedAt: normalizeEpochMs(item.updatedAt) || normalizeEpochMs(item.createdAt) || null,
+    task: sanitizeArtifactLinkedRef(item.task),
+    session: sanitizeArtifactLinkedRef(item.session),
+    agent: sanitizeArtifactLinkedRef(item.agent),
+    links: Array.isArray(item.links) ? item.links.slice(0, 8).map(sanitizeArtifactLink).filter(Boolean) : [],
+    ui: sanitizeArtifactUiSpec(item.ui),
+    componentPreview: sanitizeArtifactComponentPreview(item.componentPreview || item.uiComponent || item.component),
+  };
+}
+
+function sanitizeArtifactLinkedRef(value) {
+  if (!value || typeof value !== "object") return null;
+  const out = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (typeof nested === "string") out[key] = nested;
+    else if (typeof nested === "number" && Number.isFinite(nested)) out[key] = nested;
+    else if (typeof nested === "boolean") out[key] = nested;
+    else if (nested === null) out[key] = null;
+  }
+  return out;
+}
+
+function sanitizeArtifactLink(link) {
+  if (!link || typeof link !== "object") return null;
+  return {
+    targetType: clean(link.targetType) || null,
+    targetId: clean(link.targetId) || null,
+    label: clean(link.label) || null,
+    value: clean(link.value) || null,
+    action: clean(link.action) || null,
+    href: clean(link.href) || null,
+    copyText: clean(link.copyText) || null,
+    task: sanitizeArtifactLinkedRef(link.task),
+    session: sanitizeArtifactLinkedRef(link.session),
+    agent: sanitizeArtifactLinkedRef(link.agent),
+  };
+}
+
+function sanitizeArtifactUiSpec(spec) {
+  if (!spec || typeof spec !== "object") return null;
+  if (spec.schema !== "ravi.ui/v1" || spec.component !== "artifact.notification") return null;
+  return {
+    schema: "ravi.ui/v1",
+    kind: "ui.spec",
+    component: "artifact.notification",
+    key: clean(spec.key) || null,
+    props: sanitizeArtifactLinkedRef(spec.props),
+    actions: Array.isArray(spec.actions)
+      ? spec.actions
+          .slice(0, 6)
+          .map((action) => ({
+            id: clean(action?.id) || null,
+            label: clean(action?.label) || null,
+            command: clean(action?.command) || null,
+            payload: sanitizeArtifactLinkedRef(action?.payload),
+          }))
+      : [],
+  };
+}
+
+function sanitizeArtifactComponentPreview(component) {
+  if (!component || typeof component !== "object") return null;
+  return {
+    id: clean(component.id) || null,
+    version: clean(component.version) || null,
+    description: clean(component.description) || null,
+    propsSchema: sanitizeArtifactJsonValue(component.propsSchema),
+    slots: sanitizeStringList(component.slots, 12),
+    actions: sanitizeStringList(component.actions, 12),
+    events: sanitizeStringList(component.events, 12),
+    surfaces: sanitizeStringList(component.surfaces, 12),
+    renderers: Array.isArray(component.renderers)
+      ? component.renderers
+          .slice(0, 8)
+          .map((renderer) => ({
+            surface: clean(renderer?.surface) || null,
+            renderer: clean(renderer?.renderer) || null,
+            package: clean(renderer?.package) || null,
+            artifactId: clean(renderer?.artifactId) || null,
+          }))
+          .filter((renderer) => renderer.surface)
+      : [],
+    fixtures: Array.isArray(component.fixtures)
+      ? component.fixtures
+          .slice(0, 6)
+          .map((fixture) => ({
+            id: clean(fixture?.id) || null,
+            label: clean(fixture?.label) || clean(fixture?.id) || null,
+            props: sanitizeArtifactJsonValue(fixture?.props),
+          }))
+          .filter((fixture) => fixture.id)
+      : [],
+  };
+}
+
+function sanitizeStringList(value, limit) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, limit)
+    .map((item) => clean(item))
+    .filter(Boolean);
+}
+
+function sanitizeArtifactJsonValue(value, depth = 0) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "string") return value.length > 600 ? `${value.slice(0, 600)}…` : value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "boolean") return value;
+  if (depth >= 4) return "[truncated]";
+  if (Array.isArray(value)) {
+    return value.slice(0, 16).map((item) => sanitizeArtifactJsonValue(item, depth + 1));
+  }
+  if (typeof value === "object") {
+    const out = {};
+    for (const [key, nested] of Object.entries(value).slice(0, 32)) {
+      out[key] = sanitizeArtifactJsonValue(nested, depth + 1);
+    }
+    return out;
+  }
+  return null;
 }
 
 async function fetchArtifactBlob(payload = {}) {

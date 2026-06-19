@@ -8,6 +8,7 @@ import {
   type ArtifactRecord,
 } from "../artifacts/store.js";
 import type { ListArtifactsOptions } from "../artifacts/store.js";
+import { buildArtifactNotificationUiSpec, type ArtifactNotificationUiSpec } from "../artifacts/ui.js";
 import { dbGetAgent } from "../router/router-db.js";
 import { listSessions, resolveSession as resolveSessionEntry } from "../router/sessions.js";
 import type { SessionEntry } from "../router/types.js";
@@ -71,6 +72,32 @@ export interface OverlayArtifactLinkRef {
   agent: OverlayArtifactAgentRef | null;
 }
 
+export interface OverlayArtifactComponentRendererRef {
+  surface: string;
+  renderer: string | null;
+  package: string | null;
+  artifactId: string | null;
+}
+
+export interface OverlayArtifactComponentFixture {
+  id: string;
+  label: string;
+  props: unknown | null;
+}
+
+export interface OverlayArtifactComponentPreview {
+  id: string | null;
+  version: string | null;
+  description: string | null;
+  propsSchema: unknown | null;
+  slots: string[];
+  actions: string[];
+  events: string[];
+  surfaces: string[];
+  renderers: OverlayArtifactComponentRendererRef[];
+  fixtures: OverlayArtifactComponentFixture[];
+}
+
 export interface OverlayArtifactItem {
   id: string;
   kind: string;
@@ -97,11 +124,14 @@ export interface OverlayArtifactItem {
   session: OverlayArtifactSessionRef | null;
   agent: OverlayArtifactAgentRef | null;
   links: OverlayArtifactLinkRef[];
+  ui: ArtifactNotificationUiSpec;
+  componentPreview: OverlayArtifactComponentPreview | null;
 }
 
 export interface OverlayArtifactsQuery {
   limit: number;
   offset: number;
+  orderBy: "createdAt" | "updatedAt";
   lifecycle: OverlayArtifactLifecycle | null;
   kind: string | null;
   taskId: string | null;
@@ -130,6 +160,7 @@ export interface OverlayArtifactsSnapshot {
 export interface BuildOverlayArtifactsPayloadArgs {
   limit?: number;
   offset?: number;
+  orderBy?: "createdAt" | "updatedAt" | null;
   lifecycle?: OverlayArtifactLifecycle | null;
   kind?: string | null;
   taskId?: string | null;
@@ -148,6 +179,7 @@ export interface BuildOverlayArtifactsPayloadArgs {
 export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadArgs = {}): OverlayArtifactsSnapshot {
   const limit = normalizeArtifactsLimit(args.limit);
   const offset = normalizeArtifactsOffset(args.offset);
+  const orderBy = normalizeArtifactsOrderBy(args.orderBy);
   const lifecycle = normalizeLifecycle(args.lifecycle ?? null);
   const kind = cleanFilterToken(args.kind);
   const taskId = cleanFilterToken(args.taskId);
@@ -162,6 +194,7 @@ export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadA
 
   const storeOptions: ListArtifactsOptions = {
     includeDeleted: lifecycle === "archived" || lifecycle === null,
+    orderBy,
     ...(kind ? { kind } : {}),
     ...(sessionId ? { session: sessionId } : {}),
     ...(taskId ? { taskId } : {}),
@@ -235,6 +268,7 @@ export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadA
     taskId,
     sessionId,
     agentId,
+    orderBy,
   });
 
   return {
@@ -243,6 +277,7 @@ export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadA
     query: {
       limit,
       offset,
+      orderBy,
       lifecycle,
       kind,
       taskId,
@@ -261,6 +296,11 @@ export function normalizeArtifactsLimit(limit: number | string | null | undefine
 
 export function normalizeArtifactsOffset(offset: number | string | null | undefined): number {
   return normalizePageOffset(offset);
+}
+
+export function normalizeArtifactsOrderBy(orderBy: string | null | undefined): "createdAt" | "updatedAt" {
+  if (orderBy === "updatedAt" || orderBy === "updated_at" || orderBy === "updated") return "updatedAt";
+  return "createdAt";
 }
 
 export function normalizeLifecycle(value: string | null | undefined): OverlayArtifactLifecycle | null {
@@ -408,7 +448,185 @@ function toOverlayArtifactItem(
     session: sessionRef,
     agent: agentRef,
     links: buildArtifactLinks(record, { taskRef, sessionRef, agentRef }),
+    ui: buildArtifactNotificationUiSpec({ artifact: record, lifecycle }),
+    componentPreview: buildOverlayArtifactComponentPreview(record),
   };
+}
+
+function buildOverlayArtifactComponentPreview(record: ArtifactRecord): OverlayArtifactComponentPreview | null {
+  if (record.kind !== "ui.component") return null;
+  const manifest = selectComponentManifest(record);
+  const nestedSchemas = asPlainRecord(manifest.schemas);
+
+  return {
+    id:
+      cleanComponentText(manifest.id) ||
+      cleanComponentText(manifest.componentId) ||
+      cleanComponentText(manifest.name) ||
+      cleanComponentText(record.title) ||
+      record.id,
+    version: cleanComponentText(manifest.version) || null,
+    description: cleanComponentText(manifest.description) || cleanComponentText(record.summary) || null,
+    propsSchema: normalizeComponentJsonValue(
+      manifest.propsSchema ?? manifest.props_schema ?? nestedSchemas?.props ?? null,
+    ),
+    slots: normalizeComponentStringList(manifest.slots),
+    actions: normalizeComponentNameList(manifest.actions),
+    events: normalizeComponentNameList(manifest.events),
+    surfaces: normalizeComponentStringList(manifest.surfaces),
+    renderers: normalizeComponentRenderers(manifest.renderers),
+    fixtures: normalizeComponentFixtures(manifest.fixtures),
+  };
+}
+
+function selectComponentManifest(record: ArtifactRecord): Record<string, unknown> {
+  const metadata = asPlainRecord(record.metadata);
+  const output = asPlainRecord(record.output);
+  const input = asPlainRecord(record.input);
+  const candidates = [
+    asPlainRecord(output?.component),
+    asPlainRecord(output?.manifest),
+    output,
+    asPlainRecord(metadata?.component),
+    asPlainRecord(metadata?.manifest),
+    metadata,
+    asPlainRecord(input?.component),
+    asPlainRecord(input?.manifest),
+    input,
+  ].filter((value): value is Record<string, unknown> => Boolean(value));
+
+  return candidates.find(isComponentManifestLike) ?? candidates[0] ?? {};
+}
+
+function isComponentManifestLike(value: Record<string, unknown>): boolean {
+  return (
+    cleanComponentText(value.schema)?.includes("ui.component") === true ||
+    cleanComponentText(value.kind) === "ui.component" ||
+    cleanComponentText(value.id) !== null ||
+    cleanComponentText(value.componentId) !== null ||
+    value.propsSchema !== undefined ||
+    value.props_schema !== undefined
+  );
+}
+
+function normalizeComponentStringList(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 12);
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => cleanComponentText(item))
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 12);
+}
+
+function normalizeComponentNameList(value: unknown): string[] {
+  if (typeof value === "string") {
+    return normalizeComponentStringList(value);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((nested) => {
+        if (typeof nested === "string") return nested.trim();
+        const item = asPlainRecord(nested);
+        return (
+          cleanComponentText(item?.id) ||
+          cleanComponentText(item?.name) ||
+          cleanComponentText(item?.type) ||
+          cleanComponentText(item?.label)
+        );
+      })
+      .filter((item): item is string => Boolean(item))
+      .slice(0, 12);
+  }
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value as Record<string, unknown>)
+    .map(([key, nested]) => {
+      const item = asPlainRecord(nested);
+      return cleanComponentText(item?.id) || cleanComponentText(item?.name) || key || cleanComponentText(item?.label);
+    })
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function normalizeComponentRenderers(value: unknown): OverlayArtifactComponentRendererRef[] {
+  if (!value || typeof value !== "object") return [];
+  const entries = Array.isArray(value)
+    ? value.map((item, index) => [String(index), item] as const)
+    : Object.entries(value as Record<string, unknown>);
+
+  return entries
+    .map(([surfaceKey, nested]) => {
+      const item = asPlainRecord(nested);
+      if (!item) return null;
+      const surface = cleanComponentText(item.surface) || surfaceKey;
+      return {
+        surface,
+        renderer:
+          cleanComponentText(item.renderer) ||
+          cleanComponentText(item.id) ||
+          cleanComponentText(item.implementation) ||
+          null,
+        package: cleanComponentText(item.package) || cleanComponentText(item.packageId) || null,
+        artifactId: cleanComponentText(item.artifactId) || null,
+      };
+    })
+    .filter((item): item is OverlayArtifactComponentRendererRef => Boolean(item?.surface))
+    .slice(0, 8);
+}
+
+function normalizeComponentFixtures(value: unknown): OverlayArtifactComponentFixture[] {
+  if (!value || typeof value !== "object") return [];
+  const entries = Array.isArray(value)
+    ? value.map((item, index) => [String(index), item] as const)
+    : Object.entries(value as Record<string, unknown>);
+
+  return entries
+    .map(([fixtureKey, nested]) => {
+      const item = asPlainRecord(nested);
+      if (!item) return null;
+      const id = cleanComponentText(item.id) || fixtureKey;
+      return {
+        id,
+        label: cleanComponentText(item.label) || cleanComponentText(item.name) || id,
+        props: normalizeComponentJsonValue(item.props ?? null),
+      };
+    })
+    .filter((item): item is OverlayArtifactComponentFixture => Boolean(item?.id))
+    .slice(0, 6);
+}
+
+function normalizeComponentJsonValue(value: unknown, depth = 0): unknown | null {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (typeof value === "string") return value.length > 600 ? `${value.slice(0, 600)}…` : value;
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (depth >= 4) return "[truncated]";
+  if (Array.isArray(value)) {
+    return value.slice(0, 16).map((item) => normalizeComponentJsonValue(item, depth + 1));
+  }
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>).slice(0, 32)) {
+      out[key] = normalizeComponentJsonValue(nested, depth + 1);
+    }
+    return out;
+  }
+  return null;
+}
+
+function asPlainRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function cleanComponentText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 function buildArtifactLinks(
@@ -556,6 +774,7 @@ function buildArtifactsPagination(args: {
   offset: number;
   returned: number;
   total: number;
+  orderBy: "createdAt" | "updatedAt";
   lifecycle: OverlayArtifactLifecycle | null;
   kind: string | null;
   taskId: string | null;
@@ -574,6 +793,7 @@ function buildArtifactsPagination(args: {
 function buildArtifactsNextCommand(args: {
   limit: number;
   offset: number;
+  orderBy: "createdAt" | "updatedAt";
   lifecycle: OverlayArtifactLifecycle | null;
   kind: string | null;
   taskId: string | null;
@@ -592,6 +812,7 @@ function buildArtifactsNextCommand(args: {
     String(args.offset),
   ];
   if (args.kind) parts.push("--kind", args.kind);
+  if (args.orderBy !== "createdAt") parts.push("--order-by", args.orderBy);
   if (args.sessionId) parts.push("--session", args.sessionId);
   if (args.taskId) parts.push("--task", args.taskId);
   if (args.lifecycle) parts.push("--lifecycle", args.lifecycle);

@@ -10,15 +10,18 @@ capabilities:
   - ui-manifest
   - operations
   - events
+  - generative-ui
 tags:
   - apps
   - ui
   - web-os
   - design-system
   - events
+  - artifacts
 applies_to:
   - .ravi/specs/apps/ui
   - .ravi/specs/apps/manifest
+  - .ravi/specs/artifacts/ui
   - src/apps
   - src/apps/service.ts
 owners:
@@ -52,6 +55,14 @@ permissions preflight, and event wiring.
   `stack`.
 - UI views MAY declare `query`, `refreshOn`, `actions`, `layout`, `components`,
   `density`, and domain-specific display hints.
+- UI views MAY reference reviewed UI artifacts when the app needs reusable,
+  generative, previewable, or cross-surface UI. Such references SHOULD point to
+  `ui.catalog`, `ui.spec`, or `ui.component` artifacts as defined by
+  `artifacts/ui`.
+- App UI descriptors SHOULD keep `query`, `refreshOn`, and `actions` as the app
+  harness even when the visual tree comes from a UI artifact. The artifact
+  describes renderable UI; the app manifest owns route, operation, freshness,
+  and permission wiring.
 - UI actions MUST reference a top-level operation. A button without an
   operation is not an app action.
 - App operations MUST be declared under top-level `operations`.
@@ -128,6 +139,39 @@ permissions preflight, and event wiring.
 }
 ```
 
+## UI Artifact References
+
+When a Ravi App uses reusable or generative UI, the app manifest SHOULD
+reference UI artifacts instead of embedding large component trees inline:
+
+```json
+{
+  "interfaces": {
+    "ui": {
+      "views": [
+        {
+          "id": "artifact-feed",
+          "type": "timeline",
+          "uiArtifact": {
+            "kind": "ui.spec",
+            "artifactId": "art_ui_spec_...",
+            "version": 3
+          },
+          "query": {
+            "operation": "artifacts.list"
+          },
+          "refreshOn": ["ravi.artifacts.completed"]
+        }
+      ]
+    }
+  }
+}
+```
+
+The referenced artifact owns the renderable JSON spec, component contract, or
+catalog vocabulary. The app manifest owns the route, operation contract,
+freshness policy, and permission boundary.
+
 ## Web OS Flow
 
 ```text
@@ -151,12 +195,15 @@ Web OS boot
 - App-specific frontend bundles MAY exist only behind a future sandboxed UI
   extension spec. They are not part of `ravi.app/v1`.
 - Ravi Web OS MUST remain the owner of the unified design system.
+- UI artifacts MAY provide reusable render contracts, but they do not grant
+  permission to execute actions and they do not carry arbitrary frontend code.
 
 ## Validation
 
 - `ravi specs get apps/ui --mode rules --json` MUST return this contract.
 - `ravi apps check` SHOULD fail malformed UI routes, views, actions, operation
-  references, forbidden UI code/style keys, and malformed operation targets.
+  references, `uiArtifact` references, forbidden UI code/style keys, and
+  malformed operation targets.
 - The pilot `apps` manifest SHOULD declare a UI route, view, actions, and
   operations that validate end to end.
 

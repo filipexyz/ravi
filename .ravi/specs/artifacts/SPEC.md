@@ -7,15 +7,18 @@ capabilities:
   - async-generation
   - lifecycle-events
   - session-notification
+  - ui-artifacts
 tags:
   - artifacts
   - async
   - lineage
+  - generative-ui
 applies_to:
   - ravi artifacts
   - ravi image
   - generated files
   - long-running media jobs
+  - .ravi/specs/artifacts/ui
 owners:
   - dev
 status: active
@@ -65,6 +68,16 @@ file exists, while it is being produced, and after completion or failure.
   inspectable.
 - Artifacts MUST preserve lineage back to the requesting session, agent, channel,
   account, and source message when that context exists.
+- Reusable or inspectable UI objects MAY be artifacts. UI catalogs, component
+  contracts, UI specs, selected patch streams, and debug renders are valid
+  semantic artifact kinds when they need versioning, lineage, review, preview,
+  rollback, replay, or audit.
+- Runtime UI implementations MUST NOT treat every DOM node, transient patch, or
+  hover/focus state as an artifact. Artifacts represent durable UI objects, not
+  every surface-level render operation.
+- Generated UI artifacts MUST preserve the same lineage guarantees as media or
+  report artifacts: source session/agent/channel/message when available, source
+  event or artifact when applicable, and producer metadata.
 - A service that produces an artifact SHOULD be able to notify the owner session
   when the artifact reaches a terminal state.
 - Generated media requested from a chat context SHOULD be delivered back to the
@@ -88,6 +101,26 @@ file exists, while it is being produced, and after completion or failure.
 - Version assets MUST use Ravi-relative asset paths and MUST NOT allow absolute
   paths or `..` traversal segments.
 
+## UI Artifacts
+
+Generative UI uses the artifact ledger as the durable object model for reviewed
+and reusable UI work. The detailed contract lives in `artifacts/ui`.
+
+Recommended UI artifact kinds:
+
+- `ui.catalog`: allowed vocabulary of component ids, action ids, props schemas,
+  slots, constraints, and generation guidance.
+- `ui.component`: reusable component contract with semver, props schema,
+  supported surfaces, fixtures, preview artifacts, and renderer references.
+- `ui.spec`: concrete JSON UI tree that composes catalog components.
+- `ui.render`: rendered preview/debug snapshot for a specific surface.
+- `ui.patch-stream`: persisted stream of JSON Patch-style operations, only when
+  replay, audit, approval, or debugging value justifies persistence.
+
+UI artifact specs MUST NOT embed arbitrary HTML, CSS, JavaScript, class names,
+Tailwind classes, or remote bundles as generated content. Surface renderers own
+implementation details and MUST validate generated specs before rendering.
+
 ## Event Types
 
 Recommended event names:
@@ -104,6 +137,19 @@ Recommended event names:
 - `completed`
 - `failed`
 - `notified`
+
+Artifact lifecycle events MAY also be projected onto Ravi event topics for app
+UIs, overlays, and agents. Canonical lifecycle topics are:
+
+- `ravi.artifacts.created`
+- `ravi.artifacts.running`
+- `ravi.artifacts.completed`
+- `ravi.artifacts.failed`
+- `ravi.artifacts.archived`
+
+Event payloads SHOULD include artifact id, kind, status, version when known,
+source session/agent/channel/message metadata when available, and the artifact
+event id or timestamp for correlation.
 
 ## CLI Surface
 

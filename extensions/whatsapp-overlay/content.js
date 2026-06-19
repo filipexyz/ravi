@@ -43,6 +43,7 @@ const expandedConversationToolGroups = new Set();
 const expandedSessionWorkspaceTools = new Set();
 const MESSAGE_POPOVER_ID = "ravi-wa-message-popover";
 const ARTIFACT_MODAL_ID = "ravi-wa-artifact-modal";
+const ARTIFACT_NOTIFICATION_STACK_ID = "ravi-wa-artifact-notification-stack";
 const RECENT_STACK_ID = "ravi-wa-overlay-recent";
 const PAGE_BRIDGE_SCRIPT_ID = "ravi-wa-page-bridge";
 const PAGE_CHAT_REQUEST_EVENT = "ravi-wa-request-active-chat";
@@ -62,6 +63,7 @@ const V3_PLACEHOLDER_POLL_INTERVAL_MS = 5000;
 const TASKS_POLL_INTERVAL_MS = 5000;
 const INSIGHTS_POLL_INTERVAL_MS = 10000;
 const ARTIFACTS_POLL_INTERVAL_MS = 10000;
+const ARTIFACT_NOTIFICATIONS_POLL_INTERVAL_MS = 4500;
 const CRM_POLL_INTERVAL_MS = 10000;
 const TASKS_EVENTS_LIMIT = 20;
 const SESSION_FOCUS_TRACE_EVENT_LIMIT = 16;
@@ -157,6 +159,10 @@ const SESSION_FOCUS_DEBUG_OPEN_STORAGE =
   "ravi-wa-overlay-session-focus-debug-open";
 const TTS_LAST_SEEN_STORAGE = "ravi-wa-overlay-tts-last-seen-at";
 const TTS_SEEN_IDS_STORAGE = "ravi-wa-overlay-tts-seen-ids";
+const ARTIFACT_NOTIFICATION_SEEN_STORAGE =
+  "ravi-wa-overlay-artifact-notification-seen";
+const ARTIFACT_NOTIFICATION_LAST_SEEN_STORAGE =
+  "ravi-wa-overlay-artifact-notification-last-seen";
 let lastPublishedAt = 0;
 const detectionLogs = [];
 let bridgeError = null;
@@ -170,6 +176,7 @@ let openMessageChip = null;
 let openMessageId = null;
 let openMessageData = null;
 let openArtifactModalData = null;
+const artifactComponentPreviewStateByArtifactId = new Map();
 let sidebarFilter = "";
 let sidebarSearchOpen = false;
 let sessionFocusDebugOpen = loadSessionFocusDebugOpen();
@@ -259,12 +266,20 @@ let v3PlaceholderInFlight = false;
 let tasksInFlight = false;
 let insightsInFlight = false;
 let artifactsInFlight = false;
+let artifactNotificationsInFlight = false;
+let artifactNotificationError = null;
 let crmInFlight = false;
 let taskDispatchInFlightTaskId = null;
 let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
 const renderSignatures = new Map();
 const sessionFocusAnimatedEventSignatures = new Map();
+const artifactNotificationSeenSignatures = loadArtifactNotificationSeenSignatures();
+const artifactNotificationBootEpochMs = Date.now();
+let artifactNotificationsBootstrapped = artifactNotificationSeenSignatures.size > 0;
+let artifactNotificationLastSeenAt = loadArtifactNotificationLastSeenAt();
+let artifactNotificationCards = [];
+let artifactNotificationSeq = 0;
 const taskDetailPaneScrollTopByTaskId = new Map();
 const TASK_WORKSPACE_DEFAULT_SECTION_STATE = Object.freeze({
   instructions: true,
@@ -332,6 +347,7 @@ function boot() {
   syncLayoutChrome();
   syncWorkspaceLauncher();
   ensureMessagePopover();
+  ensureArtifactNotificationStack();
   refreshAll();
   intervalIds.push(setInterval(refreshSnapshot, SNAPSHOT_POLL_INTERVAL_MS));
   intervalIds.push(
@@ -355,6 +371,9 @@ function boot() {
   intervalIds.push(setInterval(refreshTasks, TASKS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshInsights, INSIGHTS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshArtifacts, ARTIFACTS_POLL_INTERVAL_MS));
+  intervalIds.push(
+    setInterval(refreshArtifactNotifications, ARTIFACT_NOTIFICATIONS_POLL_INTERVAL_MS),
+  );
   intervalIds.push(setInterval(refreshCrm, CRM_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(pollDomCommands, DOM_COMMAND_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(syncLayoutChrome, LAYOUT_SYNC_INTERVAL_MS));
@@ -1160,6 +1179,123 @@ async function refreshArtifacts(force = false) {
   }
 }
 
+async function refreshArtifactNotifications(force = false) {
+  if (pollingStopped || artifactNotificationsInFlight) return;
+
+  artifactNotificationsInFlight = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:get-artifact-notifications",
+      payload: {
+        limit: 30,
+        since: artifactNotificationLastSeenAt || undefined,
+      },
+    });
+    if (!response?.ok || !Array.isArray(response.items)) {
+      artifactNotificationError = buildArtifactNotificationErrorMessage(
+        response,
+        "não consegui carregar notificações de artifacts",
+      );
+      renderArtifactNotificationStack();
+      return;
+    }
+    const hadError = Boolean(artifactNotificationError);
+    artifactNotificationError = null;
+    consumeArtifactNotificationItems(response.items, force || hadError);
+  } catch (error) {
+    console.debug("[ravi-wa-overlay] artifact notifications poll failed", error);
+    artifactNotificationError = buildArtifactNotificationErrorMessage(
+      error,
+      "não consegui carregar notificações de artifacts",
+    );
+    renderArtifactNotificationStack();
+  } finally {
+    artifactNotificationsInFlight = false;
+  }
+}
+
+function buildArtifactNotificationErrorMessage(value, fallbackMessage) {
+  const status = typeof value?.status === "number" && value.status > 0 ? value.status : null;
+  const code = typeof value?.code === "string" && value.code.trim() ? value.code.trim() : null;
+  let message =
+    typeof value?.error === "string" && value.error.trim()
+      ? value.error.trim()
+      : value instanceof Error
+        ? value.message
+        : typeof value?.message === "string" && value.message.trim()
+          ? value.message.trim()
+          : fallbackMessage;
+  if (status || code) {
+    message = `${message}${status ? ` (${status}` : " ("}${status && code ? `/${code}` : code || ""})`;
+  }
+  return message;
+}
+
+function consumeArtifactNotificationItems(items, force = false) {
+  const normalized = items
+    .map(normalizeArtifactNotificationItem)
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftTime = Number(left.updatedAt || left.createdAt) || 0;
+      const rightTime = Number(right.updatedAt || right.createdAt) || 0;
+      return leftTime - rightTime || String(left.id).localeCompare(String(right.id));
+  });
+  if (!normalized.length) {
+    artifactNotificationsBootstrapped = true;
+    if (force) renderArtifactNotificationStack();
+    return;
+  }
+
+  if (!artifactNotificationsBootstrapped && !artifactNotificationSeenSignatures.size) {
+    const freshCards = [];
+    for (const item of normalized) {
+      const signature = buildArtifactNotificationSignature(item);
+      const time = Number(item.updatedAt || item.createdAt) || 0;
+      artifactNotificationSeenSignatures.add(signature);
+      artifactNotificationLastSeenAt = Math.max(artifactNotificationLastSeenAt, time);
+      if (time > artifactNotificationBootEpochMs) {
+        freshCards.push(buildArtifactNotificationCardState(item, signature));
+      }
+    }
+    artifactNotificationsBootstrapped = true;
+    persistArtifactNotificationState();
+    if (freshCards.length) {
+      artifactNotificationCards = [...freshCards.reverse(), ...artifactNotificationCards].slice(0, 5);
+      renderArtifactNotificationStack();
+      return;
+    }
+    if (force) renderArtifactNotificationStack();
+    return;
+  }
+
+  const nextCards = [];
+  for (const item of normalized) {
+    const signature = buildArtifactNotificationSignature(item);
+    const time = Number(item.updatedAt || item.createdAt) || 0;
+    artifactNotificationLastSeenAt = Math.max(artifactNotificationLastSeenAt, time);
+    if (artifactNotificationSeenSignatures.has(signature)) continue;
+    artifactNotificationSeenSignatures.add(signature);
+    nextCards.push(buildArtifactNotificationCardState(item, signature));
+  }
+
+  persistArtifactNotificationState();
+  if (!nextCards.length && !force) return;
+
+  if (nextCards.length) {
+    artifactNotificationCards = [...nextCards.reverse(), ...artifactNotificationCards].slice(0, 5);
+  }
+  renderArtifactNotificationStack();
+}
+
+function buildArtifactNotificationCardState(item, signature) {
+  return {
+    id: `artifact-notification-${++artifactNotificationSeq}`,
+    signature,
+    item,
+    receivedAt: Date.now(),
+  };
+}
+
 async function refreshCrm(force = false) {
   if (pollingStopped || crmInFlight) return;
   if (!force && activeWorkspace !== "crm") return;
@@ -1231,6 +1367,7 @@ function refreshAll() {
   if (activeWorkspace === "artifacts") refreshArtifacts(true);
   if (activeWorkspace === "crm") refreshCrm(true);
   if (activeWorkspace === "omni") refreshOmniPanel(true);
+  refreshArtifactNotifications(true);
   refreshChatListOverlay();
   refreshMessageChips();
   refreshV3Placeholders();
@@ -4440,8 +4577,47 @@ function ensureArtifactModal() {
       void focusArtifactSessionByKey(sessionKey);
     }
   });
+  modal.addEventListener("input", handleArtifactModalComponentInput);
+  modal.addEventListener("change", handleArtifactModalComponentInput);
   document.body.appendChild(modal);
   return modal;
+}
+
+function handleArtifactModalComponentInput(event) {
+  const target = resolveEventElement(event.target);
+  if (!target || !openArtifactModalData?.componentPreview) return;
+
+  const fixtureSelect = target.closest("[data-ravi-component-fixture]");
+  if (fixtureSelect && event.type === "change") {
+    const fixtureIndex = Number(fixtureSelect.getAttribute("data-ravi-component-fixture"));
+    const selectedIndex = Number(fixtureSelect.value);
+    const state = getArtifactComponentPreviewState(openArtifactModalData);
+    const fixtures = getArtifactComponentFixtures(openArtifactModalData.componentPreview);
+    const nextIndex = Number.isFinite(selectedIndex) ? selectedIndex : fixtureIndex;
+    const nextFixture = fixtures[nextIndex] || fixtures[0] || null;
+    state.fixtureIndex = Math.max(0, nextIndex);
+    state.props = cloneComponentProps(nextFixture?.props);
+    renderArtifactModal();
+    return;
+  }
+
+  const control = target.closest("[data-ravi-component-control]");
+  if (!control) return;
+  const propName = control.getAttribute("data-ravi-component-control");
+  if (!propName) return;
+  const state = getArtifactComponentPreviewState(openArtifactModalData);
+  const propSchema = getArtifactComponentPropSchema(openArtifactModalData.componentPreview, propName);
+  state.props[propName] = readArtifactComponentControlValue(control, propSchema);
+  updateArtifactComponentVisualOnly();
+}
+
+function updateArtifactComponentVisualOnly() {
+  const modal = document.getElementById(ARTIFACT_MODAL_ID);
+  if (!(modal instanceof HTMLElement) || !openArtifactModalData?.componentPreview) return;
+  const visual = modal.querySelector(".ravi-wa-artifact-modal__visual--component");
+  if (!(visual instanceof HTMLElement)) return;
+  const state = getArtifactComponentPreviewState(openArtifactModalData);
+  visual.innerHTML = renderArtifactComponentVisual(openArtifactModalData.componentPreview, state);
 }
 
 function closeArtifactModal() {
@@ -4472,10 +4648,16 @@ function renderArtifactModal() {
     .filter(Boolean)
     .join(" · ");
   const hasImage = Boolean(data.imageSrc);
+  const componentState = getArtifactComponentPreviewState(data);
+  const componentVisual = renderArtifactComponentVisual(data.componentPreview, componentState);
   const image = data.imageSrc
     ? `<div class="ravi-wa-artifact-modal__visual">
         <img src="${escapeAttribute(data.imageSrc)}" alt="${escapeAttribute(title)}" />
       </div>`
+    : componentVisual
+      ? `<div class="ravi-wa-artifact-modal__visual ravi-wa-artifact-modal__visual--component">
+          ${componentVisual}
+        </div>`
     : data.glyph
       ? `<div class="ravi-wa-artifact-modal__visual ravi-wa-artifact-modal__visual--glyph">
           <span>${escapeHtml(data.glyph)}</span>
@@ -4491,6 +4673,7 @@ function renderArtifactModal() {
     detailText && detailText !== primaryText ? detailText : null;
   const metaRows = buildArtifactModalMetaRows(data);
   const actions = buildArtifactModalActions(data);
+  const componentPreview = renderArtifactModalComponentPreview(data.componentPreview, componentState);
   const panelClass = `ravi-wa-artifact-modal__panel${hasImage ? " ravi-wa-artifact-modal__panel--image" : ""}`;
   const contentClass = [
     "ravi-wa-artifact-modal__content",
@@ -4521,6 +4704,7 @@ function renderArtifactModal() {
               ? `<p class="ravi-wa-artifact-modal__summary">${escapeHtml(primaryText)}</p>`
               : ""
           }
+          ${componentPreview}
           ${
             fullDetail
               ? `<pre class="ravi-wa-artifact-modal__detail">${escapeHtml(fullDetail)}</pre>`
@@ -4534,6 +4718,270 @@ function renderArtifactModal() {
           ${actions ? `<div class="ravi-wa-artifact-modal__actions">${actions}</div>` : ""}
         </section>
       </div>
+    </div>
+  `;
+}
+
+function renderArtifactModalComponentPreview(component, state) {
+  if (!component || typeof component !== "object") return "";
+  const title = component.id || "ui.component";
+  const version = component.version ? `v${component.version}` : "draft";
+  const description = component.description || null;
+  const propsSchema = component.propsSchema ? formatArtifactModalJson(component.propsSchema) : null;
+  const fixtures = Array.isArray(component.fixtures) ? component.fixtures : [];
+  const renderers = Array.isArray(component.renderers) ? component.renderers : [];
+
+  return `
+    <section class="ravi-wa-artifact-modal__component-preview" aria-label="Preview do componente">
+      <div class="ravi-wa-artifact-modal__component-head">
+        <div>
+          <span>component artifact</span>
+          <strong>${escapeHtml(title)}</strong>
+        </div>
+        <em>${escapeHtml(version)}</em>
+      </div>
+      ${description ? `<p>${escapeHtml(description)}</p>` : ""}
+      ${renderArtifactComponentControls(component, state)}
+      ${renderArtifactComponentChips("surfaces", component.surfaces)}
+      ${renderArtifactComponentChips("slots", component.slots)}
+      ${renderArtifactComponentChips("actions", component.actions)}
+      ${renderArtifactComponentChips("events", component.events)}
+      ${
+        renderers.length
+          ? `<div class="ravi-wa-artifact-modal__component-block">
+              <span>renderers</span>
+              ${renderers
+                .map((renderer) =>
+                  `<code>${escapeHtml(
+                    [
+                      renderer?.surface,
+                      renderer?.renderer,
+                      renderer?.package,
+                      renderer?.artifactId,
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                  )}</code>`,
+                )
+                .join("")}
+            </div>`
+          : ""
+      }
+      ${
+        fixtures.length
+          ? `<div class="ravi-wa-artifact-modal__component-block">
+              <span>fixtures</span>
+              ${fixtures
+                .map((fixture) => {
+                  const props = fixture?.props ? ` ${formatArtifactModalJson(fixture.props)}` : "";
+                  return `<code>${escapeHtml(`${fixture?.label || fixture?.id || "fixture"}${props}`)}</code>`;
+                })
+                .join("")}
+            </div>`
+          : ""
+      }
+      ${
+        propsSchema
+          ? `<details class="ravi-wa-artifact-modal__component-schema">
+              <summary>props schema</summary>
+              <pre>${escapeHtml(propsSchema)}</pre>
+            </details>`
+          : ""
+      }
+    </section>
+  `;
+}
+
+function renderArtifactComponentControls(component, state) {
+  if (!component || typeof component !== "object" || !state) return "";
+  const fixtures = getArtifactComponentFixtures(component);
+  const properties = getArtifactComponentPropSchemas(component);
+  const controls = Object.entries(properties).slice(0, 14);
+  if (!fixtures.length && !controls.length) return "";
+
+  return `
+    <div class="ravi-wa-artifact-modal__component-controls">
+      ${
+        fixtures.length > 1
+          ? `<label class="ravi-wa-artifact-modal__component-control">
+              <span>story</span>
+              <select data-ravi-component-fixture="${escapeAttribute(String(state.fixtureIndex || 0))}">
+                ${fixtures
+                  .map((fixture, index) => {
+                    const selected = index === state.fixtureIndex ? " selected" : "";
+                    return `<option value="${escapeAttribute(String(index))}"${selected}>${escapeHtml(
+                      fixture.label || fixture.id || `story ${index + 1}`,
+                    )}</option>`;
+                  })
+                  .join("")}
+              </select>
+            </label>`
+          : ""
+      }
+      ${controls.map(([propName, propSchema]) => renderArtifactComponentControl(propName, propSchema, state.props?.[propName])).join("")}
+    </div>
+  `;
+}
+
+function renderArtifactComponentControl(propName, propSchema, value) {
+  const schema = propSchema && typeof propSchema === "object" ? propSchema : {};
+  const label = schema.title || propName;
+  const enumValues = Array.isArray(schema.enum) ? schema.enum : null;
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  const currentValue = value === undefined || value === null ? schema.default ?? "" : value;
+  const dataAttr = `data-ravi-component-control="${escapeAttribute(propName)}"`;
+
+  if (enumValues?.length) {
+    return `
+      <label class="ravi-wa-artifact-modal__component-control">
+        <span>${escapeHtml(label)}</span>
+        <select ${dataAttr}>
+          ${enumValues
+            .map((option) => {
+              const optionValue = String(option);
+              const selected = String(currentValue) === optionValue ? " selected" : "";
+              return `<option value="${escapeAttribute(optionValue)}"${selected}>${escapeHtml(optionValue)}</option>`;
+            })
+            .join("")}
+        </select>
+      </label>
+    `;
+  }
+
+  if (type === "boolean") {
+    return `
+      <label class="ravi-wa-artifact-modal__component-control ravi-wa-artifact-modal__component-control--check">
+        <span>${escapeHtml(label)}</span>
+        <input type="checkbox" ${dataAttr}${currentValue === true ? " checked" : ""} />
+      </label>
+    `;
+  }
+
+  if (type === "number" || type === "integer") {
+    return `
+      <label class="ravi-wa-artifact-modal__component-control">
+        <span>${escapeHtml(label)}</span>
+        <input type="number" ${dataAttr} value="${escapeAttribute(String(currentValue))}" />
+      </label>
+    `;
+  }
+
+  return `
+    <label class="ravi-wa-artifact-modal__component-control">
+      <span>${escapeHtml(label)}</span>
+      <input type="text" ${dataAttr} value="${escapeAttribute(String(currentValue))}" />
+    </label>
+  `;
+}
+
+function renderArtifactComponentVisual(component, state) {
+  const componentId = typeof component?.id === "string" ? component.id.trim() : "";
+  const props = state?.props || {};
+  return renderKnownUiComponentFixture(componentId, props);
+}
+
+function renderKnownUiComponentFixture(componentId, props) {
+  if (componentId === "artifact.card") return renderUiComponentArtifactCard(props);
+  if (componentId === "artifact.notification") return renderUiComponentArtifactCard(props);
+  return "";
+}
+
+function renderUiComponentArtifactCard(props) {
+  const tone = normalizeUiComponentTone(props?.tone || props?.status || "completed");
+  const title = typeof props?.title === "string" && props.title.trim() ? props.title.trim() : "Artifact";
+  const summary = typeof props?.summary === "string" && props.summary.trim() ? props.summary.trim() : "";
+  const artifactId =
+    typeof props?.artifactId === "string" && props.artifactId.trim()
+      ? props.artifactId.trim()
+      : "art_demo";
+  const kind = typeof props?.kind === "string" && props.kind.trim() ? props.kind.trim() : "artifact";
+  const glyph = getArtifactGlyph(kind, props?.mimeType);
+
+  return `
+    <article class="ravi-wa-ui-component-artifact-card ravi-wa-ui-component-artifact-card--${escapeAttribute(tone)}">
+      <div class="ravi-wa-ui-component-artifact-card__glyph" aria-hidden="true">${escapeHtml(glyph)}</div>
+      <div class="ravi-wa-ui-component-artifact-card__body">
+        <div class="ravi-wa-ui-component-artifact-card__meta">
+          <span>${escapeHtml(kind)}</span>
+          <span>${escapeHtml(tone)}</span>
+        </div>
+        <strong>${escapeHtml(shorten(title, 72))}</strong>
+        ${summary ? `<p>${escapeHtml(shorten(summary, 116))}</p>` : ""}
+        <code>${escapeHtml(artifactId)}</code>
+      </div>
+    </article>
+  `;
+}
+
+function normalizeUiComponentTone(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["pending", "running", "completed", "failed", "archived"].includes(normalized)
+    ? normalized
+    : "completed";
+}
+
+function getArtifactComponentPreviewState(data) {
+  if (!data?.componentPreview) return null;
+  const key = data.artifactId || data.id || data.componentPreview.id || "component";
+  const existing = artifactComponentPreviewStateByArtifactId.get(key);
+  if (existing) return existing;
+  const fixtures = getArtifactComponentFixtures(data.componentPreview);
+  const fixture = fixtures[0] || null;
+  const state = {
+    fixtureIndex: 0,
+    props: cloneComponentProps(fixture?.props),
+  };
+  artifactComponentPreviewStateByArtifactId.set(key, state);
+  return state;
+}
+
+function getArtifactComponentFixtures(component) {
+  return Array.isArray(component?.fixtures) ? component.fixtures.filter(Boolean).slice(0, 12) : [];
+}
+
+function cloneComponentProps(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return { ...value };
+  }
+}
+
+function getArtifactComponentPropSchemas(component) {
+  const propsSchema = component?.propsSchema;
+  if (!propsSchema || typeof propsSchema !== "object") return {};
+  const properties = propsSchema.properties;
+  return properties && typeof properties === "object" && !Array.isArray(properties)
+    ? properties
+    : {};
+}
+
+function getArtifactComponentPropSchema(component, propName) {
+  return getArtifactComponentPropSchemas(component)[propName] || null;
+}
+
+function readArtifactComponentControlValue(control, propSchema) {
+  const schema = propSchema && typeof propSchema === "object" ? propSchema : {};
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  if (control instanceof HTMLInputElement && control.type === "checkbox") {
+    return control.checked;
+  }
+  if (type === "number" || type === "integer") {
+    const parsed = Number(control.value);
+    if (!Number.isFinite(parsed)) return 0;
+    return type === "integer" ? Math.trunc(parsed) : parsed;
+  }
+  return control.value;
+}
+
+function renderArtifactComponentChips(label, values) {
+  const list = Array.isArray(values) ? values.filter(Boolean).slice(0, 12) : [];
+  if (!list.length) return "";
+  return `
+    <div class="ravi-wa-artifact-modal__component-chips">
+      <span>${escapeHtml(label)}</span>
+      ${list.map((value) => `<code>${escapeHtml(String(value))}</code>`).join("")}
     </div>
   `;
 }
@@ -5991,6 +6439,256 @@ function ensureMessagePopover() {
   popover.className = "ravi-hidden";
   document.body.appendChild(popover);
   return popover;
+}
+
+function ensureArtifactNotificationStack() {
+  let stack = document.getElementById(ARTIFACT_NOTIFICATION_STACK_ID);
+  if (stack instanceof HTMLElement) return stack;
+
+  stack = document.createElement("div");
+  stack.id = ARTIFACT_NOTIFICATION_STACK_ID;
+  stack.className = "ravi-wa-artifact-notification-stack ravi-hidden";
+  stack.addEventListener("click", (event) => {
+    const target = resolveEventElement(event.target);
+    if (!target) return;
+
+    const closeButton = target.closest("[data-ravi-artifact-notification-dismiss]");
+    if (closeButton) {
+      const cardId = closeButton.getAttribute("data-ravi-artifact-notification-dismiss");
+      dismissArtifactNotification(cardId);
+      return;
+    }
+
+    const card = target.closest("[data-ravi-artifact-notification]");
+    if (!card) return;
+    const cardId = card.getAttribute("data-ravi-artifact-notification");
+    openArtifactNotification(cardId);
+  });
+  stack.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = resolveEventElement(event.target);
+    if (target?.closest("[data-ravi-artifact-notification-dismiss]")) return;
+    const card = target?.closest("[data-ravi-artifact-notification]");
+    if (!card) return;
+    event.preventDefault();
+    openArtifactNotification(card.getAttribute("data-ravi-artifact-notification"));
+  });
+  document.body.appendChild(stack);
+  return stack;
+}
+
+function renderArtifactNotificationStack() {
+  const stack = ensureArtifactNotificationStack();
+  const cards = artifactNotificationCards.slice(0, 5);
+  if (!cards.length && !artifactNotificationError) {
+    stack.className = "ravi-wa-artifact-notification-stack ravi-hidden";
+    stack.innerHTML = "";
+    return;
+  }
+
+  stack.className = "ravi-wa-artifact-notification-stack";
+  stack.innerHTML = [
+    artifactNotificationError ? renderArtifactNotificationError(artifactNotificationError) : "",
+    ...cards.map((card, index) => renderArtifactNotificationCard(card, index)),
+  ]
+    .filter(Boolean)
+    .join("");
+}
+
+function renderArtifactNotificationError(message) {
+  return `
+    <article
+      class="ravi-wa-artifact-notification ravi-wa-artifact-notification--failed ravi-wa-artifact-notification--error"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="ravi-wa-artifact-notification__glyph" aria-hidden="true">!</div>
+      <div class="ravi-wa-artifact-notification__body">
+        <div class="ravi-wa-artifact-notification__meta">
+          <span>artifact notifications</span>
+          <span>erro</span>
+        </div>
+        <strong>Falha ao carregar notificações</strong>
+        <p>${escapeHtml(shorten(String(message), 132))}</p>
+      </div>
+      <button
+        type="button"
+        class="ravi-wa-artifact-notification__close"
+        data-ravi-artifact-notification-dismiss="__artifact_notification_error__"
+        aria-label="Dispensar erro"
+      >×</button>
+    </article>
+  `;
+}
+
+function renderArtifactNotificationCard(card, index) {
+  const item = card?.item || {};
+  const lifecycle = item.lifecycle || item.status || "running";
+  const title = item.label || item.id || "artifact";
+  const subtitle = buildArtifactNotificationSubtitle(item);
+  const summary = item.summary || item.path || item.uri || item.blobPath || "";
+  const elapsed = formatElapsedCompact(item.updatedAt || item.createdAt) || "agora";
+  const delayMs = Math.min(index * 90, 360);
+  const glyph = getArtifactGlyph(item.kind, item.mimeType);
+
+  return `
+    <article
+      class="ravi-wa-artifact-notification ravi-wa-artifact-notification--${escapeAttribute(lifecycle)}"
+      data-ravi-artifact-notification="${escapeAttribute(card.id)}"
+      style="--ravi-artifact-notification-delay: ${delayMs}ms"
+      role="button"
+      tabindex="0"
+      title="${escapeAttribute(title)}"
+    >
+      <div class="ravi-wa-artifact-notification__glyph" aria-hidden="true">${escapeHtml(glyph)}</div>
+      <div class="ravi-wa-artifact-notification__body">
+        <div class="ravi-wa-artifact-notification__meta">
+          <span>${escapeHtml(subtitle)}</span>
+          <span>${escapeHtml(elapsed)}</span>
+        </div>
+        <strong>${escapeHtml(shorten(title, 72))}</strong>
+        ${summary ? `<p>${escapeHtml(shorten(String(summary), 116))}</p>` : ""}
+        ${renderArtifactNotificationLineage(item)}
+      </div>
+      <button
+        type="button"
+        class="ravi-wa-artifact-notification__close"
+        data-ravi-artifact-notification-dismiss="${escapeAttribute(card.id)}"
+        aria-label="Dispensar artifact"
+      >×</button>
+    </article>
+  `;
+}
+
+function buildArtifactNotificationSubtitle(item) {
+  return [
+    item?.kind || "artifact",
+    item?.lifecycle || item?.status || "running",
+    item?.provider,
+    item?.model,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function renderArtifactNotificationLineage(item) {
+  const parts = [
+    item?.agentId ? `agent ${item.agentId}` : null,
+    item?.sessionName ? `session ${shorten(item.sessionName, 20)}` : null,
+    item?.taskId ? `task ${shorten(item.taskId, 18)}` : null,
+  ].filter(Boolean);
+  if (!parts.length) return "";
+  return `<div class="ravi-wa-artifact-notification__lineage">${parts
+    .slice(0, 3)
+    .map((part) => `<span>${escapeHtml(part)}</span>`)
+    .join("")}</div>`;
+}
+
+function openArtifactNotification(cardId) {
+  const card = artifactNotificationCards.find((item) => item.id === cardId);
+  if (!card?.item) return;
+  openArtifactModal(buildArtifactsWorkspaceModalData(card.item));
+}
+
+function dismissArtifactNotification(cardId) {
+  if (cardId === "__artifact_notification_error__") {
+    artifactNotificationError = null;
+    renderArtifactNotificationStack();
+    return;
+  }
+  artifactNotificationCards = artifactNotificationCards.filter((item) => item.id !== cardId);
+  renderArtifactNotificationStack();
+}
+
+function normalizeArtifactNotificationItem(item) {
+  if (!item || typeof item !== "object") return null;
+  const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : null;
+  if (!id) return null;
+  const createdAt = normalizeArtifactNotificationTimestamp(item.createdAt);
+  const updatedAt =
+    normalizeArtifactNotificationTimestamp(item.updatedAt) || createdAt || Date.now();
+  return {
+    ...item,
+    id,
+    kind: typeof item.kind === "string" && item.kind.trim() ? item.kind.trim() : "artifact",
+    label:
+      typeof item.label === "string" && item.label.trim()
+        ? item.label.trim()
+        : id,
+    lifecycle:
+      typeof item.lifecycle === "string" && item.lifecycle.trim()
+        ? item.lifecycle.trim()
+        : "running",
+    status:
+      typeof item.status === "string" && item.status.trim()
+        ? item.status.trim()
+        : null,
+    createdAt: createdAt || updatedAt,
+    updatedAt,
+  };
+}
+
+function normalizeArtifactNotificationTimestamp(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function buildArtifactNotificationSignature(item) {
+  return [
+    item?.id || "artifact",
+    item?.lifecycle || item?.status || "running",
+    item?.updatedAt || item?.createdAt || 0,
+  ].join(":");
+}
+
+function loadArtifactNotificationSeenSignatures() {
+  try {
+    const raw = window.localStorage.getItem(ARTIFACT_NOTIFICATION_SEEN_STORAGE);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(
+      parsed
+        .filter((value) => typeof value === "string" && value.trim())
+        .slice(-160),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function loadArtifactNotificationLastSeenAt() {
+  try {
+    const value = Number(window.localStorage.getItem(ARTIFACT_NOTIFICATION_LAST_SEEN_STORAGE));
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function persistArtifactNotificationState() {
+  try {
+    const values = Array.from(artifactNotificationSeenSignatures).slice(-160);
+    artifactNotificationSeenSignatures.clear();
+    values.forEach((value) => artifactNotificationSeenSignatures.add(value));
+    window.localStorage.setItem(
+      ARTIFACT_NOTIFICATION_SEEN_STORAGE,
+      JSON.stringify(values),
+    );
+    if (artifactNotificationLastSeenAt > 0) {
+      window.localStorage.setItem(
+        ARTIFACT_NOTIFICATION_LAST_SEEN_STORAGE,
+        String(Math.floor(artifactNotificationLastSeenAt)),
+      );
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
 }
 
 function render(snapshot = latestSnapshot, context = detectChatContext()) {
@@ -14029,7 +14727,35 @@ function buildArtifactsWorkspaceModalData(item) {
     imageSrc,
     glyph: imageSrc ? null : getArtifactGlyph(item.kind, item.mimeType),
     links: item.links || [],
+    componentPreview: normalizeArtifactComponentPreview(item.componentPreview),
   };
+}
+
+function normalizeArtifactComponentPreview(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    id: typeof value.id === "string" && value.id.trim() ? value.id.trim() : null,
+    version: typeof value.version === "string" && value.version.trim() ? value.version.trim() : null,
+    description:
+      typeof value.description === "string" && value.description.trim()
+        ? value.description.trim()
+        : null,
+    propsSchema: value.propsSchema ?? null,
+    slots: normalizeArtifactComponentStringArray(value.slots),
+    actions: normalizeArtifactComponentStringArray(value.actions),
+    events: normalizeArtifactComponentStringArray(value.events),
+    surfaces: normalizeArtifactComponentStringArray(value.surfaces),
+    renderers: Array.isArray(value.renderers) ? value.renderers.slice(0, 8) : [],
+    fixtures: Array.isArray(value.fixtures) ? value.fixtures.slice(0, 6) : [],
+  };
+}
+
+function normalizeArtifactComponentStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean)
+    .slice(0, 12);
 }
 
 async function copyArtifactValue(value, label) {

@@ -191,6 +191,17 @@ describe("buildOverlayArtifactsPayload", () => {
     expect(first?.session?.activity).toBe("thinking");
     expect(first?.agent?.name).toBe("Main Agent");
     expect(first?.path).toBe("/tmp/diagram.png");
+    expect(first?.ui).toMatchObject({
+      schema: "ravi.ui/v1",
+      kind: "ui.spec",
+      component: "artifact.notification",
+      props: {
+        artifactId: "art_image_1",
+        tone: "completed",
+        sessionName: "dev-main",
+        taskId: "task-123",
+      },
+    });
 
     const taskLink = first?.links.find((link) => link.targetType === "task");
     expect(taskLink?.action).toBe("focus-task");
@@ -268,6 +279,120 @@ describe("buildOverlayArtifactsPayload", () => {
       nextOffset: 2,
     });
     expect(payload.pagination.nextCommand).toContain("ravi artifacts list --rich --json --limit 2 --offset 2");
+  });
+
+  it("passes updatedAt ordering through rich artifact pagination", () => {
+    const calls: unknown[] = [];
+    const payload = buildOverlayArtifactsPayload({
+      limit: 1,
+      offset: 0,
+      orderBy: "updatedAt",
+      sessions: [],
+      listArtifactsPage(options) {
+        calls.push(options);
+        return {
+          items: [makeRecord({ id: "art_updated", updatedAt: 30 })],
+          total: 2,
+          limit: 1,
+          offset: 0,
+        };
+      },
+      resolveTask: () => null,
+      resolveSession: () => null,
+      resolveAgentName: () => null,
+      now: () => 100,
+    });
+
+    expect(calls[0]).toMatchObject({ orderBy: "updatedAt", limit: 1, offset: 0 });
+    expect(payload.query.orderBy).toBe("updatedAt");
+    expect(payload.pagination.nextCommand).toContain("--order-by updatedAt");
+  });
+
+  it("projects ui.component artifacts into a declarative component preview", () => {
+    const records: ArtifactRecord[] = [
+      makeRecord({
+        id: "art_component_card",
+        kind: "ui.component",
+        title: "artifact.card",
+        summary: "Compact artifact card used by notifications",
+        metadata: {
+          schema: "ravi.ui.component/v1",
+          id: "artifact.card",
+          version: "0.1.0",
+          propsSchema: {
+            type: "object",
+            required: ["artifactId", "title"],
+            properties: {
+              artifactId: { type: "string" },
+              title: { type: "string" },
+              tone: { enum: ["running", "completed", "failed"] },
+            },
+          },
+          slots: ["default", "actions"],
+          surfaces: ["wa-overlay", "web-os"],
+          actions: {
+            open: { label: "abrir" },
+            dismiss: { label: "dispensar" },
+          },
+          events: ["click", "dismiss"],
+          renderers: {
+            "wa-overlay": {
+              renderer: "artifact-card.compact",
+              artifactId: "art_renderer_1",
+            },
+          },
+          fixtures: [
+            {
+              id: "completed",
+              label: "Completed",
+              props: {
+                artifactId: "art_demo",
+                title: "Demo artifact",
+                tone: "completed",
+              },
+            },
+          ],
+        },
+      }),
+    ];
+
+    const payload = buildOverlayArtifactsPayload({
+      sessions: [],
+      listArtifacts: () => records,
+      resolveTask: () => null,
+      resolveSession: () => null,
+      resolveAgentName: () => null,
+      now: () => 100,
+    });
+
+    expect(payload.items[0]?.componentPreview).toMatchObject({
+      id: "artifact.card",
+      version: "0.1.0",
+      description: "Compact artifact card used by notifications",
+      slots: ["default", "actions"],
+      surfaces: ["wa-overlay", "web-os"],
+      actions: ["open", "dismiss"],
+      events: ["click", "dismiss"],
+      renderers: [
+        {
+          surface: "wa-overlay",
+          renderer: "artifact-card.compact",
+          artifactId: "art_renderer_1",
+        },
+      ],
+      fixtures: [
+        {
+          id: "completed",
+          label: "Completed",
+        },
+      ],
+    });
+    expect(payload.items[0]?.componentPreview?.propsSchema).toMatchObject({
+      type: "object",
+      properties: {
+        artifactId: { type: "string" },
+      },
+    });
   });
 
   it("includes archived artifacts only when lifecycle filter allows it", () => {

@@ -17,6 +17,8 @@
   - Fail if a view omits valid `id` or primitive `type`.
   - Fail if `density`, `layout`, `components`, `query`, `refreshOn`, or
     `actions` have invalid shapes.
+  - Fail if `uiArtifact` is present and does not declare a supported
+    `kind`, valid `artifactId`, and valid optional `version`.
   - Fail if `refreshOn` contains malformed event topics.
   - Fail if a query references an undeclared operation.
 

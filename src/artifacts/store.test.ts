@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachTagSlugsToAsset, dbFindTagBindings } from "../tags/index.js";
+import { setArtifactLifecycleEventPublisherForTests } from "./events.js";
 import {
   appendArtifactEvent,
   attachArtifact,
@@ -27,6 +28,7 @@ describe("artifact store", () => {
   });
 
   afterEach(async () => {
+    setArtifactLifecycleEventPublisherForTests();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
@@ -147,6 +149,33 @@ describe("artifact store", () => {
       source: "test",
       actor: "dev",
       payload: { provider: "openai" },
+    });
+  });
+
+  it("projects artifact lifecycle events to canonical subjects", () => {
+    const published: Array<{ subject: string; payload: Record<string, unknown> }> = [];
+    setArtifactLifecycleEventPublisherForTests((subject, payload) => {
+      published.push({ subject, payload });
+    });
+
+    const artifact = createArtifact({
+      kind: "image",
+      title: "Async image",
+      status: "pending",
+    });
+
+    updateArtifact(artifact.id, { status: "running" });
+    updateArtifact(artifact.id, { status: "completed" });
+
+    expect(published.map((event) => event.subject)).toEqual([
+      "ravi.artifacts.created",
+      "ravi.artifacts.running",
+      "ravi.artifacts.completed",
+    ]);
+    expect(published[2]?.payload).toMatchObject({
+      lifecycle: "completed",
+      artifact: { id: artifact.id, kind: "image", status: "completed" },
+      event: { eventType: "updated", status: "completed" },
     });
   });
 
@@ -364,5 +393,17 @@ describe("artifact store", () => {
     expect(page.offset).toBe(1);
     expect(page.items).toHaveLength(1);
     expect([first.id, second.id]).toContain(page.items[0]?.id);
+  });
+
+  it("can order artifact lists by latest update", async () => {
+    const first = createArtifact({ kind: "image", title: "First" });
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    createArtifact({ kind: "image", title: "Second" });
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    updateArtifact(first.id, { summary: "Updated after creation" });
+
+    const updated = listArtifactsPage({ kind: "image", orderBy: "updatedAt", limit: 2 });
+
+    expect(updated.items.map((item) => item.id)[0]).toBe(first.id);
   });
 });

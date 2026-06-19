@@ -98,6 +98,14 @@ function parseInteger(value: string | undefined, label: string): number | undefi
   return parsed;
 }
 
+function parseArtifactOrderBy(value: string | undefined): "createdAt" | "updatedAt" | undefined {
+  if (!value?.trim()) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "created" || normalized === "createdat" || normalized === "created_at") return "createdAt";
+  if (normalized === "updated" || normalized === "updatedat" || normalized === "updated_at") return "updatedAt";
+  fail(`Invalid --order-by: ${value}. Use createdAt|updatedAt.`);
+}
+
 function contextDefaults() {
   const ctx = getContext();
   return {
@@ -384,6 +392,8 @@ export class ArtifactsCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500; rich max: 200)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching artifacts to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--order-by <field>", description: "Sort by createdAt or updatedAt (default: createdAt)" })
+    orderBy?: string,
     @Option({ flags: "--include-deleted", description: "Include archived/deleted artifacts" }) includeDeleted?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
@@ -408,6 +418,7 @@ export class ArtifactsCommands {
       const payload = buildOverlayArtifactsPayload({
         ...(limit ? { limit: parseInteger(limit, "--limit") } : {}),
         ...(offset ? { offset: parseCliListOffset(offset) } : {}),
+        ...(orderBy ? { orderBy: parseArtifactOrderBy(orderBy) } : {}),
         ...(normalizedLifecycle ? { lifecycle: normalizedLifecycle } : {}),
         ...(kind?.trim() ? { kind: kind.trim() } : {}),
         ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
@@ -420,11 +431,13 @@ export class ArtifactsCommands {
 
     const pageLimit = parseCliListLimit(limit);
     const pageOffset = parseCliListOffset(offset);
+    const parsedOrderBy = parseArtifactOrderBy(orderBy);
     const filterOptions = {
       ...(kind?.trim() ? { kind: kind.trim() } : {}),
       ...(session?.trim() ? { session: session.trim() } : {}),
       ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
       ...(tag?.trim() ? { tag: tag.trim() } : {}),
+      ...(parsedOrderBy ? { orderBy: parsedOrderBy } : {}),
       includeDeleted: includeDeleted === true,
     };
     const page = listArtifactsPage({
@@ -448,6 +461,8 @@ export class ArtifactsCommands {
         taskId?.trim() || null,
         "--tag",
         tag?.trim() || null,
+        "--order-by",
+        parsedOrderBy && parsedOrderBy !== "createdAt" ? parsedOrderBy : null,
         includeDeleted ? "--include-deleted" : null,
       ],
     });

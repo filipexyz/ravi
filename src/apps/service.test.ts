@@ -494,6 +494,66 @@ describe("Ravi app manifest service", () => {
     expect(errors).toContain("operations.apps.check.authorization.input.includeOptions");
   });
 
+  it("validates UI artifact references", () => {
+    const root = makeRepo();
+    writeManifest(
+      root,
+      "ui-artifacts-valid",
+      validManifest({
+        id: "ui-artifacts-valid",
+        name: "UI Artifacts Valid",
+        interfaces: {
+          ui: {
+            views: [
+              {
+                id: "artifact-feed",
+                type: "timeline",
+                uiArtifact: {
+                  kind: "ui.spec",
+                  artifactId: "art_ui_spec_123",
+                  version: 3,
+                },
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(getAppManifest("ui-artifacts-valid").valid).toBe(true);
+
+    writeManifest(
+      root,
+      "ui-artifacts-invalid",
+      validManifest({
+        id: "ui-artifacts-invalid",
+        name: "UI Artifacts Invalid",
+        interfaces: {
+          ui: {
+            views: [
+              {
+                id: "artifact-feed",
+                type: "timeline",
+                uiArtifact: {
+                  kind: "ui.render",
+                  artifactId: "not-artifact",
+                  version: 0,
+                },
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const invalid = getAppManifest("ui-artifacts-invalid");
+    const errors = invalid.errors.join("\n");
+    expect(invalid.valid).toBe(false);
+    expect(errors).toContain("interfaces.ui.views[0].uiArtifact.kind");
+    expect(errors).toContain("interfaces.ui.views[0].uiArtifact.artifactId");
+    expect(errors).toContain("interfaces.ui.views[0].uiArtifact.version");
+  });
+
   it("accepts builtin operations and rejects recursive dynamic app commands", () => {
     const root = makeRepo();
     writeManifest(
