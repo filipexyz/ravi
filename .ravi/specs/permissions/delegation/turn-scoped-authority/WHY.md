@@ -40,7 +40,7 @@ Roles match the operational model operators already understand:
 - easy audit of who has what;
 - clear blast radius when a role changes.
 
-Role grants also keep the low-level local-grants relation model simple: roles are just subjects with relations, and contacts/chats are members or constraints.
+Role/profile modeling keeps authorization understandable: roles are reusable capability bundles, and contacts/chats are explicit members or constraints.
 
 ## Alternatives Rejected
 
@@ -77,4 +77,3 @@ Rejected for user-initiated invocation contexts because it makes agent admin pow
 - More context computation per turn is acceptable because it prevents cross-actor leakage.
 - Short-lived invocation contexts require more context records or refresh logic, but they make revocation and auditing reliable.
 - Intersection can deny more often at first. Denials are correct until roles/surface policies are explicitly configured.
-

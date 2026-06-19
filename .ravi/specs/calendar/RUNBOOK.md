@@ -14,9 +14,8 @@ owners:
 ## Inspect Local Calendars
 
 ```bash
-ravi calendar accounts list --json
-ravi calendar calendars list --json
-ravi calendar events list --from now --to +7d --json
+ravi calendars list --json
+ravi calendars events list --from now --to +7d --json
 ```
 
 ## Debug "My Agenda" Leaks

@@ -1314,6 +1314,20 @@ export const hookTestReturnSchema = looseObjectSchema;
 
 export const agentRecordReturnSchema = looseObjectSchema;
 
+const runtimeCapabilityReturnSchema = z.object({
+  permission: z.string().optional(),
+  objectType: z.string().optional(),
+  objectId: z.string().optional(),
+  source: z.string().optional(),
+});
+
+const agentRuntimePermissionsConfigReturnSchema = z
+  .object({
+    profile: z.enum(["bootstrap", "full-access"]).optional(),
+    capabilities: z.array(z.union([z.string(), runtimeCapabilityReturnSchema])).optional(),
+  })
+  .nullable();
+
 export const agentsListReturnSchema = pagedItemsReturnSchema
   .extend({
     defaultAgent: z.string(),
@@ -1370,6 +1384,19 @@ export const agentSetReturnSchema = z
     agent: agentRecordReturnSchema.optional(),
   })
   .passthrough();
+
+export const agentPermissionsReturnSchema = z.object({
+  action: z.literal("permissions"),
+  changed: z.boolean(),
+  agentId: z.string(),
+  profile: z.string().optional(),
+  runtimePermissions: agentRuntimePermissionsConfigReturnSchema.optional(),
+  before: agentRuntimePermissionsConfigReturnSchema.optional(),
+  after: agentRuntimePermissionsConfigReturnSchema.optional(),
+  defaults: jsonObjectSchema.nullable().optional(),
+  command: z.string().optional(),
+  agent: jsonObjectSchema.optional(),
+});
 
 export const agentDebounceReturnSchema = z
   .object({

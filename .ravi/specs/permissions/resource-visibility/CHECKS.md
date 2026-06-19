@@ -26,23 +26,12 @@ capability: resource-visibility
 - Assert `crm contact/contacts/next/fact/task/opportunity` commands cannot
   reveal records attached only to hidden contacts.
 
-## Audit Queries
+## Audit Commands
 
-```sql
-select subject_type, subject_id, relation, object_type, object_id, source
-from relations
-where relation in (
-  'view',
-  'access',
-  'modify',
-  'use',
-  'execute',
-  'read_contact',
-  'read_own_contacts',
-  'read_tagged_contacts',
-  'write_contacts'
-)
-order by subject_type, subject_id, relation, object_type, object_id;
+```bash
+ravi permissions status --json
+ravi permissions materialize --subject-type agent --subject-id main --json
+ravi doctor --domain permissions --json
 ```
 
 ```bash

@@ -71,6 +71,7 @@ export type TaskEventType =
   | "task.progress"
   | "task.checkpoint.missed"
   | "task.comment"
+  | "task.updated"
   | "task.archived"
   | "task.unarchived"
   | "task.blocked"
@@ -482,6 +483,16 @@ export interface TaskCommentInput {
   authorAgentId?: string;
   authorSessionName?: string;
   body: string;
+}
+
+export interface TaskUpdateInput {
+  actor?: string;
+  agentId?: string;
+  sessionName?: string;
+  title?: string;
+  instructions?: string;
+  priority?: TaskPriority;
+  message?: string;
 }
 
 export type TaskListSort = "updated" | "created";

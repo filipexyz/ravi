@@ -506,7 +506,7 @@ describe("Ravi app manifest service", () => {
           cli: {
             command: "ravi khal-tasks",
             json: true,
-            health: "ravi apps run khal-tasks check --json",
+            health: "ravi khal-tasks check --json",
           },
         },
         operations: {
@@ -539,7 +539,7 @@ describe("Ravi app manifest service", () => {
           cli: {
             command: "ravi recursive-app",
             json: true,
-            health: "ravi recursive-app check --json",
+            health: "ravi recursive-app list --json",
           },
         },
         operations: {
@@ -550,7 +550,7 @@ describe("Ravi app manifest service", () => {
           },
         },
         health: {
-          checks: [{ type: "cli", command: "ravi recursive-app check --json" }],
+          checks: [{ type: "cli", command: "ravi recursive-app list --json" }],
         },
       }),
     );

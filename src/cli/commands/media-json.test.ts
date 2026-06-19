@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 
 afterAll(() => mock.restore());
 
@@ -139,6 +139,88 @@ describe("media/audio/react JSON output", () => {
     expect(payload.options).toMatchObject({ lang: "en", voiceNote: false });
     expect(result).toEqual(payload);
     expect(emittedEvents).toHaveLength(0);
+  });
+
+  it("generates audio from a relative markdown text file", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".ravi-audio-text-file-"));
+    const filePath = join(dir, "prompt.md");
+    const textFile = relative(process.cwd(), filePath);
+    writeFileSync(filePath, "bonjour depuis un fichier\n");
+    try {
+      const { output, result } = await captureConsole(() =>
+        new AudioCommands().generate(
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "fr",
+          undefined,
+          undefined,
+          false,
+          undefined,
+          true,
+          textFile,
+        ),
+      );
+      const payload = JSON.parse(output);
+
+      expect(payload.audio).toMatchObject({
+        text: "bonjour depuis un fichier",
+      });
+      expect(payload.options).toMatchObject({ lang: "fr", voiceNote: false });
+      expect(result).toEqual(payload);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unsafe audio text file paths", async () => {
+    const commands = new AudioCommands();
+    await expect(
+      commands.generate(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        true,
+        "../x.txt",
+      ),
+    ).rejects.toThrow("--text-file must not contain '..' path segments.");
+    await expect(
+      commands.generate(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        true,
+        "/tmp/x.txt",
+      ),
+    ).rejects.toThrow("--text-file must be a relative path inside the current working directory.");
+    await expect(
+      commands.generate(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        true,
+        "x.pdf",
+      ),
+    ).rejects.toThrow("--text-file must point to a .md or .txt file.");
   });
 
   it("prints delivered media send results as typed JSON", async () => {

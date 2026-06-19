@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: delegation
 capabilities:
-  - local-grants
+  - provider-runtime
   - roles
   - invocation-context
   - effective-capabilities

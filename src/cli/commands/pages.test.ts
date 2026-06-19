@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
+import { closeConsoleScopeStore, upsertConsoleScopeDefault } from "../../console-scope/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { PagesCommands } from "./pages.js";
 
@@ -11,6 +12,7 @@ const tempDirs: string[] = [];
 let stateDir: string | null = null;
 
 afterEach(async () => {
+  closeConsoleScopeStore();
   for (const dir of tempDirs.splice(0)) {
     await rm(dir, { recursive: true, force: true });
   }
@@ -37,7 +39,9 @@ describe("pages CLI commands", () => {
     });
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
-    const { output } = await captureConsole(() => command.list("proj", undefined, undefined, undefined, true));
+    const { output } = await captureConsole(() =>
+      command.list("proj", undefined, undefined, undefined, undefined, true),
+    );
     const payload = JSON.parse(output);
 
     expect(calls).toEqual([
@@ -77,7 +81,9 @@ describe("pages CLI commands", () => {
     });
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
-    const { output } = await captureConsole(() => command.create("proj", "demo", "public", true, undefined, true));
+    const { output } = await captureConsole(() =>
+      command.create(["proj", "demo"], undefined, "public", true, undefined, true),
+    );
     const payload = JSON.parse(output);
 
     expect(calls).toEqual([
@@ -119,7 +125,9 @@ describe("pages CLI commands", () => {
     });
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
-    const { output } = await captureConsole(() => command.update("proj", "demo", "public", undefined, true));
+    const { output } = await captureConsole(() =>
+      command.update(["proj", "demo"], undefined, "public", undefined, true),
+    );
     const payload = JSON.parse(output);
 
     expect(calls).toEqual([
@@ -158,7 +166,7 @@ describe("pages CLI commands", () => {
     });
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
-    await captureConsole(() => command.visibility("proj", "demo", "private", undefined, true));
+    await captureConsole(() => command.visibility(["proj", "demo", "private"], undefined, undefined, true));
 
     expect(calls).toEqual([
       {
@@ -209,7 +217,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.domains("filipe-ai", "filipe-ai", ["www.filipe.ai", "filipe.ai"], true, undefined, true),
+      command.domains(["filipe-ai", "filipe-ai", "www.filipe.ai", "filipe.ai"], undefined, true, undefined, true),
     );
     const payload = JSON.parse(output);
 
@@ -301,9 +309,8 @@ describe("pages CLI commands", () => {
 
     const { output } = await captureConsole(() =>
       command.publish(
-        "proj",
-        "demo",
-        dir,
+        ["proj", "demo", dir],
+        undefined,
         "/guide",
         "public",
         "Docs",
@@ -331,6 +338,43 @@ describe("pages CLI commands", () => {
       upload: { attempted: 0, skipped: 1 },
       site: { slug: "demo" },
       release: { id: "rel_123" },
+    });
+  });
+
+  it("uses the saved Console scope when the Pages project is omitted", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-scope-command-test-");
+    upsertConsoleScopeDefault({
+      scopeKind: "session",
+      scopeKey: "ravi-console",
+      consoleUrl: "https://console.example",
+      organization: { id: "org_1", name: "Acme" },
+      project: { id: "proj_1", slug: "rbbt-ravi", name: "RBBT", ref: "rbbt-ravi" },
+    });
+
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const client = makeClient(async (method, path, body, accessToken) => {
+      calls.push({ method, path, body, accessToken });
+      return [{ id: "site_1", slug: "docs", defaultHostname: "docs.ravi.page" }];
+    });
+    const command = new PagesCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      getContext: () => ({ sessionName: "ravi-console" }),
+    });
+
+    const { output } = await captureConsole(() =>
+      command.list(undefined, undefined, undefined, undefined, undefined, true),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls[0]?.path).toBe("/api/cli/projects/rbbt-ravi/pages");
+    expect(payload).toMatchObject({
+      success: true,
+      projectRef: "rbbt-ravi",
+      scope: {
+        source: "session_default",
+        project: { ref: "rbbt-ravi" },
+      },
     });
   });
 });

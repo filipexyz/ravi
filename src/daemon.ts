@@ -43,6 +43,7 @@ import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./w
 import { hasLiveAdminContext } from "./runtime/context-registry.js";
 import type { MessageTarget } from "./runtime/message-types.js";
 import { dbHasActiveAssignedTaskForSession } from "./tasks/task-db.js";
+import { startWorkObjectNatsService, type WorkObjectNatsServiceHandle } from "./work-objects/index.js";
 import {
   tryAcquireLeadership,
   startLeadershipRenewal,
@@ -179,6 +180,7 @@ let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
 let webhookHttpServer: WebhookHttpServerHandle | null = null;
+let workObjectNatsService: WorkObjectNatsServiceHandle | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
 export function getBotInstance(): RaviBot | null {
@@ -244,6 +246,10 @@ async function shutdown(signal: string) {
 
     if (sessionAdapterBus) {
       await sessionAdapterBus.stop();
+    }
+
+    if (workObjectNatsService) {
+      await workObjectNatsService.stop();
     }
 
     if (webhookHttpServer) {
@@ -399,6 +405,9 @@ export async function startDaemon() {
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
   log.info("Session adapter bus started");
+
+  workObjectNatsService = startWorkObjectNatsService();
+  log.info("Work Object NATS service started");
 
   webhookHttpServer = startWebhookHttpServerFromEnv();
   if (webhookHttpServer) {

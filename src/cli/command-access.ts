@@ -47,12 +47,12 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
   const operation = buildCliCommandOperation(input);
   const attempted: PermissionProviderDecision[] = [];
 
-  for (const objectId of commandObjectCandidates(input.group, input.command)) {
+  for (const candidate of commandAccessCandidates(input)) {
     const decision = authorizePermission({
       ...authority.request,
-      permission: "execute",
-      objectType: "group",
-      objectId,
+      permission: candidate.permission,
+      objectType: candidate.objectType,
+      objectId: candidate.objectId,
       operation,
     });
     attempted.push(decision);
@@ -128,6 +128,54 @@ function resolveCommandAccessAuthority(
 
 function commandObjectCandidates(group: string, command: string): string[] {
   return [`${group}_${command}`, group];
+}
+
+function commandAccessCandidates(input: CliCommandAccessInput): Array<{
+  permission: string;
+  objectType: string;
+  objectId: string;
+}> {
+  if (!input.access) return [];
+
+  const semanticCandidates = [
+    {
+      permission: input.access.kind,
+      objectType: input.access.resource,
+      objectId: input.access.action,
+    },
+    {
+      permission: input.access.kind,
+      objectType: input.access.resource,
+      objectId: "*",
+    },
+    {
+      permission: input.access.kind,
+      objectType: `${input.access.resource}.${input.access.action}`,
+      objectId: "*",
+    },
+  ];
+
+  const legacyCandidates = commandObjectCandidates(input.group, input.command).map((objectId) => ({
+    permission: "execute",
+    objectType: "group",
+    objectId,
+  }));
+
+  return dedupeCandidates([...semanticCandidates, ...legacyCandidates]);
+}
+
+function dedupeCandidates(
+  candidates: Array<{ permission: string; objectType: string; objectId: string }>,
+): Array<{ permission: string; objectType: string; objectId: string }> {
+  const seen = new Set<string>();
+  const result: Array<{ permission: string; objectType: string; objectId: string }> = [];
+  for (const candidate of candidates) {
+    const key = `${candidate.permission}:${candidate.objectType}:${candidate.objectId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(candidate);
+  }
+  return result;
 }
 
 function normalizeAccess(access: CommandAccessOptions): PermissionProviderCommandAccess {

@@ -60,6 +60,7 @@ import {
   dbSetTaskLaunchPlan,
   dbSetTaskProfileResolution,
   dbSetTaskProfileState,
+  dbUpdateTask,
 } from "./task-db.js";
 import {
   appendTaskDocumentSection,
@@ -102,6 +103,7 @@ import type {
   TaskStatus,
   TaskTerminalInput,
   TaskUnarchiveInput,
+  TaskUpdateInput,
   TaskWorktreeConfig,
   TaskWorktreeMode,
 } from "./types.js";
@@ -1021,11 +1023,14 @@ function buildTaskRuntimeStateDocSection(task: TaskRecord, event: TaskEvent): Ta
             ? "Task Archived"
             : event.type === "task.unarchived"
               ? "Task Restored"
-              : "Task Runtime Update";
+              : event.type === "task.updated"
+                ? "Task Updated"
+                : "Task Runtime Update";
 
   const lines = [
     `Event: \`${event.type}\``,
     `Current status: \`${task.status}\``,
+    `Current priority: \`${task.priority}\``,
     `Current progress: \`${task.progress}%\``,
   ];
 
@@ -2892,6 +2897,27 @@ export function unarchiveTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  return { ...result, task: documentedTask };
+}
+
+export function updateTask(
+  taskId: string,
+  input: TaskUpdateInput,
+): {
+  task: TaskRecord;
+  event: TaskEvent;
+  wasNoop?: boolean;
+} {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  const result = dbUpdateTask(taskId, input);
+  const documentedTask = result.wasNoop
+    ? result.task
+    : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  syncWorkflowNodeRunForTask(taskId);
   return { ...result, task: documentedTask };
 }
 

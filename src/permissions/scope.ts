@@ -8,7 +8,6 @@
 import { getContext } from "../cli/context.js";
 import { agentCan, canWithCapabilityContext, localOperatorCan } from "./provider-runtime.js";
 import { recordPermissionDenial } from "./denials.js";
-import { explainPermissionDecision, summarizePermissionGrantState, type ExplainGrantState } from "./explain.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "./audit-provenance.js";
 import { publish, closeNats } from "../nats.js";
 import type { ContextRecord, ContextSource } from "../router/router-db.js";
@@ -73,10 +72,6 @@ interface ScopeDenialDiagnosis {
   missingPrincipals: string[];
   missingPrincipalDetails: MissingPrincipalDetail[];
   recommendedGrantSubjects: string[];
-  grantState?: ExplainGrantState;
-  branchStates?: Array<{ branch: string; principal: string | null; state: ExplainGrantState; verdict: string }>;
-  nearMissRelations?: unknown[];
-  revocationEvents?: unknown[];
 }
 
 interface MissingPrincipalDetail {
@@ -149,7 +144,6 @@ function buildScopeDenialDiagnosis(
   const missingBranches: string[] = [];
   const missingBranchTypes: string[] = [];
   const resolutionHints: string[] = [];
-  const grantSummary = buildGrantStateSummary(input, provenance);
 
   if (provenance?.authorityMode === "delegated") {
     if (provenance.actorCapabilityCount === 0) {
@@ -191,7 +185,6 @@ function buildScopeDenialDiagnosis(
         missingPrincipals: uniquePrincipals,
         missingPrincipalDetails: dedupeMissingPrincipalDetails(missingPrincipalDetails),
         recommendedGrantSubjects: grantSubjects,
-        ...grantSummary,
       };
     }
 
@@ -202,7 +195,6 @@ function buildScopeDenialDiagnosis(
         missingPrincipals: [],
         missingPrincipalDetails: [],
         recommendedGrantSubjects: [],
-        ...grantSummary,
       };
     }
   }
@@ -214,40 +206,7 @@ function buildScopeDenialDiagnosis(
     missingPrincipals: [agentPrincipal],
     missingPrincipalDetails: [{ branch: "agent", principal: agentPrincipal }],
     recommendedGrantSubjects: [agentPrincipal],
-    ...grantSummary,
   };
-}
-
-function buildGrantStateSummary(
-  input: {
-    ctx: ScopeContext;
-    relation: string;
-    objectType: string;
-    objectId: string;
-  },
-  provenance?: AuditContextProvenance,
-): Pick<ScopeDenialDiagnosis, "grantState" | "branchStates" | "nearMissRelations" | "revocationEvents"> {
-  if (!input.ctx.agentId) return {};
-  try {
-    const decision = explainPermissionDecision({
-      relation: input.relation,
-      objectType: input.objectType,
-      objectId: input.objectId,
-      agentId: input.ctx.agentId,
-      actor: provenance?.actorPrincipal ?? null,
-      chat: provenance?.surfacePrincipal ?? null,
-      sessionKey: input.ctx.sessionKey,
-    });
-    const summary = summarizePermissionGrantState(decision);
-    return {
-      grantState: summary.state,
-      branchStates: summary.branchStates,
-      nearMissRelations: summary.nearMissRelations.slice(0, 10),
-      revocationEvents: summary.revocationEvents,
-    };
-  } catch {
-    return {};
-  }
 }
 
 function uniqueNonEmpty(values: string[]): string[] {

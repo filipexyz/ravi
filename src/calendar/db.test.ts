@@ -131,7 +131,7 @@ describe("local calendar db", () => {
     expect(events[0].title).toBe("Morning");
   });
 
-  it("stores calendar membership without making local grants an authorization bypass", () => {
+  it("stores calendar membership without making membership an authorization bypass", () => {
     const account = createCalendarAccount({ provider: "local" });
     const calendar = createCalendar({ accountId: account.id, name: "Team" });
 

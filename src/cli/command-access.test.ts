@@ -122,7 +122,9 @@ describe("CLI command access enforcement", () => {
 
     expect(result.allowed).toBe(true);
     expect(result.decision?.providerId).toBe("local-operator");
-    expect(result.decision?.objectId).toBe("demo_create");
+    expect(result.decision?.permission).toBe("mutate");
+    expect(result.decision?.objectType).toBe("demo.items");
+    expect(result.decision?.objectId).toBe("create");
   });
 
   it("ignores default credential context for direct local CLI authorization", () => {
@@ -160,7 +162,9 @@ describe("CLI command access enforcement", () => {
 
     expect(result.allowed).toBe(true);
     expect(result.decision?.providerId).toBe("local-operator");
-    expect(result.decision?.objectId).toBe("demo_create");
+    expect(result.decision?.permission).toBe("mutate");
+    expect(result.decision?.objectType).toBe("demo.items");
+    expect(result.decision?.objectId).toBe("create");
   });
 
   it("does not allow tool or gateway execution without a resolved runtime principal", () => {
@@ -193,7 +197,63 @@ describe("CLI command access enforcement", () => {
     expect(result.attempted).toEqual([]);
   });
 
-  it("authorizes runtime contexts through command-specific capabilities first", () => {
+  it("authorizes runtime contexts through semantic command capabilities first", () => {
+    const record = context([{ permission: "mutate", objectType: "demo.items", objectId: "create" }]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "demo",
+        command: "create",
+        access: ACCESS,
+        source: "gateway",
+      }),
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.decision?.providerId).toBe("context-capabilities");
+    expect(result.decision?.permission).toBe("mutate");
+    expect(result.decision?.objectType).toBe("demo.items");
+    expect(result.decision?.objectId).toBe("create");
+    expect(result.attempted).toHaveLength(1);
+  });
+
+  it("allows semantic resource wildcard command capabilities", () => {
+    const record = context([{ permission: "mutate", objectType: "demo.items", objectId: "*" }]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "demo",
+        command: "create",
+        access: ACCESS,
+        source: "gateway",
+      }),
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.decision?.permission).toBe("mutate");
+    expect(result.decision?.objectType).toBe("demo.items");
+    expect(result.decision?.objectId).toBe("create");
+    expect(
+      result.attempted.map((decision) => `${decision.permission}:${decision.objectType}:${decision.objectId}`),
+    ).toEqual(["mutate:demo.items:create"]);
+  });
+
+  it("supports dotted action resource wildcards as a transition alias", () => {
+    const record = context([{ permission: "mutate", objectType: "demo.items.create", objectId: "*" }]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "demo",
+        command: "create",
+        access: ACCESS,
+        source: "tool",
+      }),
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.decision?.permission).toBe("mutate");
+    expect(result.decision?.objectType).toBe("demo.items.create");
+    expect(result.decision?.objectId).toBe("*");
+  });
+
+  it("falls back to legacy command-specific execute capabilities", () => {
     const record = context([{ permission: "execute", objectType: "group", objectId: "demo_create" }]);
     const result = runWithContext({ agentId: "dev", context: record }, () =>
       enforceCliCommandAccess({
@@ -206,10 +266,12 @@ describe("CLI command access enforcement", () => {
 
     expect(result.allowed).toBe(true);
     expect(result.decision?.providerId).toBe("context-capabilities");
+    expect(result.decision?.permission).toBe("execute");
+    expect(result.decision?.objectType).toBe("group");
     expect(result.decision?.objectId).toBe("demo_create");
   });
 
-  it("falls back to group-level capabilities for command execution", () => {
+  it("falls back to legacy group-level execute capabilities for command execution", () => {
     const record = context([{ permission: "execute", objectType: "group", objectId: "demo" }]);
     const result = runWithContext({ agentId: "dev", context: record }, () =>
       enforceCliCommandAccess({
@@ -222,7 +284,15 @@ describe("CLI command access enforcement", () => {
 
     expect(result.allowed).toBe(true);
     expect(result.decision?.objectId).toBe("demo");
-    expect(result.attempted.map((decision) => decision.objectId)).toEqual(["demo_create", "demo"]);
+    expect(
+      result.attempted.map((decision) => `${decision.permission}:${decision.objectType}:${decision.objectId}`),
+    ).toEqual([
+      "mutate:demo.items:create",
+      "mutate:demo.items:*",
+      "mutate:demo.items.create:*",
+      "execute:group:demo_create",
+      "execute:group:demo",
+    ]);
   });
 
   it("denies runtime contexts without matching execute capability", () => {
@@ -238,7 +308,7 @@ describe("CLI command access enforcement", () => {
 
     expect(result.allowed).toBe(false);
     expect(result.errorMessage).toContain("agent:dev cannot execute demo create");
-    expect(result.attempted).toHaveLength(2);
+    expect(result.attempted).toHaveLength(5);
     expect(result.attempted.every((decision) => decision.providerId === "context-capabilities")).toBe(true);
   });
 });

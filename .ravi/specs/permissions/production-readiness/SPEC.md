@@ -5,9 +5,11 @@ kind: capability
 domain: permissions
 capability: production-readiness
 capabilities:
-  - local-grants
+  - provider-runtime
+  - agent-runtime-permissions
+  - contact-policy-permissions
   - delegation
-  - explain
+  - resource-visibility
   - operations
   - testing
 tags:
@@ -18,14 +20,15 @@ tags:
   - operations
 applies_to:
   - src/permissions/provider-runtime.ts
+  - src/permissions/provider-registry.ts
+  - src/permissions/agent-runtime-permissions-provider.ts
+  - src/permissions/contact-policy-permissions-provider.ts
   - src/permissions/capability-context.ts
   - src/permissions/delegation.ts
   - src/permissions/scope.ts
-  - src/permissions/explain.ts
-  - src/permissions/policies.ts
-  - src/permissions/relations.ts
   - src/runtime/runtime-request-context.ts
   - src/runtime/context-registry.ts
+  - src/router/router-db.ts
 owners:
   - ravi-dev
 status: active
@@ -36,239 +39,99 @@ normative: true
 
 ## Intent
 
-This spec defines the exit criteria for declaring the local-grants permission system
-production ready. It is a gate, not a feature: each criterion is a `MUST` that
-is either met or a tracked gap. A criterion counts as met only when it has an
-automated check that fails if the property regresses.
+This spec defines the exit criteria for declaring the provider-runtime
+permission system production ready. A criterion counts as met only when code and
+automated checks prevent regression.
 
-Readiness is judged against the live model that exists today: turn-scoped
-delegated authority computed as the intersection of executor agent, actor,
-surface, and turn capabilities, with surface inheritance, deny vetoes, role
-expansion, and delegation overrides. The system must be correct, consistent,
-fresh, recoverable, observable, and tested before it carries production traffic
-unsupervised.
+Readiness is judged against the live model: turn-scoped delegated authority is
+computed from executor agent, actor, surface, and turn capabilities, with
+surface inheritance, deny vetoes, role expansion, delegation overrides, and
+provider-owned resource visibility.
 
 ## Readiness Gates
 
-### G1 — Model Correctness
+### G1 Model Correctness
 
-- Delegated authority MUST be an intersection of executor-agent, actor,
-  surface, and turn capabilities. Union MUST NOT authorize user-initiated tool
-  use.
-- A surface with no explicit grant, `deny_<relation>`, or `constrain role:<id>`
-  decision MUST inherit the actor branch and MUST NOT require a duplicate grant.
-- `deny_<relation>` on any branch MUST veto the capability over every allow,
-  inheritance, override, and wildcard.
-- `constrain role:<id>` MUST bound the surface to the constraint role closure;
-  capabilities outside it MUST deny unless a surface-level override allows them.
-- Role membership MUST expand transitively with cycle protection on every
-  branch.
-- An unresolved or automation actor MUST receive no human delegation override.
-- `admin system:*` on the executor agent MUST NOT, by itself, authorize a
-  user-initiated delegated turn.
+- User-initiated delegated execution MUST require the executor-agent ceiling and
+  the actor branch.
+- A surface with no explicit allow, deny, or constraint for the same object MUST
+  inherit the actor branch.
+- Explicit surface deny MUST veto inheritance, overrides, and wildcards.
+- Surface constraints MUST bound the surface to the expanded constraint
+  capabilities.
+- Delegation overrides MAY satisfy human actor/surface branches, but MUST NOT
+  exceed the executor-agent ceiling.
+- Automation and unresolved actors MUST NOT receive human delegation overrides.
 
-Validation: `bun test src/permissions/delegation.test.ts` (see G4) exercising
-the full allow/deny/inherit/constrain/override matrix.
+Validation: `bun test src/permissions/delegation.test.ts`.
 
-### G2 — Evaluator Consistency
+### G2 Provider Runtime Boundary
 
-The legacy relation ledger contains more than one compatibility evaluation
-path: the relation-ledger subject evaluator, the snapshot matcher
-(`capabilitiesAllow`), the delegated materializer (`buildEffectiveCapabilities`),
-and the explain branch matcher (`relationCoversRequest`). These paths are not
-the default Ravi authorization chain; they exist only for migration, explain,
-doctor, and cleanup flows.
+- Authorization call sites MUST go through `provider-runtime`.
+- Runtime context creation MUST materialize capabilities through registered
+  materializers.
+- Direct imports of retired permission engines or direct capability evaluators
+  from core runtime call sites MUST fail doctor/tests.
+- Apps, CLI command access, Bash hooks, SDK gateway, sessions, contacts, agents,
+  automations, and resource visibility MUST be covered by provider-runtime
+  checks or by a bounded already-materialized context capability snapshot.
 
-- The final delegated allow/deny used by enforcement and by `explain` MUST come
-  from the same materializer (`materializeDelegatedAuthority`). A parallel
-  implementation that can disagree on the final decision is forbidden.
-- For any subject and effective grant set in the legacy ledger, the legacy
-  subject decision and the snapshot/delegated path MUST agree on allow/deny
-  across wildcards, trailing patterns, tool-group membership, nested roles, and
-  constraints.
-- Wildcard/pattern semantics MUST be defined in one place and shared. The
-  current contract is exact match, full `*`, and trailing `prefix*` only;
-  infix patterns are not supported and MUST NOT silently appear to match.
-- A regression test MUST assert provider-vs-materializer agreement on a shared
-  case matrix; drift MUST fail CI.
+Validation:
 
-Validation: a cross-evaluator agreement test (currently missing) plus
-`explain` final-decision equality against a real enforcement check.
+- `bun test src/permissions/provider-runtime.test.ts`
+- `ravi doctor --domain permissions --json`
 
-### G3 — Freshness And Revocation
+### G3 Freshness And Revocation
 
-- A grant created after a delegated context was built MUST authorize on the
-  next turn without daemon restart. (Met: enforcement live-materializes
-  delegated authority.)
-- A revoked grant, role membership, constraint, or policy MUST stop
-  authorizing by the next authority check.
-- Capability counts stored in context metadata MUST be treated as point-in-time
-  snapshots, never as live state, by every consumer (denial diagnosis, explain,
-  audit).
-- Turn/observer approval caps MUST remain an upper bound that newer live grants
+- Provider-owned config changes MUST affect the next materialization without
+  daemon restart.
+- Context snapshot counts are audit metadata, not live authorization state.
+- Turn approval caps MUST remain an upper bound that newer provider-owned config
   cannot exceed.
 
-Validation: freshness tests in
-`permissions/delegation/turn-scoped-authority/CHECKS.md` plus a revoke→deny
-test on a live context.
+Validation:
 
-### G4 — Test Coverage Of The Core
+- `bun test src/runtime/runtime-request-context.test.ts`
+- `bun test src/runtime/context-registry.test.ts`
 
-- `delegation.ts` MUST have a dedicated unit test covering intersection,
-  surface inheritance, deny veto, constraint bounding, role expansion (nested +
-  cyclic), delegation overrides, and automation/unresolved-actor emptiness.
-  (Gap: no `delegation.test.ts` today; logic is only exercised indirectly.)
-- `capability-context.ts` MUST have a dedicated unit test for the snapshot
-  matcher and the superadmin boundary across delegated vs agent-runtime
-  contexts. (Gap: no `capability-context.test.ts` today.)
-- The group-chat cross-actor regression (trusted speaker then untrusted speaker
-  in one session) MUST be tested end to end.
-- Automation principals (cron/trigger) MUST have tests proving they run under
-  their own principal and do not inherit the last human actor.
-- Coverage of authority-bearing gates (tools, Bash+executable, CLI groups,
-  sessions, contacts, apps, gateway streams, child-context issuance) MUST each
-  have at least one allow and one deny test.
+### G4 Resource Visibility Migration
 
-Validation: presence and green status of the named test files; coverage report
-on `src/permissions` and the enforcement gates.
+- Existing agents MUST become visible to the default operator agent through
+  provider-owned runtime config: `view agent:*`.
+- New agents created inside a runtime context MUST grant creator visibility via
+  provider-owned config: `view agent:<new-agent-id>`.
+- WhatsApp group creation with `--create-agent` MUST apply the same creator
+  visibility rule.
+- `agents list/show` MUST filter by `view agent:<id>` and return a
+  not-found-equivalent result for hidden agents.
 
-### G5 — Operational Safety
+Validation:
 
-- Bulk revocation (`permissions legacy --apply`) MUST simulate blast radius,
-  refuse above the zero-capability threshold without `--break-glass`, detect
-  self-preservation, and stamp a revocation batch id. (Met.)
-- Every bulk revocation MUST be reversible as a unit through a relation-store
-  API without hand SQL. (Met via `restore-batch`.)
-- Subject-scoped restore MUST be a first-class CLI path; restoring one
-  subject's revoked grants MUST NOT require raw SQL. (Gap: `restore-batch` is
-  batch-wide only; subject-scoped recovery currently needs SQL.)
-- A break-glass operator path to grant/restore permissions MUST exist that does
-  not depend on any agent holding `admin system:*`, so an incident that revokes
-  admin cannot lock out recovery. (Gap surfaced by the 2026-06-10 incident: the
-  permission-managing agents lost admin and could not self-serve.)
-- Destructive permission commands invoked from an agent runtime context MUST
-  require human operator approval above the blast-radius threshold; agent
-  self-confirmation MUST NOT clear the gate.
+- `bun test src/permissions/provider-runtime.test.ts`
+- `bun test src/cli/commands/agents.test.ts`
+- `ravi doctor --domain permissions --json`
 
-Validation: `permissions/profiles/CHECKS.md` legacy/restore checks plus a
-subject-scoped restore test and a break-glass path test.
+### G5 Operational Safety
 
-### G6 — Configuration Completeness
+- `ravi permissions` MUST be inspection-only for the active provider runtime.
+- Mutating agent authority MUST go through provider-owned surfaces such as
+  `ravi agents permissions`.
+- Skills and specs MUST teach the provider-runtime surface, not removed command
+  paths.
+- Doctor MUST report active provider-runtime health and resource-visibility
+  migration gaps.
 
-- A newly observed chat surface MUST resolve to a sane default without manual
-  per-surface seeding. Inheritance covers the no-decision case; a documented
-  default-surface profile MUST exist for the case where surfaces should be
-  constrained by default.
-- Every automation that drives an agent (cron, trigger, session-followup,
-  daemon-restart) MUST resolve to a principal whose role grants cover what that
-  automation needs. A reconcile/seed path MUST assign automation principals to
-  the correct role rather than leaving them on a minimal base role.
-- Agent role membership and per-agent least-privilege roles MUST be derivable
-  from config/policy and reconciled on boot, not hand-maintained per subject.
-- The legacy wildcard/full-access grants remaining on bootstrap/issuer subjects
-  MUST be retired or explicitly re-justified; they MUST NOT remain as ambient
-  debt.
+Validation:
 
-Validation: a reconcile dry-run showing zero unintended drift, plus a check
-that automation principals in use are covered by an active role.
-
-### G7 — Explainability And Audit
-
-- Every denial MUST carry a grant state (`never_granted`, `revoked`, `expired`,
-  `constrained`, `ceiling`) and reference a revocation event when the blocking
-  branch lost authority to a batch. (Met.)
-- `permissions explain` MUST reproduce a persisted denial and report whether
-  current state still denies. (Met.)
-- For an allow, every effective capability MUST be attributable to a direct
-  grant, role expansion, delegation override, or turn approval. (Met.)
-- Audit events MUST never leak `contextKey`, secret env values, or credentials.
-
-Validation: `permissions/explain/CHECKS.md`.
-
-### G8 — State Hygiene
-
-- Legacy relation rows MAY remain in the database for audit/migration, but they
-  MUST NOT be reported by the default doctor as active authorization health.
-- The default doctor permissions domain MUST validate the active provider
-  runtime chain and boundaries, not the retired relation-ledger state.
-- Relation-ledger archival, restore, and cleanup belong to explicit migration
-  tooling while that tooling exists.
-
-Validation: `permissions/production-readiness/CHECKS.md` and the
-`permissions.provider_runtime_*` finding ids in `doctor/check-catalog/CHECKS.md`.
+- `bun test src/cli/commands/permissions.test.ts`
+- `rg` over source, skills, and permission specs for removed command paths.
 
 ## Exit Checklist
 
-Production ready requires ALL of:
-
-- [x] G1 model-correctness matrix test green. (`delegation.test.ts`)
-- [x] G2 cross-evaluator agreement test green (`consistency.test.ts`) AND one
-      shared object-id matcher (`objectIdMatches`) used by provider, snapshot,
-      materializer, and explain.
-- [x] G3 freshness + revoke-stops-auth tests green.
-- [x] G4 `delegation.test.ts` + `capability-context.test.ts` exist and pass;
-      every authority gate has allow+deny tests (tools/executables, CLI groups,
-      sessions, contacts, Bash, mailbox, gateway, child-context, apps, calendar).
-- [x] G5 subject-scoped restore CLI (`restore-batch --subject`) + documented
-      admin-independent break-glass path, both tested.
-- [x] G6 no relation-ledger reconcile on boot; automation authority is derived
-      through provider-runtime materialization/context snapshots.
-- [x] G7 explainability/audit checks green.
-- [x] G8 doctor health checks validate provider-runtime chain and boundaries
-      instead of relation-ledger drift.
-
-## Current Status (2026-06-11, third pass)
-
-Closed (code): G1, G2 (agreement test + unified `objectIdMatches`), G3, G4
-(core `delegation.test.ts`/`capability-context.test.ts` + per-gate allow+deny
-including `apps/permissions.test.ts`, `calendar/access.test.ts`, AND an
-end-to-end delegated-turn gate test
-`src/runtime/delegated-turn-enforcement.test.ts` that drives
-buildRuntimeRequestContext → runWithContext → enforceScopeCheck/agentCan and
-proves trusted-allow, untrusted-deny, no cross-actor leakage, automation-deny,
-automation-covered-via-role, and surface deny-veto), G5 (`restore-batch
---subject` + operator break-glass), G7, G8 (provider-runtime default-chain and
-boundary doctor checks).
-
-G6 no longer uses relation-ledger automation reconciliation on boot.
-
-The remaining gaps are migration cleanup, not active runtime authorization:
-
-1. Retire or remove the user-facing legacy `ravi permissions` ledger commands.
-2. Move relation-ledger restore/archive flows behind explicit migration tooling
-   or delete them after the migration window closes.
-3. Complete provider-owned replacements for any remaining app/domain policy
-   flows that still materialize relations.
-4. Deploy: commit, PR `dev → main`, merge; optionally wire a denial monitor on
-   `ravi.audit.denied`.
-
-The remaining optional code hardening (non-blocking): remove the legacy
-relation-ledger agreement harness after all cleanup/doctor/explain flows move to
-provider-native implementations; fix the test-harness global-state-lock
-flakiness for CI.
-
-Superseded snapshot (first pass): G1 (model implemented), G3 (live re-materialization
-of delegated contexts), G5 bulk-revocation guards + batch restore, G7
-explainability/diagnosis.
-
-Open gaps blocking production: G2 (no cross-evaluator agreement test), G4
-(`delegation.ts` and `capability-context.ts` have no dedicated tests — the core
-matcher is only tested indirectly), G5 (no subject-scoped restore, no
-admin-independent break-glass — an incident can still lock out recovery), G6
-
-Superseded snapshot (pre-pass): G1 (model implemented), G3 (live re-materialization
-of delegated contexts), G5 bulk-revocation guards + batch restore, G7
-explainability/diagnosis.
-
-Open gaps blocking production: G2 (no cross-evaluator agreement test), G4
-(`delegation.ts` and `capability-context.ts` have no dedicated tests — the core
-matcher is only tested indirectly), G5 (no subject-scoped restore, no
-admin-independent break-glass — an incident can still lock out recovery), G6
-(automation principals fall back to a minimal base role and get denied; legacy
-wildcard debt remains on issuer subjects), G8 (no archival of ~16k revoked rows,
-no doctor health check).
-
-Empirical state: role-based delegation works (agent via role role-expands to its
-CLI groups) and fail-closed holds (out-of-role command denies). 6 roles, 49
-memberships, 18 policies materializing — the role migration is in progress but
-incomplete for automation principals.
+- [x] Delegation model has focused tests.
+- [x] Runtime provider boundary has tests.
+- [x] Agent visibility migration is provider-owned and idempotent.
+- [x] Agent creation persists creator visibility when a runtime creator exists.
+- [x] WhatsApp group agent creation persists creator visibility.
+- [x] Permissions CLI exposes status/check/materialize only.
+- [x] Skills describe the current provider-runtime model.

@@ -34,7 +34,12 @@ type CommandClass = new () => object;
  * e.g. "whatsapp.group" on program creates program → whatsapp → group
  * Returns the deepest command node.
  */
-function resolveCommandPath(parent: CommanderCommand, segments: string[], description: string): CommanderCommand {
+function resolveCommandPath(
+  parent: CommanderCommand,
+  segments: string[],
+  description: string,
+  aliases?: string[],
+): CommanderCommand {
   let current = parent;
   for (let i = 0; i < segments.length; i++) {
     const name = segments[i];
@@ -47,6 +52,12 @@ function resolveCommandPath(parent: CommanderCommand, segments: string[], descri
     } else if (isLast && description) {
       // Update description if this is the final segment
       existing.description(description);
+    }
+    if (isLast && aliases?.length) {
+      const currentAliases = new Set(existing.aliases());
+      for (const alias of aliases) {
+        if (!currentAliases.has(alias)) existing.alias(alias);
+      }
     }
     current = existing;
   }
@@ -65,6 +76,7 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
   for (const cls of classes) {
     const groupMeta = getGroupMetadata(cls);
     if (!groupMeta) continue;
+    if (groupMeta.hidden) continue;
     for (const cmd of getCommandsMetadata(cls)) {
       const fullName = `${groupMeta.name}.${cmd.name}`;
       const prev = seen.get(fullName);
@@ -82,13 +94,14 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
   for (const cls of classes) {
     const groupMeta = getGroupMetadata(cls);
     if (!groupMeta) continue;
+    if (groupMeta.hidden) continue;
 
     const commandsMeta = getCommandsMetadata(cls);
     if (commandsMeta.length === 0) continue;
 
     // Support nested groups via dot notation
     const segments = groupMeta.name.split(".");
-    const group = resolveCommandPath(program, segments, groupMeta.description);
+    const group = resolveCommandPath(program, segments, groupMeta.description, groupMeta.aliases);
 
     const instance = new cls();
 

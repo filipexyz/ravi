@@ -59,10 +59,12 @@ discover, inspect, validate, and continue implementing the app safely.
   implementation exists.
 - The scaffold MUST NOT generate operation commands that recursively invoke
   `ravi <app-id> <operation>` for the same app id.
-- The scaffold MUST NOT generate health commands that recursively invoke
-  `ravi <app-id> check` for the same app id.
+- The scaffold MAY generate `interfaces.cli.health` as
+  `ravi <app-id> check --json`, because that is a router-owned safe check.
+  It MUST NOT generate health commands that invoke arbitrary app operations.
 - Scaffolded skills MUST teach agents to start from `ravi apps show`, validate
-  with `ravi apps check`, and use declared operations only.
+  with `ravi apps check`, and operate declared operations through
+  `ravi <app-id> <operation>`.
 - The scaffold MUST NOT execute generated commands, health checks, app code, or
   storage migrations.
 - Scaffold-from-CLI behavior, whether exposed as `ravi apps import-cli` or
@@ -90,9 +92,9 @@ ravi apps scaffold <app-id> \
 - `ravi apps scaffold example --json` SHOULD write files in an empty repo.
 - `ravi apps check example --json` SHOULD pass immediately after scaffold.
 - After app router support exists, scaffolded apps SHOULD be invokable through
-  `ravi apps run example check --json` without adding a static CLI command.
-- After app router support exists, scaffolded apps SHOULD be invokable through
   `ravi example check --json` when `example` has no static command collision.
+- Scaffolded apps SHOULD remain invokable through
+  `ravi apps run example check --json` as a router fallback/debug path.
 - Re-running scaffold without `--force` SHOULD fail if target files exist.
 - Re-running scaffold with `--force` MAY overwrite scaffold files.
 

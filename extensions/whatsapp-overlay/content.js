@@ -8129,11 +8129,17 @@ function readTtsSettingsForm(form) {
 }
 
 function isContextKeyBridgeResponse(response) {
+  const status = typeof response?.status === "number" ? response.status : 0;
   const code = typeof response?.code === "string" ? response.code : "";
   const error = typeof response?.error === "string" ? response.error : "";
   return (
+    status === 401 ||
+    status === 403 ||
     code === "invalid_context_key" ||
     code === "no_active_server" ||
+    code.startsWith("context_key_") ||
+    code === "http_401" ||
+    code === "http_403" ||
     /unknown context key|context key|rctx_/i.test(error)
   );
 }

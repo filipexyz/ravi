@@ -8,7 +8,7 @@ import {
 
 export async function buildSnapshot(client, query) {
   const [sessionsResult, agentsResult] = await Promise.all([
-    client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    client.sessions.list({ live: true }).catch((error) => fallbackUnlessAuth(error, { sessions: [] })),
     listAgents(client),
     getBindings(),
     ensureLiveStateStream().catch(() => false),
@@ -81,8 +81,8 @@ export async function buildTasksSnapshot(client, query) {
   if (clean(query?.sessionName)) filters.session = clean(query.sessionName);
 
   const [tasksResult, sessionsResult] = await Promise.all([
-    client.tasks.list(filters).catch(() => ({ tasks: [] })),
-    client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    client.tasks.list(filters).catch((error) => fallbackUnlessAuth(error, { tasks: [] })),
+    client.sessions.list({ live: true }).catch((error) => fallbackUnlessAuth(error, { sessions: [] })),
     ensureLiveStateStream().catch(() => false),
   ]);
 
@@ -317,9 +317,9 @@ function buildDispatchState(item, actorSession, dispatchSessions) {
 
 export async function buildOmniPanelSnapshot(client, query) {
   const [sessionsResult, agentsResult, routesResult, instancesResult, allBindings] = await Promise.all([
-    client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    client.sessions.list({ live: true }).catch((error) => fallbackUnlessAuth(error, { sessions: [] })),
     listAgents(client),
-    client.routes.list().catch(() => ({ routes: [] })),
+    client.routes.list().catch((error) => fallbackUnlessAuth(error, { routes: [] })),
     listInstances(client),
     getBindings(),
     ensureLiveStateStream().catch(() => false),
@@ -426,7 +426,7 @@ export async function executeOmniRoute(client, body) {
 export async function resolveChatList(client, body) {
   const entries = Array.isArray(body?.entries) ? body.entries : [];
   const [sessionsResult, agentsResult] = await Promise.all([
-    client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    client.sessions.list({ live: true }).catch((error) => fallbackUnlessAuth(error, { sessions: [] })),
     listAgents(client),
     ensureLiveStateStream().catch(() => false),
   ]);
@@ -573,14 +573,23 @@ function normalizeSessions(result) {
 
 function listAgents(client) {
   return client?.agents?.list
-    ? client.agents.list({}).catch(() => ({ agents: [] }))
+    ? client.agents.list({}).catch((error) => fallbackUnlessAuth(error, { agents: [] }))
     : Promise.resolve({ agents: [] });
 }
 
 function listInstances(client) {
   return client?.instances?.list
-    ? client.instances.list({ asJson: true, limit: "100" }).catch(() => ({ instances: [] }))
+    ? client.instances.list({ asJson: true, limit: "100" }).catch((error) => fallbackUnlessAuth(error, { instances: [] }))
     : Promise.resolve({ instances: [] });
+}
+
+function fallbackUnlessAuth(error, fallback) {
+  if (isAuthOrPermissionError(error)) throw error;
+  return fallback;
+}
+
+function isAuthOrPermissionError(error) {
+  return error?.status === 401 || error?.status === 403;
 }
 
 function normalizeAgents(result) {

@@ -35,7 +35,7 @@ the global Permission Provider Runtime.
 
 The goal is to avoid encoding every app's resource rules into Ravi core while
 preserving fail-closed execution, canonical actor identity, auditable decisions,
-temporary grants, and runtime context isolation.
+  provider-owned authority, and runtime context isolation.
 
 An app permission provider answers this question:
 
@@ -52,7 +52,7 @@ Ravi. It does not bypass other required providers.
   registry, bounded execution, composition, redaction, and audit.
 - Platform authority such as app visibility, agent ceilings, break-glass, and
   temporary grant lifetime MUST be decided by configured permission providers,
-  not by app code and not by direct grant-store imports in Ravi core.
+  not by app code and not by direct imports of unrelated provider storage in Ravi core.
 - App Permission Providers MUST be executed by the Permission Provider Runtime,
   not by router-local app code.
 - App Permission Providers MUST decide only app-owned domain rules. Examples:

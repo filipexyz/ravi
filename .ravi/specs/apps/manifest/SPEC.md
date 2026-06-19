@@ -261,8 +261,9 @@ merely because a manifest was generated.
 - `interfaces.cli.command` SHOULD reference the canonical user/operator
   command. CLI-backed apps SHOULD satisfy `apps/cli`.
 - `interfaces.cli.json` SHOULD be true for machine-consumed CLIs.
-- `interfaces.cli.health`, when present as an executable command, MUST NOT
-  point back to the same app dynamic alias such as `ravi <app-id> check`.
+- `interfaces.cli.health` MAY point at the router-owned safe check
+  `ravi <app-id> check --json`. It MUST NOT point at a mutating app operation
+  or arbitrary recursive app alias.
 - `interfaces.sdk.namespace` SHOULD match the generated SDK namespace when the
   app is exposed through the SDK gateway.
 - `interfaces.stream.channels` SHOULD list stream/control channels for
@@ -378,8 +379,9 @@ merely because a manifest was generated.
   interface targets, invalid target metadata, or invalid `mutating` shape.
 - Manifest validation MUST fail when router-executed CLI operations recursively
   point at `ravi <app-id> ...` for the same app id.
-- Manifest validation MUST fail when executable health commands recursively
-  point at `ravi <app-id> check` for the same app id.
+- Manifest validation MUST allow router-owned safe health commands such as
+  `ravi <app-id> check --json`, and MUST fail health commands that recurse into
+  mutating or non-health app operations.
 - Manifest validation MUST fail when builtin operations use handlers outside
   the router allowlist.
 - Manifest validation SHOULD warn on missing health checks, missing skill for

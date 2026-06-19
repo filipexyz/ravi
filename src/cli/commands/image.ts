@@ -240,10 +240,10 @@ export class ImageCommands {
     // provider fails, the command fails. Operators can retry with --provider.
     const ctx = getContext();
     const agentId = ctx?.agentId;
-    const defaults = agentId ? getAgent(agentId)?.defaults : undefined;
+    const defaults = (agentId ? getAgent(agentId)?.defaults : undefined) ?? undefined;
     const accountId = ctx?.source?.accountId;
     const instance = accountId ? (dbGetInstance(accountId) ?? dbGetInstanceByInstanceId(accountId)) : undefined;
-    const instanceDefaults = instance?.defaults;
+    const instanceDefaults = instance?.defaults ?? undefined;
 
     const resolvedProvider =
       provider ??

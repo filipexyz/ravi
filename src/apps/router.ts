@@ -17,6 +17,11 @@ interface ResolvedOperation {
   operation: RaviAppOperationDeclaration;
 }
 
+interface ResolvedOperationInvocation {
+  resolved: ResolvedOperation;
+  args: string[];
+}
+
 const DEFAULT_STATIC_ROOT_COMMANDS = new Set(["apps"]);
 
 export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviAppRunResult> {
@@ -34,9 +39,9 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       throw new Error(`App manifest is missing for ${app.id}`);
     }
 
-    const resolved = resolveOperation(app, operationName);
-    result = await dispatchResolvedOperation(app, resolved, {
-      args: options.args ?? [],
+    const invocation = resolveOperationInvocation(app, operationName, options.args ?? []);
+    result = await dispatchResolvedOperation(app, invocation.resolved, {
+      args: invocation.args,
       json: options.json === true,
       cwd: options.cwd,
       env: options.env,
@@ -175,18 +180,43 @@ export function printAppRunResult(result: RaviAppRunResult, options: { json?: bo
 }
 
 function resolveOperation(app: RaviAppManifestRecord, operationName: string | null): ResolvedOperation {
+  const resolved = tryResolveOperation(app, operationName);
+  if (resolved) return resolved;
+
+  const appId = app.manifest?.id ?? app.id;
+  throw new Error(`Operation not found for app ${appId}: ${operationName}`);
+}
+
+function resolveOperationInvocation(
+  app: RaviAppManifestRecord,
+  operationName: string | null,
+  args: string[],
+): ResolvedOperationInvocation {
+  if (!operationName) {
+    return { resolved: resolveOperation(app, operationName), args };
+  }
+
+  const tokens = [operationName, ...args];
+  const maxSegments = Math.min(tokens.length, maxOperationTokenSegments(app));
+
+  for (let segmentCount = maxSegments; segmentCount >= 1; segmentCount--) {
+    const candidate = tokens.slice(0, segmentCount).join(".");
+    const resolved = tryResolveOperation(app, candidate);
+    if (resolved) {
+      return { resolved, args: tokens.slice(segmentCount) };
+    }
+  }
+
+  return { resolved: resolveOperation(app, operationName), args };
+}
+
+function tryResolveOperation(app: RaviAppManifestRecord, operationName: string | null): ResolvedOperation | null {
   const appId = app.manifest?.id ?? app.id;
   const operationPrefix = appId.replace(/\//g, ".");
   const operations = manifestOperations(app);
 
-  if (!operationName || operationName === "help") {
+  if (!operationName) {
     return virtualBuiltin(`${operationPrefix}.help`, "apps.help");
-  }
-  if (operationName === "show") {
-    return virtualBuiltin(`${operationPrefix}.show`, "apps.manifest.show");
-  }
-  if (operationName === "check") {
-    return virtualBuiltin(`${operationPrefix}.check`, "apps.manifest.check");
   }
 
   const direct = operations[operationName];
@@ -203,7 +233,34 @@ function resolveOperation(app: RaviAppManifestRecord, operationName: string | nu
     }
   }
 
-  throw new Error(`Operation not found for app ${appId}: ${operationName}`);
+  if (operationName === "help") {
+    return virtualBuiltin(`${operationPrefix}.help`, "apps.help");
+  }
+  if (operationName === "show") {
+    return virtualBuiltin(`${operationPrefix}.show`, "apps.manifest.show");
+  }
+  if (operationName === "check") {
+    return virtualBuiltin(`${operationPrefix}.check`, "apps.manifest.check");
+  }
+
+  return null;
+}
+
+function maxOperationTokenSegments(app: RaviAppManifestRecord): number {
+  const appId = app.manifest?.id ?? app.id;
+  let maxSegments = 1;
+  for (const [id, operation] of Object.entries(manifestOperations(app))) {
+    if (!isOperationDeclaration(operation)) continue;
+    maxSegments = Math.max(maxSegments, localOperationName(appId, id).split(".").length);
+    if (Array.isArray(operation.aliases)) {
+      for (const alias of operation.aliases) {
+        if (typeof alias === "string" && alias.trim()) {
+          maxSegments = Math.max(maxSegments, alias.trim().split(".").length);
+        }
+      }
+    }
+  }
+  return maxSegments;
 }
 
 async function dispatchResolvedOperation(
@@ -359,9 +416,9 @@ function runBuiltinHandler(handler: string, app: RaviAppManifestRecord): unknown
       app: toDetail(app),
       operations: operationIds,
       nextCommands: [
+        `ravi ${app.id.split("/").join(" ")} --help`,
+        `ravi ${app.id.split("/").join(" ")} check --json`,
         `ravi apps show ${app.id} --json`,
-        `ravi apps check ${app.id} --json`,
-        `ravi apps run ${app.id} check --json`,
       ],
     };
   }

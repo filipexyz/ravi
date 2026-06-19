@@ -114,19 +114,11 @@ where revoked_at is null
   and (expires_at is null or expires_at > unixepoch());
 ```
 
-Routes to broad agents:
+Routes to broad agents MUST be audited through provider-runtime
+materialization:
 
-```sql
-select count(*) as active_routes_to_superadmin,
-       count(distinct r.agent_id) as superadmin_agents_routed
-from routes r
-join relations rel
-  on rel.subject_type = 'agent'
- and rel.subject_id = r.agent_id
- and rel.relation = 'admin'
- and rel.object_type = 'system'
- and rel.object_id = '*'
-where r.deleted_at is null;
+```bash
+ravi permissions materialize --subject-type agent --subject-id <agent-id> --json
 ```
 
 ## CLI Acceptance

@@ -41,5 +41,7 @@ The scaffold keeps app creation aligned with the ecosystem:
 - Generating operations that call `ravi <app-id>` from inside the manifest:
   rejected because router-executed CLI operations would recursively dispatch
   themselves.
-- Generating health checks that call `ravi <app-id> check`: rejected because
-  app validation would recursively dispatch itself.
+- Generating health checks that call arbitrary `ravi <app-id> ...` operations:
+  rejected because non-health app operations can recursively dispatch
+  themselves. The router-owned safe check `ravi <app-id> check --json` is
+  allowed for `interfaces.cli.health`.

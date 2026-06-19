@@ -99,7 +99,7 @@ Until explicit metadata exists, verb/path heuristics MAY mark commands as
 unclassified `warn` findings. They MUST NOT be reported as unsafe `error`
 solely from a name heuristic.
 
-Legacy relation-ledger drift belongs to migration tooling, not the default
+Retired permission storage drift belongs to migration tooling, not the default
 doctor permissions domain. The default doctor MUST validate the active
 Permission Provider Runtime chain, boundary invariants, explicit local-operator
 semantics, and runtime bootstrap scope.

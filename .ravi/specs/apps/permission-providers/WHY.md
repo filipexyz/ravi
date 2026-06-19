@@ -46,9 +46,8 @@ That gives us a smaller core and a more pluggable app ecosystem.
 - Provider metadata lives in the app manifest because it is part of the app's
   operational contract. Discovery validates metadata but does not execute the
   provider.
-- The implementation should support a provider-runtime facade before arbitrary
-  external provider commands. `local-grants` may preserve current behavior, but
-  it is not Ravi core.
+- The implementation supports a provider-runtime facade before arbitrary
+  external provider commands. Provider-owned config is not Ravi core.
 
 ## Rejected Alternatives
 

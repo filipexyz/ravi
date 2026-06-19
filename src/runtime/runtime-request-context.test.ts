@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { grantRelation } from "../permissions/relations.js";
+import { createContact } from "../contacts.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbCreateAgent, dbGetContext } from "../router/router-db.js";
@@ -102,11 +102,9 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "access", "session", "main")).toBe(false);
   });
 
-  it("ignores relation-store role grants in the default executor ceiling", () => {
+  it("does not materialize role authority without a provider-owned runtime config", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
-    grantRelation("agent", agent.id, "member", "role", "audit-agent");
-    grantRelation("role", "audit-agent", "access", "session", "restricted");
 
     const prompt = promptForContact("luis", "audit");
     const { runtimeContext } = buildRuntimeRequestContext({
@@ -173,10 +171,9 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "observer_report")).toBe(false);
   });
 
-  it("keeps relation-store denies out of default runtime materialization", () => {
+  it("has no surface deny branch without a provider-owned surface policy", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
-    grantRelation("chat", "chat_group_1", "deny_execute", "group", "sessions_info");
 
     const prompt = promptForContact("luis", "audit");
     const { runtimeContext } = buildRuntimeRequestContext({
@@ -294,6 +291,40 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
   });
 
+  it("materializes admin-tagged contact authority into delegated group turns", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const owner = createContact({
+      phone: "5511988887777",
+      name: "Owner",
+      tags: ["permission.admin"],
+      status: "allowed",
+    });
+
+    const prompt = promptForContact(owner.id, "publish page");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "delegated",
+      actorPrincipal: `contact:${owner.id}`,
+      actorCapabilityCount: 1,
+      surfaceCapabilityCount: 0,
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "pages")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_trace")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
   it("fails closed for external prompts without a resolved contact actor", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
@@ -328,11 +359,9 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
-  it("does not materialize relation-store chat delegation overrides by default", () => {
+  it("does not materialize chat delegation overrides without a provider-owned surface policy", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
-    grantRelation("agent", agent.id, "use", "tool", "Bash");
-    grantRelation("chat", "chat_group_1", "delegate_use", "tool", "Bash");
 
     const prompt = promptForContact("luis", "run bash");
     const { runtimeContext } = buildRuntimeRequestContext({
@@ -359,11 +388,9 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
   });
 
-  it("does not materialize relation-store agent delegation overrides by default", () => {
+  it("does not materialize agent delegation overrides without provider-owned config", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
-    grantRelation("agent", agent.id, "use", "tool", "Bash");
-    grantRelation("agent", agent.id, "delegate_use", "tool", "Bash");
 
     const prompt = promptForContact("luis", "run bash");
     const denied = buildRuntimeRequestContext({
@@ -384,22 +411,6 @@ describe("runtime request context authority", () => {
     });
     expect(canWithCapabilities(denied.capabilities, "use", "tool", "Bash")).toBe(false);
     expect(canWithCapabilities(denied.capabilities, "access", "session", "restricted")).toBe(false);
-
-    grantRelation("chat", "chat_group_1", "use", "tool", "*");
-    const allowed = buildRuntimeRequestContext({
-      dbSessionKey: sessionKey,
-      sessionName,
-      sessionCwd: "/tmp/provider-agent",
-      agent,
-      prompt,
-      runtimeProviderId: "codex",
-      model: "gpt-5",
-      runtimeResolution,
-      resolvedSource: prompt.source,
-    }).runtimeContext;
-
-    expect(canWithCapabilities(allowed.capabilities, "use", "tool", "Bash")).toBe(false);
-    expect(canWithCapabilities(allowed.capabilities, "use", "tool", "Read")).toBe(false);
   });
 
   it("runs cron prompts as automation principals instead of inheriting agent authority", () => {

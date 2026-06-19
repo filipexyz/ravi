@@ -3,9 +3,10 @@
  */
 
 import "reflect-metadata";
-import { resolve, basename } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { basename, extname, isAbsolute, normalize, relative, resolve } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
-import { getContext } from "../context.js";
+import { fail, getContext } from "../context.js";
 import { generateAudio, listElevenLabsVoices } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
 import { sendMediaWithOmniCli } from "../media-send.js";
@@ -25,6 +26,48 @@ import {
   audioVoicesReturnSchema,
 } from "./operational-return-schemas.js";
 
+const TEXT_FILE_EXTENSIONS = new Set([".md", ".txt"]);
+
+function readTextFileOption(path: string | undefined): string | undefined {
+  if (path === undefined) return undefined;
+
+  const rawPath = path.trim();
+  if (!rawPath) fail("--text-file cannot be empty.");
+  if (rawPath.includes("\0")) fail("--text-file contains an invalid path.");
+  if (isAbsolute(rawPath)) fail("--text-file must be a relative path inside the current working directory.");
+
+  const normalizedPath = normalize(rawPath);
+  if (normalizedPath === "." || normalizedPath === ".." || normalizedPath.split(/[\\/]+/).includes("..")) {
+    fail("--text-file must not contain '..' path segments.");
+  }
+
+  const extension = extname(normalizedPath).toLowerCase();
+  if (!TEXT_FILE_EXTENSIONS.has(extension)) {
+    fail("--text-file must point to a .md or .txt file.");
+  }
+
+  const cwd = resolve(process.cwd());
+  const absolutePath = resolve(cwd, normalizedPath);
+  const cwdRelativePath = relative(cwd, absolutePath);
+  if (!cwdRelativePath || cwdRelativePath.startsWith("..") || isAbsolute(cwdRelativePath)) {
+    fail("--text-file must be inside the current working directory.");
+  }
+
+  let text: string;
+  try {
+    const stat = statSync(absolutePath);
+    if (!stat.isFile()) fail("--text-file must point to a regular file.");
+    text = readFileSync(absolutePath, "utf8");
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("--text-file")) throw error;
+    fail(`Cannot read --text-file: ${rawPath}`);
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed) fail("--text-file is empty.");
+  return trimmed;
+}
+
 @Group({
   name: "audio",
   description: "Audio generation tools (TTS)",
@@ -38,8 +81,8 @@ export class AudioCommands {
   @CommandAccess({ kind: "mutate", resource: "audio", action: "generate", risk: "high" })
   @Returns(audioGenerateReturnSchema)
   async generate(
-    @Arg("text", { description: "Text to convert to speech" })
-    text: string,
+    @Arg("text", { required: false, description: "Text to convert to speech" })
+    text?: string,
     @Option({ flags: "--voice <id>", description: "ElevenLabs voice ID" })
     voice?: string,
     @Option({ flags: "--model <model>", description: "Model: eleven_multilingual_v2, eleven_turbo_v2_5, etc" })
@@ -61,7 +104,18 @@ export class AudioCommands {
     caption?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--text-file <path>",
+      description: "Relative .md or .txt file to convert to speech",
+    })
+    textFile?: string,
   ) {
+    const fileText = readTextFileOption(textFile);
+    const inlineText = text?.trim();
+    if (fileText && inlineText) fail("Use either text or --text-file, not both.");
+    const resolvedText = fileText ?? inlineText;
+    if (!resolvedText) fail("Provide text or --text-file.");
+
     // Resolve agent defaults (CLI flags take precedence)
     const agentId = getContext()?.agentId;
     const defaults = agentId ? getAgent(agentId)?.defaults : undefined;
@@ -75,7 +129,7 @@ export class AudioCommands {
       console.log("Generating audio...");
     }
 
-    const result = await generateAudio(text, {
+    const result = await generateAudio(resolvedText, {
       voice: resolvedVoice,
       model: resolvedModel,
       speed: resolvedSpeed,
@@ -121,7 +175,7 @@ export class AudioCommands {
       audio: {
         filePath: result.filePath,
         mimeType: result.mimeType,
-        text,
+        text: resolvedText,
         sendCommand,
       },
       options: {
@@ -138,7 +192,7 @@ export class AudioCommands {
     if (!asJson) {
       console.log(`\n✓ Audio saved: ${result.filePath}`);
       console.log(`  Send to chat: ${sendCommand}`);
-      console.log(`\nText: ${text.slice(0, 200)}${text.length > 200 ? "..." : ""}`);
+      console.log(`\nText: ${resolvedText.slice(0, 200)}${resolvedText.length > 200 ? "..." : ""}`);
       if (voice) console.log(`Voice: ${voice}`);
       if (speed) console.log(`Speed: ${speed}`);
     }
@@ -146,7 +200,7 @@ export class AudioCommands {
     if (send) {
       const delivered = await sendMediaWithOmniCli({
         filePath: result.filePath,
-        caption: caption ?? text.slice(0, 100),
+        caption: caption ?? resolvedText.slice(0, 100),
         type: "audio",
         filename: basename(result.filePath),
         voiceNote: true,
@@ -159,7 +213,7 @@ export class AudioCommands {
         chatId: delivered.target.chatId,
         ...(delivered.target.threadId ? { threadId: delivered.target.threadId } : {}),
         filename: delivered.filename,
-        caption: caption ?? text.slice(0, 100),
+        caption: caption ?? resolvedText.slice(0, 100),
         voiceNote: true,
         ...(delivered.delivery.messageId ? { messageId: delivered.delivery.messageId } : {}),
         ...(delivered.delivery.status ? { status: delivered.delivery.status } : {}),

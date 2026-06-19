@@ -25,6 +25,12 @@ When the app id collides with a static root command, use:
 ravi apps run <app-id> <operation> --json
 ```
 
+Otherwise, agent and operator guidance should use:
+
+```bash
+ravi <app-id> <operation> --json
+```
+
 ## Diagnose Operation Dispatch
 
 Inspect the manifest:
@@ -51,6 +57,14 @@ ravi <app-id> <operation>
 Use a router builtin for help/show/check placeholders or point the command at a
 real static/external executor.
 
+For dot-separated operation ids, test the CLI-token form too:
+
+```bash
+ravi <app-id> test a --json
+```
+
+This should resolve to `<app-id>.test.a` when that operation is declared.
+
 ## Diagnose Permissions
 
 Read manifest permissions and operation permissions:
@@ -68,9 +82,9 @@ authorization.
 Run both surfaces when root alias is expected:
 
 ```bash
-ravi apps run <app-id> check --json
 ravi <app-id> check --json
+ravi apps run <app-id> check --json
 ```
 
 Both should return structured JSON on success and failure. If the app has a
-static command collision, only the canonical `ravi apps run` form is expected.
+static command collision, only the fallback `ravi apps run` form is expected.

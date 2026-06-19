@@ -351,9 +351,18 @@ ravi settings set defaultTimezone America/Sao_Paulo
 - `per-channel-peer` - Isolated by channel+contact
 - `per-account-channel-peer` - Full isolation
 
-**REBAC Permissions:**
+**Permission Provider Runtime:**
 
-Fine-grained relation-based access control for agents:
+Runtime permissions for agents are configured through provider-owned agent
+defaults:
+
+```bash
+ravi agents permissions dev             # Show runtime profile
+ravi agents permissions dev full-access # Full Ravi permissions for agent + own automations
+ravi agents permissions dev none        # Return to bootstrap defaults
+```
+
+The legacy relation ledger remains available for audit/migration:
 
 ```bash
 ravi permissions grant agent:dev use tool:Bash
@@ -363,7 +372,6 @@ ravi permissions grant agent:dev access session:dev-*
 ravi permissions revoke agent:dev use tool:Bash
 ravi permissions check agent:dev execute group:contacts
 ravi permissions list --subject agent:dev
-ravi permissions init agent:dev full-access      # Template: all tools + executables
 ravi permissions init agent:dev sdk-tools        # Template: SDK tools only
 ravi permissions init agent:dev safe-executables # Template: safe CLIs only
 ravi permissions sync                            # Re-sync from config
@@ -374,7 +382,7 @@ ravi permissions clear                           # Clear manual relations
 
 **Entity types:** `agent`, `system`, `group`, `session`, `contact`, `tool`, `executable`, `cron`, `trigger`, `team`
 
-**Enforcement:** New agents are closed-by-default (no permissions). Denied actions emit audit events to `ravi.audit.denied`.
+**Enforcement:** New agents start with bootstrap runtime permissions. Denied actions emit audit events to `ravi.audit.denied`.
 
 **Global Settings:**
 - `defaultAgent` - Default agent when no route matches
@@ -619,7 +627,7 @@ Tool and executable access is controlled via REBAC permissions:
 ravi permissions grant agent:main use tool:Bash          # Allow SDK tool
 ravi permissions grant agent:main execute executable:git  # Allow CLI executable
 ravi permissions grant agent:main execute group:contacts  # Allow CLI command group
-ravi permissions init agent:main full-access              # All tools + executables
+ravi agents permissions main full-access                  # Full Ravi runtime profile
 ```
 
 ## Emoji Reactions

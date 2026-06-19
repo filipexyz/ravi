@@ -200,6 +200,9 @@ describe("AppsCommands", () => {
     expect(guide.skill).toBe("ravi-system-apps");
     expect(guide.skillGate).toEqual({ group: "apps", skill: "ravi-system-apps" });
     expect(guide.prompts.map((prompt) => prompt.id)).toContain("scaffold");
+    expect(guide.prompts.find((prompt) => prompt.id === "operate")?.commands).toContain(
+      "ravi <app-id> <operation> --json",
+    );
     expect(guide.prompts.find((prompt) => prompt.id === "skill-gate")?.commands).toContain(
       "ravi skills show ravi-system-apps --json",
     );
@@ -283,8 +286,10 @@ describe("AppsCommands", () => {
     expect(existsSync(created.specPath)).toBe(true);
     expect(existsSync(created.skillPath)).toBe(true);
     expect(readFileSync(created.skillPath, "utf8")).toContain("ravi apps show music --json");
+    expect(readFileSync(created.skillPath, "utf8")).toContain("ravi music check --json");
     expect(created.nextCommands).toContain("ravi apps guide music --json");
-    expect(created.nextCommands).toContain("ravi apps run music check --json");
+    expect(created.nextCommands).toContain("ravi music check --json");
+    expect(created.nextCommands).toContain("ravi music list --json");
     expect(created.nextCommands.some((command) => command.includes("ravi skills show music --source "))).toBe(true);
     expect(created.nextCommands).not.toContain("ravi skills show ravi-system-music --json");
 
@@ -422,11 +427,22 @@ exit 1
       manifestPath: string;
       operationCandidates: Array<{ id: string; mutating: boolean; destructive: boolean }>;
       debugCandidates: Array<{ id: string }>;
-      manifest: { operations: Record<string, { interface: string; command?: string; permission?: string }> };
+      manifest: {
+        interfaces: Record<string, { command?: string; health?: string }>;
+        operations: Record<string, { interface: string; command?: string; permission?: string }>;
+      };
       reviewRequired: string[];
+      sourceCommand: string;
+      command: string;
     };
 
     expect(dryRun).toMatchObject({ id: "fake-app", source: "manifest", confidence: "high" });
+    expect(dryRun.sourceCommand).toBe(fakeCli);
+    expect(dryRun.command).toBe("ravi fake-app");
+    expect(dryRun.manifest.interfaces.cli).toMatchObject({
+      command: "ravi fake-app",
+      health: "ravi fake-app check --json",
+    });
     expect(dryRun.operationCandidates.map((candidate) => candidate.id)).toEqual(["list", "delete"]);
     expect(dryRun.debugCandidates.map((candidate) => candidate.id)).toEqual(["watch"]);
     expect(dryRun.manifest.operations["fake-app.list"]).toMatchObject({
@@ -506,7 +522,7 @@ exit 1
     expect(imported.warnings.join("\n")).toContain("assumes generated operations should use --json");
   });
 
-  it("runs scaffolded app operations through apps run", async () => {
+  it("runs scaffolded app operations through the explicit app router command", async () => {
     makeRepo();
     const commands = new AppsCommands();
     captureJson(() =>

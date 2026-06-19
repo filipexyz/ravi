@@ -26,7 +26,7 @@ ravi agents create <id> <cwd> [--provider <provider>] [--model <model>]
 
 O `cwd` é o diretório onde fica o `AGENTS.md` do agent (suas instruções canônicas). Crie o diretório e o `AGENTS.md` antes. O Ravi materializa um `CLAUDE.md` de compatibilidade quando necessário.
 
-**Regra de criação completa:** agent novo deve nascer com as configurações runtime conhecidas, não ser criado "cru" para depois corrigir manualmente. Quando souber o runtime, passe `--provider` e `--model` no `agents create`; quando estiver criando junto com WhatsApp, passe `--agent-provider` e `--agent-model` no `whatsapp group create --create-agent`. Antes de colocar o agent numa rota live, garanta que o Permission Provider Runtime vai materializar as capabilities necessárias para ele. `local-grants` é apenas o provider legado/materializer de compatibilidade, não a autorização nativa do core.
+**Regra de criação completa:** agent novo deve nascer com as configurações runtime conhecidas, não ser criado "cru" para depois corrigir manualmente. Quando souber o runtime, passe `--provider` e `--model` no `agents create`; quando estiver criando junto com WhatsApp, passe `--agent-provider` e `--agent-model` no `whatsapp group create --create-agent`. Antes de colocar o agent numa rota live, garanta que o Permission Provider Runtime vai materializar as capabilities necessárias para ele.
 
 ## Runtimes Disponíveis
 
@@ -183,37 +183,48 @@ Keys:
 
 ## Permissões / Provider Runtime
 
-O Ravi autoriza execução pelo Permission Provider Runtime. Hoje, grants locais podem
-ser usados como provider legado para materializar capabilities no contexto do
-agent, mas a decisão runtime não deve depender de imports diretos de local-grants.
+O Ravi autoriza execução pelo Permission Provider Runtime. Para permissões
+operacionais do agent, use `ravi agents permissions`: ele grava a configuração
+de runtime em `agent.defaults.runtimePermissions` e o provider
+`agent-runtime-permissions` materializa as capabilities no contexto do agent.
+A superfície normal para destravar um agent novo é `ravi agents permissions`,
+que grava config provider-owned no próprio agent.
 
 ```bash
-# Ver grants legados de um agent
-ravi permissions list --subject agent:<id>
+# Ver perfil runtime atual
+ravi agents permissions <id>
 
-# Configurar grants legados que podem materializar capabilities
-ravi permissions init agent:<id> full-access     # Tudo liberado
-ravi permissions init agent:<id> sdk-tools       # SDK tools padrão
-ravi permissions init agent:<id> safe-executables # Executáveis seguros
+# Dar acesso total dentro do Ravi para o agent e suas próprias automações
+ravi agents permissions <id> full-access
 
-# Grants individuais
-ravi permissions grant agent:<id> use tool:Bash
-ravi permissions grant agent:<id> execute executable:git
+# Voltar ao bootstrap mínimo
+ravi agents permissions <id> none
 
-# Verificar estado do provider legado, não uma chamada runtime sem contexto
-ravi permissions check agent:<id> use tool:Bash
+# Capability explícita sem ampliar o bootstrap global
+ravi agents permissions <id> bootstrap --capabilities execute:executable:omni
+
+# Capabilities semânticas de comandos CLI read-only
+ravi agents permissions <id> bootstrap --capabilities read:skills:show,read:self:whoami,read:self:permissions,read:tasks.profiles:*,read:tasks:list,read:cron:show
+
+# Inspecionar capabilities provider-runtime
+ravi permissions materialize --subject-type agent --subject-id <id>
 ```
 
 Ver skill `permissions-manager` para documentação completa.
 
+Para comandos CLI decorados com `@CommandAccess`, prefira capabilities
+semânticas no formato `<read|mutate>:<resource>:<action>`, por exemplo
+`read:tasks.profiles:list`. `execute:group:*` e `execute:group:<grupo>` são
+compatibilidade ampla; não use como recomendação padrão para agents novos.
+
 ### Provider runtime vs hooks externos
 
-`full-access` no provider legado permite materializar capabilities amplas para o
-Ravi: tools, grupos e executáveis. Isso não desativa automaticamente hooks
-globais do provider, denylist local, PreToolUse externo ou políticas instaladas
-fora do Ravi.
+`full-access` em `ravi agents permissions` materializa `admin system:*` como
+capability de snapshot do Ravi para o agent e para automações que rodam em nome
+dele. Isso não desativa automaticamente hooks globais do provider, denylist
+local, PreToolUse externo ou políticas instaladas fora do Ravi.
 
-Quando Bash ainda é negado depois de `ravi permissions check` permitir:
+Quando Bash ainda é negado depois de `ravi agents permissions <id> full-access`:
 
 1. Leia a mensagem de denial e identifique se veio do Ravi ou do provider/hook externo.
 2. Verifique hooks locais do workspace do agent antes de mudar grants.
@@ -365,10 +376,8 @@ ravi agents create atendimento ~/ravi/atendimento --provider codex --model gpt-5
 # 3. Rotear grupo pro agent
 ravi instances routes add main group:120363425628305127 atendimento
 
-# 4. Configurar grants legados que materializam capabilities
-ravi permissions init agent:atendimento sdk-tools       # SDK tools padrão
-ravi permissions init agent:atendimento safe-executables # Executáveis seguros
-ravi permissions grant agent:atendimento use tool:Bash   # Liberar Bash
+# 4. Configurar perfil runtime do agent
+ravi agents permissions atendimento full-access
 ```
 
 ### Aprovar contato e associar a agent

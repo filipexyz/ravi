@@ -69,11 +69,20 @@ export function resolveSessionOutputTarget(input: ResolveSessionOutputTargetInpu
 function chatToMessageTarget(chatId: string, fallback: MessageTarget | undefined): MessageTarget | null {
   const chat = dbGetChat(chatId);
   if (!chat) return null;
+  const target = splitCanonicalPlatformChat(chat.platformChatId);
   return {
     channel: chat.channel,
     accountId: chat.instanceId || fallback?.accountId || "",
     instanceId: chat.instanceId || undefined,
-    chatId: chat.platformChatId,
     canonicalChatId: chat.id,
+    ...target,
   };
+}
+
+function splitCanonicalPlatformChat(platformChatId: string): { chatId: string; threadId?: string } {
+  const separator = platformChatId.indexOf("#");
+  if (separator === -1) return { chatId: platformChatId };
+  const chatId = platformChatId.slice(0, separator);
+  const threadId = platformChatId.slice(separator + 1);
+  return threadId ? { chatId, threadId } : { chatId };
 }

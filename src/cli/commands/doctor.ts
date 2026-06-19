@@ -10,13 +10,21 @@ import {
 } from "../../permissions/provider-registry.js";
 import {
   authorizePermission,
+  canWithCapabilities,
   localOperatorCan,
   materializeSubjectCapabilities,
 } from "../../permissions/provider-runtime.js";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
 import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime/types.js";
-import { dbListAgents, dbListInstances, dbListRoutes, getDb, getRaviDbPath } from "../../router/router-db.js";
+import {
+  dbListAgents,
+  dbListInstances,
+  dbListRoutes,
+  getDb,
+  getDefaultAgentId,
+  getRaviDbPath,
+} from "../../router/router-db.js";
 import {
   currentCliOnlyCommands,
   currentWeakPublicReturnCommands,
@@ -144,6 +152,7 @@ type DoctorDeps = {
   dbListAgents: typeof dbListAgents;
   dbListInstances: typeof dbListInstances;
   dbListRoutes: typeof dbListRoutes;
+  getDefaultAgentId: typeof getDefaultAgentId;
   inspectAgentInstructionFiles: typeof inspectAgentInstructionFiles;
   listTaskAutomations: typeof listTaskAutomations;
   getRuntimeCompatibilityIssues: (
@@ -195,6 +204,7 @@ const DEFAULT_DEPS: DoctorDeps = {
   dbListAgents,
   dbListInstances,
   dbListRoutes,
+  getDefaultAgentId,
   inspectAgentInstructionFiles,
   listTaskAutomations,
   getRuntimeCompatibilityIssues,
@@ -402,6 +412,10 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
     addCheck(checks, () => {
       agents = deps.dbListAgents();
       return buildRegisteredAgentsCheck(agents);
+    });
+    addCheck(checks, () => {
+      if (!agents) agents = deps.dbListAgents();
+      return buildAgentVisibilityMigrationCheck(agents, deps);
     });
 
     addCheck(checks, () => {
@@ -990,6 +1004,75 @@ function buildRegisteredAgentsCheck(agents: ReturnType<typeof dbListAgents>): Le
   };
 }
 
+function buildAgentVisibilityMigrationCheck(
+  agents: ReturnType<typeof dbListAgents>,
+  deps: DoctorDeps,
+): LegacyDoctorCheck {
+  if (agents.length === 0) {
+    return {
+      id: "permissions.agents_visibility_migration",
+      domain: "permissions",
+      title: "Agent visibility migration",
+      status: "skip",
+      summary: "no agents are registered",
+      data: { totalAgents: 0 },
+    };
+  }
+
+  const defaultAgentId = deps.getDefaultAgentId();
+  const defaultAgent = agents.find((agent) => agent.id === defaultAgentId);
+  if (!defaultAgent) {
+    return {
+      id: "permissions.agents_visibility_migration",
+      domain: "permissions",
+      title: "Agent visibility migration",
+      status: "fail",
+      severity: "error",
+      summary: `default agent ${defaultAgentId} is missing, so agent visibility backfill cannot protect list/show`,
+      fixHint: "create the default agent or set defaultAgent to an existing agent, then rerun doctor",
+      data: { defaultAgentId, totalAgents: agents.length },
+    };
+  }
+
+  const capabilities = deps.materializeSubjectCapabilities("agent", defaultAgentId);
+  const invisible = agents
+    .filter((agent) => agent.id !== defaultAgentId)
+    .filter((agent) => !canWithCapabilities(capabilities, "view", "agent", agent.id))
+    .map((agent) => agent.id);
+
+  if (invisible.length > 0) {
+    return {
+      id: "permissions.agents_visibility_migration",
+      domain: "permissions",
+      title: "Agent visibility migration",
+      status: "fail",
+      severity: "error",
+      summary: `${invisible.length} agent(s) are not visible to default agent ${defaultAgentId}`,
+      details: limitStrings(invisible, 12),
+      fixHint:
+        "rerun the router DB migration/backfill path; default agent must materialize view agent:* through provider-runtime defaults",
+      data: {
+        defaultAgentId,
+        invisible,
+        totalAgents: agents.length,
+      },
+    };
+  }
+
+  return {
+    id: "permissions.agents_visibility_migration",
+    domain: "permissions",
+    title: "Agent visibility migration",
+    status: "ok",
+    summary: `default agent ${defaultAgentId} can view all ${agents.length} registered agent(s)`,
+    data: {
+      defaultAgentId,
+      totalAgents: agents.length,
+      capabilityCount: capabilities.length,
+    },
+  };
+}
+
 function buildAgentInstructionCheck(agents: ReturnType<typeof dbListAgents>, deps: DoctorDeps): LegacyDoctorCheck {
   if (agents.length === 0) {
     return {
@@ -1090,16 +1173,7 @@ function buildTaskAutomationsCheck(deps: DoctorDeps): LegacyDoctorCheck {
 }
 
 function buildRuntimeSchemaCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const requiredTables = [
-    "agents",
-    "instances",
-    "routes",
-    "chats",
-    "relations",
-    "message_metadata",
-    "cost_events",
-    "session_turns",
-  ];
+  const requiredTables = ["agents", "instances", "routes", "chats", "message_metadata", "cost_events", "session_turns"];
   const rows = deps.queryRows<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'");
   const existing = new Set(rows.map((row) => row.name).filter(Boolean));
   const missing = requiredTables.filter((table) => !existing.has(table));
@@ -1806,7 +1880,7 @@ function buildPermissionProviderRuntimeChainCheck(deps: DoctorDeps): LegacyDocto
   const authorizationProviders = deps.getConfiguredPermissionProviders().map((provider) => provider.id);
   const capabilityMaterializers = deps.getConfiguredCapabilityMaterializers().map((provider) => provider.id);
   const expectedAuthorization = ["local-operator", "context-capabilities"];
-  const expectedMaterializers = ["runtime-bootstrap"];
+  const expectedMaterializers = ["runtime-bootstrap", "agent-runtime-permissions", "contact-policy-permissions"];
   const authOk = sameStringList(authorizationProviders, expectedAuthorization);
   const materializersOk = sameStringList(capabilityMaterializers, expectedMaterializers);
 
@@ -1849,8 +1923,7 @@ function buildPermissionProviderRuntimeBoundaryCheck(deps: DoctorDeps): LegacyDo
   const providerRuntimePath = join(deps.cwd(), "src", "permissions", "provider-runtime.ts");
   const enginePath = join(deps.cwd(), "src", "permissions", "engine.ts");
   const providerRuntimeSource = deps.exists(providerRuntimePath) ? deps.readFile(providerRuntimePath) : "";
-  const forbiddenImportPattern =
-    /from\s+["']\.\/(?:engine|capability-context|relations|local-grants-provider)(?:\.js)?["']/;
+  const forbiddenImportPattern = /from\s+["']\.\/(?:engine|capability-context)(?:\.js)?["']/;
   const failures: string[] = [];
 
   if (deps.exists(enginePath)) {
@@ -1859,7 +1932,7 @@ function buildPermissionProviderRuntimeBoundaryCheck(deps: DoctorDeps): LegacyDo
   if (!providerRuntimeSource) {
     failures.push("src/permissions/provider-runtime.ts is missing or unreadable");
   } else if (forbiddenImportPattern.test(providerRuntimeSource)) {
-    failures.push("provider-runtime imports a legacy grant evaluator/store directly");
+    failures.push("provider-runtime imports a retired permission evaluator directly");
   }
 
   if (failures.length > 0) {
@@ -1871,7 +1944,7 @@ function buildPermissionProviderRuntimeBoundaryCheck(deps: DoctorDeps): LegacyDo
       severity: "error",
       summary: "provider-runtime boundary checks failed",
       details: failures,
-      fixHint: "keep legacy grant stores behind explicit providers and keep deleted native engines out of source",
+      fixHint: "keep provider storage behind explicit providers and keep deleted native engines out of source",
       data: { failures },
     };
   }
@@ -1881,7 +1954,7 @@ function buildPermissionProviderRuntimeBoundaryCheck(deps: DoctorDeps): LegacyDo
     domain: "permissions",
     title: "Permission provider runtime boundaries",
     status: "ok",
-    summary: "provider-runtime facade is isolated from native engines and legacy grant stores",
+    summary: "provider-runtime facade is isolated from native engines and provider storage internals",
     data: { enginePresent: false },
   };
 }

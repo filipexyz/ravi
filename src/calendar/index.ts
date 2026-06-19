@@ -30,7 +30,7 @@ export type {
   UpdateCalendarEventInput,
 } from "./types.js";
 
-export type { CalendarAccessLevel, CalendarScopeContext } from "./access.js";
+export type { CalendarAccessLevel, CalendarScopeContext, CalendarSubject } from "./access.js";
 
 export {
   addCalendarMember,
@@ -57,8 +57,10 @@ export {
 
 export {
   calendarAccessLevel,
+  calendarScopeSubjects,
   canUseAnyCalendar,
   canUseCalendar,
   canUseCalendarProvider,
   getCalendarScopeContext,
+  resolveDefaultCalendarOwnerSubject,
 } from "./access.js";

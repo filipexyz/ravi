@@ -11,10 +11,12 @@ ravi specs sync --json
 ## Regression Checks
 
 - A valid manifest can be invoked with
-  `ravi apps run <app-id> check --json` without CLI rebuild.
-- A valid manifest can be invoked with
   `ravi <app-id> check --json` when `<app-id>` does not collide with a static
   command.
+- A valid manifest can also be invoked with
+  `ravi apps run <app-id> check --json` without CLI rebuild as router fallback.
+- A declared operation id like `<app-id>.test.a` can be invoked with
+  `ravi <app-id> test a --json`.
 - Static root commands take precedence over dynamic app ids.
 - Unknown root commands still use normal CLI error/help handling.
 - Duplicate app ids fail before dispatch and report both manifest sources.

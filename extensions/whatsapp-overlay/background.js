@@ -174,9 +174,15 @@ function toErrorResponse(error) {
     return { ok: false, status: 0, code: "invalid_context_key", error: error.message };
   }
   const status = typeof error?.status === "number" ? error.status : 0;
-  const code = typeof error?.body?.code === "string" ? error.body.code : null;
+  const gatewayCode = typeof error?.body?.code === "string" ? error.body.code : null;
+  const gatewayError = typeof error?.body?.error === "string" ? error.body.error : null;
+  const authReason = typeof error?.body?.reason === "string" ? error.body.reason : null;
   const command = typeof error?.command === "string" ? error.command : null;
   const message = typeof error?.message === "string" ? error.message : String(error);
+  const authCode =
+    status === 401 ? (authReason ? `context_key_${authReason}` : "invalid_context_key") : null;
+  const code =
+    authCode || gatewayCode || (gatewayError === "Unauthorized" ? "invalid_context_key" : null);
   return {
     ok: false,
     status,
@@ -541,7 +547,10 @@ async function postAgentTtsSettings(payload = {}) {
   if (!agentId) return { ok: false, status: 400, code: "missing_agent", error: "Missing agentId" };
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
   const { client } = await getClient();
-  const agentsResult = await client.agents.list({}).catch(() => ({ agents: [] }));
+  const agentsResult = await client.agents.list({}).catch((error) => {
+    if (error?.status === 401 || error?.status === 403) throw error;
+    return { agents: [] };
+  });
   const agents = Array.isArray(agentsResult?.agents) ? agentsResult.agents : [];
   const agent = agents.find((item) => clean(item?.id ?? item?.agentId ?? item?.name) === agentId) ?? null;
   const currentDefaults =

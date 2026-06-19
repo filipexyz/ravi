@@ -102,6 +102,25 @@ describe("whatsapp overlay extension compositions", () => {
     expect(snapshot.recentSessions.map((session) => session.sessionName)).toContain("ravimem");
   });
 
+  it("propagates gateway auth errors instead of rendering an empty snapshot", async () => {
+    const authError = Object.assign(new Error("Unauthorized"), { status: 401 });
+    const client = {
+      sessions: {
+        list: async () => {
+          throw authError;
+        },
+      },
+      agents: {
+        list: async () => ({ agents: [] }),
+      },
+    };
+
+    await expect(buildSnapshot(client, {})).rejects.toMatchObject({
+      status: 401,
+      message: "Unauthorized",
+    });
+  });
+
   it("hides terminal task sessions from active and recent session lists", async () => {
     const now = Date.now();
     const client = {

@@ -53,7 +53,7 @@ function manifest(id: string): Record<string, unknown> {
       cli: {
         command: `ravi ${id.split("/").join(" ")}`,
         json: true,
-        health: `ravi apps run ${id} check --json`,
+        health: `ravi ${id.split("/").join(" ")} check --json`,
       },
     },
     operations: {
@@ -72,6 +72,11 @@ function manifest(id: string): Record<string, unknown> {
         handler: "apps.stub.list",
         mutating: true,
         permission: `${id}:write`,
+      },
+      [`${prefix}.test.a`]: {
+        interface: "builtin",
+        handler: "apps.stub.list",
+        mutating: false,
       },
     },
     permissions: {
@@ -263,6 +268,33 @@ describe("Ravi app router", () => {
     expect(result.result).toMatchObject({ ok: true, checked: 1 });
   });
 
+  it("prefers declared operations over virtual router builtins", async () => {
+    const root = makeRepo();
+    const body = manifest("khal-tasks");
+    (body.operations as Record<string, unknown>)["khal-tasks.show"] = {
+      interface: "builtin",
+      handler: "apps.stub.list",
+      mutating: false,
+    };
+    writeManifest(root, "khal-tasks", body);
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "show",
+      json: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      appId: "khal-tasks",
+      operation: "show",
+      operationId: "khal-tasks.show",
+      interface: "builtin",
+      handler: "apps.stub.list",
+    });
+    expect(result.result).toMatchObject({ total: 0, items: [] });
+  });
+
   it("resolves dynamic root aliases without stealing static root commands", () => {
     const root = makeRepo();
     writeManifest(root, "khal-tasks", manifest("khal-tasks"));
@@ -304,6 +336,24 @@ describe("Ravi app router", () => {
       ok: true,
       appId: "khal-tasks",
       operationId: "khal-tasks.check",
+    });
+  });
+
+  it("resolves dotted operation ids from whitespace-separated CLI tokens", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+
+    const payload = (await captureJson(() =>
+      maybeRunAppAliasRoute(["khal-tasks", "test", "a", "--json"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    )) as { ok: boolean; appId: string; operation: string; operationId: string };
+
+    expect(payload).toMatchObject({
+      ok: true,
+      appId: "khal-tasks",
+      operation: "test.a",
+      operationId: "khal-tasks.test.a",
     });
   });
 

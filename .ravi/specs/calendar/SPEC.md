@@ -146,28 +146,24 @@ not required by this calendar spec.
 The agent-facing CLI SHOULD evolve toward local-first commands:
 
 ```bash
-ravi calendar accounts list
-ravi calendar accounts create
-ravi calendar accounts sync <account>
-ravi calendar calendars list
-ravi calendar calendars create
-ravi calendar calendars show <calendar>
-ravi calendar calendars share <calendar>
-ravi calendar events list --from <time> --to <time>
-ravi calendar events read <event>
-ravi calendar events create --calendar <calendar> --title <title> --start <time> --end <time>
-ravi calendar events update <event>
-ravi calendar events cancel <event>
-ravi calendar events respond <event> --status accepted
-ravi calendar availability --from <time> --to <time>
-ravi calendar outbox status
+ravi calendars list
+ravi calendars create
+ravi calendars show <calendar>
+ravi calendars share <calendar>
+ravi calendars events list --from <time> --to <time>
+ravi calendars events read <event>
+ravi calendars events create --calendar <calendar> --title <title> --start <time> --end <time>
+ravi calendars events update <event>
+ravi calendars events cancel <event>
+ravi calendars events respond <event> --status accepted
+ravi calendars availability --from <time> --to <time>
 ```
 
 All commands consumed by agents MUST support `--json`.
 
-Provider-specific operations SHOULD live under explicit provider surfaces or
-provider account commands. Agent-facing read/write paths SHOULD go through the
-local calendar and local outbox.
+Provider-specific operations and outbox diagnostics are internal until cloud
+sync is introduced. Agent-facing read/write paths SHOULD go through the local
+calendar commands only.
 
 ## Events
 

@@ -348,7 +348,11 @@ function validateInterfaceBlocks(
       if (value.json !== true) {
         warnings.push("interfaces.cli.json should be true for machine-consumed CLI apps.");
       }
-      if (typeof value.health === "string" && isRecursiveDynamicAppCommand(manifest.id, value.health)) {
+      if (
+        typeof value.health === "string" &&
+        isRecursiveDynamicAppCommand(manifest.id, value.health) &&
+        !isRouterHealthCommand(manifest.id, value.health)
+      ) {
         errors.push(`interfaces.cli.health must not recursively invoke ravi ${manifest.id.split("/").join(" ")}.`);
       }
     }
@@ -541,7 +545,7 @@ function validateHealth(value: Record<string, unknown>, appId: unknown, errors: 
     }
     if (check.type === "cli" && typeof check.command === "string") {
       const id = typeof appId === "string" ? appId.trim() : "";
-      if (isRecursiveDynamicAppCommand(id, check.command)) {
+      if (isRecursiveDynamicAppCommand(id, check.command) && !isRouterHealthCommand(id, check.command)) {
         errors.push(`health.checks[${index}].command must not recursively invoke ravi ${id.split("/").join(" ")}.`);
       }
     }
@@ -1351,4 +1355,18 @@ function isRecursiveDynamicAppCommand(appId: string, command: string): boolean {
 
   const appSegments = appId.split("/");
   return appSegments.every((segment, index) => tokens[index + 1] === segment);
+}
+
+function isRouterHealthCommand(appId: string, command: string): boolean {
+  if (!appId) return false;
+  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  if (tokens[0] !== "ravi") return false;
+
+  const appSegments = appId.split("/");
+  const matchesSlashForm = tokens[1] === appId;
+  const offset = matchesSlashForm ? 2 : appSegments.length + 1;
+  if (!matchesSlashForm && !appSegments.every((segment, index) => tokens[index + 1] === segment)) return false;
+
+  const operation = tokens[offset];
+  return operation === "check" || operation === "--help" || operation === "-h";
 }

@@ -46,6 +46,7 @@ export type PermissionProviderOperation = PermissionProviderCliCommandOperation;
 export interface PermissionProviderCapabilityOptions {
   includeRoles?: boolean;
   includeConstraints?: boolean;
+  executorAgentId?: string;
 }
 
 export interface PermissionProviderRequest {

@@ -190,7 +190,7 @@ describe("Scope Isolation", () => {
     it("allows superadmin commands for a direct operator even when no agent holds admin", () => {
       // Break-glass recovery: an incident that revokes every agent's admin must
       // not lock out the operator CLI. With no agent principal, superadmin-scoped
-      // commands (permissions grant/init/restore-batch) stay allowed.
+      // recovery commands stay allowed through the explicit local-operator path.
       const result = enforceScopeCheck("superadmin", "permissions", "grant");
       expect(result.allowed).toBe(true);
     });
@@ -202,7 +202,7 @@ describe("Scope Isolation", () => {
       expect(result.errorMessage).toContain("requires admin on system:*");
     });
 
-    it("keeps stale agent-runtime contexts isolated from legacy grant-store changes", () => {
+    it("keeps stale agent-runtime contexts isolated from later provider-owned config changes", () => {
       const context = {
         contextId: "ctx_stale",
         agentId: "homologacao-solar",

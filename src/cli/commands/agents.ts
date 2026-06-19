@@ -14,6 +14,7 @@ import {
   agentDebugReturnSchema,
   agentDeleteReturnSchema,
   agentInstructionSyncReturnSchema,
+  agentPermissionsReturnSchema,
   agentResetReturnSchema,
   agentSessionReturnSchema,
   agentSetReturnSchema,
@@ -50,6 +51,13 @@ import type { AgentConfig } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
+import {
+  buildAgentRuntimePermissionsDefaults,
+  ensureAgentCanViewAgent,
+  getAgentRuntimePermissionsConfigFromDefaults,
+  normalizeAgentRuntimePermissionProfile,
+  type AgentRuntimePermissionsConfig,
+} from "../../permissions/agent-runtime-permissions-provider.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -152,6 +160,37 @@ function validateAgentModelValue(providerId: string | undefined, model: string):
   if (!result.ok) {
     fail(result.error ?? `Invalid model: ${model}`);
   }
+}
+
+function parseRuntimePermissionCapabilities(value: string | undefined): AgentRuntimePermissionsConfig["capabilities"] {
+  if (value === undefined) return undefined;
+  const raw = value.trim();
+  if (!raw) return [];
+  return raw.split(",").map((entry) => {
+    const parts = entry.trim().split(":");
+    if (parts.length < 3) {
+      fail(`Invalid capability '${entry}'. Expected permission:objectType:objectId`);
+    }
+    const [permission, objectType, ...objectIdParts] = parts;
+    const objectId = objectIdParts.join(":").trim();
+    if (!permission?.trim() || !objectType?.trim() || !objectId) {
+      fail(`Invalid capability '${entry}'. Expected permission:objectType:objectId`);
+    }
+    return {
+      permission: permission.trim(),
+      objectType: objectType.trim(),
+      objectId,
+    };
+  });
+}
+
+function describeRuntimePermissionConfig(config: AgentRuntimePermissionsConfig | null): string {
+  if (!config) return "bootstrap";
+  const parts = [config.profile ?? "custom"];
+  if (config.capabilities?.length) {
+    parts.push(`${config.capabilities.length} explicit`);
+  }
+  return parts.join(" + ");
 }
 
 function buildDebugSessionSummary(session: {
@@ -334,9 +373,11 @@ export class AgentsCommands {
     }
 
     const isDefault = agent.id === config.defaultAgent;
+    const runtimePermissions = getAgentRuntimePermissionsConfigFromDefaults(agent.defaults);
     const payload = {
       agent: buildAgentJson(agent, config.defaultAgent),
-      permissionsCommand: `ravi permissions list --subject agent:${agent.id}`,
+      runtimePermissions,
+      permissionsCommand: `ravi agents permissions ${agent.id}`,
     };
 
     if (asJson) {
@@ -349,13 +390,14 @@ export class AgentsCommands {
       console.log(`  Provider:      ${agent.provider || DEFAULT_RUNTIME_PROVIDER_ID}`);
       console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
       console.log(`  Mode:          ${agent.mode ?? "active"}`);
+      console.log(`  Permissions:   ${describeRuntimePermissionConfig(runtimePermissions)}`);
       console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
       console.log(`  Group Debounce:${agent.groupDebounceMs ? ` ${agent.groupDebounceMs}ms` : " -"}`);
       console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
 
       console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
       console.log(`  Tags:          ${formatTagSlugs(payload.agent.tags)}`);
-      console.log(`  Permissions:   ravi permissions list --subject agent:${agent.id}`);
+      console.log(`  Permissions:   ravi agents permissions ${agent.id}`);
 
       if (agent.remote) {
         console.log(`  Remote:        ${agent.remote}${agent.remoteUser ? ` (user: ${agent.remoteUser})` : ""}`);
@@ -398,6 +440,9 @@ export class AgentsCommands {
         ...(normalizedProvider ? { provider: normalizedProvider } : {}),
         ...(normalizedModel ? { model: normalizedModel } : {}),
       });
+      const creatorAgentId = getScopeContext()?.agentId;
+      const creatorVisibilityChanged =
+        creatorAgentId && creatorAgentId !== id ? ensureAgentCanViewAgent(creatorAgentId, id) : false;
 
       // Ensure directory exists
       const config = loadRouterConfig();
@@ -420,8 +465,12 @@ export class AgentsCommands {
         agent: buildAgentJson(createdAgent, config.defaultAgent),
         runtimeTarget: inspectCliRuntimeTarget(),
         permissions: {
-          default: "closed" as const,
-          initCommand: `ravi permissions init agent:${id} full-access`,
+          default: "bootstrap" as const,
+          configureCommand: `ravi agents permissions ${id} full-access`,
+          visibility: {
+            defaultAgent: config.defaultAgent,
+            ...(creatorAgentId ? { creatorAgentId, creatorVisibilityChanged } : {}),
+          },
         },
       };
       if (asJson) {
@@ -436,8 +485,8 @@ export class AgentsCommands {
         if (normalizedModel) {
           console.log(`  Model: ${normalizedModel}`);
         }
-        console.log(`  Permissions: closed (no tools, no executables)`);
-        console.log(`  Use 'ravi permissions init agent:${id} full-access' to configure`);
+        console.log(`  Permissions: bootstrap`);
+        console.log(`  Use 'ravi agents permissions ${id} full-access' to configure`);
       }
       emitConfigChanged();
       return payload;
@@ -718,6 +767,98 @@ export class AgentsCommands {
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
+  }
+
+  @Command({ name: "permissions", description: "Set or show an agent runtime permission profile" })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "permissions", risk: "high" })
+  permissions(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Arg("profile", { required: false, description: "Profile: bootstrap, full-access, none" }) profile?: string,
+    @Option({
+      flags: "--capabilities <list>",
+      description: "Comma-separated explicit capabilities (permission:objectType:objectId)",
+    })
+    capabilitiesInput?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--clear-capabilities", description: "Remove explicit capabilities while preserving profile" })
+    clearCapabilities?: boolean,
+  ) {
+    const agent = getAgent(id);
+    if (!agent) {
+      fail(`Agent not found: ${id}`);
+    }
+
+    const before = getAgentRuntimePermissionsConfigFromDefaults(agent.defaults);
+    if (clearCapabilities && capabilitiesInput !== undefined) {
+      fail("Use either --capabilities or --clear-capabilities, not both");
+    }
+    const explicitCapabilities = clearCapabilities ? [] : parseRuntimePermissionCapabilities(capabilitiesInput);
+
+    if (profile === undefined && explicitCapabilities === undefined) {
+      const payload = {
+        action: "permissions" as const,
+        changed: false as const,
+        agentId: id,
+        profile: before?.profile ?? "bootstrap",
+        runtimePermissions: before,
+        command: `ravi agents permissions ${id} full-access`,
+        agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
+      };
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(`Runtime permissions for ${id}: ${describeRuntimePermissionConfig(before)}`);
+        console.log(`  Full access: ravi agents permissions ${id} full-access`);
+        console.log(`  Clear:       ravi agents permissions ${id} none`);
+      }
+      return payload;
+    }
+
+    const normalizedProfile = profile === undefined ? before?.profile : normalizeAgentRuntimePermissionProfile(profile);
+    if (profile !== undefined && normalizedProfile === null) {
+      fail(`Invalid runtime permission profile: ${profile}. Valid profiles: bootstrap, full-access, none`);
+    }
+
+    const nextConfig =
+      normalizedProfile === "none"
+        ? null
+        : {
+            ...(before ?? {}),
+            ...(normalizedProfile ? { profile: normalizedProfile } : {}),
+          };
+    if (nextConfig && explicitCapabilities !== undefined) {
+      if (explicitCapabilities.length > 0) {
+        nextConfig.capabilities = explicitCapabilities;
+      } else {
+        delete nextConfig.capabilities;
+      }
+    }
+    const after: AgentRuntimePermissionsConfig | null =
+      nextConfig && Object.keys(nextConfig).length > 0 ? nextConfig : null;
+
+    const nextDefaults = buildAgentRuntimePermissionsDefaults(agent.defaults, after);
+    updateAgent(id, { defaults: nextDefaults });
+    const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
+    const payload = {
+      action: "permissions" as const,
+      changed: true as const,
+      agentId: id,
+      before,
+      after,
+      defaults: nextDefaults ?? null,
+      agent: buildAgentJson(updated, loadRouterConfig().defaultAgent),
+    };
+
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\u2713 Runtime permissions set: ${id} -> ${describeRuntimePermissionConfig(after)}`);
+      if (after?.profile === "full-access") {
+        console.log("  Materializes: admin system:* for the agent and its own automation turns");
+      }
+    }
+    emitConfigChanged();
+    return payload;
   }
 
   @Command({ name: "debounce", description: "Set message debounce time" })
@@ -1175,6 +1316,7 @@ declareCommandReturns(AgentsCommands, {
   debug: agentDebugReturnSchema,
   delete: agentDeleteReturnSchema,
   list: agentsListReturnSchema,
+  permissions: agentPermissionsReturnSchema,
   reset: agentResetReturnSchema,
   session: agentSessionReturnSchema,
   set: agentSetReturnSchema,

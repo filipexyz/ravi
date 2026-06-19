@@ -39,6 +39,13 @@ ravi audio generate "Bom dia a todos" --lang pt
 ravi audio generate "Mensagem de voz" --send
 ```
 
+### Gerar a partir de arquivo de texto
+```bash
+ravi audio generate --text-file roteiro.md --lang fr --send
+```
+
+`--text-file` só aceita arquivos relativos ao diretório atual, sem `..`, e apenas extensões `.md` ou `.txt`. Use isso para textos longos em vez de `$(cat ...)`, heredoc, `python -c` ou substituição de shell.
+
 ### Com caption custom ao enviar
 ```bash
 ravi audio generate "Conteúdo importante" --send --caption "Escuta isso"
@@ -66,6 +73,7 @@ ravi audio generate "Narração" -o /tmp/audios
 | `-o, --output <dir>` | Diretório de saída | `/tmp` |
 | `--send` | Envia pro chat automaticamente | `false` |
 | `--caption <text>` | Caption ao enviar (com `--send`) | início do texto |
+| `--text-file <path>` | Lê texto de arquivo relativo `.md` ou `.txt` | nenhum |
 
 ## Retorno
 
@@ -80,8 +88,9 @@ Se usar `--send`, o Ravi entrega direto via `omni send` em vez de só publicar u
 ## Fluxo recomendado
 
 1. Rode `ravi audio generate "texto"` — gera o MP3
-2. Se precisa enviar pro chat, use `--send` ou copie o comando `ravi media send` do output
-3. Pra português, use `--lang pt` pra melhor pronúncia
+2. Para textos longos, salve em `.md` ou `.txt` no diretório atual e use `--text-file caminho-relativo.md`
+3. Se precisa enviar pro chat, use `--send` ou copie o comando `ravi media send` do output
+4. Pra português, use `--lang pt` pra melhor pronúncia
 
 ## Limitações
 

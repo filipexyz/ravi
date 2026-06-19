@@ -78,11 +78,6 @@ Any mismatch MUST fail.
 Wire into `ravi doctor`:
 
 ```sql
--- subjects with zero active capabilities that have inactive grants (post-revocation)
-select subject_type, count(*) from relations
-where revoked_at is not null
-group by subject_type;
-
 -- active contexts still carrying admin system:*
 select count(*) from contexts
 where revoked_at is null and (expires_at is null or expires_at > unixepoch())

@@ -66,7 +66,7 @@ channels.inbound_contact_unresolved
 - A public command with no return schema emits `sdk.returns.missing_public`.
 - A mutating command without explicit registry metadata emits
   `permissions.command_mutation_unclassified`.
-- Provider runtime default providers emit
+- Provider runtime default providers and materializers emit
   `permissions.provider_runtime_default_chain`.
 - Provider runtime boundary drift emits
   `permissions.provider_runtime_boundaries`.

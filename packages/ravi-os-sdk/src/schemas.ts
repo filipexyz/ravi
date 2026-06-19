@@ -967,6 +967,268 @@ export const AgentsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `agents.permissions`. */
+export const AgentsPermissionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "description": "Comma-separated explicit capabilities (permission:objectType:objectId)",
+      "type": "string"
+    },
+    "clearCapabilities": {
+      "description": "Remove explicit capabilities while preserving profile",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Agent ID",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Profile: bootstrap, full-access, none",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.permissions`. */
+export const AgentsPermissionsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "permissions",
+      "type": "string"
+    },
+    "after": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "type": "string"
+                      },
+                      "objectType": {
+                        "type": "string"
+                      },
+                      "permission": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "profile": {
+              "enum": [
+                "bootstrap",
+                "full-access"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "agent": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "before": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "type": "string"
+                      },
+                      "objectType": {
+                        "type": "string"
+                      },
+                      "permission": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "profile": {
+              "enum": [
+                "bootstrap",
+                "full-access"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "command": {
+      "type": "string"
+    },
+    "defaults": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "profile": {
+      "type": "string"
+    },
+    "runtimePermissions": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "type": "string"
+                      },
+                      "objectType": {
+                        "type": "string"
+                      },
+                      "permission": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "profile": {
+              "enum": [
+                "bootstrap",
+                "full-access"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.reset`. */
 export const AgentsResetInputSchema = {
   "additionalProperties": false,
@@ -5361,14 +5623,15 @@ export const AudioGenerateInputSchema = {
       "description": "Text to convert to speech",
       "type": "string"
     },
+    "textFile": {
+      "description": "Relative .md or .txt file to convert to speech",
+      "type": "string"
+    },
     "voice": {
       "description": "ElevenLabs voice ID",
       "type": "string"
     }
   },
-  "required": [
-    "text"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6642,584 +6905,8 @@ export const BridgesRevokeReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.accounts.create`. */
-export const CalendarAccountsCreateInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "credentialsRef": {
-      "description": "Reference to an existing credential store entry",
-      "type": "string"
-    },
-    "id": {
-      "description": "Stable local account id",
-      "type": "string"
-    },
-    "name": {
-      "description": "Display name",
-      "type": "string"
-    },
-    "provider": {
-      "description": "Provider id, e.g. local or google-calendar",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.accounts.create`. */
-export const CalendarAccountsCreateReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "account": {
-      "additionalProperties": false,
-      "properties": {
-        "capabilities": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "credentialsRef": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "defaultCalendarId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "displayName": {
-          "type": "string"
-        },
-        "id": {
-          "type": "string"
-        },
-        "provider": {
-          "type": "string"
-        },
-        "settings": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "status": {
-          "enum": [
-            "active",
-            "paused",
-            "auth_required",
-            "disabled"
-          ],
-          "type": "string"
-        },
-        "updatedAt": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "id",
-        "provider",
-        "displayName",
-        "status",
-        "defaultCalendarId",
-        "credentialsRef",
-        "capabilities",
-        "settings",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "account"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.accounts.list`. */
-export const CalendarAccountsListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "limit": {
-      "description": "Maximum records",
-      "type": "string"
-    },
-    "offset": {
-      "description": "Offset",
-      "type": "string"
-    },
-    "provider": {
-      "description": "Filter by provider",
-      "type": "string"
-    },
-    "status": {
-      "description": "Filter by account status",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.accounts.list`. */
-export const CalendarAccountsListReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "accounts": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "capabilities": {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "createdAt": {
-            "type": "number"
-          },
-          "credentialsRef": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "defaultCalendarId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "displayName": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "provider": {
-            "type": "string"
-          },
-          "settings": {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "status": {
-            "enum": [
-              "active",
-              "paused",
-              "auth_required",
-              "disabled"
-            ],
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "provider",
-          "displayName",
-          "status",
-          "defaultCalendarId",
-          "credentialsRef",
-          "capabilities",
-          "settings",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "accounts"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.accounts.sync`. */
-export const CalendarAccountsSyncInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "account": {
-      "description": "Local calendar account id",
-      "type": "string"
-    },
-    "once": {
-      "description": "Run one foreground tick",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "account"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.accounts.sync`. */
-export const CalendarAccountsSyncReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "anyOf": [
-    {
-      "additionalProperties": false,
-      "properties": {
-        "account": {
-          "additionalProperties": false,
-          "properties": {
-            "capabilities": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "createdAt": {
-              "type": "number"
-            },
-            "credentialsRef": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "defaultCalendarId": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "displayName": {
-              "type": "string"
-            },
-            "id": {
-              "type": "string"
-            },
-            "provider": {
-              "type": "string"
-            },
-            "settings": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "status": {
-              "enum": [
-                "active",
-                "paused",
-                "auth_required",
-                "disabled"
-              ],
-              "type": "string"
-            },
-            "updatedAt": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "id",
-            "provider",
-            "displayName",
-            "status",
-            "defaultCalendarId",
-            "credentialsRef",
-            "capabilities",
-            "settings",
-            "createdAt",
-            "updatedAt"
-          ],
-          "type": "object"
-        },
-        "localFirst": {
-          "const": true,
-          "type": "boolean"
-        },
-        "ok": {
-          "const": true,
-          "type": "boolean"
-        },
-        "status": {
-          "const": "adapter_not_required",
-          "type": "string"
-        }
-      },
-      "required": [
-        "ok",
-        "account",
-        "status",
-        "localFirst"
-      ],
-      "type": "object"
-    },
-    {
-      "additionalProperties": false,
-      "properties": {
-        "account": {
-          "additionalProperties": false,
-          "properties": {
-            "capabilities": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "createdAt": {
-              "type": "number"
-            },
-            "credentialsRef": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "defaultCalendarId": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "displayName": {
-              "type": "string"
-            },
-            "id": {
-              "type": "string"
-            },
-            "provider": {
-              "type": "string"
-            },
-            "settings": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "status": {
-              "enum": [
-                "active",
-                "paused",
-                "auth_required",
-                "disabled"
-              ],
-              "type": "string"
-            },
-            "updatedAt": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "id",
-            "provider",
-            "displayName",
-            "status",
-            "defaultCalendarId",
-            "credentialsRef",
-            "capabilities",
-            "settings",
-            "createdAt",
-            "updatedAt"
-          ],
-          "type": "object"
-        },
-        "message": {
-          "type": "string"
-        },
-        "ok": {
-          "const": false,
-          "type": "boolean"
-        },
-        "status": {
-          "const": "adapter_not_started",
-          "type": "string"
-        }
-      },
-      "required": [
-        "ok",
-        "account",
-        "status",
-        "message"
-      ],
-      "type": "object"
-    }
-  ]
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.availability`. */
-export const CalendarAvailabilityInputSchema = {
+/** JSON Schema for the input body of `calendars.availability`. */
+export const CalendarsAvailabilityInputSchema = {
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -7242,8 +6929,8 @@ export const CalendarAvailabilityInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.availability`. */
-export const CalendarAvailabilityReturnSchema = {
+/** JSON Schema for the return shape of `calendars.availability`. */
+export const CalendarsAvailabilityReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "busy": {
@@ -7315,8 +7002,8 @@ export const CalendarAvailabilityReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.calendars.create`. */
-export const CalendarCalendarsCreateInputSchema = {
+/** JSON Schema for the input body of `calendars.create`. */
+export const CalendarsCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -7363,8 +7050,8 @@ export const CalendarCalendarsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.calendars.create`. */
-export const CalendarCalendarsCreateReturnSchema = {
+/** JSON Schema for the return shape of `calendars.create`. */
+export const CalendarsCreateReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -7540,8 +7227,8 @@ export const CalendarCalendarsCreateReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.calendars.disable`. */
-export const CalendarCalendarsDisableInputSchema = {
+/** JSON Schema for the input body of `calendars.disable`. */
+export const CalendarsDisableInputSchema = {
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -7555,8 +7242,8 @@ export const CalendarCalendarsDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.calendars.disable`. */
-export const CalendarCalendarsDisableReturnSchema = {
+/** JSON Schema for the return shape of `calendars.disable`. */
+export const CalendarsDisableReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -7732,724 +7419,8 @@ export const CalendarCalendarsDisableReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.calendars.list`. */
-export const CalendarCalendarsListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "account": {
-      "description": "Local account id",
-      "type": "string"
-    },
-    "limit": {
-      "description": "Maximum records",
-      "type": "string"
-    },
-    "offset": {
-      "description": "Offset",
-      "type": "string"
-    },
-    "status": {
-      "description": "Filter by calendar status",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.calendars.list`. */
-export const CalendarCalendarsListReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "calendars": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "accountId": {
-            "type": "string"
-          },
-          "color": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "createdAt": {
-            "type": "number"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "isDefault": {
-            "type": "boolean"
-          },
-          "lastSyncedAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "metadata": {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "name": {
-            "type": "string"
-          },
-          "ownerId": {
-            "type": "string"
-          },
-          "ownerType": {
-            "type": "string"
-          },
-          "providerCalendarId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "role": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "active",
-              "paused",
-              "disabled",
-              "deleted"
-            ],
-            "type": "string"
-          },
-          "timezone": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updatedAt": {
-            "type": "number"
-          },
-          "visibility": {
-            "enum": [
-              "private",
-              "shared",
-              "public",
-              "local_only"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "accountId",
-          "providerCalendarId",
-          "name",
-          "description",
-          "color",
-          "timezone",
-          "role",
-          "status",
-          "visibility",
-          "ownerType",
-          "ownerId",
-          "isDefault",
-          "lastSyncedAt",
-          "metadata",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "calendars"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.calendars.share`. */
-export const CalendarCalendarsShareInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "description": "Local calendar id or name",
-      "type": "string"
-    },
-    "expiresAt": {
-      "description": "Optional membership expiration timestamp",
-      "type": "string"
-    },
-    "relation": {
-      "description": "owner, reader, writer, manager, or free_busy",
-      "type": "string"
-    },
-    "with": {
-      "description": "Subject, e.g. agent:main",
-      "type": "string"
-    }
-  },
-  "required": [
-    "calendar"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.calendars.share`. */
-export const CalendarCalendarsShareReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "additionalProperties": false,
-      "properties": {
-        "accountId": {
-          "type": "string"
-        },
-        "color": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "isDefault": {
-          "type": "boolean"
-        },
-        "lastSyncedAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "metadata": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "name": {
-          "type": "string"
-        },
-        "ownerId": {
-          "type": "string"
-        },
-        "ownerType": {
-          "type": "string"
-        },
-        "providerCalendarId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "role": {
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "active",
-            "paused",
-            "disabled",
-            "deleted"
-          ],
-          "type": "string"
-        },
-        "timezone": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "updatedAt": {
-          "type": "number"
-        },
-        "visibility": {
-          "enum": [
-            "private",
-            "shared",
-            "public",
-            "local_only"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "accountId",
-        "providerCalendarId",
-        "name",
-        "description",
-        "color",
-        "timezone",
-        "role",
-        "status",
-        "visibility",
-        "ownerType",
-        "ownerId",
-        "isDefault",
-        "lastSyncedAt",
-        "metadata",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    },
-    "member": {
-      "additionalProperties": false,
-      "properties": {
-        "calendarId": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "expiresAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "memberId": {
-          "type": "string"
-        },
-        "memberType": {
-          "type": "string"
-        },
-        "relation": {
-          "enum": [
-            "owner",
-            "reader",
-            "writer",
-            "manager",
-            "free_busy"
-          ],
-          "type": "string"
-        },
-        "updatedAt": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "id",
-        "calendarId",
-        "memberType",
-        "memberId",
-        "relation",
-        "expiresAt",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "calendar",
-    "member"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.calendars.show`. */
-export const CalendarCalendarsShowInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "description": "Local calendar id, name, or provider calendar id",
-      "type": "string"
-    },
-    "members": {
-      "description": "Include membership projection rows",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "calendar"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.calendars.show`. */
-export const CalendarCalendarsShowReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "additionalProperties": false,
-      "properties": {
-        "accountId": {
-          "type": "string"
-        },
-        "color": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "isDefault": {
-          "type": "boolean"
-        },
-        "lastSyncedAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "metadata": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "name": {
-          "type": "string"
-        },
-        "ownerId": {
-          "type": "string"
-        },
-        "ownerType": {
-          "type": "string"
-        },
-        "providerCalendarId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "role": {
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "active",
-            "paused",
-            "disabled",
-            "deleted"
-          ],
-          "type": "string"
-        },
-        "timezone": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "updatedAt": {
-          "type": "number"
-        },
-        "visibility": {
-          "enum": [
-            "private",
-            "shared",
-            "public",
-            "local_only"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "accountId",
-        "providerCalendarId",
-        "name",
-        "description",
-        "color",
-        "timezone",
-        "role",
-        "status",
-        "visibility",
-        "ownerType",
-        "ownerId",
-        "isDefault",
-        "lastSyncedAt",
-        "metadata",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    },
-    "members": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "calendarId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "number"
-          },
-          "expiresAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "memberId": {
-            "type": "string"
-          },
-          "memberType": {
-            "type": "string"
-          },
-          "relation": {
-            "enum": [
-              "owner",
-              "reader",
-              "writer",
-              "manager",
-              "free_busy"
-            ],
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "calendarId",
-          "memberType",
-          "memberId",
-          "relation",
-          "expiresAt",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "calendar"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.events.cancel`. */
-export const CalendarEventsCancelInputSchema = {
+/** JSON Schema for the input body of `calendars.events.cancel`. */
+export const CalendarsEventsCancelInputSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -8467,8 +7438,8 @@ export const CalendarEventsCancelInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.cancel`. */
-export const CalendarEventsCancelReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.cancel`. */
+export const CalendarsEventsCancelReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -9162,8 +8133,8 @@ export const CalendarEventsCancelReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.create`. */
-export const CalendarEventsCreateInputSchema = {
+/** JSON Schema for the input body of `calendars.events.create`. */
+export const CalendarsEventsCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "attendee": {
@@ -9206,8 +8177,8 @@ export const CalendarEventsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.create`. */
-export const CalendarEventsCreateReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.create`. */
+export const CalendarsEventsCreateReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -9901,8 +8872,8 @@ export const CalendarEventsCreateReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.list`. */
-export const CalendarEventsListInputSchema = {
+/** JSON Schema for the input body of `calendars.events.list`. */
+export const CalendarsEventsListInputSchema = {
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -9941,8 +8912,8 @@ export const CalendarEventsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.list`. */
-export const CalendarEventsListReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.list`. */
+export const CalendarsEventsListReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -10542,8 +9513,8 @@ export const CalendarEventsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.read`. */
-export const CalendarEventsReadInputSchema = {
+/** JSON Schema for the input body of `calendars.events.read`. */
+export const CalendarsEventsReadInputSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -10557,8 +9528,8 @@ export const CalendarEventsReadInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.read`. */
-export const CalendarEventsReadReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.read`. */
+export const CalendarsEventsReadReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -11138,8 +10109,8 @@ export const CalendarEventsReadReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.respond`. */
-export const CalendarEventsRespondInputSchema = {
+/** JSON Schema for the input body of `calendars.events.respond`. */
+export const CalendarsEventsRespondInputSchema = {
   "additionalProperties": false,
   "properties": {
     "attendeeAgent": {
@@ -11169,8 +10140,8 @@ export const CalendarEventsRespondInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.respond`. */
-export const CalendarEventsRespondReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.respond`. */
+export const CalendarsEventsRespondReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -11857,8 +10828,8 @@ export const CalendarEventsRespondReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.update`. */
-export const CalendarEventsUpdateInputSchema = {
+/** JSON Schema for the input body of `calendars.events.update`. */
+export const CalendarsEventsUpdateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "busy": {
@@ -11908,8 +10879,8 @@ export const CalendarEventsUpdateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.update`. */
-export const CalendarEventsUpdateReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.update`. */
+export const CalendarsEventsUpdateReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -12603,181 +11574,12 @@ export const CalendarEventsUpdateReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.outbox.inspect`. */
-export const CalendarOutboxInspectInputSchema = {
+/** JSON Schema for the input body of `calendars.list`. */
+export const CalendarsListInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "outbox": {
-      "description": "Local outbox id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "outbox"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.outbox.inspect`. */
-export const CalendarOutboxInspectReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "outbox": {
-      "additionalProperties": false,
-      "properties": {
-        "accountId": {
-          "type": "string"
-        },
-        "attemptCount": {
-          "type": "number"
-        },
-        "calendarId": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "eventId": {
-          "type": "string"
-        },
-        "id": {
-          "type": "string"
-        },
-        "idempotencyKey": {
-          "type": "string"
-        },
-        "lastErrorCode": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "nextAttemptAt": {
-          "type": "number"
-        },
-        "operation": {
-          "enum": [
-            "create",
-            "update",
-            "cancel",
-            "delete",
-            "respond"
-          ],
-          "type": "string"
-        },
-        "payload": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "providerResult": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "status": {
-          "enum": [
-            "pending",
-            "leased",
-            "sending",
-            "sent",
-            "acked",
-            "failed",
-            "dead"
-          ],
-          "type": "string"
-        },
-        "updatedAt": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "id",
-        "accountId",
-        "calendarId",
-        "eventId",
-        "operation",
-        "idempotencyKey",
-        "payload",
-        "status",
-        "attemptCount",
-        "nextAttemptAt",
-        "lastErrorCode",
-        "providerResult",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "outbox"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.outbox.list`. */
-export const CalendarOutboxListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "description": "Local calendar id or name",
+    "account": {
+      "description": "Local account id",
       "type": "string"
     },
     "limit": {
@@ -12789,15 +11591,15 @@ export const CalendarOutboxListInputSchema = {
       "type": "string"
     },
     "status": {
-      "description": "Filter by outbox status",
+      "description": "Filter by calendar status",
       "type": "string"
     }
   },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.outbox.list`. */
-export const CalendarOutboxListReturnSchema = {
+/** JSON Schema for the return shape of `calendars.list`. */
+export const CalendarsListReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -12837,32 +11639,14 @@ export const CalendarOutboxListReturnSchema = {
   },
   "additionalProperties": false,
   "properties": {
-    "outbox": {
+    "calendars": {
       "items": {
         "additionalProperties": false,
         "properties": {
           "accountId": {
             "type": "string"
           },
-          "attemptCount": {
-            "type": "number"
-          },
-          "calendarId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "number"
-          },
-          "eventId": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "idempotencyKey": {
-            "type": "string"
-          },
-          "lastErrorCode": {
+          "color": {
             "anyOf": [
               {
                 "type": "string"
@@ -12872,20 +11656,36 @@ export const CalendarOutboxListReturnSchema = {
               }
             ]
           },
-          "nextAttemptAt": {
+          "createdAt": {
             "type": "number"
           },
-          "operation": {
-            "enum": [
-              "create",
-              "update",
-              "cancel",
-              "delete",
-              "respond"
-            ],
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
             "type": "string"
           },
-          "payload": {
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
             "additionalProperties": {
               "$ref": "#/$defs/__schema0"
             },
@@ -12894,51 +11694,76 @@ export const CalendarOutboxListReturnSchema = {
             },
             "type": "object"
           },
-          "providerResult": {
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "providerCalendarId": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "$ref": "#/$defs/__schema0"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ]
           },
+          "role": {
+            "type": "string"
+          },
           "status": {
             "enum": [
-              "pending",
-              "leased",
-              "sending",
-              "sent",
-              "acked",
-              "failed",
-              "dead"
+              "active",
+              "paused",
+              "disabled",
+              "deleted"
             ],
             "type": "string"
           },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "shared",
+              "public",
+              "local_only"
+            ],
+            "type": "string"
           }
         },
         "required": [
           "id",
           "accountId",
-          "calendarId",
-          "eventId",
-          "operation",
-          "idempotencyKey",
-          "payload",
+          "providerCalendarId",
+          "name",
+          "description",
+          "color",
+          "timezone",
+          "role",
           "status",
-          "attemptCount",
-          "nextAttemptAt",
-          "lastErrorCode",
-          "providerResult",
+          "visibility",
+          "ownerType",
+          "ownerId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
           "createdAt",
           "updatedAt"
         ],
@@ -12948,28 +11773,40 @@ export const CalendarOutboxListReturnSchema = {
     }
   },
   "required": [
-    "outbox"
+    "calendars"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.outbox.retry`. */
-export const CalendarOutboxRetryInputSchema = {
+/** JSON Schema for the input body of `calendars.share`. */
+export const CalendarsShareInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "outbox": {
-      "description": "Local outbox id",
+    "calendar": {
+      "description": "Local calendar id or name",
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "Optional membership expiration timestamp",
+      "type": "string"
+    },
+    "relation": {
+      "description": "owner, reader, writer, manager, or free_busy",
+      "type": "string"
+    },
+    "with": {
+      "description": "Subject, e.g. agent:main",
       "type": "string"
     }
   },
   "required": [
-    "outbox"
+    "calendar"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.outbox.retry`. */
-export const CalendarOutboxRetryReturnSchema = {
+/** JSON Schema for the return shape of `calendars.share`. */
+export const CalendarsShareReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -13009,31 +11846,13 @@ export const CalendarOutboxRetryReturnSchema = {
   },
   "additionalProperties": false,
   "properties": {
-    "outbox": {
+    "calendar": {
       "additionalProperties": false,
       "properties": {
         "accountId": {
           "type": "string"
         },
-        "attemptCount": {
-          "type": "number"
-        },
-        "calendarId": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "eventId": {
-          "type": "string"
-        },
-        "id": {
-          "type": "string"
-        },
-        "idempotencyKey": {
-          "type": "string"
-        },
-        "lastErrorCode": {
+        "color": {
           "anyOf": [
             {
               "type": "string"
@@ -13043,20 +11862,36 @@ export const CalendarOutboxRetryReturnSchema = {
             }
           ]
         },
-        "nextAttemptAt": {
+        "createdAt": {
           "type": "number"
         },
-        "operation": {
-          "enum": [
-            "create",
-            "update",
-            "cancel",
-            "delete",
-            "respond"
-          ],
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
           "type": "string"
         },
-        "payload": {
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
           "additionalProperties": {
             "$ref": "#/$defs/__schema0"
           },
@@ -13065,31 +11900,116 @@ export const CalendarOutboxRetryReturnSchema = {
           },
           "type": "object"
         },
-        "providerResult": {
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "providerCalendarId": {
           "anyOf": [
             {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
+              "type": "string"
             },
             {
               "type": "null"
             }
           ]
         },
+        "role": {
+          "type": "string"
+        },
         "status": {
           "enum": [
-            "pending",
-            "leased",
-            "sending",
-            "sent",
-            "acked",
-            "failed",
-            "dead"
+            "active",
+            "paused",
+            "disabled",
+            "deleted"
+          ],
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "shared",
+            "public",
+            "local_only"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "providerCalendarId",
+        "name",
+        "description",
+        "color",
+        "timezone",
+        "role",
+        "status",
+        "visibility",
+        "ownerType",
+        "ownerId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "member": {
+      "additionalProperties": false,
+      "properties": {
+        "calendarId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "memberId": {
+          "type": "string"
+        },
+        "memberType": {
+          "type": "string"
+        },
+        "relation": {
+          "enum": [
+            "owner",
+            "reader",
+            "writer",
+            "manager",
+            "free_busy"
           ],
           "type": "string"
         },
@@ -13099,17 +12019,11 @@ export const CalendarOutboxRetryReturnSchema = {
       },
       "required": [
         "id",
-        "accountId",
         "calendarId",
-        "eventId",
-        "operation",
-        "idempotencyKey",
-        "payload",
-        "status",
-        "attemptCount",
-        "nextAttemptAt",
-        "lastErrorCode",
-        "providerResult",
+        "memberType",
+        "memberId",
+        "relation",
+        "expiresAt",
         "createdAt",
         "updatedAt"
       ],
@@ -13117,38 +12031,261 @@ export const CalendarOutboxRetryReturnSchema = {
     }
   },
   "required": [
-    "outbox"
+    "calendar",
+    "member"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.outbox.status`. */
-export const CalendarOutboxStatusInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.outbox.status`. */
-export const CalendarOutboxStatusReturnSchema = {
+/** JSON Schema for the input body of `calendars.show`. */
+export const CalendarsShowInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "counts": {
-      "additionalProperties": {
-        "type": "number"
-      },
-      "propertyNames": {
-        "type": "string"
-      },
-      "type": "object"
+    "calendar": {
+      "description": "Local calendar id, name, or provider calendar id",
+      "type": "string"
     },
-    "total": {
-      "type": "number"
+    "members": {
+      "description": "Include membership projection rows",
+      "type": "boolean"
     }
   },
   "required": [
-    "counts",
-    "total"
+    "calendar"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `calendars.show`. */
+export const CalendarsShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "providerCalendarId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "disabled",
+            "deleted"
+          ],
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "shared",
+            "public",
+            "local_only"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "providerCalendarId",
+        "name",
+        "description",
+        "color",
+        "timezone",
+        "role",
+        "status",
+        "visibility",
+        "ownerType",
+        "ownerId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "members": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "calendarId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "memberType": {
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "owner",
+              "reader",
+              "writer",
+              "manager",
+              "free_busy"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "calendarId",
+          "memberType",
+          "memberId",
+          "relation",
+          "expiresAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "calendar"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -14120,6 +13257,791 @@ export const CloudProjectsListReturnSchema = {
     "pagination",
     "projects",
     "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.scope.clear`. */
+export const CloudScopeClearInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Clear default for an agent; current agent when omitted",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "global": {
+      "description": "Clear default for this local Ravi installation",
+      "type": "boolean"
+    },
+    "session": {
+      "description": "Clear default for a Ravi session; current session when omitted",
+      "type": "string"
+    },
+    "workspace": {
+      "description": "Clear default for a workspace; current cwd when omitted",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.scope.clear`. */
+export const CloudScopeClearReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "clear",
+      "type": "string"
+    },
+    "cleared": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "scopeKey": {
+          "type": "string"
+        },
+        "scopeKind": {
+          "enum": [
+            "session",
+            "agent",
+            "workspace",
+            "global"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scopeKind",
+        "scopeKey"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "action",
+    "target",
+    "cleared"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.scope.explain`. */
+export const CloudScopeExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Pretend this explicit project was passed",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.scope.explain`. */
+export const CloudScopeExplainReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "consoleUrl": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "ref"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "scopeKey": {
+            "type": "string"
+          },
+          "scopeKind": {
+            "enum": [
+              "session",
+              "agent",
+              "workspace",
+              "global"
+            ],
+            "type": "string"
+          },
+          "selected": {
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "explicit",
+              "runtime_context",
+              "local_project_mapping",
+              "session_default",
+              "agent_default",
+              "workspace_default",
+              "global_default",
+              "cloud_credentials",
+              "env_compat",
+              "single_remote_project"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "label",
+          "selected",
+          "available"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "missingProjectCommand": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "organization": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "slug": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "resolved": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "consoleUrl": {
+              "type": "string"
+            },
+            "organization": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "slug": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ref"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "explicit",
+                "runtime_context",
+                "local_project_mapping",
+                "session_default",
+                "agent_default",
+                "workspace_default",
+                "global_default",
+                "cloud_credentials",
+                "env_compat",
+                "single_remote_project"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "consoleUrl",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "resolved",
+    "candidates"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.scope.set`. */
+export const CloudScopeSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Set default for an agent; current agent when omitted",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "global": {
+      "description": "Set default for this local Ravi installation",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug to use by default",
+      "type": "string"
+    },
+    "session": {
+      "description": "Set default for a Ravi session; current session when omitted",
+      "type": "string"
+    },
+    "workspace": {
+      "description": "Set default for a workspace; current cwd when omitted",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.scope.set`. */
+export const CloudScopeSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "set",
+      "type": "string"
+    },
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "consoleUrl": {
+          "type": "string"
+        },
+        "organization": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "ref"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "explicit",
+            "runtime_context",
+            "local_project_mapping",
+            "session_default",
+            "agent_default",
+            "workspace_default",
+            "global_default",
+            "cloud_credentials",
+            "env_compat",
+            "single_remote_project"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "consoleUrl",
+        "source"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "scopeKey": {
+          "type": "string"
+        },
+        "scopeKind": {
+          "enum": [
+            "session",
+            "agent",
+            "workspace",
+            "global"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scopeKind",
+        "scopeKey"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "action",
+    "target",
+    "scope"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.scope.show`. */
+export const CloudScopeShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.scope.show`. */
+export const CloudScopeShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "consoleUrl": {
+          "type": "string"
+        },
+        "organization": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "ref"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "explicit",
+            "runtime_context",
+            "local_project_mapping",
+            "session_default",
+            "agent_default",
+            "workspace_default",
+            "global_default",
+            "cloud_credentials",
+            "env_compat",
+            "single_remote_project"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "consoleUrl",
+        "source"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "scope"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -33914,6 +33836,13 @@ export const ObserversShowReturnSchema = {
 export const PagesCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "args": {
+      "description": "[project] <slug>; project defaults to Ravi Console scope",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "console": {
       "description": "Console base URL",
       "type": "string"
@@ -33923,11 +33852,7 @@ export const PagesCreateInputSchema = {
       "type": "boolean"
     },
     "project": {
-      "description": "Console project id or slug",
-      "type": "string"
-    },
-    "slug": {
-      "description": "Hosted subdomain slug, e.g. demo for demo.ravi.page",
+      "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     },
     "visibility": {
@@ -33936,8 +33861,7 @@ export const PagesCreateInputSchema = {
     }
   },
   "required": [
-    "project",
-    "slug"
+    "args"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -34038,6 +33962,13 @@ export const PagesCreateReturnSchema = {
 export const PagesDomainsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "args": {
+      "description": "[project] <site> <hostname...>; project defaults to scope only for the non-ambiguous form",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "check": {
       "description": "Run provider readiness check after binding",
       "type": "boolean"
@@ -34046,26 +33977,13 @@ export const PagesDomainsInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
-    "hostnames": {
-      "description": "Custom hostname(s), e.g. www.example.com",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
     "project": {
-      "description": "Console project id or slug",
-      "type": "string"
-    },
-    "site": {
-      "description": "Pages site id or slug",
+      "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     }
   },
   "required": [
-    "hostnames",
-    "project",
-    "site"
+    "args"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -34185,13 +34103,10 @@ export const PagesListInputSchema = {
       "type": "string"
     },
     "project": {
-      "description": "Console project id or slug",
+      "description": "Console project id or slug; defaults to Ravi Console scope",
       "type": "string"
     }
   },
-  "required": [
-    "project"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -34337,6 +34252,13 @@ export const PagesListReturnSchema = {
 export const PagesPublishInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "args": {
+      "description": "[project] <site> <source>; project defaults to Ravi Console scope",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "artifactSlug": {
       "description": "Published artifact slug",
       "type": "string"
@@ -34375,7 +34297,7 @@ export const PagesPublishInputSchema = {
       "type": "boolean"
     },
     "project": {
-      "description": "Console project id or slug",
+      "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     },
     "reason": {
@@ -34388,14 +34310,6 @@ export const PagesPublishInputSchema = {
     },
     "route": {
       "description": "Pages route path to mount content at (default: /)",
-      "type": "string"
-    },
-    "site": {
-      "description": "Pages site id or slug",
-      "type": "string"
-    },
-    "source": {
-      "description": "Local directory, file, or artifact id to publish",
       "type": "string"
     },
     "title": {
@@ -34412,9 +34326,7 @@ export const PagesPublishInputSchema = {
     }
   },
   "required": [
-    "project",
-    "site",
-    "source"
+    "args"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -34644,16 +34556,19 @@ export const PagesPublishReturnSchema = {
 export const PagesUpdateInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "args": {
+      "description": "[project] <site>; project defaults to Ravi Console scope",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "console": {
       "description": "Console base URL",
       "type": "string"
     },
     "project": {
-      "description": "Console project id or slug",
-      "type": "string"
-    },
-    "site": {
-      "description": "Pages site id or slug",
+      "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     },
     "visibility": {
@@ -34662,8 +34577,7 @@ export const PagesUpdateInputSchema = {
     }
   },
   "required": [
-    "project",
-    "site"
+    "args"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -34761,27 +34675,24 @@ export const PagesUpdateReturnSchema = {
 export const PagesVisibilityInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "args": {
+      "description": "[project] <site> <visibility>; project defaults to Ravi Console scope",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "console": {
       "description": "Console base URL",
       "type": "string"
     },
     "project": {
-      "description": "Console project id or slug",
-      "type": "string"
-    },
-    "site": {
-      "description": "Pages site id or slug",
-      "type": "string"
-    },
-    "visibility": {
-      "description": "private|protected_link|public",
+      "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     }
   },
   "required": [
-    "project",
-    "site",
-    "visibility"
+    "args"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -34879,24 +34790,23 @@ export const PagesVisibilityReturnSchema = {
 export const PermissionsCheckInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "object": {
-      "description": "Object (e.g., group:contacts, session:dev-grupo1)",
+    "localOperator": {
+      "description": "Evaluate as explicit local operator",
+      "type": "boolean"
+    },
+    "objectId": {
+      "description": "Object id",
+      "type": "string"
+    },
+    "objectType": {
+      "description": "Object type",
       "type": "string"
     },
     "permission": {
-      "description": "Permission (e.g., execute, access, admin)",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Subject (e.g., agent:dev)",
+      "description": "Permission/relation to check",
       "type": "string"
     }
   },
-  "required": [
-    "object",
-    "permission",
-    "subject"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -34907,28 +34817,160 @@ export const PermissionsCheckReturnSchema = {
     "allowed": {
       "type": "boolean"
     },
-    "object": {
+    "decision": {
       "additionalProperties": false,
       "properties": {
-        "id": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "contextId": {
           "type": "string"
         },
-        "raw": {
+        "decision": {
+          "enum": [
+            "allow",
+            "deny",
+            "needs_approval",
+            "not_applicable"
+          ],
           "type": "string"
         },
-        "type": {
+        "durationMs": {
+          "type": "number"
+        },
+        "evidence": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "objectId": {
+                "type": "string"
+              },
+              "objectType": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "providerId": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "objectId": {
           "type": "string"
+        },
+        "objectType": {
+          "type": "string"
+        },
+        "permission": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "providerVersion": {
+          "type": "string"
+        },
+        "reasonCode": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "subject": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
         }
       },
       "required": [
-        "raw",
-        "type",
-        "id"
+        "decision",
+        "allowed",
+        "providerId",
+        "providerVersion",
+        "reasonCode",
+        "permission",
+        "objectType",
+        "objectId"
       ],
       "type": "object"
-    },
-    "permission": {
+    }
+  },
+  "required": [
+    "allowed",
+    "decision"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.materialize`. */
+export const PermissionsMaterializeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "subjectId": {
+      "description": "Subject id",
       "type": "string"
+    },
+    "subjectType": {
+      "description": "Subject type",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.materialize`. */
+export const PermissionsMaterializeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
     "subject": {
       "additionalProperties": false,
@@ -34936,15 +34978,11 @@ export const PermissionsCheckReturnSchema = {
         "id": {
           "type": "string"
         },
-        "raw": {
-          "type": "string"
-        },
         "type": {
           "type": "string"
         }
       },
       "required": [
-        "raw",
         "type",
         "id"
       ],
@@ -34953,1583 +34991,95 @@ export const PermissionsCheckReturnSchema = {
   },
   "required": [
     "subject",
-    "permission",
-    "object",
-    "allowed"
+    "capabilities"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `permissions.clear`. */
-export const PermissionsClearInputSchema = {
+/** JSON Schema for the input body of `permissions.status`. */
+export const PermissionsStatusInputSchema = {
   "additionalProperties": false,
-  "properties": {
-    "all": {
-      "description": "Clear ALL relations (including config)",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.clear`. */
-export const PermissionsClearReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "status": {
-      "const": "cleared",
-      "type": "string"
-    },
-    "target": {
-      "additionalProperties": {},
-      "properties": {
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "target",
-    "changedCount",
-    "status"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.explain`. */
-export const PermissionsExplainInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "actor": {
-      "description": "Actor principal, e.g. contact:luis",
-      "type": "string"
-    },
-    "agent": {
-      "description": "Executor agent id or agent:<id>",
-      "type": "string"
-    },
-    "broad": {
-      "description": "Allow wildcard recommendations in output",
-      "type": "boolean"
-    },
-    "chat": {
-      "description": "Surface chat id or chat:<id>",
-      "type": "string"
-    },
-    "denial": {
-      "description": "Reconstruct and re-evaluate a recorded denial",
-      "type": "string"
-    },
-    "object": {
-      "description": "Object to explain (e.g., group:sessions_info)",
-      "type": "string"
-    },
-    "relation": {
-      "description": "Relation to explain (e.g., execute, use)",
-      "type": "string"
-    },
-    "session": {
-      "description": "Session key/name for context",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.explain`. */
-export const PermissionsExplainReturnSchema = {
-  "additionalProperties": {},
   "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `permissions.grant`. */
-export const PermissionsGrantInputSchema = {
+/** JSON Schema for the return shape of `permissions.status`. */
+export const PermissionsStatusReturnSchema = {
   "additionalProperties": false,
   "properties": {
-    "expiresAt": {
-      "description": "Temporary grant expiration as ISO time or epoch seconds",
-      "type": "string"
-    },
-    "object": {
-      "description": "Object (e.g., system:*, group:contacts, session:dev-*)",
-      "type": "string"
-    },
-    "permanent": {
-      "description": "Create an explicit permanent grant",
-      "type": "boolean"
-    },
-    "reason": {
-      "description": "Reason stored with the grant",
-      "type": "string"
-    },
-    "relation": {
-      "description": "Relation (e.g., admin, access, execute, write_contacts)",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Subject (e.g., agent:dev)",
-      "type": "string"
-    },
-    "ttl": {
-      "description": "Temporary grant TTL (default: 1h; examples: 15m, 2h, 7d)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "object",
-    "relation",
-    "subject"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.grant`. */
-export const PermissionsGrantReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "relation": {
-      "additionalProperties": {},
-      "properties": {
-        "active": {
-          "type": "boolean"
-        },
-        "expiresAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "grantMode": {
-          "enum": [
-            "temporary",
-            "permanent"
-          ],
-          "type": "string"
-        },
-        "id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            }
-          ]
-        },
-        "issuedBy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "object": {
-          "type": "string"
-        },
-        "objectId": {
-          "type": "string"
-        },
-        "objectMembers": {
-          "items": {
+    "authorizationProviders": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
             "type": "string"
           },
-          "type": "array"
-        },
-        "objectType": {
-          "type": "string"
-        },
-        "reason": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "relation": {
-          "type": "string"
-        },
-        "revocationBatchId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "revokedAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "source": {
-          "type": "string"
-        },
-        "subject": {
-          "type": "string"
-        },
-        "subjectId": {
-          "type": "string"
-        },
-        "subjectType": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "subjectType",
-        "subjectId",
-        "subject",
-        "relation",
-        "objectType",
-        "objectId",
-        "object"
-      ],
-      "type": "object"
-    },
-    "status": {
-      "const": "granted",
-      "type": "string"
-    },
-    "target": {
-      "additionalProperties": {},
-      "properties": {
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "type": "object"
-    },
-    "warnings": {
-      "items": {
-        "additionalProperties": {},
-        "propertyNames": {
-          "type": "string"
-        },
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "target",
-    "changedCount",
-    "status",
-    "relation",
-    "warnings"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.init`. */
-export const PermissionsInitInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "expiresAt": {
-      "description": "Temporary grant expiration as ISO time or epoch seconds",
-      "type": "string"
-    },
-    "permanent": {
-      "description": "Create explicit permanent grants",
-      "type": "boolean"
-    },
-    "reason": {
-      "description": "Reason stored with the grants",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Subject (e.g., agent:dev)",
-      "type": "string"
-    },
-    "template": {
-      "description": "Template: sdk-tools, all-tools, safe-executables, full-access, tool-groups",
-      "type": "string"
-    },
-    "ttl": {
-      "description": "Temporary grant TTL (default: 1h; examples: 15m, 2h, 7d)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "subject",
-    "template"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.init`. */
-export const PermissionsInitReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "relations": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {
-          "active": {
+          "required": {
             "type": "boolean"
           },
-          "expiresAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "grantMode": {
-            "enum": [
-              "temporary",
-              "permanent"
-            ],
-            "type": "string"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              }
-            ]
-          },
-          "issuedBy": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "object": {
-            "type": "string"
-          },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "objectType": {
-            "type": "string"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "relation": {
-            "type": "string"
-          },
-          "revocationBatchId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "revokedAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
+          "version": {
             "type": "string"
           }
         },
         "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
+          "id",
+          "version",
+          "required"
         ],
         "type": "object"
       },
       "type": "array"
     },
-    "status": {
-      "const": "applied",
-      "type": "string"
-    },
-    "target": {
-      "additionalProperties": {},
-      "properties": {
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "target",
-    "changedCount",
-    "status",
-    "relations"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.legacy`. */
-export const PermissionsLegacyInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "apply": {
-      "description": "Revoke the selected legacy grants. Requires --confirm legacy-cleanup.",
-      "type": "boolean"
-    },
-    "breakGlass": {
-      "description": "Explicitly allow high-impact cleanup after reviewing blast radius",
-      "type": "boolean"
-    },
-    "confirm": {
-      "description": "Required with --apply; must be exactly legacy-cleanup",
-      "type": "string"
-    },
-    "includeSpecific": {
-      "description": "Also include object-specific manual permanent grants, not only wildcards/patterns",
-      "type": "boolean"
-    },
-    "limit": {
-      "description": "Maximum number of candidate grants to include/apply in this run",
-      "type": "string"
-    },
-    "maxZeroSubjects": {
-      "description": "Maximum subjects allowed to lose all active grants before requiring --break-glass (default: 5)",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Limit cleanup to one subject, e.g. agent:dev or chat:chat_id",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.legacy`. */
-export const PermissionsLegacyReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.list`. */
-export const PermissionsListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "all": {
-      "description": "Include expired and revoked relations",
-      "type": "boolean"
-    },
-    "limit": {
-      "description": "Page size (default: 50, max: 500)",
-      "type": "string"
-    },
-    "object": {
-      "description": "Filter by object (e.g., group:contacts)",
-      "type": "string"
-    },
-    "offset": {
-      "description": "Number of matching relations to skip (default: 0)",
-      "type": "string"
-    },
-    "relation": {
-      "description": "Filter by relation",
-      "type": "string"
-    },
-    "source": {
-      "description": "Filter by source (config|manual)",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Filter by subject (e.g., agent:dev)",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.list`. */
-export const PermissionsListReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "filter": {
-      "additionalProperties": {},
-      "properties": {
-        "includeInactive": {
-          "type": "boolean"
-        },
-        "objectId": {
-          "type": "string"
-        },
-        "objectType": {
-          "type": "string"
-        },
-        "relation": {
-          "type": "string"
-        },
-        "source": {
-          "type": "string"
-        },
-        "subjectId": {
-          "type": "string"
-        },
-        "subjectType": {
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "items": {
+    "capabilityMaterializers": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "active": {
+          "id": {
+            "type": "string"
+          },
+          "required": {
             "type": "boolean"
           },
-          "expiresAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "grantMode": {
-            "enum": [
-              "temporary",
-              "permanent"
-            ],
-            "type": "string"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              }
-            ]
-          },
-          "issuedBy": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "object": {
-            "type": "string"
-          },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "objectType": {
-            "type": "string"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "relation": {
-            "type": "string"
-          },
-          "revocationBatchId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "revokedAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
+          "version": {
             "type": "string"
           }
         },
         "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
+          "id",
+          "version",
+          "required"
         ],
         "type": "object"
       },
       "type": "array"
     },
-    "pagination": {
+    "mutationCommands": {
       "additionalProperties": false,
       "properties": {
-        "hasMore": {
+        "enabled": {
+          "const": false,
           "type": "boolean"
         },
-        "limit": {
-          "type": "number"
-        },
-        "nextCommand": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "nextOffset": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "offset": {
-          "type": "number"
-        },
-        "returned": {
-          "type": "number"
-        },
-        "total": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "limit",
-        "offset",
-        "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
-      ],
-      "type": "object"
-    },
-    "relations": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "expiresAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "grantMode": {
-            "enum": [
-              "temporary",
-              "permanent"
-            ],
-            "type": "string"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              }
-            ]
-          },
-          "issuedBy": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "object": {
-            "type": "string"
-          },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "objectType": {
-            "type": "string"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "relation": {
-            "type": "string"
-          },
-          "revocationBatchId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "revokedAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "total": {
-      "type": "number"
-    }
-  },
-  "required": [
-    "total",
-    "pagination",
-    "filter",
-    "items",
-    "relations"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.policies.apply`. */
-export const PermissionsPoliciesApplyInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "dir": {
-      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
-      "type": "string"
-    },
-    "policy": {
-      "description": "Optional policy id",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.policies.apply`. */
-export const PermissionsPoliciesApplyReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.policies.dry-run`. */
-export const PermissionsPoliciesDryRunInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "dir": {
-      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
-      "type": "string"
-    },
-    "policy": {
-      "description": "Optional policy id",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.policies.dry-run`. */
-export const PermissionsPoliciesDryRunReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.policies.explain`. */
-export const PermissionsPoliciesExplainInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "asset": {
-      "description": "Asset selector, e.g. contact:c1 or chat:chat_id",
-      "type": "string"
-    },
-    "dir": {
-      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "asset"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.policies.explain`. */
-export const PermissionsPoliciesExplainReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.policies.list`. */
-export const PermissionsPoliciesListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "dir": {
-      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
-      "type": "string"
-    },
-    "limit": {
-      "description": "Page size (default: 50, max: 500)",
-      "type": "string"
-    },
-    "offset": {
-      "description": "Number of policies to skip (default: 0)",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.policies.list`. */
-export const PermissionsPoliciesListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.policies.reconcile`. */
-export const PermissionsPoliciesReconcileInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "dir": {
-      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
-      "type": "string"
-    },
-    "policy": {
-      "description": "Optional policy id",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.policies.reconcile`. */
-export const PermissionsPoliciesReconcileReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.policies.show`. */
-export const PermissionsPoliciesShowInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "dir": {
-      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
-      "type": "string"
-    },
-    "policy": {
-      "description": "Policy id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "policy"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.policies.show`. */
-export const PermissionsPoliciesShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.policies.validate`. */
-export const PermissionsPoliciesValidateInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "dir": {
-      "description": "Policy directory (default: $RAVI_STATE_DIR/permission-policies)",
-      "type": "string"
-    },
-    "policy": {
-      "description": "Optional policy id",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.policies.validate`. */
-export const PermissionsPoliciesValidateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.prune-revoked`. */
-export const PermissionsPruneRevokedInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "apply": {
-      "description": "Delete the matched revoked relations. Requires --confirm prune-revoked.",
-      "type": "boolean"
-    },
-    "confirm": {
-      "description": "Required with --apply; must be exactly prune-revoked",
-      "type": "string"
-    },
-    "olderThanDays": {
-      "description": "Only prune relations revoked at least N days ago (default: 90)",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.prune-revoked`. */
-export const PermissionsPruneRevokedReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.restore-batch`. */
-export const PermissionsRestoreBatchInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "apply": {
-      "description": "Restore the batch. Requires --confirm restore-revocation.",
-      "type": "boolean"
-    },
-    "batch": {
-      "description": "Revocation batch id. Use --revoked-at only for legacy timestamp fallback.",
-      "type": "string"
-    },
-    "confirm": {
-      "description": "Required with --apply; must be exactly restore-revocation",
-      "type": "string"
-    },
-    "revokedAt": {
-      "description": "Interpret the batch argument as a legacy revoked_at timestamp",
-      "type": "boolean"
-    },
-    "subject": {
-      "description": "Restore only this subject's revoked grants in the batch, e.g. agent:dev or chat:chat_id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "batch"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.restore-batch`. */
-export const PermissionsRestoreBatchReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.revoke`. */
-export const PermissionsRevokeInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "object": {
-      "description": "Object (e.g., system:*, group:contacts)",
-      "type": "string"
-    },
-    "relation": {
-      "description": "Relation",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Subject (e.g., agent:dev)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "object",
-    "relation",
-    "subject"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.revoke`. */
-export const PermissionsRevokeReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "relation": {
-      "additionalProperties": {},
-      "properties": {
-        "active": {
-          "type": "boolean"
-        },
-        "expiresAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "grantMode": {
-          "enum": [
-            "temporary",
-            "permanent"
-          ],
-          "type": "string"
-        },
-        "id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            }
-          ]
-        },
-        "issuedBy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "object": {
-          "type": "string"
-        },
-        "objectId": {
-          "type": "string"
-        },
-        "objectMembers": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "objectType": {
-          "type": "string"
-        },
-        "reason": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "relation": {
-          "type": "string"
-        },
-        "revocationBatchId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "revokedAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "source": {
-          "type": "string"
-        },
-        "subject": {
-          "type": "string"
-        },
-        "subjectId": {
-          "type": "string"
-        },
-        "subjectType": {
+        "message": {
           "type": "string"
         }
       },
       "required": [
-        "subjectType",
-        "subjectId",
-        "subject",
-        "relation",
-        "objectType",
-        "objectId",
-        "object"
+        "enabled",
+        "message"
       ],
       "type": "object"
-    },
-    "remainingIndividualRelations": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "expiresAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "grantMode": {
-            "enum": [
-              "temporary",
-              "permanent"
-            ],
-            "type": "string"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              }
-            ]
-          },
-          "issuedBy": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "object": {
-            "type": "string"
-          },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "objectType": {
-            "type": "string"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "relation": {
-            "type": "string"
-          },
-          "revocationBatchId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "revokedAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
-        ],
-        "type": "object"
-      },
-      "type": "array"
     },
     "status": {
-      "const": "revoked",
+      "const": "provider-runtime",
       "type": "string"
-    },
-    "target": {
-      "additionalProperties": {},
-      "properties": {
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "type": "object"
     }
   },
   "required": [
-    "target",
-    "changedCount",
     "status",
-    "relation",
-    "remainingIndividualRelations"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.sync`. */
-export const PermissionsSyncInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.sync`. */
-export const PermissionsSyncReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "relations": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "expiresAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "grantMode": {
-            "enum": [
-              "temporary",
-              "permanent"
-            ],
-            "type": "string"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              }
-            ]
-          },
-          "issuedBy": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "object": {
-            "type": "string"
-          },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "objectType": {
-            "type": "string"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "relation": {
-            "type": "string"
-          },
-          "revocationBatchId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "revokedAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "status": {
-      "const": "synced",
-      "type": "string"
-    },
-    "target": {
-      "additionalProperties": {},
-      "properties": {
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "target",
-    "changedCount",
-    "status",
-    "relations"
+    "mutationCommands",
+    "authorizationProviders",
+    "capabilityMaterializers"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -52586,6 +51136,1125 @@ export const WhatsappGroupSettingsInputSchema = {
 export const WhatsappGroupSettingsReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `work-objects.action`. */
+export const WorkObjectsActionInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "actionId": {
+      "description": "Action id, e.g. task.comment",
+      "type": "string"
+    },
+    "id": {
+      "description": "External reference id",
+      "type": "string"
+    },
+    "type": {
+      "description": "External reference type, e.g. task",
+      "type": "string"
+    },
+    "value": {
+      "description": "Optional action value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "actionId",
+    "id",
+    "type"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `work-objects.action`. */
+export const WorkObjectsActionReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "object": {
+          "additionalProperties": false,
+          "properties": {
+            "actions": {
+              "additionalProperties": false,
+              "properties": {
+                "overflowActions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessibilityLabel": {
+                        "type": "string"
+                      },
+                      "actionId": {
+                        "type": "string"
+                      },
+                      "processingState": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "interstitialText": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "enabled"
+                        ],
+                        "type": "object"
+                      },
+                      "style": {
+                        "enum": [
+                          "primary",
+                          "danger"
+                        ],
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "primaryActions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessibilityLabel": {
+                        "type": "string"
+                      },
+                      "actionId": {
+                        "type": "string"
+                      },
+                      "processingState": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "interstitialText": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "enabled"
+                        ],
+                        "type": "object"
+                      },
+                      "style": {
+                        "enum": [
+                          "primary",
+                          "danger"
+                        ],
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "attributes": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "customFields": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "edit": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "long": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "label",
+                  "key"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "description": {
+              "type": "string"
+            },
+            "displayId": {
+              "type": "string"
+            },
+            "displayOrder": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "displayType": {
+              "type": "string"
+            },
+            "entityType": {
+              "type": "string"
+            },
+            "externalRef": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            },
+            "fields": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "edit": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "long": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                },
+                "type": "object"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "metadataLastModified": {
+              "type": "number"
+            },
+            "productIconUrl": {
+              "type": "string"
+            },
+            "productName": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url",
+            "externalRef",
+            "title"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "providerId",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `work-objects.resolve`. */
+export const WorkObjectsResolveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "External reference id",
+      "type": "string"
+    },
+    "target": {
+      "description": "URL or object id",
+      "type": "string"
+    },
+    "type": {
+      "description": "External reference type, e.g. task",
+      "type": "string"
+    },
+    "url": {
+      "description": "Object URL to resolve",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `work-objects.resolve`. */
+export const WorkObjectsResolveReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "additionalProperties": false,
+          "properties": {
+            "overflowActions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "accessibilityLabel": {
+                    "type": "string"
+                  },
+                  "actionId": {
+                    "type": "string"
+                  },
+                  "processingState": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "interstitialText": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "enabled"
+                    ],
+                    "type": "object"
+                  },
+                  "style": {
+                    "enum": [
+                      "primary",
+                      "danger"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "primaryActions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "accessibilityLabel": {
+                    "type": "string"
+                  },
+                  "actionId": {
+                    "type": "string"
+                  },
+                  "processingState": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "interstitialText": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "enabled"
+                    ],
+                    "type": "object"
+                  },
+                  "style": {
+                    "enum": [
+                      "primary",
+                      "danger"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "attributes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "customFields": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "edit": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "long": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "label",
+              "key"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "displayId": {
+          "type": "string"
+        },
+        "displayOrder": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "displayType": {
+          "type": "string"
+        },
+        "entityType": {
+          "type": "string"
+        },
+        "externalRef": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "fields": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "edit": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              },
+              "long": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string"
+              },
+              "value": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "type": "object"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "metadataLastModified": {
+          "type": "number"
+        },
+        "productIconUrl": {
+          "type": "string"
+        },
+        "productName": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "externalRef",
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "providerId",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `work-objects.suggest`. */
+export const WorkObjectsSuggestInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fieldId": {
+      "description": "Field id, e.g. status",
+      "type": "string"
+    },
+    "id": {
+      "description": "External reference id",
+      "type": "string"
+    },
+    "query": {
+      "description": "Optional suggestion filter",
+      "type": "string"
+    },
+    "type": {
+      "description": "External reference type, e.g. task",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fieldId",
+    "id",
+    "type"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `work-objects.suggest`. */
+export const WorkObjectsSuggestReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "type": "string"
+    },
+    "result": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "value"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "providerId",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `work-objects.update`. */
+export const WorkObjectsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "External reference id",
+      "type": "string"
+    },
+    "revision": {
+      "description": "Optional optimistic revision",
+      "type": "string"
+    },
+    "type": {
+      "description": "External reference type, e.g. task",
+      "type": "string"
+    },
+    "values": {
+      "description": "Patch values as JSON object",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "type"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `work-objects.update`. */
+export const WorkObjectsUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "fieldErrors": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "formError": {
+          "type": "string"
+        },
+        "object": {
+          "additionalProperties": false,
+          "properties": {
+            "actions": {
+              "additionalProperties": false,
+              "properties": {
+                "overflowActions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessibilityLabel": {
+                        "type": "string"
+                      },
+                      "actionId": {
+                        "type": "string"
+                      },
+                      "processingState": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "interstitialText": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "enabled"
+                        ],
+                        "type": "object"
+                      },
+                      "style": {
+                        "enum": [
+                          "primary",
+                          "danger"
+                        ],
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "primaryActions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessibilityLabel": {
+                        "type": "string"
+                      },
+                      "actionId": {
+                        "type": "string"
+                      },
+                      "processingState": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "interstitialText": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "enabled"
+                        ],
+                        "type": "object"
+                      },
+                      "style": {
+                        "enum": [
+                          "primary",
+                          "danger"
+                        ],
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "attributes": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "customFields": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "edit": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "long": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "label",
+                  "key"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "description": {
+              "type": "string"
+            },
+            "displayId": {
+              "type": "string"
+            },
+            "displayOrder": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "displayType": {
+              "type": "string"
+            },
+            "entityType": {
+              "type": "string"
+            },
+            "externalRef": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            },
+            "fields": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "edit": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "long": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                },
+                "type": "object"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "metadataLastModified": {
+              "type": "number"
+            },
+            "productIconUrl": {
+              "type": "string"
+            },
+            "productName": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url",
+            "externalRef",
+            "title"
+          ],
+          "type": "object"
+        },
+        "revision": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "providerId",
+    "result"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

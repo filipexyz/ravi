@@ -18,6 +18,20 @@ class DemoCommands {
   child(@Arg("id") _id: string) {}
 }
 
+@Group({ name: "plural", description: "Plural root", scope: "open", aliases: ["singular"] })
+class GroupAliasCommands {
+  @Command({ name: "show", description: "Show alias target" })
+  @CommandAccess({ kind: "read", resource: "plural", action: "show", risk: "low" })
+  show() {}
+}
+
+@Group({ name: "internal", description: "Internal commands", scope: "open", hidden: true })
+class HiddenGroupCommands {
+  @Command({ name: "debug", description: "Hidden debug command" })
+  @CommandAccess({ kind: "read", resource: "internal", action: "debug", risk: "low" })
+  debug() {}
+}
+
 interface CapturedCall {
   id: string;
   json: boolean | undefined;
@@ -55,6 +69,23 @@ describe("registerCommands", () => {
 
     expect(child).toBeDefined();
     expect(child?.commands.some((command) => command.name() === "show")).toBe(true);
+  });
+
+  it("registers aliases on command groups", () => {
+    const program = new CommanderCommand();
+
+    registerCommands(program, [GroupAliasCommands]);
+
+    const plural = program.commands.find((command) => command.name() === "plural");
+    expect(plural?.aliases()).toContain("singular");
+  });
+
+  it("skips hidden command groups", () => {
+    const program = new CommanderCommand();
+
+    registerCommands(program, [HiddenGroupCommands]);
+
+    expect(program.commands.some((command) => command.name() === "internal")).toBe(false);
   });
 
   describe("dotted groups colliding with same-named direct command", () => {

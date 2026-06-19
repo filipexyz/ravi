@@ -12,6 +12,7 @@ type AgentLike = {
   model?: string;
   provider?: string;
   remote?: string;
+  defaults?: Record<string, unknown> | null;
 };
 
 type SessionLike = {
@@ -247,6 +248,172 @@ describe("AgentsCommands set model validation", () => {
     );
 
     expect(createAgentCalls).toHaveLength(0);
+  });
+});
+
+describe("AgentsCommands permissions", () => {
+  beforeEach(() => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev" };
+    allAgents = [];
+    createAgentCalls = [];
+    updateAgentCalls = [];
+    resolvedSession = null;
+    mainSession = null;
+    sessionsByAgent = [];
+    transcriptPath = null;
+    instructionStates.clear();
+  });
+
+  it("sets a provider-runtime full-access profile on agent defaults", () => {
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logCalls.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      const payload = commands.permissions("dev", "full-access", undefined, true);
+
+      expect(payload).toMatchObject({
+        action: "permissions",
+        changed: true,
+        agentId: "dev",
+        after: { profile: "full-access" },
+        defaults: { runtimePermissions: { profile: "full-access" } },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: { defaults: { runtimePermissions: { profile: "full-access" } } },
+      },
+    ]);
+  });
+
+  it("can show the current provider-runtime permission profile without mutating", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: { runtimePermissions: { profile: "full-access" } },
+    };
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logCalls.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      const payload = commands.permissions("dev", undefined, undefined, true);
+
+      expect(payload).toMatchObject({
+        action: "permissions",
+        changed: false,
+        agentId: "dev",
+        profile: "full-access",
+        runtimePermissions: { profile: "full-access" },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(updateAgentCalls).toEqual([]);
+  });
+
+  it("clears provider-runtime permissions from agent defaults", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: { runtimePermissions: { profile: "full-access" } },
+    };
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logCalls.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      const payload = commands.permissions("dev", "none", undefined, true);
+
+      expect(payload).toMatchObject({
+        action: "permissions",
+        changed: true,
+        agentId: "dev",
+        before: { profile: "full-access" },
+        after: null,
+        defaults: null,
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: { defaults: null },
+      },
+    ]);
+  });
+
+  it("clears explicit runtime capabilities while preserving profile", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: {
+        runtimePermissions: {
+          profile: "bootstrap",
+          capabilities: ["execute:executable:omni"],
+        },
+      },
+    };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = commands.permissions("dev", undefined, undefined, true, true);
+
+      expect(payload).toMatchObject({
+        action: "permissions",
+        changed: true,
+        agentId: "dev",
+        before: { profile: "bootstrap", capabilities: [{ permission: "execute", objectType: "executable" }] },
+        after: { profile: "bootstrap" },
+        defaults: { runtimePermissions: { profile: "bootstrap" } },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: { defaults: { runtimePermissions: { profile: "bootstrap" } } },
+      },
+    ]);
+  });
+
+  it("rejects combining explicit runtime capabilities with clear-capabilities", () => {
+    const commands = new AgentsCommands();
+
+    expect(() => commands.permissions("dev", undefined, "execute:executable:omni", true, true)).toThrow(
+      "Use either --capabilities or --clear-capabilities, not both",
+    );
+    expect(updateAgentCalls).toEqual([]);
+  });
+
+  it("rejects unknown runtime permission profiles", () => {
+    const commands = new AgentsCommands();
+
+    expect(() => commands.permissions("dev", "superuser", undefined, true)).toThrow(
+      "Invalid runtime permission profile: superuser",
+    );
+    expect(updateAgentCalls).toEqual([]);
   });
 });
 

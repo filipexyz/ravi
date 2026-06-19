@@ -228,7 +228,11 @@ function buildDelegatedRuntimeContextInput(options: {
   const actorDisplayName = cleanStringValue(actorMetadata?.senderName);
   const surfaceDisplayName = cleanStringValue(actorMetadata?.groupName);
   const actorCapabilities = actorPrincipal
-    ? materializeSubjectCapabilities(actorPrincipal.subjectType, actorPrincipal.subjectId)
+    ? materializeSubjectCapabilities(
+        actorPrincipal.subjectType,
+        actorPrincipal.subjectId,
+        actorPrincipal.subjectType === "automation" ? { executorAgentId: options.agentId } : {},
+      )
     : [];
   const surfaceCapabilities = surfacePrincipal
     ? materializeSubjectCapabilities(surfacePrincipal.subjectType, surfacePrincipal.subjectId, { includeRoles: false })

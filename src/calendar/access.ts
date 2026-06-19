@@ -5,6 +5,7 @@ import {
   localOperatorCan,
   type PermissionProvider,
 } from "../permissions/provider-runtime.js";
+import { parseAuthorityPrincipal } from "../permissions/delegation.js";
 import { getScopeContext, type ScopeContext } from "../permissions/scope.js";
 import { listCalendarMembers } from "./db.js";
 import type { CalendarCalendar, CalendarMemberRelation } from "./types.js";
@@ -13,6 +14,10 @@ export type CalendarPermission = "read" | "search" | "free-busy" | "write" | "re
 export type CalendarProviderPermission = "sync" | "manage";
 export type CalendarScopeContext = ScopeContext;
 export type CalendarAccessLevel = "read" | "free-busy" | "none";
+export interface CalendarSubject {
+  type: string;
+  id: string;
+}
 
 export function getCalendarScopeContext(): CalendarScopeContext {
   return getScopeContext();
@@ -24,7 +29,7 @@ export function canUseCalendar(
   calendar: Pick<CalendarCalendar, "id" | "name" | "providerCalendarId" | "visibility" | "ownerType" | "ownerId">,
 ): boolean {
   if (!ctx.agentId) return localOperatorCan(permission, "calendar", calendar.id);
-  if (calendar.ownerType === "agent" && calendar.ownerId === ctx.agentId) return true;
+  if (calendarScopeSubjects(ctx).some((subject) => calendarSubjectOwnsCalendar(subject, calendar))) return true;
   if (
     calendar.visibility === "public" &&
     (permission === "read" || permission === "search" || permission === "free-busy")
@@ -65,6 +70,43 @@ export function calendarAccessLevel(
   return "none";
 }
 
+export function calendarScopeSubjects(ctx: CalendarScopeContext): CalendarSubject[] {
+  const subjects: CalendarSubject[] = [];
+  const metadata = ctx.context?.metadata ?? {};
+  const actorPrincipal = parseAuthorityPrincipal(metadata.actorPrincipal);
+
+  if (actorPrincipal) {
+    subjects.push({ type: actorPrincipal.subjectType, id: actorPrincipal.subjectId });
+  }
+
+  const actorType = stringMetadata(metadata, "actorType");
+  const contactId = stringMetadata(metadata, "contactId");
+  if (actorType === "contact" && contactId) {
+    subjects.push({ type: "contact", id: contactId });
+  }
+
+  const legacyEnvContactId = ctx.context ? null : stringEnv("RAVI_CONTACT_ID");
+  if (legacyEnvContactId) {
+    subjects.push({ type: "contact", id: legacyEnvContactId });
+  }
+
+  if (ctx.agentId) {
+    subjects.push({ type: "agent", id: ctx.agentId });
+  }
+
+  return dedupeCalendarSubjects(subjects);
+}
+
+export function resolveDefaultCalendarOwnerSubject(ctx: CalendarScopeContext): CalendarSubject {
+  const subjects = calendarScopeSubjects(ctx);
+  return (
+    subjects.find((subject) => subject.type === "contact") ??
+    subjects.find((subject) => subject.type === "agent") ??
+    subjects.find((subject) => subject.type === "system") ??
+    subjects[0] ?? { type: "system", id: "ravi" }
+  );
+}
+
 function hasDetailCalendarAccess(
   ctx: CalendarScopeContext,
   calendar: Pick<CalendarCalendar, "id" | "name" | "providerCalendarId" | "visibility" | "ownerType" | "ownerId">,
@@ -90,16 +132,27 @@ function canWithCalendarMembershipProvider(
   permission: string,
   calendar: Pick<CalendarCalendar, "id" | "name" | "providerCalendarId">,
 ): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "calendar", calendar.id);
-  return authorizePermission(
-    {
-      subject: { type: "agent", id: ctx.agentId },
-      permission,
-      objectType: "calendar",
-      objectId: calendar.id,
-    },
-    { providers: [calendarMembershipProvider(calendar)] },
-  ).allowed;
+  const subjects = calendarScopeSubjects(ctx);
+  if (subjects.length === 0 && !ctx.agentId) return localOperatorCan(permission, "calendar", calendar.id);
+  return subjects.some(
+    (subject) =>
+      authorizePermission(
+        {
+          subject,
+          permission,
+          objectType: "calendar",
+          objectId: calendar.id,
+        },
+        { providers: [calendarMembershipProvider(calendar)] },
+      ).allowed,
+  );
+}
+
+function calendarSubjectOwnsCalendar(
+  subject: CalendarSubject,
+  calendar: Pick<CalendarCalendar, "ownerType" | "ownerId">,
+): boolean {
+  return calendar.ownerType === subject.type && calendar.ownerId === subject.id;
 }
 
 function calendarMembershipProvider(
@@ -168,4 +221,28 @@ function calendarRelationAllows(relation: CalendarMemberRelation, permission: st
     return ["read", "search", "free-busy"].includes(permission);
   }
   return relation === "free_busy" && permission === "free-busy";
+}
+
+function stringMetadata(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function stringEnv(key: string): string | null {
+  const value = process.env[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function dedupeCalendarSubjects(subjects: CalendarSubject[]): CalendarSubject[] {
+  const seen = new Set<string>();
+  return subjects.filter((subject) => {
+    const key = `${subject.type}:${subject.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

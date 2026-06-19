@@ -105,7 +105,7 @@ export interface AgentConfig {
   remoteUser?: string;
 
   /** Generic key-value defaults for CLI tools and agent-scoped extensions (e.g., context guardians) */
-  defaults?: Record<string, unknown>;
+  defaults?: Record<string, unknown> | null;
 }
 
 // ============================================================================

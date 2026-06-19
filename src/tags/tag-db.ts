@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { revokePolicyMaterializationsForSelector } from "../permissions/policy-materialization-revocation.js";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import {
   TAG_ASSET_TYPES,
@@ -705,9 +704,6 @@ export function dbDeleteTagBinding(input: {
         ...(previous.updatedBy ? { updatedBy: previous.updatedBy } : {}),
       },
     });
-    if (slug.startsWith("policy.")) {
-      revokePolicyMaterializationsForSelector({ assetType, assetId, tagSlug: slug });
-    }
   }
 
   return result.changes > 0;

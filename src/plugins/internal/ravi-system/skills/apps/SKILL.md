@@ -6,7 +6,7 @@ description: |
   - Criar scaffold de um novo Ravi App
   - Entender interfaces CLI, SDK, UI, tool e stream de um app
   - Usar operations, storage, events, artifacts, skills e health checks declarados em ravi.app.json
-  - Ensinar agentes a operar apps via `ravi apps`
+  - Ensinar agentes a operar apps via `ravi <app-id> <operation>`
 ---
 
 # Ravi Apps
@@ -17,7 +17,7 @@ Um app e uma unidade operacional com manifesto, interfaces, operations, permisso
 storage, events, skills e health checks. O manifesto e metadata declarativa; ele
 nao concede permissao e discovery/check nao executam codigo do app.
 
-## Comandos Canonicos
+## Comandos De Registry
 
 ```bash
 ravi apps list --json
@@ -28,6 +28,16 @@ ravi apps scaffold <app-id> --dry-run --json
 ravi apps guide [app-id] --json
 ravi apps prompts [app-id] --json
 ```
+
+Esses comandos gerenciam o registry/manifest. Para operar o app no dia a dia,
+prefira sempre:
+
+```bash
+ravi <app-id> <operation> --json
+```
+
+Use `ravi apps run <app-id> <operation> --json` apenas como fallback/debug
+quando houver colisao com comando estatico ou quando estiver testando o router.
 
 ## Fluxo Para Operar Um App
 
@@ -58,6 +68,12 @@ ravi apps check <app-id> --json
 - `manifest.events`: eventos emitidos/consumidos.
 - `manifest.skills`: skills que ensinam agentes a operar o app.
 - `manifest.health`: checks seguros e nao destrutivos.
+
+5. Opere pelo alias do app:
+
+```bash
+ravi <app-id> <operation> --json
+```
 
 ## Fluxo Para Criar Um App
 
@@ -91,6 +107,8 @@ ravi apps guide <app-id> --json
 ## Regras
 
 - Nao invente comandos. Use apenas operations declaradas.
+- Nao ensine agentes a usar `ravi apps run` como caminho normal do app; use `ravi <app-id> <operation>`.
+- Operations com caminho pontuado podem ser chamadas em CLI como tokens separados quando declaradas. Exemplo: `app.test.a` pode ser invocado como `ravi app test a`.
 - Nao raspe stdout quando houver JSON.
 - Nao execute health checks durante discovery.
 - Nao use manifesto como grant de permissao.

@@ -98,6 +98,7 @@ export function importCliApp(options: RaviAppImportCliOptions): RaviAppImportCli
   });
   const appSlug = id.replace(/\//g, "-");
   const operationPrefix = id.replace(/\//g, ".");
+  const appCommand = `ravi ${id.split("/").join(" ")}`;
   const name = options.name?.trim() || metadata.name || titleFromAppId(id);
   const description = options.description?.trim() || metadata.description || `Operate ${sourceCommand} as a Ravi App.`;
   const skill = options.includeSkill === false ? null : `ravi-system-${appSlug}`;
@@ -107,7 +108,7 @@ export function importCliApp(options: RaviAppImportCliOptions): RaviAppImportCli
     operationPrefix,
     name,
     description,
-    command: metadata.command,
+    command: appCommand,
     candidates: metadata.candidates,
     skill,
     includeUi: options.includeUi !== false,
@@ -118,7 +119,7 @@ export function importCliApp(options: RaviAppImportCliOptions): RaviAppImportCli
     id,
     name,
     description,
-    command: metadata.command,
+    command: appCommand,
     manifest,
   });
 
@@ -379,7 +380,7 @@ function buildImportedManifest(input: {
     cli: {
       command: input.command,
       json: input.candidates.some((candidate) => candidate.json),
-      health: `ravi apps run ${input.id} check --json`,
+      health: `${input.command} check --json`,
     },
   };
   if (input.includeUi) {

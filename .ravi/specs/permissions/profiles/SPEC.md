@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: profiles
 capabilities:
-  - local-grants
+  - provider-runtime
   - roles
   - delegated-authority
   - capability-materialization
@@ -17,7 +17,7 @@ tags:
   - delegation
   - least-privilege
 applies_to:
-  - src/permissions/relations.ts
+  - src/permissions/provider-runtime.ts
   - src/permissions/delegation.ts
   - src/permissions/capability-context.ts
   - src/runtime/runtime-request-context.ts
@@ -113,16 +113,15 @@ When building a delegated runtime context, Ravi MUST:
 
 Materialized capabilities MUST include source metadata such as:
 
-- direct grant id/source;
+- provider id/source;
 - profile id;
-- membership relation;
-- surface constraint relation;
-- expiration/revocation state;
-- reason/issued_by when available.
+- membership source;
+- surface constraint source;
+- reason/issuer when available.
 
 ## App Profiles
 
-Apps MAY be exposed through direct grants or profiles.
+Apps MAY be exposed through provider-owned capabilities or profiles.
 
 Preferred app profile pattern:
 
@@ -159,11 +158,10 @@ role:trusted-dev execute executable:git
 
 Rules:
 
-- Tag-managed membership MUST be materialized into `relations`.
-- Tag-managed membership MUST default to temporary grants unless the policy
-  rule explicitly marks it permanent.
+- Tag-managed membership MUST be materialized by the tag/contact-policy
+  provider, not by a shared grants table.
 - Removing the tag and reconciling the policy MUST remove only membership
-  owned by that policy, not manual memberships.
+  owned by that policy source, not explicit agent runtime capabilities.
 - Tag-managed membership MUST compute the target role closure before
   materialization. Membership into roles containing forbidden or undeclared
   sensitive capabilities MUST fail validation or require explicit break-glass

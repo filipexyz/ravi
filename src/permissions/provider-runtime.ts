@@ -33,7 +33,7 @@ export interface AuthorizePermissionOptions {
 /**
  * The single authorization facade for Ravi runtime callers.
  *
- * Ravi core calls this provider runtime, not grant-store internals. The default
+ * Ravi core calls this provider runtime, not provider storage internals. The default
  * chain is configured by provider-registry.ts and can be replaced without
  * changing callers.
  */

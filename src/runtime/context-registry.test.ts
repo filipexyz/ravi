@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { clearRelations, grantRelation } from "../permissions/relations.js";
 import { dbCreateAgent, dbDeleteAgent, dbGetContext, getDb } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -23,7 +22,6 @@ function cleanup(): void {
   const db = getDb();
   db.prepare("DELETE FROM contexts WHERE agent_id = ?").run(TEST_AGENT_ID);
   db.prepare("DELETE FROM sessions WHERE agent_id = ?").run(TEST_AGENT_ID);
-  clearRelations({ subjectType: "agent", subjectId: TEST_AGENT_ID });
   dbDeleteAgent(TEST_AGENT_ID);
 }
 
@@ -77,7 +75,6 @@ describe("runtime context registry", () => {
   it("reuses one live agent-runtime context per agent/session and keeps the original capability snapshot", () => {
     const sessionKey = "agent:test-context-agent:main";
     createTestSession(sessionKey);
-    grantRelation("agent", TEST_AGENT_ID, "execute", "group", "context", "manual");
 
     const first = getOrCreateAgentRuntimeContext({
       agentId: TEST_AGENT_ID,
@@ -87,8 +84,6 @@ describe("runtime context registry", () => {
       metadata: { runtimeProvider: "codex", runtimeModel: "gpt-5.4" },
       source: { channel: "whatsapp", accountId: "main", chatId: "chat-1" },
     });
-
-    grantRelation("agent", TEST_AGENT_ID, "admin", "system", "*", "manual");
 
     const second = getOrCreateAgentRuntimeContext({
       agentId: TEST_AGENT_ID,
@@ -111,12 +106,7 @@ describe("runtime context registry", () => {
       objectId: "*",
       source: "runtime-bootstrap:agent",
     });
-    expect(second.capabilities).not.toContainEqual({
-      permission: "admin",
-      objectType: "system",
-      objectId: "*",
-      source: "manual",
-    });
+    expect(second.capabilities.some((capability) => capability.permission === "admin")).toBe(false);
   });
 
   it("creates a fresh agent-runtime context when the previous one is revoked or expired", () => {
@@ -183,10 +173,7 @@ describe("runtime context registry", () => {
     expect(dbGetContext(first.contextId)?.metadata?.revocationReason).toBe("session_reset_test");
   });
 
-  it("snapshots provider materialized capabilities instead of agent relations", () => {
-    grantRelation("agent", TEST_AGENT_ID, "execute", "group", "context", "manual");
-    grantRelation("agent", TEST_AGENT_ID, "access", "session", "dev-*", "manual");
-
+  it("snapshots provider materialized capabilities only", () => {
     const capabilities = snapshotAgentCapabilities(TEST_AGENT_ID);
     expect(capabilities).toContainEqual({
       permission: "use",
@@ -283,8 +270,6 @@ describe("runtime context registry", () => {
   });
 
   it("cascades revocation to descendants with a single shared revokedAt", () => {
-    grantRelation("agent", TEST_AGENT_ID, "admin", "system", "*", "manual");
-
     const parent = createRuntimeContext({
       kind: "agent-runtime",
       agentId: TEST_AGENT_ID,
@@ -328,8 +313,6 @@ describe("runtime context registry", () => {
   });
 
   it("supports --no-cascade narrow revoke that leaves descendants live", () => {
-    grantRelation("agent", TEST_AGENT_ID, "admin", "system", "*", "manual");
-
     const parent = createRuntimeContext({
       kind: "agent-runtime",
       agentId: TEST_AGENT_ID,
@@ -366,8 +349,6 @@ describe("runtime context registry", () => {
         capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
       }),
     ).toThrow("Capability not granted by parent context");
-
-    grantRelation("agent", TEST_AGENT_ID, "admin", "system", "*", "manual");
 
     expect(() =>
       issueRuntimeContext({

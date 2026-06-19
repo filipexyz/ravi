@@ -1,15 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { listPermissionDenials } from "../permissions/denials.js";
-import { grantRelation } from "../permissions/relations.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createBashPermissionHook, createToolPermissionHook, evaluateBashPermission } from "./hook.js";
-
-// Helpers
-function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
-  grantRelation(subjectType, subjectId, relation, objectType, objectId, "test");
-}
 
 function makeToolContext(agentId: string, capabilities: ContextCapability[], kind = "test-runtime"): ToolContext {
   const context: ContextRecord = {
@@ -193,7 +187,7 @@ describe("createBashPermissionHook", () => {
       expect(decision.allowed).toBe(true);
     });
 
-    it("does not honor relation-store executable grants added after a stale context was issued", () => {
+    it("keeps executable grants bounded to the issued context", () => {
       const decision = evaluateBashPermission("python3 --version", {
         agentId: "dev",
         kind: "agent-runtime",
@@ -201,16 +195,6 @@ describe("createBashPermissionHook", () => {
       });
 
       expect(decision.allowed).toBe(false);
-
-      grant("agent", "dev", "execute", "executable", "python3");
-
-      const liveGrantDecision = evaluateBashPermission("python3 --version", {
-        agentId: "dev",
-        kind: "agent-runtime",
-        capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
-      });
-
-      expect(liveGrantDecision.allowed).toBe(false);
     });
   });
 
@@ -220,7 +204,6 @@ describe("createBashPermissionHook", () => {
 
   describe("session scope", () => {
     it("blocks access to unauthorized session via ravi sessions send", async () => {
-      grant("agent", "test", "execute", "executable", "ravi");
       const result = await callBashHook("ravi sessions send main 'hello'", "test", {
         agentId: "test",
         sessionName: "test-own",
@@ -239,7 +222,6 @@ describe("createBashPermissionHook", () => {
     });
 
     it("allows access to own session", async () => {
-      grant("agent", "test", "execute", "executable", "ravi");
       const result = await callBashHook("ravi sessions send test-own 'hello'", "test", {
         agentId: "test",
         sessionName: "test-own",
@@ -248,7 +230,6 @@ describe("createBashPermissionHook", () => {
     });
 
     it("allows non-session commands without session grants", async () => {
-      grant("agent", "test", "execute", "executable", "ravi");
       const result = await callBashHook("ravi contacts list", "test", { agentId: "test" });
       expect(isDenied(result)).toBe(false);
     });
@@ -290,9 +271,12 @@ describe("createToolPermissionHook", () => {
     expect(isDenied(result)).toBe(true);
   });
 
-  it("allows SDK tool with grant", async () => {
-    grant("agent", "dev", "use", "tool", "Bash");
-    const result = await callToolHook("Bash", "dev");
+  it("allows SDK tool with context capability", async () => {
+    const result = await callToolHook(
+      "Bash",
+      "dev",
+      makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Bash" }]),
+    );
     expect(isDenied(result)).toBe(false);
   });
 
@@ -317,8 +301,11 @@ describe("createToolPermissionHook", () => {
   });
 
   it("allows with wildcard tool grant", async () => {
-    grant("agent", "dev", "use", "tool", "*");
-    const result = await callToolHook("Read", "dev");
+    const result = await callToolHook(
+      "Read",
+      "dev",
+      makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "*" }]),
+    );
     expect(isDenied(result)).toBe(false);
   });
 
@@ -343,12 +330,10 @@ describe("createToolPermissionHook", () => {
     expect(isDenied(await callToolHook("Write", "main", context))).toBe(false);
   });
 
-  it("does not expand scoped contexts from relation-store superadmin grants", async () => {
+  it("keeps scoped contexts bounded to their issued capabilities", async () => {
     const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Read" }]);
 
     expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
-
-    grant("agent", "dev", "admin", "system", "*");
 
     expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
     expect(isDenied(await callToolHook("Read", "dev", context))).toBe(false);

@@ -51,6 +51,8 @@ export interface GroupOptions {
   name: string;
   description: string;
   scope?: ScopeType;
+  aliases?: string[];
+  hidden?: boolean;
 }
 
 export interface CommandOptions {

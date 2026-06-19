@@ -1447,31 +1447,6 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name) WHERE name IS NOT NULL;
 
-    -- local-grants: Relationship-based access control
-    CREATE TABLE IF NOT EXISTS relations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      subject_type TEXT NOT NULL,
-      subject_id TEXT NOT NULL,
-      relation TEXT NOT NULL,
-      object_type TEXT NOT NULL,
-      object_id TEXT NOT NULL,
-      source TEXT NOT NULL DEFAULT 'manual',
-      grant_mode TEXT NOT NULL DEFAULT 'permanent',
-      expires_at INTEGER,
-      revoked_at INTEGER,
-      revocation_batch_id TEXT,
-      reason TEXT,
-      issued_by TEXT,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch())
-    );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_relations_unique
-      ON relations(subject_type, subject_id, relation, object_type, object_id);
-    CREATE INDEX IF NOT EXISTS idx_relations_subject
-      ON relations(subject_type, subject_id);
-    CREATE INDEX IF NOT EXISTS idx_relations_object
-      ON relations(object_type, object_id);
-
     CREATE TABLE IF NOT EXISTS permission_denials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       subject_type TEXT NOT NULL,
@@ -1496,48 +1471,6 @@ function getDb(): Database {
       ON permission_denials(subject_type, subject_id, relation, object_type, object_id, resolved_at);
     CREATE INDEX IF NOT EXISTS idx_permission_denials_session
       ON permission_denials(session_key, session_name, created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS permission_policy_rules (
-      id TEXT PRIMARY KEY,
-      version TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
-      source_path TEXT,
-      rule_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      disabled_at INTEGER
-    );
-
-    CREATE TABLE IF NOT EXISTS permission_policy_materializations (
-      id TEXT PRIMARY KEY,
-      policy_id TEXT NOT NULL,
-      policy_version TEXT NOT NULL,
-      selector_asset_type TEXT NOT NULL,
-      selector_asset_id TEXT NOT NULL,
-      tag_slug TEXT NOT NULL,
-      tag_binding_id TEXT,
-      tag_binding_source TEXT,
-      subject_type TEXT NOT NULL,
-      subject_id TEXT NOT NULL,
-      relation TEXT NOT NULL,
-      object_type TEXT NOT NULL,
-      object_id TEXT NOT NULL,
-      desired_hash TEXT NOT NULL,
-      relation_id INTEGER,
-      status TEXT NOT NULL,
-      conflict_source TEXT,
-      reason TEXT,
-      expires_at INTEGER,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      revoked_at INTEGER
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_permission_policy_materializations_policy_hash
-      ON permission_policy_materializations(policy_id, desired_hash);
-    CREATE INDEX IF NOT EXISTS idx_permission_policy_materializations_relation
-      ON permission_policy_materializations(subject_type, subject_id, relation, object_type, object_id, status);
-    CREATE INDEX IF NOT EXISTS idx_permission_policy_materializations_selector
-      ON permission_policy_materializations(selector_asset_type, selector_asset_id, tag_slug, status);
 
     -- Message metadata (transcriptions, media paths — for reply reinjection)
     CREATE TABLE IF NOT EXISTS message_metadata (
@@ -1966,7 +1899,7 @@ function getDb(): Database {
     log.info("Added remote_user column to agents table");
   }
 
-  // Migration: drop legacy permission columns (replaced by local-grants)
+  // Migration: drop legacy permission columns (replaced by provider-runtime capability snapshots)
   const legacyCols = ["allowed_tools", "bash_mode", "bash_allowlist", "bash_denylist"];
   const toDrop = legacyCols.filter((c) => agentColumns.some((ac) => ac.name === c));
   if (toDrop.length > 0) {
@@ -2465,9 +2398,10 @@ function getDb(): Database {
     );
   `);
 
-  ensureRelationMigrations(db);
   ensureCostEventMigrations(db);
   ensureIdentityChatMigrations(db);
+  removePermissionLegacyTables(db);
+  ensureAgentVisibilityMigration(db);
   backfillChatModelOnce(db);
 
   // Create default agent if none exist
@@ -2558,18 +2492,6 @@ function isDuplicateColumnRace(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
 }
 
-function ensureRelationMigrations(database: Database): void {
-  ensureColumn(database, "relations", "grant_mode", "TEXT NOT NULL DEFAULT 'permanent'");
-  ensureColumn(database, "relations", "expires_at", "INTEGER");
-  ensureColumn(database, "relations", "revoked_at", "INTEGER");
-  ensureColumn(database, "relations", "revocation_batch_id", "TEXT");
-  ensureColumn(database, "relations", "reason", "TEXT");
-  ensureColumn(database, "relations", "issued_by", "TEXT");
-  database.exec(
-    "CREATE INDEX IF NOT EXISTS idx_relations_revocation_batch ON relations(revocation_batch_id) WHERE revocation_batch_id IS NOT NULL",
-  );
-}
-
 function ensureCostEventMigrations(database: Database): void {
   ensureColumn(database, "cost_events", "pricing_status", "TEXT NOT NULL DEFAULT 'legacy'");
   ensureColumn(database, "cost_events", "pricing_source", "TEXT");
@@ -2579,6 +2501,114 @@ function ensureCostEventMigrations(database: Database): void {
   ensureColumn(database, "cost_events", "pricing_model", "TEXT");
   ensureColumn(database, "cost_events", "pricing_error", "TEXT");
   database.exec("CREATE INDEX IF NOT EXISTS idx_cost_events_pricing_status ON cost_events(pricing_status, created_at)");
+}
+
+function removePermissionLegacyTables(database: Database): void {
+  database.exec(`
+    DROP TABLE IF EXISTS relations;
+    DROP TABLE IF EXISTS permission_policy_rules;
+    DROP TABLE IF EXISTS permission_policy_materializations;
+  `);
+}
+
+function ensureAgentVisibilityMigration(database: Database): void {
+  const defaultAgentId = getDefaultAgentIdFromDatabase(database);
+  if (!defaultAgentId) return;
+  ensureAgentDefaultsCapability(database, defaultAgentId, {
+    permission: "view",
+    objectType: "agent",
+    objectId: "*",
+  });
+}
+
+function getDefaultAgentIdFromDatabase(database: Database): string {
+  const row = database.prepare("SELECT value FROM settings WHERE key = 'defaultAgent'").get() as
+    | { value: string }
+    | undefined;
+  return row?.value?.trim() || "main";
+}
+
+function ensureAgentDefaultsCapability(
+  database: Database,
+  agentId: string,
+  capability: { permission: string; objectType: string; objectId: string },
+): boolean {
+  const row = database.prepare("SELECT defaults FROM agents WHERE id = ?").get(agentId) as
+    | { defaults: string | null }
+    | undefined;
+  if (!row) return false;
+
+  const defaults = parseAgentDefaultsRecord(row.defaults);
+  const runtimePermissions = parseAgentRuntimePermissionsRecord(defaults.runtimePermissions);
+  const capabilities = Array.isArray(runtimePermissions.capabilities) ? [...runtimePermissions.capabilities] : [];
+  if (capabilities.some((entry) => capabilityInputCovers(entry, capability))) {
+    return false;
+  }
+
+  capabilities.push({ ...capability });
+  runtimePermissions.capabilities = capabilities;
+  defaults.runtimePermissions = runtimePermissions;
+  database
+    .prepare("UPDATE agents SET defaults = ?, updated_at = ? WHERE id = ?")
+    .run(JSON.stringify(defaults), Date.now(), agentId);
+  log.info("Backfilled provider-runtime agent visibility", { agentId, capability });
+  return true;
+}
+
+function parseAgentDefaultsRecord(value: string | null): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseAgentRuntimePermissionsRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
+}
+
+function capabilityInputCovers(
+  value: unknown,
+  requested: { permission: string; objectType: string; objectId: string },
+): boolean {
+  const capability = normalizeAgentDefaultsCapability(value);
+  if (!capability) return false;
+  if (capability.permission === "admin" && capability.objectType === "system" && capability.objectId === "*") {
+    return true;
+  }
+  if (capability.permission !== requested.permission || capability.objectType !== requested.objectType) {
+    return false;
+  }
+  return capability.objectId === requested.objectId || capability.objectId === "*";
+}
+
+function normalizeAgentDefaultsCapability(value: unknown): {
+  permission: string;
+  objectType: string;
+  objectId: string;
+} | null {
+  if (typeof value === "string") {
+    const [permission, objectType, ...objectIdParts] = value.split(":");
+    const objectId = objectIdParts.join(":");
+    if (!permission || !objectType || !objectId) return null;
+    return { permission, objectType, objectId };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.permission !== "string" ||
+    typeof record.objectType !== "string" ||
+    typeof record.objectId !== "string"
+  ) {
+    return null;
+  }
+  return {
+    permission: record.permission,
+    objectType: record.objectType,
+    objectId: record.objectId,
+  };
 }
 
 function ensureIdentityChatMigrations(database: Database): void {
@@ -6561,6 +6591,7 @@ export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentCon
     );
 
     log.info("Created agent", { id: validated.id });
+    ensureAgentVisibilityMigration(getDb());
     return dbGetAgent(validated.id)!;
   } catch (err) {
     if ((err as Error).message.includes("UNIQUE constraint failed")) {
@@ -6920,6 +6951,9 @@ export function dbSetSetting(key: string, value: string): void {
   const s = getStatements();
   const now = Date.now();
   s.upsertSetting.run(key, value, now);
+  if (key === "defaultAgent") {
+    ensureAgentVisibilityMigration(getDb());
+  }
   log.info("Set setting", { key, value });
 }
 

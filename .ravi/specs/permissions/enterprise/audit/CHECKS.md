@@ -11,7 +11,7 @@ feature: audit
 
 ## Unit / Integration Tests
 
-- An authorized sensitive action (`permissions grant` allowed, Bash execution
+- An authorized sensitive action (authority mutation allowed, Bash execution
   allowed, contact write allowed) emits an ALLOW audit record with full
   provenance (decision, mode, actor/operator, agent, surface, object, action,
   timestamp).
@@ -24,8 +24,8 @@ feature: audit
 - Hash chain: tampering with or deleting any record is detected by the
   verification command; an intact log verifies clean.
 - A privileged action whose audit cannot be persisted or queued is REFUSED.
-- Records under legal-hold are NOT removed by `permissions prune-revoked` /
-  `context prune` / audit compaction.
+- Records under legal-hold are NOT removed by context pruning or audit
+  compaction.
 
 ## Export
 

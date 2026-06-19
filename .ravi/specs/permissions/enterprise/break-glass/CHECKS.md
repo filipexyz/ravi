@@ -12,7 +12,7 @@ feature: break-glass
 ## Unit / Integration Tests
 
 - Enterprise mode ON, no agent principal, no operator credential:
-  `enforceScopeCheck("superadmin", "permissions", "grant")` is DENIED.
+  superadmin authority mutation is DENIED.
 - Enterprise mode ON, valid operator credential: the same check is ALLOWED and
   the resolved principal is `operator:<id>` in the scope context.
 - `agentCan(undefined, …)` does NOT return allow purely from a missing
@@ -21,13 +21,14 @@ feature: break-glass
   explicitly requests local-operator authorization.
 - Explicit local-operator authorization is exercised through the provider
   runtime facade and never through a hidden caller branch.
-- A break-glass `permissions grant` records `issued_by = operator:<id>` on the
-  created relation.
+- A break-glass authority mutation records `operator:<id>` on the provider-owned
+  audit event.
 - A break-glass mutation with no auditable sink available is REFUSED (audit is a
   precondition, not best-effort).
-- Recovery path: with every agent's `admin system:*` revoked, an authenticated
-  operator can still `restore-batch`/`grant`; an unauthenticated caller cannot.
-- A break-glass bulk revocation above the blast-radius threshold without
+- Recovery path: with every agent's `admin system:*` unavailable, an
+  authenticated operator can still use the provider-owned recovery path; an
+  unauthenticated caller cannot.
+- A break-glass broad authority change above the blast-radius threshold without
   approval is REFUSED; with approval it succeeds and records operator + reason.
 
 ## Audit Assertions

@@ -52,7 +52,9 @@ Use focused fixtures or local test databases to cover:
 - public mutating command lacks permission metadata:
   `permissions.command_mutation_unclassified` is `warn`;
 - provider runtime default chain matches the expected local-operator/context
-  providers: `permissions.provider_runtime_default_chain` is emitted;
+  providers and runtime-bootstrap/agent-runtime-permissions/contact-policy-permissions
+  materializers:
+  `permissions.provider_runtime_default_chain` is emitted;
 - provider runtime boundary is isolated from native engines and relation stores:
   `permissions.provider_runtime_boundaries` is emitted;
 - no-subject/no-context permission requests fail closed unless explicit

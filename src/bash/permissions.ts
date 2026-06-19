@@ -1,7 +1,7 @@
 /**
  * Bash Permission Reference Lists
  *
- * Default allowlist used by legacy relation-ledger templates.
+ * Default executable allowlist used by provider-runtime bootstrap profiles.
  */
 
 // ============================================================================
@@ -9,7 +9,7 @@
 // ============================================================================
 
 /**
- * Safe executables for the legacy template "safe-executables".
+ * Safe executables for bootstrap profiles.
  * These are commonly needed for development and are considered low-risk.
  */
 export function getDefaultAllowlist(): string[] {

@@ -204,6 +204,52 @@ export type AgentsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `agents.permissions`. */
+export type AgentsPermissionsInput = {
+  capabilities?: string;
+  clearCapabilities?: boolean;
+  id: string;
+  profile?: string;
+};
+
+/** Return shape for `agents.permissions`. */
+export type AgentsPermissionsReturn = {
+  action: "permissions";
+  after?: ({
+    capabilities?: Array<string | ({
+      objectId?: string;
+      objectType?: string;
+      permission?: string;
+      source?: string;
+    })>;
+    profile?: "bootstrap" | "full-access";
+  }) | null;
+  agent?: Record<string, unknown>;
+  agentId: string;
+  before?: ({
+    capabilities?: Array<string | ({
+      objectId?: string;
+      objectType?: string;
+      permission?: string;
+      source?: string;
+    })>;
+    profile?: "bootstrap" | "full-access";
+  }) | null;
+  changed: boolean;
+  command?: string;
+  defaults?: (Record<string, unknown>) | null;
+  profile?: string;
+  runtimePermissions?: ({
+    capabilities?: Array<string | ({
+      objectId?: string;
+      objectType?: string;
+      permission?: string;
+      source?: string;
+    })>;
+    profile?: "bootstrap" | "full-access";
+  }) | null;
+};
+
 /** Input shape for `agents.reset`. */
 export type AgentsResetInput = {
   id: string;
@@ -1107,7 +1153,8 @@ export type AudioGenerateInput = {
   output?: string;
   send?: boolean;
   speed?: string;
-  text: string;
+  text?: string;
+  textFile?: string;
   voice?: string;
 };
 
@@ -1402,105 +1449,16 @@ export type BridgesRevokeReturn = {
   success: true;
 };
 
-/** Input shape for `calendar.accounts.create`. */
-export type CalendarAccountsCreateInput = {
-  credentialsRef?: string;
-  id?: string;
-  name?: string;
-  provider?: string;
-};
-
-/** Return shape for `calendar.accounts.create`. */
-export type CalendarAccountsCreateReturn = {
-  account: {
-    capabilities: Record<string, unknown>;
-    createdAt: number;
-    credentialsRef: string | null;
-    defaultCalendarId: string | null;
-    displayName: string;
-    id: string;
-    provider: string;
-    settings: Record<string, unknown>;
-    status: "active" | "paused" | "auth_required" | "disabled";
-    updatedAt: number;
-  };
-};
-
-/** Input shape for `calendar.accounts.list`. */
-export type CalendarAccountsListInput = {
-  limit?: string;
-  offset?: string;
-  provider?: string;
-  status?: string;
-};
-
-/** Return shape for `calendar.accounts.list`. */
-export type CalendarAccountsListReturn = {
-  accounts: Array<{
-    capabilities: Record<string, unknown>;
-    createdAt: number;
-    credentialsRef: string | null;
-    defaultCalendarId: string | null;
-    displayName: string;
-    id: string;
-    provider: string;
-    settings: Record<string, unknown>;
-    status: "active" | "paused" | "auth_required" | "disabled";
-    updatedAt: number;
-  }>;
-};
-
-/** Input shape for `calendar.accounts.sync`. */
-export type CalendarAccountsSyncInput = {
-  account: string;
-  once?: boolean;
-};
-
-/** Return shape for `calendar.accounts.sync`. */
-export type CalendarAccountsSyncReturn = ({
-  account: {
-    capabilities: Record<string, unknown>;
-    createdAt: number;
-    credentialsRef: string | null;
-    defaultCalendarId: string | null;
-    displayName: string;
-    id: string;
-    provider: string;
-    settings: Record<string, unknown>;
-    status: "active" | "paused" | "auth_required" | "disabled";
-    updatedAt: number;
-  };
-  localFirst: true;
-  ok: true;
-  status: "adapter_not_required";
-}) | ({
-  account: {
-    capabilities: Record<string, unknown>;
-    createdAt: number;
-    credentialsRef: string | null;
-    defaultCalendarId: string | null;
-    displayName: string;
-    id: string;
-    provider: string;
-    settings: Record<string, unknown>;
-    status: "active" | "paused" | "auth_required" | "disabled";
-    updatedAt: number;
-  };
-  message: string;
-  ok: false;
-  status: "adapter_not_started";
-});
-
-/** Input shape for `calendar.availability`. */
-export type CalendarAvailabilityInput = {
+/** Input shape for `calendars.availability`. */
+export type CalendarsAvailabilityInput = {
   calendar?: string;
   from?: string;
   limit?: string;
   to?: string;
 };
 
-/** Return shape for `calendar.availability`. */
-export type CalendarAvailabilityReturn = {
+/** Return shape for `calendars.availability`. */
+export type CalendarsAvailabilityReturn = {
   busy: Array<{
     busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
     calendarId: string;
@@ -1516,8 +1474,8 @@ export type CalendarAvailabilityReturn = {
   };
 };
 
-/** Input shape for `calendar.calendars.create`. */
-export type CalendarCalendarsCreateInput = {
+/** Input shape for `calendars.create`. */
+export type CalendarsCreateInput = {
   account?: string;
   color?: string;
   default?: boolean;
@@ -1530,8 +1488,8 @@ export type CalendarCalendarsCreateInput = {
   visibility?: string;
 };
 
-/** Return shape for `calendar.calendars.create`. */
-export type CalendarCalendarsCreateReturn = {
+/** Return shape for `calendars.create`. */
+export type CalendarsCreateReturn = {
   calendar: {
     accountId: string;
     color: string | null;
@@ -1553,13 +1511,13 @@ export type CalendarCalendarsCreateReturn = {
   };
 };
 
-/** Input shape for `calendar.calendars.disable`. */
-export type CalendarCalendarsDisableInput = {
+/** Input shape for `calendars.disable`. */
+export type CalendarsDisableInput = {
   calendar: string;
 };
 
-/** Return shape for `calendar.calendars.disable`. */
-export type CalendarCalendarsDisableReturn = {
+/** Return shape for `calendars.disable`. */
+export type CalendarsDisableReturn = {
   calendar: {
     accountId: string;
     color: string | null;
@@ -1581,125 +1539,14 @@ export type CalendarCalendarsDisableReturn = {
   };
 };
 
-/** Input shape for `calendar.calendars.list`. */
-export type CalendarCalendarsListInput = {
-  account?: string;
-  limit?: string;
-  offset?: string;
-  status?: string;
-};
-
-/** Return shape for `calendar.calendars.list`. */
-export type CalendarCalendarsListReturn = {
-  calendars: Array<{
-    accountId: string;
-    color: string | null;
-    createdAt: number;
-    description: string | null;
-    id: string;
-    isDefault: boolean;
-    lastSyncedAt: number | null;
-    metadata: Record<string, unknown>;
-    name: string;
-    ownerId: string;
-    ownerType: string;
-    providerCalendarId: string | null;
-    role: string;
-    status: "active" | "paused" | "disabled" | "deleted";
-    timezone: string | null;
-    updatedAt: number;
-    visibility: "private" | "shared" | "public" | "local_only";
-  }>;
-};
-
-/** Input shape for `calendar.calendars.share`. */
-export type CalendarCalendarsShareInput = {
-  calendar: string;
-  expiresAt?: string;
-  relation?: string;
-  with?: string;
-};
-
-/** Return shape for `calendar.calendars.share`. */
-export type CalendarCalendarsShareReturn = {
-  calendar: {
-    accountId: string;
-    color: string | null;
-    createdAt: number;
-    description: string | null;
-    id: string;
-    isDefault: boolean;
-    lastSyncedAt: number | null;
-    metadata: Record<string, unknown>;
-    name: string;
-    ownerId: string;
-    ownerType: string;
-    providerCalendarId: string | null;
-    role: string;
-    status: "active" | "paused" | "disabled" | "deleted";
-    timezone: string | null;
-    updatedAt: number;
-    visibility: "private" | "shared" | "public" | "local_only";
-  };
-  member: {
-    calendarId: string;
-    createdAt: number;
-    expiresAt: number | null;
-    id: string;
-    memberId: string;
-    memberType: string;
-    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
-    updatedAt: number;
-  };
-};
-
-/** Input shape for `calendar.calendars.show`. */
-export type CalendarCalendarsShowInput = {
-  calendar: string;
-  members?: boolean;
-};
-
-/** Return shape for `calendar.calendars.show`. */
-export type CalendarCalendarsShowReturn = {
-  calendar: {
-    accountId: string;
-    color: string | null;
-    createdAt: number;
-    description: string | null;
-    id: string;
-    isDefault: boolean;
-    lastSyncedAt: number | null;
-    metadata: Record<string, unknown>;
-    name: string;
-    ownerId: string;
-    ownerType: string;
-    providerCalendarId: string | null;
-    role: string;
-    status: "active" | "paused" | "disabled" | "deleted";
-    timezone: string | null;
-    updatedAt: number;
-    visibility: "private" | "shared" | "public" | "local_only";
-  };
-  members?: Array<{
-    calendarId: string;
-    createdAt: number;
-    expiresAt: number | null;
-    id: string;
-    memberId: string;
-    memberType: string;
-    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
-    updatedAt: number;
-  }>;
-};
-
-/** Input shape for `calendar.events.cancel`. */
-export type CalendarEventsCancelInput = {
+/** Input shape for `calendars.events.cancel`. */
+export type CalendarsEventsCancelInput = {
   event: string;
   idempotencyKey?: string;
 };
 
-/** Return shape for `calendar.events.cancel`. */
-export type CalendarEventsCancelReturn = {
+/** Return shape for `calendars.events.cancel`. */
+export type CalendarsEventsCancelReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -1783,8 +1630,8 @@ export type CalendarEventsCancelReturn = {
   }) | null;
 };
 
-/** Input shape for `calendar.events.create`. */
-export type CalendarEventsCreateInput = {
+/** Input shape for `calendars.events.create`. */
+export type CalendarsEventsCreateInput = {
   attendee?: string;
   calendar?: string;
   description?: string;
@@ -1796,8 +1643,8 @@ export type CalendarEventsCreateInput = {
   title?: string;
 };
 
-/** Return shape for `calendar.events.create`. */
-export type CalendarEventsCreateReturn = {
+/** Return shape for `calendars.events.create`. */
+export type CalendarsEventsCreateReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -1881,8 +1728,8 @@ export type CalendarEventsCreateReturn = {
   }) | null;
 };
 
-/** Input shape for `calendar.events.list`. */
-export type CalendarEventsListInput = {
+/** Input shape for `calendars.events.list`. */
+export type CalendarsEventsListInput = {
   calendar?: string;
   from?: string;
   includeCancelled?: boolean;
@@ -1893,8 +1740,8 @@ export type CalendarEventsListInput = {
   to?: string;
 };
 
-/** Return shape for `calendar.events.list`. */
-export type CalendarEventsListReturn = {
+/** Return shape for `calendars.events.list`. */
+export type CalendarsEventsListReturn = {
   events: Array<({
     accountId: string;
     allDay: boolean;
@@ -1966,13 +1813,13 @@ export type CalendarEventsListReturn = {
   };
 };
 
-/** Input shape for `calendar.events.read`. */
-export type CalendarEventsReadInput = {
+/** Input shape for `calendars.events.read`. */
+export type CalendarsEventsReadInput = {
   event: string;
 };
 
-/** Return shape for `calendar.events.read`. */
-export type CalendarEventsReadReturn = {
+/** Return shape for `calendars.events.read`. */
+export type CalendarsEventsReadReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -2040,8 +1887,8 @@ export type CalendarEventsReadReturn = {
   });
 };
 
-/** Input shape for `calendar.events.respond`. */
-export type CalendarEventsRespondInput = {
+/** Input shape for `calendars.events.respond`. */
+export type CalendarsEventsRespondInput = {
   attendeeAgent?: string;
   attendeeEmail?: string;
   event: string;
@@ -2049,8 +1896,8 @@ export type CalendarEventsRespondInput = {
   status?: string;
 };
 
-/** Return shape for `calendar.events.respond`. */
-export type CalendarEventsRespondReturn = {
+/** Return shape for `calendars.events.respond`. */
+export type CalendarsEventsRespondReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -2134,8 +1981,8 @@ export type CalendarEventsRespondReturn = {
   };
 };
 
-/** Input shape for `calendar.events.update`. */
-export type CalendarEventsUpdateInput = {
+/** Input shape for `calendars.events.update`. */
+export type CalendarsEventsUpdateInput = {
   busy?: string;
   description?: string;
   end?: string;
@@ -2148,8 +1995,8 @@ export type CalendarEventsUpdateInput = {
   visibility?: string;
 };
 
-/** Return shape for `calendar.events.update`. */
-export type CalendarEventsUpdateReturn = {
+/** Return shape for `calendars.events.update`. */
+export type CalendarsEventsUpdateReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -2233,91 +2080,115 @@ export type CalendarEventsUpdateReturn = {
   }) | null;
 };
 
-/** Input shape for `calendar.outbox.inspect`. */
-export type CalendarOutboxInspectInput = {
-  outbox: string;
-};
-
-/** Return shape for `calendar.outbox.inspect`. */
-export type CalendarOutboxInspectReturn = {
-  outbox: {
-    accountId: string;
-    attemptCount: number;
-    calendarId: string;
-    createdAt: number;
-    eventId: string;
-    id: string;
-    idempotencyKey: string;
-    lastErrorCode: string | null;
-    nextAttemptAt: number;
-    operation: "create" | "update" | "cancel" | "delete" | "respond";
-    payload: Record<string, unknown>;
-    providerResult: (Record<string, unknown>) | null;
-    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
-    updatedAt: number;
-  };
-};
-
-/** Input shape for `calendar.outbox.list`. */
-export type CalendarOutboxListInput = {
-  calendar?: string;
+/** Input shape for `calendars.list`. */
+export type CalendarsListInput = {
+  account?: string;
   limit?: string;
   offset?: string;
   status?: string;
 };
 
-/** Return shape for `calendar.outbox.list`. */
-export type CalendarOutboxListReturn = {
-  outbox: Array<{
+/** Return shape for `calendars.list`. */
+export type CalendarsListReturn = {
+  calendars: Array<{
     accountId: string;
-    attemptCount: number;
-    calendarId: string;
+    color: string | null;
     createdAt: number;
-    eventId: string;
+    description: string | null;
     id: string;
-    idempotencyKey: string;
-    lastErrorCode: string | null;
-    nextAttemptAt: number;
-    operation: "create" | "update" | "cancel" | "delete" | "respond";
-    payload: Record<string, unknown>;
-    providerResult: (Record<string, unknown>) | null;
-    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
     updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
   }>;
 };
 
-/** Input shape for `calendar.outbox.retry`. */
-export type CalendarOutboxRetryInput = {
-  outbox: string;
+/** Input shape for `calendars.share`. */
+export type CalendarsShareInput = {
+  calendar: string;
+  expiresAt?: string;
+  relation?: string;
+  with?: string;
 };
 
-/** Return shape for `calendar.outbox.retry`. */
-export type CalendarOutboxRetryReturn = {
-  outbox: {
+/** Return shape for `calendars.share`. */
+export type CalendarsShareReturn = {
+  calendar: {
     accountId: string;
-    attemptCount: number;
+    color: string | null;
+    createdAt: number;
+    description: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
+    updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
+  };
+  member: {
     calendarId: string;
     createdAt: number;
-    eventId: string;
+    expiresAt: number | null;
     id: string;
-    idempotencyKey: string;
-    lastErrorCode: string | null;
-    nextAttemptAt: number;
-    operation: "create" | "update" | "cancel" | "delete" | "respond";
-    payload: Record<string, unknown>;
-    providerResult: (Record<string, unknown>) | null;
-    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    memberId: string;
+    memberType: string;
+    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
     updatedAt: number;
   };
 };
 
-/** Input shape for `calendar.outbox.status`. */
-export type CalendarOutboxStatusInput = Record<string, never>;
+/** Input shape for `calendars.show`. */
+export type CalendarsShowInput = {
+  calendar: string;
+  members?: boolean;
+};
 
-/** Return shape for `calendar.outbox.status`. */
-export type CalendarOutboxStatusReturn = {
-  counts: Record<string, number>;
-  total: number;
+/** Return shape for `calendars.show`. */
+export type CalendarsShowReturn = {
+  calendar: {
+    accountId: string;
+    color: string | null;
+    createdAt: number;
+    description: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
+    updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
+  };
+  members?: Array<{
+    calendarId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    id: string;
+    memberId: string;
+    memberType: string;
+    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
+    updatedAt: number;
+  }>;
 };
 
 /** Input shape for `chats.backfill-provider-timestamps`. */
@@ -2548,6 +2419,140 @@ export type CloudProjectsListReturn = {
   projects: Array<Record<string, unknown>>;
   success: true;
   total: number;
+};
+
+/** Input shape for `cloud.scope.clear`. */
+export type CloudScopeClearInput = {
+  agent?: string;
+  console?: string;
+  global?: boolean;
+  session?: string;
+  workspace?: string;
+};
+
+/** Return shape for `cloud.scope.clear`. */
+export type CloudScopeClearReturn = {
+  action: "clear";
+  cleared: boolean;
+  success: true;
+  target: {
+    scopeKey: string;
+    scopeKind: "session" | "agent" | "workspace" | "global";
+  };
+};
+
+/** Input shape for `cloud.scope.explain`. */
+export type CloudScopeExplainInput = {
+  console?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.scope.explain`. */
+export type CloudScopeExplainReturn = {
+  candidates: Array<{
+    available: boolean;
+    consoleUrl?: string;
+    label: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    reason?: string;
+    scopeKey?: string;
+    scopeKind?: "session" | "agent" | "workspace" | "global";
+    selected: boolean;
+    source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
+  }>;
+  consoleUrl: string;
+  missingProjectCommand?: string | null;
+  organization?: ({
+    id?: string | null;
+    name?: string | null;
+    slug?: string | null;
+  }) | null;
+  resolved: ({
+    consoleUrl: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
+  }) | null;
+  success: true;
+};
+
+/** Input shape for `cloud.scope.set`. */
+export type CloudScopeSetInput = {
+  agent?: string;
+  console?: string;
+  global?: boolean;
+  project?: string;
+  session?: string;
+  workspace?: string;
+};
+
+/** Return shape for `cloud.scope.set`. */
+export type CloudScopeSetReturn = {
+  action: "set";
+  scope: {
+    consoleUrl: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
+  };
+  success: true;
+  target: {
+    scopeKey: string;
+    scopeKind: "session" | "agent" | "workspace" | "global";
+  };
+};
+
+/** Input shape for `cloud.scope.show`. */
+export type CloudScopeShowInput = {
+  console?: string;
+};
+
+/** Return shape for `cloud.scope.show`. */
+export type CloudScopeShowReturn = {
+  scope: {
+    consoleUrl: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
+  };
+  success: true;
 };
 
 /** Input shape for `commands.list`. */
@@ -6929,10 +6934,10 @@ export type ObserversShowReturn = {
 
 /** Input shape for `pages.create`. */
 export type PagesCreateInput = {
+  args: string[];
   console?: string;
   defaultSite?: boolean;
-  project: string;
-  slug: string;
+  project?: string;
   visibility?: string;
 };
 
@@ -6948,11 +6953,10 @@ export type PagesCreateReturn = {
 
 /** Input shape for `pages.domains`. */
 export type PagesDomainsInput = {
+  args: string[];
   check?: boolean;
   console?: string;
-  hostnames: string[];
-  project: string;
-  site: string;
+  project?: string;
 };
 
 /** Return shape for `pages.domains`. */
@@ -6972,7 +6976,7 @@ export type PagesListInput = {
   console?: string;
   limit?: string;
   offset?: string;
-  project: string;
+  project?: string;
 };
 
 /** Return shape for `pages.list`. */
@@ -6996,6 +7000,7 @@ export type PagesListReturn = {
 
 /** Input shape for `pages.publish`. */
 export type PagesPublishInput = {
+  args: string[];
   artifactSlug?: string;
   artifactVersion?: string;
   assetBase?: string;
@@ -7005,12 +7010,10 @@ export type PagesPublishInput = {
   entrypoint?: string;
   idempotencyKey?: string;
   noActivate?: boolean;
-  project: string;
+  project?: string;
   reason?: string;
   replaceRelease?: boolean;
   route?: string;
-  site: string;
-  source: string;
   title?: string;
   uploadSession?: string;
   visibility?: string;
@@ -7053,9 +7056,9 @@ export type PagesPublishReturn = {
 
 /** Input shape for `pages.update`. */
 export type PagesUpdateInput = {
+  args: string[];
   console?: string;
-  project: string;
-  site: string;
+  project?: string;
   visibility?: string;
 };
 
@@ -7072,10 +7075,9 @@ export type PagesUpdateReturn = {
 
 /** Input shape for `pages.visibility`. */
 export type PagesVisibilityInput = {
+  args: string[];
   console?: string;
-  project: string;
-  site: string;
-  visibility: string;
+  project?: string;
 };
 
 /** Return shape for `pages.visibility`. */
@@ -7091,402 +7093,83 @@ export type PagesVisibilityReturn = {
 
 /** Input shape for `permissions.check`. */
 export type PermissionsCheckInput = {
-  object: string;
-  permission: string;
-  subject: string;
+  localOperator?: boolean;
+  objectId?: string;
+  objectType?: string;
+  permission?: string;
 };
 
 /** Return shape for `permissions.check`. */
 export type PermissionsCheckReturn = {
   allowed: boolean;
-  object: {
-    id: string;
-    raw: string;
-    type: string;
+  decision: {
+    allowed: boolean;
+    contextId?: string;
+    decision: "allow" | "deny" | "needs_approval" | "not_applicable";
+    durationMs?: number;
+    evidence?: Array<{
+      kind?: string;
+      message?: string;
+      objectId?: string;
+      objectType?: string;
+      permission?: string;
+      providerId?: string;
+      source?: string;
+    }>;
+    objectId: string;
+    objectType: string;
+    permission: string;
+    providerId: string;
+    providerVersion: string;
+    reasonCode: string;
+    requestId?: string;
+    subject?: {
+      id: string;
+      type: string;
+    };
   };
-  permission: string;
+};
+
+/** Input shape for `permissions.materialize`. */
+export type PermissionsMaterializeInput = {
+  subjectId?: string;
+  subjectType?: string;
+};
+
+/** Return shape for `permissions.materialize`. */
+export type PermissionsMaterializeReturn = {
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
   subject: {
     id: string;
-    raw: string;
     type: string;
   };
 };
 
-/** Input shape for `permissions.clear`. */
-export type PermissionsClearInput = {
-  all?: boolean;
-};
+/** Input shape for `permissions.status`. */
+export type PermissionsStatusInput = Record<string, never>;
 
-/** Return shape for `permissions.clear`. */
-export type PermissionsClearReturn = {
-  changedCount: number;
-  status: "cleared";
-  target: {
-    type: string;
-    [k: string]: unknown;
-  };
-};
-
-/** Input shape for `permissions.explain`. */
-export type PermissionsExplainInput = {
-  actor?: string;
-  agent?: string;
-  broad?: boolean;
-  chat?: string;
-  denial?: string;
-  object?: string;
-  relation?: string;
-  session?: string;
-};
-
-/** Return shape for `permissions.explain`. */
-export type PermissionsExplainReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.grant`. */
-export type PermissionsGrantInput = {
-  expiresAt?: string;
-  object: string;
-  permanent?: boolean;
-  reason?: string;
-  relation: string;
-  subject: string;
-  ttl?: string;
-};
-
-/** Return shape for `permissions.grant`. */
-export type PermissionsGrantReturn = {
-  changedCount: number;
-  relation: {
-    active?: boolean;
-    expiresAt?: number | null;
-    grantMode?: "temporary" | "permanent";
-    id?: string | number;
-    issuedBy?: string | null;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    reason?: string | null;
-    relation: string;
-    revocationBatchId?: string | null;
-    revokedAt?: number | null;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
-  };
-  status: "granted";
-  target: {
-    type: string;
-    [k: string]: unknown;
-  };
-  warnings: Array<Record<string, unknown>>;
-};
-
-/** Input shape for `permissions.init`. */
-export type PermissionsInitInput = {
-  expiresAt?: string;
-  permanent?: boolean;
-  reason?: string;
-  subject: string;
-  template: string;
-  ttl?: string;
-};
-
-/** Return shape for `permissions.init`. */
-export type PermissionsInitReturn = {
-  changedCount: number;
-  relations: Array<{
-    active?: boolean;
-    expiresAt?: number | null;
-    grantMode?: "temporary" | "permanent";
-    id?: string | number;
-    issuedBy?: string | null;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    reason?: string | null;
-    relation: string;
-    revocationBatchId?: string | null;
-    revokedAt?: number | null;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
+/** Return shape for `permissions.status`. */
+export type PermissionsStatusReturn = {
+  authorizationProviders: Array<{
+    id: string;
+    required: boolean;
+    version: string;
   }>;
-  status: "applied";
-  target: {
-    type: string;
-    [k: string]: unknown;
-  };
-};
-
-/** Input shape for `permissions.legacy`. */
-export type PermissionsLegacyInput = {
-  apply?: boolean;
-  breakGlass?: boolean;
-  confirm?: string;
-  includeSpecific?: boolean;
-  limit?: string;
-  maxZeroSubjects?: string;
-  subject?: string;
-};
-
-/** Return shape for `permissions.legacy`. */
-export type PermissionsLegacyReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.list`. */
-export type PermissionsListInput = {
-  all?: boolean;
-  limit?: string;
-  object?: string;
-  offset?: string;
-  relation?: string;
-  source?: string;
-  subject?: string;
-};
-
-/** Return shape for `permissions.list`. */
-export type PermissionsListReturn = {
-  filter: {
-    includeInactive?: boolean;
-    objectId?: string;
-    objectType?: string;
-    relation?: string;
-    source?: string;
-    subjectId?: string;
-    subjectType?: string;
-    [k: string]: unknown;
-  };
-  items: Array<{
-    active?: boolean;
-    expiresAt?: number | null;
-    grantMode?: "temporary" | "permanent";
-    id?: string | number;
-    issuedBy?: string | null;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    reason?: string | null;
-    relation: string;
-    revocationBatchId?: string | null;
-    revokedAt?: number | null;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
+  capabilityMaterializers: Array<{
+    id: string;
+    required: boolean;
+    version: string;
   }>;
-  pagination: {
-    hasMore: boolean;
-    limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
-    offset: number;
-    returned: number;
-    total: number;
+  mutationCommands: {
+    enabled: false;
+    message: string;
   };
-  relations: Array<{
-    active?: boolean;
-    expiresAt?: number | null;
-    grantMode?: "temporary" | "permanent";
-    id?: string | number;
-    issuedBy?: string | null;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    reason?: string | null;
-    relation: string;
-    revocationBatchId?: string | null;
-    revokedAt?: number | null;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
-  }>;
-  total: number;
-};
-
-/** Input shape for `permissions.policies.apply`. */
-export type PermissionsPoliciesApplyInput = {
-  dir?: string;
-  policy?: string;
-};
-
-/** Return shape for `permissions.policies.apply`. */
-export type PermissionsPoliciesApplyReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.policies.dry-run`. */
-export type PermissionsPoliciesDryRunInput = {
-  dir?: string;
-  policy?: string;
-};
-
-/** Return shape for `permissions.policies.dry-run`. */
-export type PermissionsPoliciesDryRunReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.policies.explain`. */
-export type PermissionsPoliciesExplainInput = {
-  asset: string;
-  dir?: string;
-};
-
-/** Return shape for `permissions.policies.explain`. */
-export type PermissionsPoliciesExplainReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.policies.list`. */
-export type PermissionsPoliciesListInput = {
-  dir?: string;
-  limit?: string;
-  offset?: string;
-};
-
-/** Return shape for `permissions.policies.list`. */
-export type PermissionsPoliciesListReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.policies.reconcile`. */
-export type PermissionsPoliciesReconcileInput = {
-  dir?: string;
-  policy?: string;
-};
-
-/** Return shape for `permissions.policies.reconcile`. */
-export type PermissionsPoliciesReconcileReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.policies.show`. */
-export type PermissionsPoliciesShowInput = {
-  dir?: string;
-  policy: string;
-};
-
-/** Return shape for `permissions.policies.show`. */
-export type PermissionsPoliciesShowReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.policies.validate`. */
-export type PermissionsPoliciesValidateInput = {
-  dir?: string;
-  policy?: string;
-};
-
-/** Return shape for `permissions.policies.validate`. */
-export type PermissionsPoliciesValidateReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.prune-revoked`. */
-export type PermissionsPruneRevokedInput = {
-  apply?: boolean;
-  confirm?: string;
-  olderThanDays?: string;
-};
-
-/** Return shape for `permissions.prune-revoked`. */
-export type PermissionsPruneRevokedReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.restore-batch`. */
-export type PermissionsRestoreBatchInput = {
-  apply?: boolean;
-  batch: string;
-  confirm?: string;
-  revokedAt?: boolean;
-  subject?: string;
-};
-
-/** Return shape for `permissions.restore-batch`. */
-export type PermissionsRestoreBatchReturn = Record<string, unknown>;
-
-/** Input shape for `permissions.revoke`. */
-export type PermissionsRevokeInput = {
-  object: string;
-  relation: string;
-  subject: string;
-};
-
-/** Return shape for `permissions.revoke`. */
-export type PermissionsRevokeReturn = {
-  changedCount: number;
-  relation: {
-    active?: boolean;
-    expiresAt?: number | null;
-    grantMode?: "temporary" | "permanent";
-    id?: string | number;
-    issuedBy?: string | null;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    reason?: string | null;
-    relation: string;
-    revocationBatchId?: string | null;
-    revokedAt?: number | null;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
-  };
-  remainingIndividualRelations: Array<{
-    active?: boolean;
-    expiresAt?: number | null;
-    grantMode?: "temporary" | "permanent";
-    id?: string | number;
-    issuedBy?: string | null;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    reason?: string | null;
-    relation: string;
-    revocationBatchId?: string | null;
-    revokedAt?: number | null;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
-  }>;
-  status: "revoked";
-  target: {
-    type: string;
-    [k: string]: unknown;
-  };
-};
-
-/** Input shape for `permissions.sync`. */
-export type PermissionsSyncInput = Record<string, never>;
-
-/** Return shape for `permissions.sync`. */
-export type PermissionsSyncReturn = {
-  changedCount: number;
-  relations: Array<{
-    active?: boolean;
-    expiresAt?: number | null;
-    grantMode?: "temporary" | "permanent";
-    id?: string | number;
-    issuedBy?: string | null;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    reason?: string | null;
-    relation: string;
-    revocationBatchId?: string | null;
-    revokedAt?: number | null;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
-  }>;
-  status: "synced";
-  target: {
-    type: string;
-    [k: string]: unknown;
-  };
+  status: "provider-runtime";
 };
 
 /** Input shape for `projects.create`. */
@@ -11720,6 +11403,254 @@ export type WhatsappGroupSettingsInput = {
 
 /** Return shape for `whatsapp.group.settings`. */
 export type WhatsappGroupSettingsReturn = Record<string, unknown>;
+
+/** Input shape for `work-objects.action`. */
+export type WorkObjectsActionInput = {
+  actionId: string;
+  id: string;
+  type: string;
+  value?: string;
+};
+
+/** Return shape for `work-objects.action`. */
+export type WorkObjectsActionReturn = {
+  providerId: string;
+  result: {
+    error?: string;
+    message?: string;
+    object?: {
+      actions?: {
+        overflowActions?: Array<{
+          accessibilityLabel?: string;
+          actionId?: string;
+          processingState?: {
+            enabled: boolean;
+            interstitialText?: string;
+          };
+          style?: "primary" | "danger";
+          text: string;
+          url?: string;
+          value?: string;
+        }>;
+        primaryActions?: Array<{
+          accessibilityLabel?: string;
+          actionId?: string;
+          processingState?: {
+            enabled: boolean;
+            interstitialText?: string;
+          };
+          style?: "primary" | "danger";
+          text: string;
+          url?: string;
+          value?: string;
+        }>;
+      };
+      attributes?: Record<string, unknown>;
+      customFields?: Array<{
+        edit?: Record<string, unknown>;
+        key: string;
+        label: string;
+        long?: boolean;
+        type?: string;
+        value: string | number | boolean;
+      }>;
+      description?: string;
+      displayId?: string;
+      displayOrder?: string[];
+      displayType?: string;
+      entityType?: string;
+      externalRef: {
+        id: string;
+        type?: string;
+      };
+      fields?: Record<string, {
+        edit?: Record<string, unknown>;
+        label?: string;
+        long?: boolean;
+        type?: string;
+        value?: unknown;
+      }>;
+      kind?: string;
+      metadataLastModified?: number;
+      productIconUrl?: string;
+      productName?: string;
+      revision?: string;
+      status?: string;
+      title: string;
+      url: string;
+    };
+  };
+};
+
+/** Input shape for `work-objects.resolve`. */
+export type WorkObjectsResolveInput = {
+  id?: string;
+  target?: string;
+  type?: string;
+  url?: string;
+};
+
+/** Return shape for `work-objects.resolve`. */
+export type WorkObjectsResolveReturn = {
+  providerId: string;
+  result: {
+    actions?: {
+      overflowActions?: Array<{
+        accessibilityLabel?: string;
+        actionId?: string;
+        processingState?: {
+          enabled: boolean;
+          interstitialText?: string;
+        };
+        style?: "primary" | "danger";
+        text: string;
+        url?: string;
+        value?: string;
+      }>;
+      primaryActions?: Array<{
+        accessibilityLabel?: string;
+        actionId?: string;
+        processingState?: {
+          enabled: boolean;
+          interstitialText?: string;
+        };
+        style?: "primary" | "danger";
+        text: string;
+        url?: string;
+        value?: string;
+      }>;
+    };
+    attributes?: Record<string, unknown>;
+    customFields?: Array<{
+      edit?: Record<string, unknown>;
+      key: string;
+      label: string;
+      long?: boolean;
+      type?: string;
+      value: string | number | boolean;
+    }>;
+    description?: string;
+    displayId?: string;
+    displayOrder?: string[];
+    displayType?: string;
+    entityType?: string;
+    externalRef: {
+      id: string;
+      type?: string;
+    };
+    fields?: Record<string, {
+      edit?: Record<string, unknown>;
+      label?: string;
+      long?: boolean;
+      type?: string;
+      value?: unknown;
+    }>;
+    kind?: string;
+    metadataLastModified?: number;
+    productIconUrl?: string;
+    productName?: string;
+    revision?: string;
+    status?: string;
+    title: string;
+    url: string;
+  };
+};
+
+/** Input shape for `work-objects.suggest`. */
+export type WorkObjectsSuggestInput = {
+  fieldId: string;
+  id: string;
+  query?: string;
+  type: string;
+};
+
+/** Return shape for `work-objects.suggest`. */
+export type WorkObjectsSuggestReturn = {
+  providerId: string;
+  result: Array<{
+    text: string;
+    value: string;
+  }>;
+};
+
+/** Input shape for `work-objects.update`. */
+export type WorkObjectsUpdateInput = {
+  id: string;
+  revision?: string;
+  type: string;
+  values?: string;
+};
+
+/** Return shape for `work-objects.update`. */
+export type WorkObjectsUpdateReturn = {
+  providerId: string;
+  result: {
+    fieldErrors?: Record<string, string>;
+    formError?: string;
+    object?: {
+      actions?: {
+        overflowActions?: Array<{
+          accessibilityLabel?: string;
+          actionId?: string;
+          processingState?: {
+            enabled: boolean;
+            interstitialText?: string;
+          };
+          style?: "primary" | "danger";
+          text: string;
+          url?: string;
+          value?: string;
+        }>;
+        primaryActions?: Array<{
+          accessibilityLabel?: string;
+          actionId?: string;
+          processingState?: {
+            enabled: boolean;
+            interstitialText?: string;
+          };
+          style?: "primary" | "danger";
+          text: string;
+          url?: string;
+          value?: string;
+        }>;
+      };
+      attributes?: Record<string, unknown>;
+      customFields?: Array<{
+        edit?: Record<string, unknown>;
+        key: string;
+        label: string;
+        long?: boolean;
+        type?: string;
+        value: string | number | boolean;
+      }>;
+      description?: string;
+      displayId?: string;
+      displayOrder?: string[];
+      displayType?: string;
+      entityType?: string;
+      externalRef: {
+        id: string;
+        type?: string;
+      };
+      fields?: Record<string, {
+        edit?: Record<string, unknown>;
+        label?: string;
+        long?: boolean;
+        type?: string;
+        value?: unknown;
+      }>;
+      kind?: string;
+      metadataLastModified?: number;
+      productIconUrl?: string;
+      productName?: string;
+      revision?: string;
+      status?: string;
+      title: string;
+      url: string;
+    };
+    revision?: string;
+  };
+};
 
 /** Input shape for `workflows.runs.archive-node`. */
 export type WorkflowsRunsArchiveNodeInput = {

@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: resource-visibility
 capabilities:
-  - local-grants
+  - provider-runtime
   - least-privilege
   - discovery
   - enumeration-resistance

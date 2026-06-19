@@ -1,16 +1,7 @@
-import { resolveToolGroup } from "../cli/tool-registry.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
 import { getDb } from "../router/router-db.js";
-import { getSession } from "../router/sessions.js";
-import { logger } from "../utils/logger.js";
-import { matchPattern } from "./capability-snapshot.js";
-import type { Relation } from "./relations.js";
 
-const log = logger.child("permissions:denials");
 const MAX_REASON_LENGTH = 500;
 const MAX_COMMAND_LENGTH = 500;
-type PermissionDenialNotifier = typeof publishSessionPrompt;
-let permissionDenialNotifier: PermissionDenialNotifier = publishSessionPrompt;
 
 export interface PermissionDenialInput {
   subjectType?: string;
@@ -67,16 +58,6 @@ interface PermissionDenialRow {
   notified_at: number | null;
 }
 
-export interface ResolvedPermissionDenialsResult {
-  matched: number;
-  notified: number;
-  sessions: string[];
-}
-
-export function setPermissionDenialNotifierForTest(notifier?: PermissionDenialNotifier): void {
-  permissionDenialNotifier = notifier ?? publishSessionPrompt;
-}
-
 export function recordPermissionDenial(input: PermissionDenialInput): PermissionDenial | null {
   const subjectType = normalizeText(input.subjectType ?? (input.agentId ? "agent" : undefined));
   const subjectId = normalizeText(input.subjectId ?? input.agentId ?? undefined);
@@ -120,64 +101,6 @@ export function recordPermissionDenial(input: PermissionDenialInput): Permission
   return getPermissionDenial(id);
 }
 
-export function resolvePermissionDenialsForGrant(relation: Relation): ResolvedPermissionDenialsResult {
-  if (relation.subjectType !== "agent") {
-    return { matched: 0, notified: 0, sessions: [] };
-  }
-
-  const pending = listPendingPermissionDenials(relation.subjectType, relation.subjectId).filter((denial) =>
-    relationCoversDenial(relation, denial),
-  );
-  if (pending.length === 0) {
-    return { matched: 0, notified: 0, sessions: [] };
-  }
-
-  const now = Date.now();
-  const ids = pending.map((denial) => denial.id);
-  const placeholders = ids.map(() => "?").join(", ");
-  getDb()
-    .prepare(
-      `
-      UPDATE permission_denials
-      SET resolved_at = ?, resolved_relation_id = ?
-      WHERE id IN (${placeholders})
-    `,
-    )
-    .run(now, relation.id, ...ids);
-
-  const bySession = new Map<string, PermissionDenial[]>();
-  for (const denial of pending) {
-    const sessionName = resolveDenialSessionName(denial);
-    if (!sessionName) continue;
-    const bucket = bySession.get(sessionName) ?? [];
-    bucket.push(denial);
-    bySession.set(sessionName, bucket);
-  }
-
-  for (const [sessionName, denials] of bySession) {
-    notifySessionPermissionGranted(sessionName, relation, denials, now);
-  }
-
-  if (bySession.size > 0) {
-    getDb()
-      .prepare(
-        `
-        UPDATE permission_denials
-        SET notified_at = ?
-        WHERE id IN (${placeholders})
-          AND (session_name IS NOT NULL OR session_key IS NOT NULL)
-      `,
-      )
-      .run(now, ...ids);
-  }
-
-  return {
-    matched: pending.length,
-    notified: bySession.size,
-    sessions: [...bySession.keys()],
-  };
-}
-
 export function listPermissionDenials(filter?: {
   subjectType?: string;
   subjectId?: string;
@@ -203,78 +126,6 @@ export function listPermissionDenials(filter?: {
     .prepare(`SELECT * FROM permission_denials ${where} ORDER BY id`)
     .all(...params) as PermissionDenialRow[];
   return rows.map(rowToPermissionDenial);
-}
-
-function listPendingPermissionDenials(subjectType: string, subjectId: string): PermissionDenial[] {
-  return listPermissionDenials({ subjectType, subjectId, resolved: false });
-}
-
-function relationCoversDenial(relation: Relation, denial: PermissionDenial): boolean {
-  if (relation.subjectType !== denial.subjectType || relation.subjectId !== denial.subjectId) {
-    return false;
-  }
-
-  if (relation.relation === "admin" && relation.objectType === "system" && relation.objectId === "*") {
-    return true;
-  }
-
-  if (relation.relation === "use" && relation.objectType === "toolgroup") {
-    if (denial.relation !== "use" || denial.objectType !== "tool") return false;
-    return resolveToolGroup(relation.objectId)?.includes(denial.objectId) ?? false;
-  }
-
-  if (relation.relation !== denial.relation || relation.objectType !== denial.objectType) {
-    return false;
-  }
-
-  if (relation.objectId === denial.objectId || relation.objectId === "*") {
-    return true;
-  }
-
-  return relation.objectId.includes("*") && matchPattern(relation.objectId, denial.objectId);
-}
-
-function notifySessionPermissionGranted(
-  sessionName: string,
-  relation: Relation,
-  denials: PermissionDenial[],
-  now: number,
-): void {
-  const sample = denials[0];
-  const deniedList = denials
-    .map((denial) => `${denial.relation} ${denial.objectType}:${denial.objectId}`)
-    .filter((value, index, list) => list.indexOf(value) === index)
-    .slice(0, 5)
-    .join(", ");
-  const prompt = [
-    `[Permission Granted: ${relation.relation} ${relation.objectType}:${relation.objectId} | Event: ravi.permissions.grant.resolved]`,
-    `A permissão que tinha falhado nesta sessão foi concedida para agent:${relation.subjectId}.`,
-    `Denial resolvido: ${deniedList || `${sample.relation} ${sample.objectType}:${sample.objectId}`}.`,
-    "Tente novamente a ação bloqueada, se ela ainda for necessária.",
-  ].join("\n");
-
-  permissionDenialNotifier(sessionName, {
-    prompt,
-    event: "ravi.permissions.grant.resolved",
-    permissionGrant: {
-      subjectType: relation.subjectType,
-      subjectId: relation.subjectId,
-      relation: relation.relation,
-      objectType: relation.objectType,
-      objectId: relation.objectId,
-      relationId: relation.id,
-      resolvedDenialIds: denials.map((denial) => denial.id),
-      timestamp: now,
-    },
-  }).catch((err) => {
-    log.warn("Failed to publish permission grant event to session", { sessionName, error: err });
-  });
-}
-
-function resolveDenialSessionName(denial: PermissionDenial): string | null {
-  if (denial.sessionName) return denial.sessionName;
-  if (!denial.sessionKey) return null;
-  return getSession(denial.sessionKey)?.name ?? denial.sessionKey;
 }
 
 export function getPermissionDenial(id: number): PermissionDenial | null {

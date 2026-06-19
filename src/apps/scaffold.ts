@@ -106,6 +106,7 @@ export function scaffoldApp(options: RaviAppScaffoldOptions): RaviAppScaffoldRes
     nextCommands: buildNextCommands({
       id,
       appSlug,
+      command,
       includeSpec,
       skill,
       skillSourcePath,
@@ -128,7 +129,7 @@ function buildScaffoldManifest(input: {
     cli: {
       command: input.command,
       json: true,
-      health: `ravi apps run ${input.id} check --json`,
+      health: `${input.command} check --json`,
     },
   };
 
@@ -288,7 +289,7 @@ ${input.description}
 
 - \`ravi apps check ${input.id} --json\`
 - \`ravi apps show ${input.id} --json\`
-- \`ravi apps run ${input.id} check --json\`
+- \`${input.command} check --json\`
 `;
 }
 
@@ -325,18 +326,16 @@ ravi apps show ${input.id} --json
 
 \`\`\`bash
 ravi apps check ${input.id} --json
-ravi apps run ${input.id} check --json
+${input.command} check --json
 \`\`\`
 
 3. Leia \`manifest.interfaces\`, \`manifest.operations\`, \`manifest.permissions\`, \`manifest.storage\` e \`manifest.events\`.
 
-4. Use apenas operations declaradas. Para CLI, prefira comandos com \`--json\`.
+4. Use apenas operations declaradas. Para operar o app, use o alias \`${input.command} <operation>\`. Para CLI, prefira comandos com \`--json\`.
 
 ## Comandos Iniciais
 
 \`\`\`bash
-ravi apps run ${input.id} list --json
-ravi apps run ${input.id} check --json
 ${input.command} list --json
 ${input.command} check --json
 \`\`\`
@@ -353,16 +352,17 @@ ${input.command} check --json
 function buildNextCommands(input: {
   id: string;
   appSlug: string;
+  command: string;
   includeSpec: boolean;
   skill: string | null;
   skillSourcePath: string;
 }): string[] {
-  const { id, appSlug, includeSpec, skill, skillSourcePath } = input;
+  const { id, appSlug, command, includeSpec, skill, skillSourcePath } = input;
   const commands = [
     `ravi apps show ${id} --json`,
     `ravi apps check ${id} --json`,
-    `ravi apps run ${id} check --json`,
-    `ravi apps run ${id} list --json`,
+    `${command} check --json`,
+    `${command} list --json`,
     `ravi apps guide ${id} --json`,
   ];
   if (includeSpec) commands.push(`ravi specs get apps/${id} --mode rules --json`);

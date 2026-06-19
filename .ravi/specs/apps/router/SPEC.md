@@ -40,26 +40,27 @@ The app router lets a newly discovered app become operable without generating a
 new TypeScript command file, rebuilding the CLI, regenerating the SDK, or adding
 a static Commander registration for every app.
 
-Canonical command:
-
-```bash
-ravi apps run <app-id> [operation] [args...] --json
-```
-
-Operator sugar:
+Operator command:
 
 ```bash
 ravi <app-id> [operation] [args...] --json
+```
+
+Router fallback/debug command:
+
+```bash
+ravi apps run <app-id> [operation] [args...] --json
 ```
 
 ## Invariants
 
 - App route resolution MUST be runtime-based. A newly discovered valid manifest
   MUST NOT require build-time command registration to be invokable through
-  `ravi apps run <app-id>`.
+  `ravi <app-id> <operation>`.
 - Static CLI commands MUST take precedence over dynamic app ids.
-- `ravi apps run <app-id> ...` is the canonical dispatch path. `ravi <app-id>
-  ...` is only a root-level alias for the same router.
+- `ravi <app-id> ...` is the canonical operator-facing path. `ravi apps run
+  <app-id> ...` is the explicit router fallback/debug path and may be used when
+  a static command collision disables the root-level app alias.
 - The root-level alias MUST activate only when the first argv token is not a
   registered static command, is a valid discovered app id, and is visible to
   the current runtime context.
@@ -76,6 +77,9 @@ ravi <app-id> [operation] [args...] --json
 - `ravi <app-id> check` SHOULD run app manifest/health validation.
 - `ravi <app-id> <operation>` MUST map to a declared operation id, declared
   alias, or router-owned builtin.
+- Dot-separated local operation ids MAY be invoked as whitespace-separated CLI
+  tokens. If `app.test.a` is declared, `ravi app test a` MUST resolve to that
+  operation before treating `a` as an argument to `app.test`.
 - Router-owned builtin operations MUST use an explicit allowlisted handler.
 - CLI-backed operations MUST NOT recursively invoke the same public dynamic
   alias, such as `ravi <app-id> <operation>`.
@@ -107,20 +111,22 @@ ravi <app-id> [operation] [args...] --json
   SHOULD return the stream/control channel contract or hand off to a dedicated
   streaming surface.
 - Dynamic app routes MUST NOT be added to the static SDK decorator registry by
-  default. SDK clients should use `apps.run` unless the app has a separate
-  generated SDK route.
+  default. SDK clients MAY use the explicit app router API, but prompts and
+  agent-facing CLI guidance SHOULD prefer `ravi <app-id> <operation>`.
 
 ## Command Contract
 
 ```bash
-ravi apps run <app-id> [operation] [args...] --json
 ravi <app-id> [operation] [args...] --json
+ravi apps run <app-id> [operation] [args...] --json
 ```
 
 Argument handling:
 
 - `<app-id>` is the manifest id.
 - `[operation]` defaults to router help/summary when omitted.
+- `[operation]` MAY contain dots (`test.a`) or be expressed as nested CLI
+  tokens (`test a`) when the declared operation id matches.
 - Remaining args are operation-specific and MUST be passed only after the
   operation executor has been resolved and authorized.
 - Global CLI flags such as `--json` MUST retain their normal behavior.
@@ -128,14 +134,14 @@ Argument handling:
 ## Resolution Order
 
 1. Registered static CLI commands.
-2. `ravi apps run <app-id> ...`.
-3. Root-level dynamic app alias `ravi <app-id> ...`.
+2. Root-level dynamic app alias `ravi <app-id> ...`.
+3. `ravi apps run <app-id> ...`.
 4. Normal CLI unknown-command handling.
 
 Static commands include generated/decorated first-party commands and manually
 registered root commands. A manifest id that collides with a static command is
 still discoverable, but its root alias is disabled. Operators and agents MUST
-use `ravi apps run <app-id> ...` for that app.
+use `ravi apps run <app-id> ...` only for that collision/debug case.
 
 ## Operation Executor Contract
 
@@ -172,17 +178,19 @@ Stream operations MUST declare `channel`.
 - The app router is not a replacement for first-party static CLI commands.
   Stable core commands may remain build-time registered when they need SDK
   codegen, decorators, or custom parser behavior.
-- The root-level alias is an ergonomic launcher only. The durable contract is
-  `ravi apps run`.
+- The root-level alias is the user and agent-facing launcher. `ravi apps run`
+  is the lower-level router entrypoint for diagnostics and collision fallback.
 
 ## Validation
 
 - `ravi specs get apps/router --mode rules --json` MUST return this contract.
 - A valid new app manifest SHOULD become invokable through
-  `ravi apps run <app-id> check --json` without rebuilding the CLI.
-- A valid new app manifest SHOULD become invokable through
   `ravi <app-id> check --json` when its id does not collide with a static
   command.
+- A valid new app manifest SHOULD also become invokable through
+  `ravi apps run <app-id> check --json` without rebuilding the CLI.
+- A declared operation id like `<app-id>.test.a` SHOULD become invokable through
+  `ravi <app-id> test a --json`.
 - A manifest id that collides with a static command SHOULD remain invokable
   through `ravi apps run <app-id> ...`.
 - A hidden manifest id SHOULD NOT resolve as a root-level dynamic alias.

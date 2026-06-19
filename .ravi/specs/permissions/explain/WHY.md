@@ -16,9 +16,8 @@ concern of audit events.
 
 ## The Incident That Forced This
 
-On 2026-06-10 ~23:17, a legacy cleanup
-(`ravi permissions legacy --apply --confirm legacy-cleanup`, two waves)
-revoked ~16,000 manual relations. The issuing session granted full access to
+On 2026-06-10 ~23:17, an unsafe broad permission cleanup in two waves removed
+authority for thousands of manual records. The issuing session granted full access to
 itself, its operator contact, and its own chat surface minutes before
 applying, so its own turns kept working while every other chat surface
 dropped to zero capabilities.
@@ -33,7 +32,7 @@ accurate and operationally useless:
   debt the cleanup was trying to retire, one denial at a time;
 - the agent asked to fix it could not, because its own admin grant had been
   revoked in the same sweep — and the diagnosis did not say that either;
-- root-causing required raw SQL against `relations.revoked_at`.
+- root-causing required direct database inspection of inactive authority records.
 
 Every fact needed for the correct diagnosis was already persisted. The system
 chose not to look at inactive tuples when explaining a zero branch.

@@ -47,6 +47,24 @@ class DemoCommands {
   }
 }
 
+@Group({ name: "aliased", description: "Aliased group", scope: "open", aliases: ["alias"] })
+class AliasedGroupCommands {
+  @Command({ name: "show", description: "Show aliased group" })
+  show() {}
+}
+
+@Group({ name: "aliased", description: "Aliased group extension", scope: "open", aliases: ["legacy"] })
+class AliasedGroupExtensionCommands {
+  @Command({ name: "list", description: "List aliased group" })
+  list() {}
+}
+
+@Group({ name: "hidden", description: "Hidden group", scope: "open", hidden: true })
+class HiddenSnapshotCommands {
+  @Command({ name: "debug", description: "Hidden debug command" })
+  debug() {}
+}
+
 @Group({ name: "demo.nested", description: "Nested demo", scope: "admin" })
 class NestedDemo {
   @Command({ name: "show", description: "Show nested" })
@@ -96,6 +114,17 @@ describe("buildRegistry", () => {
     expect(helloCmd?.access).toEqual({ kind: "read", resource: "demo", action: "hello", risk: "low" });
     expect(helloCmd?.args.map((a) => a.name)).toEqual(["name"]);
     expect(helloCmd?.options.map((o) => o.name).sort()).toEqual(["limit", "shout"]);
+  });
+
+  it("captures group aliases", () => {
+    const reg = buildRegistry([AliasedGroupCommands, AliasedGroupExtensionCommands]);
+    expect(reg.groups.find((group) => group.name === "aliased")?.aliases).toEqual(["alias", "legacy"]);
+  });
+
+  it("skips hidden groups", () => {
+    const reg = buildRegistry([HiddenSnapshotCommands]);
+    expect(reg.groups).toEqual([]);
+    expect(reg.commands).toEqual([]);
   });
 
   it("produces inferred Zod schemas for default flag DSL patterns", () => {

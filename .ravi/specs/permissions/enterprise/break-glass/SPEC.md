@@ -6,7 +6,7 @@ domain: permissions
 capability: enterprise
 feature: break-glass
 capabilities:
-  - local-grants
+  - provider-runtime
   - operator-identity
   - audit
 tags:
@@ -65,11 +65,10 @@ removed.
   cannot be audited MUST be refused.
 - Break-glass MUST be distinguishable from normal delegated authority in traces
   and provenance (`mode = break-glass`, operator principal present).
-- High-impact break-glass actions (bulk revocation, clearing relations, granting
-  `admin system:*`, restoring batches) SHOULD require a reason and MAY require a
-  second-operator approval or be time-bound; above a configured blast-radius
-  threshold approval MUST be required (reuse the existing bulk-op blast-radius
-  guard).
+- High-impact break-glass actions (authority reset, granting `admin system:*`,
+  or broad provider-owned capability changes) SHOULD require a reason and MAY
+  require a second-operator approval or be time-bound; above a configured
+  blast-radius threshold approval MUST be required.
 - Operator privilege MUST be revocable and time-bindable like any other grant;
   a standing all-powerful local operator is a configuration, not the default for
   enterprise mode.
@@ -95,10 +94,8 @@ removed.
 - `agentCan(undefined, …)` MUST return deny. `enforceScopeCheck` and other
   no-agent gates MUST consult an explicit local-operator/operator path instead
   of returning allow purely on missing `agentId`.
-- The permission-mutating CLI group (`grant`, `init`, `revoke`, `legacy`,
-  `restore-batch`, `prune-revoked`, `clear`) MUST require an authenticated
-  operator in enterprise mode and MUST record the operator on each mutation
-  (`issued_by = operator:<id>`).
+- Provider-owned authority mutation MUST require an authenticated operator in
+  enterprise mode and MUST record the operator on each mutation audit event.
 - Recovery from an incident that revokes all agent admin MUST remain possible
   through the authenticated operator path (the operator does not depend on any
   agent holding `admin system:*`), preserving the break-glass guarantee from
@@ -107,7 +104,8 @@ removed.
 ## Acceptance Criteria
 
 - With enterprise mode on, an invocation with no agent principal and no operator
-  credential is DENIED for `permissions grant` and every authority-bearing gate.
+  credential is DENIED for provider-owned authority mutation and every
+  authority-bearing gate.
 - With a valid operator credential, the same invocation is ALLOWED and produces
   a break-glass audit record naming the operator.
 - A break-glass bulk revocation above the blast-radius threshold requires

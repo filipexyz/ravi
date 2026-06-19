@@ -5,7 +5,7 @@ kind: capability
 domain: permissions
 capability: enterprise
 capabilities:
-  - local-grants
+  - provider-runtime
   - delegation
   - break-glass
   - audit
@@ -64,10 +64,9 @@ See `permissions/enterprise/WHY.md` for the full rationale.
 
 - Each deployment is a single tenant. Cross-tenant isolation is NOT required
   inside one deployment; it is provided by deployment separation.
-- The authorization store stays local (the `relations` table is already a
-  Zanzibar-style tuple store at a scale a single tenant never outgrows). The
-  enterprise work MUST NOT introduce a mandatory external authorization service
-  that breaks the local-first, data-never-leaves guarantee.
+- Authorization stays local and provider-owned. Enterprise work MUST NOT
+  introduce a mandatory external authorization service that breaks the
+  local-first, data-never-leaves guarantee.
 - Multi-tenant SaaS is explicitly out of scope for this spec.
 
 ## Invariants

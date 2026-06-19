@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { agentCan } from "../permissions/provider-runtime.js";
-import { grantRelation } from "../permissions/relations.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
 import type { AgentConfig } from "../router/index.js";
-import { dbCreateAgent } from "../router/router-db.js";
+import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
@@ -101,8 +100,6 @@ describe("delegated turn enforcement (end-to-end)", () => {
     process.env.RAVI_TURN_SCOPED_AUTHORITY = "1";
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
-    // Legacy grant-store superadmin must not leak into provider-runtime turns.
-    grantRelation("agent", agent.id, "admin", "system", "*");
   });
 
   afterEach(async () => {
@@ -115,8 +112,7 @@ describe("delegated turn enforcement (end-to-end)", () => {
     stateDir = null;
   });
 
-  it("does not authorize a resolved actor from relation-store grants alone", () => {
-    grantRelation("contact", "luis", "execute", "group", "sessions_info");
+  it("does not authorize a resolved actor without provider-owned actor authority", () => {
     const ctx = turnContext(contactPrompt("luis"));
 
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
@@ -132,9 +128,7 @@ describe("delegated turn enforcement (end-to-end)", () => {
     expect(decision.errorMessage).toContain("execute on group:sessions_info");
   });
 
-  it("does not resolve actor authority from legacy grants or leak it to the next unresolved speaker", () => {
-    grantRelation("contact", "luis", "use", "tool", "Bash");
-
+  it("does not leak resolved actor state to the next unresolved speaker", () => {
     const trusted = turnContext(contactPrompt("luis"));
     expect(runWithContext(trusted, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(false);
 
@@ -152,18 +146,22 @@ describe("delegated turn enforcement (end-to-end)", () => {
     expect(decision.allowed).toBe(true);
   });
 
-  it("ignores relation-store role grants for cron automation in default runtime materialization", () => {
-    grantRelation("automation", "cron:job-1", "member", "role", "ops");
-    grantRelation("role", "ops", "access", "session", "restricted");
+  it("lets cron automation inherit the executor agent runtime permission profile", () => {
+    dbUpdateAgent(agent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const ctx = turnContext(cronPrompt());
+
+    expect(runWithContext(ctx, () => agentCan(agent.id, "admin", "system", "*"))).toBe(true);
+    expect(runWithContext(ctx, () => agentCan(agent.id, "execute", "executable", "omni"))).toBe(true);
+  });
+
+  it("does not add extra cron authority without provider-owned automation config", () => {
     const ctx = turnContext(cronPrompt());
 
     expect(runWithContext(ctx, () => agentCan(agent.id, "execute", "group", "sessions_info"))).toBe(true);
     expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
   });
 
-  it("keeps relation-store grants and surface denies out of default provider-runtime turns", () => {
-    grantRelation("contact", "luis", "execute", "group", "sessions_info");
-    grantRelation("chat", "chat_group_1", "deny_execute", "group", "sessions_info");
+  it("keeps contact turns denied without provider-owned actor and surface authority", () => {
     const ctx = turnContext(contactPrompt("luis"));
 
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));

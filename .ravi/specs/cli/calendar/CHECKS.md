@@ -26,6 +26,8 @@ owners:
 - Unauthorized agents cannot read event details.
 - `availability` with free/busy permission redacts private details.
 - Calendar sharing requires `calendar:manage`.
+- `calendars create` without explicit owner uses the active contact actor when
+  one is resolved in runtime context.
 - Recurring events are not expanded outside the requested output window.
 
 ## Local-First Writes

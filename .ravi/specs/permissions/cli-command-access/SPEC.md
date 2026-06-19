@@ -35,8 +35,9 @@ CLI command access metadata declares what a command does so the Permission
 Provider Runtime can decide whether it may run.
 
 The decorator is a contract, not a grant and not policy. It MUST NOT encode
-REBAC relations, role expansion, subject grants, or local allowlists. It exists
-to turn a decorated CLI method into a typed provider-runtime request.
+provider-owned capabilities, role expansion, subject authority, or local
+allowlists. It exists to turn a decorated CLI method into a typed
+provider-runtime request.
 
 ## Decorator
 
@@ -139,6 +140,41 @@ credentials, secret env values, or arbitrary unredacted command payloads.
 The provider runtime owns the decision. The command decorator MUST NOT decide
 whether a subject is allowed.
 
+## Capability Mapping
+
+CLI command execution MUST authorize the semantic command capability declared by
+`@CommandAccess` before falling back to legacy command-group capabilities.
+
+Canonical command capabilities use:
+
+```text
+<kind>:<resource>:<action>
+```
+
+Examples:
+
+```text
+read:skills:show
+read:self:permissions
+read:tasks.profiles:list
+read:tasks.profiles:preview
+mutate:tasks:create
+```
+
+Rules:
+
+- `access.kind` maps to the capability permission: `read` or `mutate`.
+- `access.resource` maps to the capability object type.
+- `access.action` maps to the capability object id.
+- `<kind>:<resource>:*` MAY authorize every action for that semantic resource.
+- During migration only, `<kind>:<resource>.<action>:*` MAY be accepted as a
+  compatibility alias for agents that produced dotted action resource ids.
+- Legacy `execute:group:<group>_<command>` and `execute:group:<group>` MAY
+  remain as fallback compatibility. They MUST NOT be the preferred grant shape
+  for newly generated instructions.
+- `read:<resource>.<action>:*` MUST NOT be documented as the canonical shape.
+  The canonical shape is `read:<resource>:<action>`.
+
 ## Local Operator
 
 Direct terminal use without a resolved runtime principal MAY be authorized by
@@ -199,12 +235,17 @@ lacks `@CommandAccess` MUST fail the relevant quality gate.
 - Do not expose command input to providers without explicit selection and
   redaction.
 - Do not let direct local CLI behavior define runtime agent authorization.
+- Do not tell operators to grant CLI commands as `read:<resource.action>:*`
+  when the canonical command capability is `read:<resource>:<action>`.
 
 ## Acceptance Criteria
 
 - Public CLI commands expose command access metadata in the registry.
 - Mutating commands produce provider-runtime requests before side effects in
   runtime/tool/gateway execution paths.
+- CLI command authorization accepts semantic `read/mutate` capabilities derived
+  from `@CommandAccess` and uses legacy `execute:group` capabilities only as a
+  compatibility fallback.
 - Direct local CLI without principal uses explicit local-operator mode only.
 - `ravi doctor --domain permissions` reports missing command access metadata
   and can distinguish missing metadata from intentionally read-only commands.

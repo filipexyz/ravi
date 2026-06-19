@@ -95,7 +95,7 @@ default and is pushed to a customer sink, not a vendor cloud).
 
 ## Acceptance Criteria
 
-- A sensitive allow (e.g. an authorized `permissions grant`, an authorized Bash
+- A sensitive allow (e.g. an authorized authority mutation, an authorized Bash
   execution) produces an audit record with full provenance, not just denies.
 - Deleting or editing a record is detectable by the verification command.
 - With a configured sink, records are exported and acknowledged; killing the

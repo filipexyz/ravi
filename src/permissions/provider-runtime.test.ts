@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { runWithContext } from "../cli/context.js";
-import type { ContextRecord } from "../router/router-db.js";
+import { createContact } from "../contacts.js";
+import { dbCreateAgent, dbUpdateAgent, type ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getConfiguredCapabilityMaterializers, getConfiguredPermissionProviders } from "./provider-registry.js";
 import {
@@ -10,10 +11,11 @@ import {
   authorizePermission,
   canWithCapabilities,
   canWithCapabilityContext,
+  can,
   localOperatorCan,
   materializeSubjectCapabilities,
 } from "./provider-runtime.js";
-import { grantRelation } from "./relations.js";
+import { ensureAgentCanViewAgent, ensureAgentCanViewAllAgents } from "./agent-runtime-permissions-provider.js";
 
 let stateDir: string | null = null;
 
@@ -56,10 +58,8 @@ describe("Permission Provider Runtime", () => {
     expect(localOperatorCan("execute", "group", "daemon")).toBe(true);
   });
 
-  it("does not read local grants from the default provider chain", () => {
+  it("does not authorize direct subject checks without a provider-owned context", () => {
     expect(agentCan("dev", "use", "app", "apps")).toBe(false);
-
-    grantRelation("agent", "dev", "use", "app", "apps", "test");
 
     const decision = authorizePermission({
       subject: { type: "agent", id: "dev" },
@@ -74,23 +74,16 @@ describe("Permission Provider Runtime", () => {
     expect(agentCan("dev", "use", "app", "apps")).toBe(false);
   });
 
-  it("keeps local grants out of default capability materialization", () => {
-    grantRelation("agent", "dev", "execute", "group", "sessions", "test");
-
+  it("materializes bootstrap capabilities without removed mutation commands", () => {
     const capabilities = materializeSubjectCapabilities("agent", "dev");
 
-    expect(capabilities).not.toContainEqual({
-      permission: "execute",
-      objectType: "group",
-      objectId: "sessions",
-      source: "test",
-    });
     expect(capabilities).toContainEqual({
       permission: "use",
       objectType: "tool",
       objectId: "*",
       source: "runtime-bootstrap:agent",
     });
+    expect(canWithCapabilities(capabilities, "execute", "executable", "omni")).toBe(false);
     expect(
       authorizePermission({
         subject: { type: "agent", id: "dev" },
@@ -99,6 +92,105 @@ describe("Permission Provider Runtime", () => {
         objectId: "sessions",
       }).allowed,
     ).toBe(false);
+  });
+
+  it("stores agent visibility in provider-owned runtime permission defaults", () => {
+    dbCreateAgent({ id: "creator", cwd: "/tmp/creator" });
+    dbCreateAgent({ id: "created", cwd: "/tmp/created" });
+
+    expect(can("agent", "creator", "view", "agent", "created")).toBe(false);
+    expect(ensureAgentCanViewAgent("creator", "created")).toBe(true);
+    expect(ensureAgentCanViewAgent("creator", "created")).toBe(false);
+
+    const capabilities = materializeSubjectCapabilities("agent", "creator");
+    expect(capabilities).toContainEqual({
+      permission: "view",
+      objectType: "agent",
+      objectId: "created",
+      source: "agent-runtime-permissions:agent:creator",
+    });
+  });
+
+  it("can backfill default-agent visibility for all agents through provider-owned config", () => {
+    dbCreateAgent({ id: "worker", cwd: "/tmp/worker" });
+
+    expect(ensureAgentCanViewAllAgents("main")).toBe(false);
+    const capabilities = materializeSubjectCapabilities("agent", "main");
+    expect(capabilities).toContainEqual({
+      permission: "view",
+      objectType: "agent",
+      objectId: "*",
+      source: "agent-runtime-permissions:agent:main",
+    });
+    expect(canWithCapabilities(capabilities, "view", "agent", "worker")).toBe(true);
+  });
+
+  it("materializes declarative full-access agent profiles from agent defaults", () => {
+    dbCreateAgent({ id: "trusted-agent", cwd: "/tmp/trusted-agent" });
+    dbUpdateAgent("trusted-agent", {
+      defaults: { runtimePermissions: { profile: "full-access" } },
+    });
+
+    const capabilities = materializeSubjectCapabilities("agent", "trusted-agent");
+
+    expect(capabilities).toContainEqual({
+      permission: "admin",
+      objectType: "system",
+      objectId: "*",
+      source: "agent-runtime-permissions:agent:trusted-agent",
+    });
+    expect(canWithCapabilities(capabilities, "execute", "executable", "omni")).toBe(true);
+  });
+
+  it("materializes explicit agent runtime capabilities without growing the bootstrap allowlist", () => {
+    dbCreateAgent({ id: "omni-agent", cwd: "/tmp/omni-agent" });
+    dbUpdateAgent("omni-agent", {
+      defaults: { runtimePermissions: { capabilities: ["execute:executable:omni"] } },
+    });
+
+    const capabilities = materializeSubjectCapabilities("agent", "omni-agent");
+
+    expect(capabilities).toContainEqual({
+      permission: "execute",
+      objectType: "executable",
+      objectId: "omni",
+      source: "agent-runtime-permissions:agent:omni-agent",
+    });
+    expect(canWithCapabilities(materializeSubjectCapabilities("agent", "dev"), "execute", "executable", "omni")).toBe(
+      false,
+    );
+  });
+
+  it("materializes admin authority for allowed admin-tagged contacts", () => {
+    const contact = createContact({
+      phone: "5511999990000",
+      name: "Owner",
+      tags: ["permission.admin"],
+      status: "allowed",
+    });
+
+    const capabilities = materializeSubjectCapabilities("contact", contact.id);
+
+    expect(capabilities).toContainEqual({
+      permission: "admin",
+      objectType: "system",
+      objectId: "*",
+      source: `contact-policy:contact:${contact.id}:admin-tag`,
+    });
+    expect(canWithCapabilities(capabilities, "execute", "group", "pages")).toBe(true);
+  });
+
+  it("does not materialize admin authority from generic contact tags", () => {
+    const contact = createContact({
+      phone: "5511999990001",
+      name: "CRM Admin",
+      tags: ["admin"],
+      status: "allowed",
+    });
+
+    const capabilities = materializeSubjectCapabilities("contact", contact.id);
+
+    expect(capabilities).toEqual([]);
   });
 
   it("does not bootstrap actor or surface principals by default", () => {
@@ -245,12 +337,16 @@ describe("Permission Provider Runtime boundaries", () => {
     expect(existsSync(join(process.cwd(), "src/permissions/engine.test.ts"))).toBe(false);
   });
 
-  it("keeps relation-store grants out of the default authorization chain", () => {
+  it("keeps provider-owned config behind the materializer chain", () => {
     expect(getConfiguredPermissionProviders().map((provider) => provider.id)).toEqual([
       "local-operator",
       "context-capabilities",
     ]);
-    expect(getConfiguredCapabilityMaterializers().map((provider) => provider.id)).toEqual(["runtime-bootstrap"]);
+    expect(getConfiguredCapabilityMaterializers().map((provider) => provider.id)).toEqual([
+      "runtime-bootstrap",
+      "agent-runtime-permissions",
+      "contact-policy-permissions",
+    ]);
   });
 
   it("keeps production authorization callers off direct grant engines and stores", () => {
@@ -269,9 +365,7 @@ describe("Permission Provider Runtime boundaries", () => {
   it("keeps the provider runtime facade off direct grant engines and stores", () => {
     const contents = readFileSync(join(process.cwd(), "src/permissions/provider-runtime.ts"), "utf8");
 
-    expect(
-      /from\s+["']\.\/(?:engine|capability-context|relations|local-grants-provider)(?:\.js)?["']/.test(contents),
-    ).toBe(false);
+    expect(/from\s+["']\.\/(?:engine|capability-context)(?:\.js)?["']/.test(contents)).toBe(false);
   });
 
   it("keeps app provider execution private behind the provider-runtime facade", () => {

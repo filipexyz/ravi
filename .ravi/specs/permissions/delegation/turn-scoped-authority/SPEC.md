@@ -6,14 +6,14 @@ domain: permissions
 capability: delegation
 feature: turn-scoped-authority
 capabilities:
-  - local-grants
+  - provider-runtime
   - runtime-context
   - contacts
   - chats
   - host-services
 tags:
   - permissions
-  - local-grants
+  - provider-runtime
   - delegation
   - contacts
   - runtime
@@ -157,7 +157,7 @@ and intersection artifact, not a second source of truth:
 
 ## Superadmin Boundary
 
-Existing local-grants behavior that lets live `isAgentSuperadmin(agentId)` win is valid only for internal admin contexts.
+Live executor-agent administrator authority is valid only for internal admin contexts.
 
 For user-initiated invocation contexts:
 
@@ -180,7 +180,7 @@ All authority-bearing surfaces MUST authorize against the effective invocation c
   `read_own_contacts system:*`, `read_tagged_contacts system:<tag>`, or a
   future explicit CRM object relation
 - Contact/CRM writes: `write_contacts system:*` or narrower future contact/CRM
-  scoped relations
+  scoped capabilities
 - Gateway streams: `view/access <object>`
 - Child context issuance: requested child capabilities MUST be a subset of effective parent capabilities
 

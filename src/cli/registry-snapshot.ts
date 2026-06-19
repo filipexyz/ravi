@@ -80,6 +80,8 @@ export interface GroupRegistryEntry {
   segments: string[];
   description: string;
   scope?: ScopeType;
+  aliases?: string[];
+  hidden?: boolean;
 }
 
 export interface CommandRegistryEntry {
@@ -134,18 +136,23 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
   for (const cls of classes) {
     const groupMeta = getGroupMetadata(cls);
     if (!groupMeta) continue;
+    if (groupMeta.hidden) continue;
 
     const commandsMeta = getCommandsMetadata(cls);
     if (commandsMeta.length === 0) continue;
 
     const segments = groupMeta.name.split(".");
-    if (!groups.has(groupMeta.name)) {
+    const existingGroup = groups.get(groupMeta.name);
+    if (!existingGroup) {
       groups.set(groupMeta.name, {
         name: groupMeta.name,
         segments,
         description: groupMeta.description,
         ...(groupMeta.scope ? { scope: groupMeta.scope } : {}),
+        ...(groupMeta.aliases ? { aliases: groupMeta.aliases } : {}),
       });
+    } else if (groupMeta.aliases?.length) {
+      existingGroup.aliases = Array.from(new Set([...(existingGroup.aliases ?? []), ...groupMeta.aliases]));
     }
 
     const instance = new cls();

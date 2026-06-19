@@ -15,32 +15,24 @@ owners:
 ## Create A Local Calendar
 
 ```bash
-ravi calendar accounts create --provider local --display-name "Local" --json
-ravi calendar calendars create --name "Luis" --timezone America/Sao_Paulo --json
+ravi calendars create --name "Luis" --timezone America/Sao_Paulo --json
 ```
 
 ## Create And Read An Event
 
 ```bash
-ravi calendar events create \
+ravi calendars events create \
   --calendar <calendar-id> \
   --title "Daily review" \
   --start "2026-06-05T10:00:00-03:00" \
   --end "2026-06-05T10:30:00-03:00" \
   --json
 
-ravi calendar events read <event-id> --json
+ravi calendars events read <event-id> --json
 ```
 
 ## Check Availability
 
 ```bash
-ravi calendar availability --from now --to +7d --json
-```
-
-## Inspect Outbox
-
-```bash
-ravi calendar outbox status --json
-ravi calendar outbox retry --json
+ravi calendars availability --from now --to +7d --json
 ```

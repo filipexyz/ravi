@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { ScopeContext } from "../permissions/scope.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { calendarAccessLevel, canUseAnyCalendar, canUseCalendar, canUseCalendarProvider } from "./access.js";
+import {
+  calendarAccessLevel,
+  canUseAnyCalendar,
+  canUseCalendar,
+  canUseCalendarProvider,
+  resolveDefaultCalendarOwnerSubject,
+} from "./access.js";
+import { addCalendarMember, createCalendar, createCalendarAccount } from "./db.js";
 import type { CalendarCalendar } from "./types.js";
 
 let stateDir: string | null = null;
@@ -27,14 +34,14 @@ function cap(permission: string, objectType: string, objectId: string): ContextC
   return { permission, objectType, objectId };
 }
 
-function ctxWith(capabilities: ContextCapability[]): ScopeContext {
+function ctxWith(capabilities: ContextCapability[], metadata: Record<string, unknown> = {}): ScopeContext {
   const context: ContextRecord = {
     contextId: "ctx_calendar_access",
     contextKey: "ctx_key_calendar_access",
     kind: "test-runtime",
     agentId: "dev",
     capabilities,
-    metadata: {},
+    metadata,
     createdAt: 0,
   };
   return { agentId: "dev", context };
@@ -66,6 +73,70 @@ describe("calendar access gate", () => {
     const owned = calendar({ ownerType: "agent", ownerId: "dev" });
     expect(canUseCalendar(DEV, "write", owned)).toBe(true);
     expect(canUseCalendar(DEV, "manage", owned)).toBe(true);
+  });
+
+  it("allows the active contact actor to use their own private calendar", () => {
+    const owned = calendar({ ownerType: "contact", ownerId: "luis" });
+    const luisCtx = ctxWith([], { actorPrincipal: "contact:luis", actorType: "contact", contactId: "luis" });
+    const otherCtx = ctxWith([], { actorPrincipal: "contact:ana", actorType: "contact", contactId: "ana" });
+
+    expect(canUseCalendar(luisCtx, "read", owned)).toBe(true);
+    expect(canUseCalendar(luisCtx, "manage", owned)).toBe(true);
+    expect(canUseCalendar(otherCtx, "read", owned)).toBe(false);
+  });
+
+  it("honors memberships for the active contact actor", () => {
+    const account = createCalendarAccount({ id: "acct-local", provider: "local" });
+    const owned = createCalendar({
+      id: "cal-luis",
+      accountId: account.id,
+      name: "Luis",
+      ownerType: "contact",
+      ownerId: "luis",
+      visibility: "private",
+    });
+    const anaCtx = ctxWith([], { actorPrincipal: "contact:ana", actorType: "contact", contactId: "ana" });
+
+    expect(canUseCalendar(anaCtx, "read", owned)).toBe(false);
+
+    addCalendarMember({ calendarId: owned.id, memberType: "contact", memberId: "ana", relation: "reader" });
+
+    expect(canUseCalendar(anaCtx, "read", owned)).toBe(true);
+    expect(canUseCalendar(anaCtx, "free-busy", owned)).toBe(true);
+    expect(canUseCalendar(anaCtx, "write", owned)).toBe(false);
+  });
+
+  it("uses the active contact actor as the default owner before the executor agent", () => {
+    const subject = resolveDefaultCalendarOwnerSubject(
+      ctxWith([], { actorPrincipal: "contact:luis", actorType: "contact", contactId: "luis" }),
+    );
+    expect(subject).toEqual({ type: "contact", id: "luis" });
+
+    const previousContactId = process.env.RAVI_CONTACT_ID;
+    delete process.env.RAVI_CONTACT_ID;
+    try {
+      expect(resolveDefaultCalendarOwnerSubject(DEV)).toEqual({ type: "agent", id: "dev" });
+      expect(resolveDefaultCalendarOwnerSubject({})).toEqual({ type: "system", id: "ravi" });
+    } finally {
+      if (previousContactId !== undefined) process.env.RAVI_CONTACT_ID = previousContactId;
+    }
+  });
+
+  it("uses legacy RAVI_CONTACT_ID when no runtime context record is available", () => {
+    const previousContactId = process.env.RAVI_CONTACT_ID;
+    process.env.RAVI_CONTACT_ID = "luis";
+    try {
+      const owned = calendar({ ownerType: "contact", ownerId: "luis" });
+
+      expect(resolveDefaultCalendarOwnerSubject(DEV)).toEqual({ type: "contact", id: "luis" });
+      expect(canUseCalendar(DEV, "manage", owned)).toBe(true);
+    } finally {
+      if (previousContactId === undefined) {
+        delete process.env.RAVI_CONTACT_ID;
+      } else {
+        process.env.RAVI_CONTACT_ID = previousContactId;
+      }
+    }
   });
 
   it("allows public calendars for read/search/free-busy but not writes", () => {

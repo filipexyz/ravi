@@ -102,7 +102,6 @@ function makeHealthyDeps() {
           { name: "instances" },
           { name: "routes" },
           { name: "chats" },
-          { name: "relations" },
           { name: "message_metadata" },
           { name: "cost_events" },
           { name: "session_turns" },

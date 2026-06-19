@@ -7,7 +7,6 @@ import { dbUpsertSkillGateRule, getOrCreateSession, getSession } from "../router
 import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
-import { grantRelation } from "../permissions/relations.js";
 
 let stateDir: string | null = null;
 let previousCodexHome: string | undefined;
@@ -281,7 +280,6 @@ describe("runtime host skill-gate enforcement", () => {
       sessionName: "permission-live-grant-test",
       capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
     });
-    grantRelation("agent", "main", "execute", "executable", "git", "test");
     const services = createRuntimeHostServices({
       context,
       agentId: "main",
