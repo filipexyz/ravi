@@ -1,6 +1,7 @@
 import { contextCapabilitiesProvider } from "./context-capabilities-provider.js";
 import type { PermissionProvider } from "./provider-types.js";
 import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
+import { localGrantsProvider } from "./local-grants-provider.js";
 
 export const localOperatorProvider: PermissionProvider = {
   id: "local-operator",
@@ -24,7 +25,7 @@ export const localOperatorProvider: PermissionProvider = {
 };
 
 const DEFAULT_PERMISSION_PROVIDERS: PermissionProvider[] = [localOperatorProvider, contextCapabilitiesProvider];
-const DEFAULT_CAPABILITY_MATERIALIZERS: PermissionProvider[] = [runtimeBootstrapProvider];
+const DEFAULT_CAPABILITY_MATERIALIZERS: PermissionProvider[] = [runtimeBootstrapProvider, localGrantsProvider];
 
 export function getConfiguredPermissionProviders(): PermissionProvider[] {
   return DEFAULT_PERMISSION_PROVIDERS;

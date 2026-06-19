@@ -74,31 +74,36 @@ describe("Permission Provider Runtime", () => {
     expect(agentCan("dev", "use", "app", "apps")).toBe(false);
   });
 
-  it("keeps local grants out of default capability materialization", () => {
+  it("includes local grants alongside bootstrap in default capability materialization", () => {
     grantRelation("agent", "dev", "execute", "group", "sessions", "test");
 
     const capabilities = materializeSubjectCapabilities("agent", "dev");
 
-    expect(capabilities).not.toContainEqual({
+    // Local-grants materializer surfaces ledger entries into the snapshot.
+    expect(capabilities).toContainEqual({
       permission: "execute",
       objectType: "group",
       objectId: "sessions",
       source: "test",
     });
+    // Bootstrap base set is still merged in.
     expect(capabilities).toContainEqual({
       permission: "use",
       objectType: "tool",
       objectId: "*",
       source: "runtime-bootstrap:agent",
     });
+    // Authorization chain still excludes local-grants, so capability-context
+    // alone has to honor the materialized grant.
     expect(
       authorizePermission({
         subject: { type: "agent", id: "dev" },
         permission: "execute",
         objectType: "group",
         objectId: "sessions",
+        context: { kind: "agent-runtime", agentId: "dev", capabilities } as never,
       }).allowed,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not bootstrap actor or surface principals by default", () => {
@@ -250,7 +255,10 @@ describe("Permission Provider Runtime boundaries", () => {
       "local-operator",
       "context-capabilities",
     ]);
-    expect(getConfiguredCapabilityMaterializers().map((provider) => provider.id)).toEqual(["runtime-bootstrap"]);
+    expect(getConfiguredCapabilityMaterializers().map((provider) => provider.id)).toEqual([
+      "runtime-bootstrap",
+      "local-grants",
+    ]);
   });
 
   it("keeps production authorization callers off direct grant engines and stores", () => {
