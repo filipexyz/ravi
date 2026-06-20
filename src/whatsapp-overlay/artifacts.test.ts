@@ -339,6 +339,10 @@ describe("buildOverlayArtifactsPayload", () => {
             "wa-overlay": {
               renderer: "artifact-card.compact",
               artifactId: "art_renderer_1",
+              source: {
+                js: "function render(root, props) { root.textContent = props.title || ''; }",
+                css: ".artifact-card { color: white; }",
+              },
             },
           },
           fixtures: [
@@ -378,6 +382,10 @@ describe("buildOverlayArtifactsPayload", () => {
           surface: "wa-overlay",
           renderer: "artifact-card.compact",
           artifactId: "art_renderer_1",
+          source: {
+            js: "function render(root, props) { root.textContent = props.title || ''; }",
+            css: ".artifact-card { color: white; }",
+          },
         },
       ],
       fixtures: [

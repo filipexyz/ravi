@@ -4618,6 +4618,7 @@ function updateArtifactComponentVisualOnly() {
   if (!(visual instanceof HTMLElement)) return;
   const state = getArtifactComponentPreviewState(openArtifactModalData);
   visual.innerHTML = renderArtifactComponentVisual(openArtifactModalData.componentPreview, state);
+  hydrateArtifactComponentSandbox(visual, openArtifactModalData.componentPreview, state);
 }
 
 function closeArtifactModal() {
@@ -4720,6 +4721,10 @@ function renderArtifactModal() {
       </div>
     </div>
   `;
+  const componentContainer = modal.querySelector(".ravi-wa-artifact-modal__visual--component");
+  if (componentContainer instanceof HTMLElement) {
+    hydrateArtifactComponentSandbox(componentContainer, data.componentPreview, componentState);
+  }
 }
 
 function renderArtifactModalComponentPreview(component, state) {
@@ -4876,13 +4881,146 @@ function renderArtifactComponentControl(propName, propSchema, value) {
 
 function renderArtifactComponentVisual(component, state) {
   const componentId = typeof component?.id === "string" ? component.id.trim() : "";
-  const props = state?.props || {};
+  const props = sanitizeArtifactComponentSandboxProps(state?.props || {});
+  if (getArtifactComponentRendererSource(component)) {
+    return renderArtifactComponentSandboxFrame(component);
+  }
   return renderKnownUiComponentFixture(componentId, props);
+}
+
+function renderArtifactComponentSandboxFrame(component) {
+  const title = readUiComponentString(component?.id) || "ui.component";
+  return `
+    <iframe
+      class="ravi-wa-ui-component-sandbox"
+      data-ravi-component-sandbox="true"
+      sandbox="allow-scripts"
+      title="${escapeAttribute(`Preview ${title}`)}"
+    ></iframe>
+  `;
+}
+
+function hydrateArtifactComponentSandbox(container, component, state) {
+  const iframe = container?.querySelector?.("[data-ravi-component-sandbox]");
+  if (!(iframe instanceof HTMLIFrameElement)) return;
+  const source = getArtifactComponentRendererSource(component);
+  if (!source?.js) return;
+  iframe.srcdoc = buildArtifactComponentSandboxSrcdoc({
+    component,
+    props: sanitizeArtifactComponentSandboxProps(state?.props || {}),
+    source,
+  });
+}
+
+function sanitizeArtifactComponentSandboxProps(props) {
+  const normalized = cloneComponentProps(props);
+  const fallbackSrc = getUiComponentImageFallbackSrc(normalized);
+  normalizeArtifactComponentSandboxImageSrc(normalized, "previewSrc", fallbackSrc);
+  if (
+    normalized.mediaPreview &&
+    typeof normalized.mediaPreview === "object" &&
+    !Array.isArray(normalized.mediaPreview)
+  ) {
+    normalized.mediaPreview = { ...normalized.mediaPreview };
+    normalizeArtifactComponentSandboxImageSrc(normalized.mediaPreview, "src", fallbackSrc);
+  }
+  return normalized;
+}
+
+function normalizeArtifactComponentSandboxImageSrc(target, key, fallbackSrc) {
+  const src = readUiComponentString(target?.[key]);
+  if (!src || isSafeUiComponentImagePreviewSrc(src)) return;
+  target[key] = fallbackSrc || "";
+}
+
+function getUiComponentImageFallbackSrc(props) {
+  const mediaPreview = props?.mediaPreview && typeof props.mediaPreview === "object" ? props.mediaPreview : null;
+  const variant = readUiComponentString(props?.variant);
+  const mimeType = readUiComponentString(props?.mimeType);
+  const mediaType = readUiComponentString(mediaPreview?.type);
+  if (variant === "image" || mediaType === "image" || mimeType?.startsWith("image/")) {
+    return getUiComponentRuntimePlaceholderImageSrc();
+  }
+  return "";
+}
+
+let uiComponentRuntimePlaceholderImageSrc = "";
+
+function getUiComponentRuntimePlaceholderImageSrc() {
+  if (uiComponentRuntimePlaceholderImageSrc) return uiComponentRuntimePlaceholderImageSrc;
+  if (typeof URL === "undefined" || typeof Blob === "undefined") return "";
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420"><rect width="640" height="420" fill="#101828"/><rect x="34" y="34" width="572" height="352" rx="28" fill="#1f2937" stroke="#8b5cf6" stroke-width="4"/><circle cx="166" cy="158" r="52" fill="#22c55e"/><path d="M96 316l118-112 88 82 68-58 174 88H96z" fill="#a78bfa"/><text x="320" y="374" font-family="Arial,sans-serif" font-size="28" fill="#f8fafc" text-anchor="middle">Ravi image preview</text></svg>';
+  try {
+    uiComponentRuntimePlaceholderImageSrc = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  } catch {
+    uiComponentRuntimePlaceholderImageSrc = "";
+  }
+  return uiComponentRuntimePlaceholderImageSrc;
+}
+
+function getArtifactComponentRendererSource(component) {
+  const renderers = Array.isArray(component?.renderers) ? component.renderers : [];
+  const renderer =
+    renderers.find((item) => item?.surface === "wa-overlay" && item?.source?.js) ||
+    renderers.find((item) => item?.source?.js) ||
+    null;
+  if (!renderer?.source || typeof renderer.source !== "object") return null;
+  const js = readUiComponentString(renderer.source.js);
+  const css = readUiComponentString(renderer.source.css) || "";
+  if (!js) return null;
+  return { js, css };
+}
+
+function buildArtifactComponentSandboxSrcdoc({ component, props, source }) {
+  const propsJson = JSON.stringify(props || {}).replace(/</g, "\\u003c");
+  const componentId = readUiComponentString(component?.id) || "ui.component";
+  const css = String(source.css || "").replace(/<\/style/gi, "<\\/style");
+  const js = String(source.js || "").replace(/<\/script/gi, "<\\/script");
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <style>
+      :root { color-scheme: dark; }
+      html, body { width: 100%; min-height: 100%; margin: 0; background: transparent; color: #e9edef; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      #root { width: 100%; min-height: 100%; display: grid; place-items: center; }
+      ${css}
+    </style>
+  </head>
+  <body>
+    <main id="root" data-component="${escapeAttribute(componentId)}"></main>
+    <script type="application/json" id="ravi-props">${propsJson}</script>
+    <script>
+      (() => {
+        const root = document.getElementById("root");
+        const props = JSON.parse(document.getElementById("ravi-props")?.textContent || "{}");
+        const api = {
+          emit(type, payload) {
+            parent.postMessage({ source: "ravi-ui-component", component: ${JSON.stringify(componentId)}, type, payload: payload ?? null }, "*");
+          }
+        };
+        try {
+          ${js}
+          const renderer = typeof render === "function" ? render : window.render;
+          if (typeof renderer === "function") {
+            renderer(root, props, api);
+          }
+        } catch (error) {
+          root.innerHTML = '<pre style="white-space:pre-wrap;margin:0;padding:12px;color:#ffb4ab;font:12px ui-monospace,monospace;"></pre>';
+          root.firstElementChild.textContent = error && error.stack ? error.stack : String(error);
+        }
+      })();
+    </script>
+  </body>
+</html>`;
 }
 
 function renderKnownUiComponentFixture(componentId, props) {
   if (componentId === "artifact.card") return renderUiComponentArtifactCard(props);
-  if (componentId === "artifact.notification") return renderUiComponentArtifactCard(props);
+  if (componentId === "artifact.notification") return renderUiComponentArtifactNotification(props);
   return "";
 }
 
@@ -4911,6 +5049,76 @@ function renderUiComponentArtifactCard(props) {
       </div>
     </article>
   `;
+}
+
+function renderUiComponentArtifactNotification(props) {
+  const tone = normalizeUiComponentTone(props?.tone || props?.status || "completed");
+  const variant = readUiComponentString(props?.variant) || "artifact";
+  const title = readUiComponentString(props?.title) || "Artifact notification";
+  const summary = readUiComponentString(props?.summary) || "";
+  const artifactId = readUiComponentString(props?.artifactId) || "art_demo";
+  const kind = readUiComponentString(props?.kind) || "artifact";
+  const provider = readUiComponentString(props?.provider);
+  const model = readUiComponentString(props?.model);
+  const updatedLabel = readUiComponentString(props?.updatedLabel) || "agora";
+  const previewSrc = getUiComponentNotificationPreviewSrc(props);
+  const previewAlt = readUiComponentString(props?.previewAlt) || title;
+  const meta = [kind, provider, model].filter(Boolean).join(" · ");
+  const preview = previewSrc
+    ? `
+      <div class="ravi-wa-ui-component-artifact-notification__preview ravi-wa-ui-component-artifact-notification__preview--image">
+        <img src="${escapeAttribute(previewSrc)}" alt="${escapeAttribute(previewAlt)}" loading="lazy" decoding="async" />
+      </div>
+    `
+    : `
+      <div class="ravi-wa-ui-component-artifact-notification__preview ravi-wa-ui-component-artifact-notification__preview--empty">
+        <span>${escapeHtml(variant)}</span>
+        <strong>${escapeHtml(kind)}</strong>
+      </div>
+    `;
+
+  return `
+    <article class="ravi-wa-ui-component-artifact-notification ravi-wa-ui-component-artifact-notification--${escapeAttribute(tone)} ravi-wa-ui-component-artifact-notification--variant-${escapeAttribute(variant.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase())}">
+      ${preview}
+      <div class="ravi-wa-ui-component-artifact-notification__body">
+        <div class="ravi-wa-ui-component-artifact-notification__meta">
+          <span>${escapeHtml(meta || variant)}</span>
+          <span>${escapeHtml(updatedLabel)}</span>
+        </div>
+        <strong>${escapeHtml(shorten(title, 72))}</strong>
+        ${summary ? `<p>${escapeHtml(shorten(summary, 132))}</p>` : ""}
+        <div class="ravi-wa-ui-component-artifact-notification__footer">
+          <code>${escapeHtml(artifactId)}</code>
+          <span>${escapeHtml(tone)}</span>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function getUiComponentNotificationPreviewSrc(props) {
+  const mediaPreview = props?.mediaPreview && typeof props.mediaPreview === "object" ? props.mediaPreview : null;
+  const direct = readUiComponentString(props?.previewSrc);
+  const nested = readUiComponentString(mediaPreview?.src);
+  const src = direct || nested;
+  if (!isSafeUiComponentImagePreviewSrc(src)) return null;
+  const variant = readUiComponentString(props?.variant);
+  const mimeType = readUiComponentString(props?.mimeType);
+  const mediaType = readUiComponentString(mediaPreview?.type);
+  if (variant === "image" || mediaType === "image" || mimeType?.startsWith("image/")) return src;
+  return null;
+}
+
+function isSafeUiComponentImagePreviewSrc(value) {
+  if (!value) return false;
+  if (value === "blob:runtime-placeholder") return false;
+  if (/^data:image\/(?:png|jpeg|jpg|webp|gif|svg\+xml);/i.test(value)) return true;
+  if (/^blob:/i.test(value)) return true;
+  return false;
+}
+
+function readUiComponentString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function normalizeUiComponentTone(value) {
@@ -6525,30 +6733,21 @@ function renderArtifactNotificationCard(card, index) {
   const item = card?.item || {};
   const lifecycle = item.lifecycle || item.status || "running";
   const title = item.label || item.id || "artifact";
-  const subtitle = buildArtifactNotificationSubtitle(item);
-  const summary = item.summary || item.path || item.uri || item.blobPath || "";
   const elapsed = formatElapsedCompact(item.updatedAt || item.createdAt) || "agora";
   const delayMs = Math.min(index * 90, 360);
-  const glyph = getArtifactGlyph(item.kind, item.mimeType);
+  const props = buildArtifactNotificationComponentProps(item, elapsed);
 
   return `
     <article
-      class="ravi-wa-artifact-notification ravi-wa-artifact-notification--${escapeAttribute(lifecycle)}"
+      class="ravi-wa-artifact-notification ravi-wa-artifact-notification--component ravi-wa-artifact-notification--${escapeAttribute(lifecycle)}"
       data-ravi-artifact-notification="${escapeAttribute(card.id)}"
       style="--ravi-artifact-notification-delay: ${delayMs}ms"
       role="button"
       tabindex="0"
       title="${escapeAttribute(title)}"
     >
-      <div class="ravi-wa-artifact-notification__glyph" aria-hidden="true">${escapeHtml(glyph)}</div>
-      <div class="ravi-wa-artifact-notification__body">
-        <div class="ravi-wa-artifact-notification__meta">
-          <span>${escapeHtml(subtitle)}</span>
-          <span>${escapeHtml(elapsed)}</span>
-        </div>
-        <strong>${escapeHtml(shorten(title, 72))}</strong>
-        ${summary ? `<p>${escapeHtml(shorten(String(summary), 116))}</p>` : ""}
-        ${renderArtifactNotificationLineage(item)}
+      <div class="ravi-wa-artifact-notification__component">
+        ${renderUiComponentArtifactNotification(props)}
       </div>
       <button
         type="button"
@@ -6558,6 +6757,75 @@ function renderArtifactNotificationCard(card, index) {
       >×</button>
     </article>
   `;
+}
+
+function buildArtifactNotificationComponentProps(item, elapsedLabel) {
+  const uiProps =
+    item?.ui?.component === "artifact.notification" && item.ui.props && typeof item.ui.props === "object"
+      ? item.ui.props
+      : {};
+  const variant = getArtifactNotificationVariant(item);
+  const previewSrc = getArtifactNotificationPreviewSrc(item, variant);
+  const title = readUiComponentString(uiProps.title) || item?.label || item?.id || "artifact";
+  const summary =
+    readUiComponentString(uiProps.summary) ||
+    readUiComponentString(item?.summary) ||
+    readUiComponentString(item?.path) ||
+    readUiComponentString(item?.uri) ||
+    readUiComponentString(item?.blobPath) ||
+    "";
+  const props = {
+    ...uiProps,
+    artifactId: item?.id || uiProps.artifactId || "artifact",
+    title,
+    summary,
+    tone: normalizeUiComponentTone(item?.lifecycle || item?.status || uiProps.tone || "running"),
+    kind: item?.kind || uiProps.kind || "artifact",
+    status: item?.status || item?.lifecycle || uiProps.status || "running",
+    provider: item?.provider || uiProps.provider || "",
+    model: item?.model || uiProps.model || "",
+    updatedLabel: elapsedLabel || "agora",
+    variant,
+    mimeType: item?.mimeType || uiProps.mimeType || "",
+    previewAlt: title,
+  };
+  if (previewSrc) {
+    props.previewSrc = previewSrc;
+    props.mediaPreview = {
+      ...(uiProps.mediaPreview && typeof uiProps.mediaPreview === "object" ? uiProps.mediaPreview : {}),
+      type: "image",
+      src: previewSrc,
+      alt: title,
+    };
+  }
+  return props;
+}
+
+function getArtifactNotificationVariant(item) {
+  const kind = String(item?.kind || "").toLowerCase();
+  const mimeType = String(item?.mimeType || "").toLowerCase();
+  if (mimeType.startsWith("image/") || kind.includes("image")) return "image";
+  if (item?.componentPreview || kind === "ui.component" || kind.includes("component")) return "ui-component";
+  if (mimeType.startsWith("audio/") || kind.includes("audio")) return "audio";
+  if (mimeType.startsWith("video/") || kind.includes("video")) return "video";
+  if (mimeType.includes("json") || kind.includes("json")) return "json";
+  if (mimeType.startsWith("text/") || kind.includes("doc") || kind.includes("markdown")) return "text";
+  if (kind.includes("trace") || kind.includes("log")) return "trace";
+  return "artifact";
+}
+
+function getArtifactNotificationPreviewSrc(item, variant) {
+  if (variant !== "image") return null;
+  const direct = getArtifactImageSrc(item);
+  if (direct && isSafeUiComponentImagePreviewSrc(direct)) return direct;
+  const blobArtifactId = getLocalArtifactImageBlobId(item);
+  if (!blobArtifactId) return getUiComponentRuntimePlaceholderImageSrc();
+  const cachedBlob = ARTIFACT_BLOB_CACHE.get(blobArtifactId);
+  if (cachedBlob?.ok && isSafeUiComponentImagePreviewSrc(cachedBlob.dataUri)) {
+    return cachedBlob.dataUri;
+  }
+  requestArtifactBlobLoad(blobArtifactId);
+  return getUiComponentRuntimePlaceholderImageSrc();
 }
 
 function buildArtifactNotificationSubtitle(item) {
@@ -14513,12 +14781,20 @@ function requestArtifactBlobLoad(artifactId) {
         });
       }
       applyArtifactBlobToTiles(artifactId);
+      applyArtifactBlobToNotifications(artifactId);
     })
     .finally(() => {
       ARTIFACT_BLOB_INFLIGHT.delete(artifactId);
     });
 
   ARTIFACT_BLOB_INFLIGHT.set(artifactId, promise);
+}
+
+function applyArtifactBlobToNotifications(artifactId) {
+  const cached = ARTIFACT_BLOB_CACHE.get(artifactId);
+  if (!cached || !cached.ok) return;
+  const hasVisibleCard = artifactNotificationCards.some((card) => card?.item?.id === artifactId);
+  if (hasVisibleCard) renderArtifactNotificationStack();
 }
 
 function applyArtifactBlobToTiles(artifactId) {

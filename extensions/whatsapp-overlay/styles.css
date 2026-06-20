@@ -3224,10 +3224,46 @@
   backdrop-filter: blur(12px);
 }
 
+.ravi-wa-artifact-notification--component {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.ravi-wa-artifact-notification__component {
+  pointer-events: none;
+}
+
+.ravi-wa-artifact-notification--component .ravi-wa-ui-component-artifact-notification {
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.ravi-wa-artifact-notification--component .ravi-wa-artifact-notification__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  background: rgba(7, 16, 22, 0.58);
+  color: #f7f8fa;
+  backdrop-filter: blur(8px);
+}
+
 .ravi-wa-artifact-notification:focus-visible,
 .ravi-wa-artifact-notification:hover {
   border-color: rgba(216, 253, 210, 0.22);
   background: rgba(32, 44, 51, 0.96);
+}
+
+.ravi-wa-artifact-notification--component:hover,
+.ravi-wa-artifact-notification--component:focus-visible {
+  background: transparent;
 }
 
 .ravi-wa-artifact-notification--completed {
@@ -3512,6 +3548,15 @@
   width: min(330px, 100%);
 }
 
+.ravi-wa-artifact-modal__visual--component .ravi-wa-ui-component-artifact-notification {
+  width: min(340px, 100%);
+}
+
+.ravi-wa-artifact-modal__visual--component .ravi-wa-ui-component-sandbox {
+  width: min(360px, 100%);
+  min-height: 360px;
+}
+
 .ravi-wa-artifact-modal__visual--glyph span {
   color: #8fbda0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -3736,6 +3781,198 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 10.5px;
   overflow-wrap: anywhere;
+}
+
+.ravi-wa-ui-component-sandbox {
+  display: block;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.ravi-wa-ui-component-artifact-notification {
+  overflow: hidden;
+  border: 1px solid rgba(122, 217, 197, 0.16);
+  border-radius: 8px;
+  background: #111b21;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.ravi-wa-ui-component-artifact-notification--completed {
+  border-color: rgba(37, 211, 102, 0.3);
+}
+
+.ravi-wa-ui-component-artifact-notification--failed {
+  border-color: rgba(255, 111, 97, 0.34);
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-image {
+  border-color: rgba(167, 139, 250, 0.38);
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-ui-component {
+  border-color: rgba(122, 217, 197, 0.34);
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-json,
+.ravi-wa-ui-component-artifact-notification--variant-trace {
+  border-color: rgba(96, 165, 250, 0.34);
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-audio {
+  border-color: rgba(251, 191, 36, 0.36);
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-video {
+  border-color: rgba(244, 114, 182, 0.34);
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-text {
+  border-color: rgba(148, 163, 184, 0.32);
+}
+
+.ravi-wa-ui-component-artifact-notification--running,
+.ravi-wa-ui-component-artifact-notification--pending {
+  border-color: rgba(255, 200, 100, 0.34);
+}
+
+.ravi-wa-ui-component-artifact-notification__preview {
+  display: grid;
+  min-height: 112px;
+  place-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at 24% 18%, rgba(37, 211, 102, 0.22), transparent 32%),
+    linear-gradient(135deg, rgba(130, 10, 209, 0.34), rgba(17, 27, 33, 0.88));
+}
+
+.ravi-wa-ui-component-artifact-notification__preview--image {
+  aspect-ratio: 4 / 3;
+  min-height: 0;
+  background: #071016;
+}
+
+.ravi-wa-ui-component-artifact-notification__preview--image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ravi-wa-ui-component-artifact-notification__preview--empty {
+  gap: 6px;
+  padding: 18px;
+  text-align: center;
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-ui-component
+  .ravi-wa-ui-component-artifact-notification__preview--empty {
+  background:
+    radial-gradient(circle at 22% 24%, rgba(122, 217, 197, 0.28), transparent 34%),
+    linear-gradient(135deg, rgba(15, 118, 110, 0.4), rgba(17, 27, 33, 0.92));
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-json
+  .ravi-wa-ui-component-artifact-notification__preview--empty,
+.ravi-wa-ui-component-artifact-notification--variant-trace
+  .ravi-wa-ui-component-artifact-notification__preview--empty {
+  background:
+    linear-gradient(90deg, rgba(96, 165, 250, 0.2) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(96, 165, 250, 0.16) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(30, 58, 138, 0.56), rgba(17, 27, 33, 0.94));
+  background-size:
+    18px 18px,
+    18px 18px,
+    auto;
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-audio
+  .ravi-wa-ui-component-artifact-notification__preview--empty {
+  background:
+    repeating-linear-gradient(90deg, rgba(251, 191, 36, 0.22) 0 5px, transparent 5px 14px),
+    linear-gradient(135deg, rgba(120, 53, 15, 0.64), rgba(17, 27, 33, 0.94));
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-video
+  .ravi-wa-ui-component-artifact-notification__preview--empty {
+  background:
+    radial-gradient(circle at 76% 24%, rgba(244, 114, 182, 0.28), transparent 30%),
+    linear-gradient(135deg, rgba(131, 24, 67, 0.58), rgba(17, 27, 33, 0.94));
+}
+
+.ravi-wa-ui-component-artifact-notification--variant-text
+  .ravi-wa-ui-component-artifact-notification__preview--empty {
+  background:
+    linear-gradient(180deg, rgba(148, 163, 184, 0.13) 0 2px, transparent 2px 11px),
+    linear-gradient(135deg, rgba(51, 65, 85, 0.58), rgba(17, 27, 33, 0.94));
+}
+
+.ravi-wa-ui-component-artifact-notification__preview--empty span {
+  color: #7ad9c5;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.ravi-wa-ui-component-artifact-notification__preview--empty strong {
+  color: #f7f8fa;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.ravi-wa-ui-component-artifact-notification__body {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.ravi-wa-ui-component-artifact-notification__meta,
+.ravi-wa-ui-component-artifact-notification__footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #8696a0;
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+.ravi-wa-ui-component-artifact-notification__meta span,
+.ravi-wa-ui-component-artifact-notification__footer span,
+.ravi-wa-ui-component-artifact-notification__footer code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-ui-component-artifact-notification__body > strong {
+  color: #f7f8fa;
+  font-size: 13.5px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.ravi-wa-ui-component-artifact-notification__body p {
+  margin: 0;
+  color: #c4d0d5;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.ravi-wa-ui-component-artifact-notification__footer {
+  padding-top: 2px;
+}
+
+.ravi-wa-ui-component-artifact-notification__footer code {
+  color: #7ad9c5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
 }
 
 .ravi-wa-artifact-modal__component-chips,

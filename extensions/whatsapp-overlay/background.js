@@ -502,6 +502,7 @@ function sanitizeArtifactComponentPreview(component) {
             renderer: clean(renderer?.renderer) || null,
             package: clean(renderer?.package) || null,
             artifactId: clean(renderer?.artifactId) || null,
+            source: sanitizeArtifactComponentRendererSource(renderer?.source),
           }))
           .filter((renderer) => renderer.surface)
       : [],
@@ -518,6 +519,20 @@ function sanitizeArtifactComponentPreview(component) {
   };
 }
 
+function sanitizeArtifactComponentRendererSource(source) {
+  if (!source || typeof source !== "object") return null;
+  const js = cleanInlineSource(source.js, 30000);
+  const css = cleanInlineSource(source.css, 20000);
+  if (!js && !css) return null;
+  return { js, css };
+}
+
+function cleanInlineSource(value, maxLength) {
+  const text = clean(value);
+  if (!text) return null;
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
 function sanitizeStringList(value, limit) {
   if (!Array.isArray(value)) return [];
   return value
@@ -528,7 +543,7 @@ function sanitizeStringList(value, limit) {
 
 function sanitizeArtifactJsonValue(value, depth = 0) {
   if (value === undefined || value === null) return null;
-  if (typeof value === "string") return value.length > 600 ? `${value.slice(0, 600)}…` : value;
+  if (typeof value === "string") return value.length > 30000 ? `${value.slice(0, 30000)}…` : value;
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "boolean") return value;
   if (depth >= 4) return "[truncated]";

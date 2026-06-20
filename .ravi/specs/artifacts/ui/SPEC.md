@@ -205,7 +205,8 @@ A `ui.component` artifact MUST document:
 - supported `actions` and emitted `events`;
 - supported `surfaces`, such as `wa-overlay`, `web-os`, `desktop`, `mobile`,
   `terminal`, `image`, `pdf`, or `email`;
-- renderer references or implementation package references per surface;
+- renderer references, implementation package references, or reviewed renderer
+  source assets per surface;
 - fixtures and sample state;
 - accessibility, density, and interaction requirements;
 - visual snapshots or preview artifacts when available;
@@ -226,6 +227,12 @@ Renderers translate `ui.spec` into native UI for a surface.
   surface-specific security constraints.
 - A generated spec MUST NOT include executable JavaScript, HTML strings, raw CSS,
   class names, Tailwind classes, or arbitrary remote bundles.
+- A `ui.component` MAY include renderer JS/CSS/TSX source assets when those
+  assets are part of the versioned component implementation, not generated
+  per-render spec content.
+- Surfaces that execute component-carried JS/CSS MUST do so through a reviewed
+  renderer loader or a sandboxed runtime. Host-page direct injection is
+  forbidden.
 - Surface renderers MAY use React, Vue, Svelte, native views, Ink, PDF, image
   generation, or another implementation internally. That choice is not part of
   the portable spec contract.
@@ -334,8 +341,9 @@ Rules:
 - `_ravi/*.json` manifests MUST identify schema, kind, artifact id when known,
   version, created source, and lineage references.
 - Schema and fixture paths MUST be Ravi-relative package paths.
-- Renderer references MUST identify reviewed implementation ids or packages.
-  They MUST NOT embed arbitrary executable source created by the model.
+- Renderer references MUST identify reviewed implementation ids, packages, or
+  reviewed source assets. They MUST NOT embed arbitrary executable source in a
+  generated `ui.spec`.
 - Component package source MAY use TSX for web-capable surfaces when the source
   itself is part of the reusable component. TSX is source, not a portable
   runtime contract; the portable contract remains the manifest, props schema,

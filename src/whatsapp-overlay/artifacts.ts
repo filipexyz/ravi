@@ -77,6 +77,10 @@ export interface OverlayArtifactComponentRendererRef {
   renderer: string | null;
   package: string | null;
   artifactId: string | null;
+  source: {
+    js: string | null;
+    css: string | null;
+  } | null;
 }
 
 export interface OverlayArtifactComponentFixture {
@@ -573,10 +577,26 @@ function normalizeComponentRenderers(value: unknown): OverlayArtifactComponentRe
           null,
         package: cleanComponentText(item.package) || cleanComponentText(item.packageId) || null,
         artifactId: cleanComponentText(item.artifactId) || null,
+        source: normalizeComponentRendererSource(item.source ?? item.inline ?? item),
       };
     })
     .filter((item): item is OverlayArtifactComponentRendererRef => Boolean(item?.surface))
     .slice(0, 8);
+}
+
+function normalizeComponentRendererSource(value: unknown): OverlayArtifactComponentRendererRef["source"] {
+  const item = asPlainRecord(value);
+  if (!item) return null;
+  const js =
+    cleanComponentSource(item.js, 30_000) ||
+    cleanComponentSource(item.javascript, 30_000) ||
+    cleanComponentSource(item.script, 30_000);
+  const css =
+    cleanComponentSource(item.css, 20_000) ||
+    cleanComponentSource(item.style, 20_000) ||
+    cleanComponentSource(item.styles, 20_000);
+  if (!js && !css) return null;
+  return { js, css };
 }
 
 function normalizeComponentFixtures(value: unknown): OverlayArtifactComponentFixture[] {
@@ -603,7 +623,7 @@ function normalizeComponentFixtures(value: unknown): OverlayArtifactComponentFix
 function normalizeComponentJsonValue(value: unknown, depth = 0): unknown | null {
   if (value === undefined) return null;
   if (value === null) return null;
-  if (typeof value === "string") return value.length > 600 ? `${value.slice(0, 600)}…` : value;
+  if (typeof value === "string") return value.length > 30_000 ? `${value.slice(0, 30_000)}…` : value;
   if (typeof value === "number" || typeof value === "boolean") return value;
   if (depth >= 4) return "[truncated]";
   if (Array.isArray(value)) {
@@ -627,6 +647,13 @@ function cleanComponentText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function cleanComponentSource(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > maxLength ? trimmed.slice(0, maxLength) : trimmed;
 }
 
 function buildArtifactLinks(
