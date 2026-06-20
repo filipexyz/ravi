@@ -6856,6 +6856,8 @@ function openArtifactNotification(cardId) {
   const card = artifactNotificationCards.find((item) => item.id === cardId);
   if (!card?.item) return;
   openArtifactModal(buildArtifactsWorkspaceModalData(card.item));
+  artifactNotificationCards = artifactNotificationCards.filter((item) => item.id !== cardId);
+  renderArtifactNotificationStack();
 }
 
 function dismissArtifactNotification(cardId) {
