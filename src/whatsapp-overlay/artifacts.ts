@@ -138,6 +138,7 @@ export interface OverlayArtifactsQuery {
   orderBy: "createdAt" | "updatedAt";
   lifecycle: OverlayArtifactLifecycle | null;
   kind: string | null;
+  tag: string | null;
   taskId: string | null;
   sessionId: string | null;
   agentId: string | null;
@@ -167,6 +168,7 @@ export interface BuildOverlayArtifactsPayloadArgs {
   orderBy?: "createdAt" | "updatedAt" | null;
   lifecycle?: OverlayArtifactLifecycle | null;
   kind?: string | null;
+  tag?: string | null;
   taskId?: string | null;
   sessionId?: string | null;
   agentId?: string | null;
@@ -186,6 +188,7 @@ export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadA
   const orderBy = normalizeArtifactsOrderBy(args.orderBy);
   const lifecycle = normalizeLifecycle(args.lifecycle ?? null);
   const kind = cleanFilterToken(args.kind);
+  const tag = cleanFilterToken(args.tag);
   const taskId = cleanFilterToken(args.taskId);
   const sessionId = cleanFilterToken(args.sessionId);
   const agentId = cleanFilterToken(args.agentId);
@@ -200,6 +203,7 @@ export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadA
     includeDeleted: lifecycle === "archived" || lifecycle === null,
     orderBy,
     ...(kind ? { kind } : {}),
+    ...(tag ? { tag } : {}),
     ...(sessionId ? { session: sessionId } : {}),
     ...(taskId ? { taskId } : {}),
     ...(agentId ? { agentId } : {}),
@@ -232,6 +236,7 @@ export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadA
     const itemLifecycle = deriveLifecycle(record);
     if (lifecycle && itemLifecycle !== lifecycle) continue;
     if (agentId && record.agentId !== agentId) continue;
+    if (!page && tag && !artifactRecordMatchesTag(record, tag)) continue;
 
     const item = toOverlayArtifactItem(record, itemLifecycle, {
       sessions,
@@ -269,6 +274,7 @@ export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadA
     total,
     lifecycle,
     kind,
+    tag,
     taskId,
     sessionId,
     agentId,
@@ -284,6 +290,7 @@ export function buildOverlayArtifactsPayload(args: BuildOverlayArtifactsPayloadA
       orderBy,
       lifecycle,
       kind,
+      tag,
       taskId,
       sessionId,
       agentId,
@@ -332,6 +339,18 @@ function cleanFilterToken(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function artifactRecordMatchesTag(record: ArtifactRecord, tag: string): boolean {
+  const normalizedTag = normalizeArtifactTagForCompare(tag);
+  if (!normalizedTag) return true;
+  return (record.tags ?? []).some((item) => normalizeArtifactTagForCompare(item) === normalizedTag);
+}
+
+function normalizeArtifactTagForCompare(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed || null;
 }
 
 function sortSessionsByUpdatedAt(sessions: SessionEntry[]): SessionEntry[] {
@@ -804,6 +823,7 @@ function buildArtifactsPagination(args: {
   orderBy: "createdAt" | "updatedAt";
   lifecycle: OverlayArtifactLifecycle | null;
   kind: string | null;
+  tag: string | null;
   taskId: string | null;
   sessionId: string | null;
   agentId: string | null;
@@ -823,6 +843,7 @@ function buildArtifactsNextCommand(args: {
   orderBy: "createdAt" | "updatedAt";
   lifecycle: OverlayArtifactLifecycle | null;
   kind: string | null;
+  tag: string | null;
   taskId: string | null;
   sessionId: string | null;
   agentId: string | null;
@@ -839,6 +860,7 @@ function buildArtifactsNextCommand(args: {
     String(args.offset),
   ];
   if (args.kind) parts.push("--kind", args.kind);
+  if (args.tag) parts.push("--tag", args.tag);
   if (args.orderBy !== "createdAt") parts.push("--order-by", args.orderBy);
   if (args.sessionId) parts.push("--session", args.sessionId);
   if (args.taskId) parts.push("--task", args.taskId);

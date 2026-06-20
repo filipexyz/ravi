@@ -308,6 +308,34 @@ describe("buildOverlayArtifactsPayload", () => {
     expect(payload.pagination.nextCommand).toContain("--order-by updatedAt");
   });
 
+  it("passes canonical tag filters through rich artifact pagination", () => {
+    const calls: unknown[] = [];
+    const payload = buildOverlayArtifactsPayload({
+      limit: 1,
+      offset: 0,
+      tag: "Ops.Team",
+      sessions: [],
+      listArtifactsPage(options) {
+        calls.push(options);
+        return {
+          items: [makeRecord({ id: "art_ops", tags: ["ops.team"], updatedAt: 30 })],
+          total: 2,
+          limit: 1,
+          offset: 0,
+        };
+      },
+      resolveTask: () => null,
+      resolveSession: () => null,
+      resolveAgentName: () => null,
+      now: () => 100,
+    });
+
+    expect(calls[0]).toMatchObject({ tag: "Ops.Team", limit: 1, offset: 0 });
+    expect(payload.query.tag).toBe("Ops.Team");
+    expect(payload.items.map((item) => item.id)).toEqual(["art_ops"]);
+    expect(payload.pagination.nextCommand).toContain("--tag Ops.Team");
+  });
+
   it("projects ui.component artifacts into a declarative component preview", () => {
     const records: ArtifactRecord[] = [
       makeRecord({

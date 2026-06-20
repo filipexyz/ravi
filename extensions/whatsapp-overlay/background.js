@@ -350,6 +350,7 @@ async function fetchArtifacts(payload = {}) {
   if (limit) options.limit = limit;
   if (clean(payload.lifecycle)) options.lifecycle = clean(payload.lifecycle);
   if (clean(payload.kind)) options.kind = clean(payload.kind);
+  if (clean(payload.tag)) options.tag = clean(payload.tag);
   if (clean(payload.taskId) || clean(payload.task)) options.task = clean(payload.taskId) || clean(payload.task);
   if (clean(payload.sessionId) || clean(payload.session)) {
     options.session = clean(payload.sessionId) || clean(payload.session);

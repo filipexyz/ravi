@@ -399,7 +399,7 @@ export class ArtifactsCommands {
     @Option({
       flags: "--rich",
       description:
-        "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--limit/--lifecycle/--agent; ignores --tag/--include-deleted.",
+        "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--tag/--limit/--lifecycle/--agent; ignores --include-deleted.",
     })
     rich?: boolean,
     @Option({
@@ -421,6 +421,7 @@ export class ArtifactsCommands {
         ...(orderBy ? { orderBy: parseArtifactOrderBy(orderBy) } : {}),
         ...(normalizedLifecycle ? { lifecycle: normalizedLifecycle } : {}),
         ...(kind?.trim() ? { kind: kind.trim() } : {}),
+        ...(tag?.trim() ? { tag: tag.trim() } : {}),
         ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
         ...(session?.trim() ? { sessionId: session.trim() } : {}),
         ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
