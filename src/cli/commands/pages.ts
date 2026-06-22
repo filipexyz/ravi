@@ -15,6 +15,7 @@ import {
   bindPageDomains,
   createPageSite,
   listPageSites,
+  listPublishedPages,
   normalizePageVisibility,
   updatePageSite,
   type PageDomainBindResult,
@@ -23,6 +24,8 @@ import {
   type PageSiteListResult,
   type PageSitePayload,
   type PageSiteUpdateResult,
+  type PublishedPageListResult,
+  type PublishedPagePayload,
 } from "../../pages/client.js";
 import { hasContext } from "../context.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
@@ -77,6 +80,43 @@ export class PagesCommands {
         items: page.items,
       };
       printPayload(payload, asJson, () => printSiteList(payload));
+      return payload;
+    });
+  }
+
+  @Command({ name: "published", description: "List published Ravi Pages URLs in a Console project" })
+  @CommandAccess({ kind: "read", resource: "pages", action: "list", risk: "low" })
+  async published(
+    @Arg("project", { required: false, description: "Console project id or slug; defaults to Ravi Console scope" })
+    project?: string,
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--limit <n>", description: "Maximum pages to return (default: 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of pages to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand(asJson, async () => {
+      const resolved = await resolvePagesProject(project, projectOption, consoleUrl, this.deps);
+      const result = await listPublishedPages({ project: resolved.projectRef, console: consoleUrl }, this.deps);
+      const page = paginateCliItems(result.pages, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "pages", "published"],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: ["--project", resolved.projectRef, consoleUrl ? "--console" : null, consoleUrl],
+      });
+      const payload = {
+        ...result,
+        scope: resolved.scope,
+        total: page.total,
+        pagination,
+        pages: page.items,
+        items: page.items,
+      };
+      printPayload(payload, asJson, () => printPublishedPageList(payload));
       return payload;
     });
   }
@@ -396,6 +436,7 @@ function cleanArgs(args: string[]): string[] {
 }
 
 const pageSiteSchema = jsonObjectSchema;
+const publishedPageSchema = jsonObjectSchema;
 
 const pagesListReturnSchema = z.object({
   success: z.literal(true),
@@ -405,6 +446,16 @@ const pagesListReturnSchema = z.object({
   pagination: strictCliOffsetPaginationSchema,
   sites: z.array(pageSiteSchema),
   items: z.array(pageSiteSchema),
+});
+
+const publishedPagesListReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  projectRef: z.string(),
+  total: z.number(),
+  pagination: strictCliOffsetPaginationSchema,
+  pages: z.array(publishedPageSchema),
+  items: z.array(publishedPageSchema),
 });
 
 const pageSiteCreateReturnSchema = z.object({
@@ -439,6 +490,7 @@ const pageDomainBindReturnSchema = z.object({
 
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
+  published: publishedPagesListReturnSchema,
   create: pageSiteCreateReturnSchema,
   publish: artifactPublishReturnSchema,
   update: pageSiteUpdateReturnSchema,
@@ -499,6 +551,32 @@ function printSiteList(
   }
 }
 
+function printPublishedPageList(
+  result: PublishedPageListResult & { pagination?: { limit: number; nextCommand: string | null; offset: number } },
+): void {
+  if (result.pages.length === 0) {
+    console.log(`No published Pages found for project ${result.projectRef}.`);
+    return;
+  }
+
+  const pagination = result.pagination;
+  console.log(
+    `Published Pages (${result.pages.length} returned of ${result.total}${
+      pagination ? `, limit ${pagination.limit}, offset ${pagination.offset}` : ""
+    })`,
+  );
+  for (const page of result.pages) {
+    console.log(`  - ${publishedPageLabel(page)}`);
+    for (const url of stringArrayValue(page.urls)) {
+      console.log(`      ${url}`);
+    }
+  }
+  if (pagination?.nextCommand) {
+    console.log("\nNext page:");
+    console.log(`  ${pagination.nextCommand}`);
+  }
+}
+
 function printCreatedSite(result: PageSiteCreateResult): void {
   console.log("✓ Pages site created");
   printSiteFields(result.site);
@@ -507,6 +585,22 @@ function printCreatedSite(result: PageSiteCreateResult): void {
     console.log("  Publish:    upload content with Pages");
     console.log(`             ${result.contentPublishCommand}`);
   }
+}
+
+function publishedPageLabel(page: PublishedPagePayload): string {
+  const title = stringValue(page.title) ?? stringValue(page.path) ?? stringValue(page.id) ?? "page";
+  const host = stringValue(page.defaultHostname);
+  const path = stringValue(page.path);
+  const status = stringValue(page.status);
+  const version = stringValue(page.artifactVersion);
+  const visibility = stringValue(page.visibility);
+  return [
+    title,
+    host && path ? `${host}${path === "/" ? "/" : path}` : (host ?? path),
+    status ?? [version, visibility].filter(Boolean).join(" · "),
+  ]
+    .filter(Boolean)
+    .join("  ");
 }
 
 function printPagePublishResult(result: ArtifactPublishResult): void {
@@ -585,6 +679,12 @@ function printSiteFields(site: PageSitePayload): void {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
 }
 
 function booleanLabel(value: unknown): string | null {

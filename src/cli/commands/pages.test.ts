@@ -66,6 +66,54 @@ describe("pages CLI commands", () => {
     });
   });
 
+  it("lists published Pages through the versioned Console CLI API", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const client = makeClient(async (method, path, body, accessToken) => {
+      calls.push({ method, path, body, accessToken });
+      return {
+        pages: [
+          {
+            id: "release_route_1",
+            title: "Docs",
+            path: "/docs",
+            defaultHostname: "demo.ravi.page",
+            urls: ["https://demo.ravi.page/docs", "https://docs.example.com/docs"],
+            status: "live · v3 · public",
+          },
+        ],
+        total: 1,
+      };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.published("proj", undefined, undefined, undefined, undefined, true),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([
+      {
+        method: "GET",
+        path: "/api/cli/projects/proj/pages/published",
+        body: undefined,
+        accessToken: "access-secret",
+      },
+    ]);
+    expect(payload).toMatchObject({
+      success: true,
+      projectRef: "proj",
+      total: 1,
+      pagination: {
+        limit: 50,
+        offset: 0,
+        returned: 1,
+        total: 1,
+      },
+      pages: [{ title: "Docs", urls: ["https://demo.ravi.page/docs", "https://docs.example.com/docs"] }],
+      items: [{ title: "Docs" }],
+    });
+  });
+
   it("creates a project Pages site through the Console CLI API", async () => {
     const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
     const client = makeClient(async (method, path, body, accessToken) => {
