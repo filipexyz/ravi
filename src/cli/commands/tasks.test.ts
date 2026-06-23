@@ -1823,6 +1823,58 @@ describe("TaskCommands create", () => {
     ]);
   });
 
+  it("renders the table list without throwing when a task has a legacy/unknown status", async () => {
+    // Status is stored as plain TEXT in the DB with no CHECK constraint, so older
+    // rows can carry a value outside the current enum. The non-JSON table render
+    // formats the status before calling `.padEnd`, which used to crash with
+    // "undefined is not an object" when the formatter returned undefined.
+    taskListMock = [
+      {
+        id: "task-legacy-1",
+        title: "legacy task",
+        status: "cancelled",
+        priority: "normal",
+        progress: 0,
+        createdAt: 1,
+        updatedAt: 100,
+      },
+    ];
+
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+
+    try {
+      // asJson (13th positional) is false here so the table render path executes.
+      expect(() =>
+        commands.list(
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          undefined,
+          false,
+          false,
+          false,
+          undefined,
+          false,
+        ),
+      ).not.toThrow();
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = logs.join("\n");
+    expect(output).toContain("task-legacy-1");
+    expect(output).toContain("cancelled");
+  });
+
   it("rejects conflicting parent and root filters on list", () => {
     const commands = new TaskCommands();
     expect(() =>
