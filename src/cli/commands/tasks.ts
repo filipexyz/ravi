@@ -104,6 +104,12 @@ function formatTaskStatus(status: TaskStatus | "waiting"): string {
       return "done";
     case "failed":
       return "failed";
+    default:
+      // Defensive fallback: legacy/unknown statuses are stored as plain TEXT in
+      // the DB and may fall outside the current enum, which would otherwise make
+      // this switch return `undefined` and crash callers that immediately format
+      // the result (e.g. `.padEnd`). Render whatever string is present instead.
+      return String(status ?? "unknown");
   }
 }
 
