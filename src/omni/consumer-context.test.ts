@@ -37,6 +37,9 @@ const contactByRef = new Map<string, Record<string, unknown>>();
 const messageMetaById = new Map<string, MessageMetadata>();
 const recordInboundCalls: string[] = [];
 const channelMessageTraceCalls: Array<Record<string, unknown>> = [];
+const fetchOmniMediaMock = mock(async () => null as Buffer | null);
+const saveToAgentAttachmentsMock = mock(async () => null as string | null);
+const transcribeAudioMock = mock(async () => ({ text: "" }));
 let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
 let contactIntakeMode: "off" | "discovered" | "pending" = "off";
@@ -245,13 +248,13 @@ mock.module("../session-trace/runtime-trace.js", () => ({
 }));
 
 mock.module("../utils/media.js", () => ({
-  fetchOmniMedia: mock(async () => null),
-  saveToAgentAttachments: mock(async () => null),
+  fetchOmniMedia: fetchOmniMediaMock,
+  saveToAgentAttachments: saveToAgentAttachmentsMock,
   MAX_AUDIO_BYTES: 16 * 1024 * 1024,
 }));
 
 mock.module("../transcribe/openai.js", () => ({
-  transcribeAudio: mock(async () => ""),
+  transcribeAudio: transcribeAudioMock,
 }));
 
 const loggerChildSpy = spyOn(logger, "child").mockImplementation(
@@ -292,6 +295,12 @@ describe("OmniConsumer channel context", () => {
     messageMetaById.clear();
     recordInboundCalls.length = 0;
     channelMessageTraceCalls.length = 0;
+    fetchOmniMediaMock.mockClear();
+    saveToAgentAttachmentsMock.mockClear();
+    transcribeAudioMock.mockClear();
+    fetchOmniMediaMock.mockImplementation(async () => null);
+    saveToAgentAttachmentsMock.mockImplementation(async () => null);
+    transcribeAudioMock.mockImplementation(async () => ({ text: "" }));
   });
 
   afterEach(async () => {
@@ -1311,6 +1320,76 @@ describe("OmniConsumer channel context", () => {
       linkedBy: "auto",
       linkReason: "omni_instance_connected",
     });
+  });
+
+  it("saves transcribed inbound audio and exposes the attachment path in the prompt", async () => {
+    const audioBuffer = Buffer.from("audio-bytes");
+    const audioPath = join(agentCwd, "attachments", "msg-audio.ogg");
+    fetchOmniMediaMock.mockImplementation(async () => audioBuffer);
+    saveToAgentAttachmentsMock.mockImplementation(async () => audioPath);
+    transcribeAudioMock.mockImplementation(async () => ({ text: "fala transcrita" }));
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-audio",
+      type: "message.received",
+      payload: {
+        externalId: "msg-audio",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: {
+          type: "audio",
+          mediaUrl: "https://omni.local/media/msg-audio",
+          mimeType: "audio/ogg; codecs=opus",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(fetchOmniMediaMock).toHaveBeenCalledWith(
+      "https://omni.local/media/msg-audio",
+      "http://omni.local",
+      "test-key",
+      16 * 1024 * 1024,
+    );
+    expect(saveToAgentAttachmentsMock).toHaveBeenCalledWith(
+      audioBuffer,
+      agentCwd,
+      "msg-audio",
+      "audio/ogg; codecs=opus",
+    );
+    expect(transcribeAudioMock).toHaveBeenCalledWith(audioBuffer, "audio/ogg; codecs=opus");
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("[Audio]\nTranscript:\nfala transcrita");
+    expect(prompt.prompt).toContain(`file: ${audioPath}`);
+    expect(messageMetaSaveCalls.at(-1)).toMatchObject([
+      "msg-audio",
+      "120363424772797713@g.us",
+      {
+        transcription: "fala transcrita",
+        mediaPath: audioPath,
+        mediaType: "audio",
+      },
+    ]);
   });
 
   it("includes stored audio transcription when replying to a quoted WhatsApp audio", async () => {
