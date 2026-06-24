@@ -2373,19 +2373,21 @@ export class OmniConsumer {
       : await fetchOmniMedia(content.mediaUrl, this.omniApiUrl, this.omniApiKey, maxBytes, mimeType);
     if (!buffer) return null;
 
-    // Audio: transcribe, save to attachments as fallback
+    // Audio needs both: transcript for the prompt and durable file path for later editing/rendering work.
     if (isAudio) {
+      let localPath: string | undefined;
+      try {
+        localPath = await saveToAgentAttachments(buffer, agentCwd, payload.externalId, mimeType);
+      } catch (err) {
+        log.warn("Failed to save audio to agent attachments", { error: err });
+      }
+
       try {
         const result = await transcribeAudio(buffer, mimeType);
-        return { transcript: result.text };
+        return { transcript: result.text, localPath };
       } catch (err) {
-        log.warn("Audio transcription failed, saving file instead", { error: err });
-        try {
-          const dest = await saveToAgentAttachments(buffer, agentCwd, payload.externalId, mimeType);
-          return { localPath: dest };
-        } catch {
-          return null;
-        }
+        log.warn("Audio transcription failed", { error: err });
+        return localPath ? { localPath } : null;
       }
     }
 
@@ -2420,7 +2422,8 @@ export class OmniConsumer {
 
     // Audio with transcript
     if (isAudio && mediaResult?.transcript) {
-      return `[Audio]\nTranscript:\n${mediaResult.transcript}`;
+      const fileLine = mediaResult.localPath ? `\nfile: ${mediaResult.localPath}` : "";
+      return `[Audio]\nTranscript:\n${mediaResult.transcript}${fileLine}`;
     }
 
     // Audio without transcript but with file
