@@ -40,6 +40,7 @@ export * from "./insights.js";
 export * from "./instances.js";
 export * from "./mail.js";
 export * from "./media.js";
+export * from "./meetings.js";
 export * from "./metrics.js";
 export * from "./observers.js";
 export * from "./operational-return-schemas.js";

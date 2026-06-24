@@ -5,6 +5,7 @@ kind: domain
 domain: channels
 capabilities:
   - chats
+  - meetings
 tags:
   - omni
   - gateway
