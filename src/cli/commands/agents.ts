@@ -466,7 +466,10 @@ export class AgentsCommands {
         runtimeTarget: inspectCliRuntimeTarget(),
         permissions: {
           default: "bootstrap" as const,
-          configureCommand: `ravi agents permissions ${id} full-access`,
+          configureCommand: `ravi agents permissions ${id}`,
+          inspectCommand: `ravi permissions materialize --subject-type agent --subject-id ${id} --json`,
+          leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+          breakGlassCommand: `ravi agents permissions ${id} full-access`,
           visibility: {
             defaultAgent: config.defaultAgent,
             ...(creatorAgentId ? { creatorAgentId, creatorVisibilityChanged } : {}),
@@ -486,7 +489,11 @@ export class AgentsCommands {
           console.log(`  Model: ${normalizedModel}`);
         }
         console.log(`  Permissions: bootstrap`);
-        console.log(`  Use 'ravi agents permissions ${id} full-access' to configure`);
+        console.log(`  Inspect: ravi permissions materialize --subject-type agent --subject-id ${id} --json`);
+        console.log(
+          `  Configure least privilege: ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+        );
+        console.log(`  Break-glass only: ravi agents permissions ${id} full-access`);
       }
       emitConfigChanged();
       return payload;
@@ -801,15 +808,22 @@ export class AgentsCommands {
         agentId: id,
         profile: before?.profile ?? "bootstrap",
         runtimePermissions: before,
-        command: `ravi agents permissions ${id} full-access`,
+        command: `ravi agents permissions ${id}`,
+        inspectCommand: `ravi permissions materialize --subject-type agent --subject-id ${id} --json`,
+        leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+        breakGlassCommand: `ravi agents permissions ${id} full-access`,
         agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
       };
       if (asJson) {
         printJson(payload);
       } else {
         console.log(`Runtime permissions for ${id}: ${describeRuntimePermissionConfig(before)}`);
-        console.log(`  Full access: ravi agents permissions ${id} full-access`);
-        console.log(`  Clear:       ravi agents permissions ${id} none`);
+        console.log(`  Inspect effective: ravi permissions materialize --subject-type agent --subject-id ${id} --json`);
+        console.log(
+          `  Least privilege:   ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+        );
+        console.log(`  Clear:             ravi agents permissions ${id} none`);
+        console.log(`  Break-glass only:  ravi agents permissions ${id} full-access`);
       }
       return payload;
     }
@@ -854,7 +868,10 @@ export class AgentsCommands {
     } else {
       console.log(`\u2713 Runtime permissions set: ${id} -> ${describeRuntimePermissionConfig(after)}`);
       if (after?.profile === "full-access") {
-        console.log("  Materializes: admin system:* for the agent and its own automation turns");
+        console.log("  Break-glass: materializes admin system:* for the agent and its own automation turns");
+        console.log(
+          "  Prefer replacing this with a provider-owned permission profile or narrow explicit capabilities.",
+        );
       }
     }
     emitConfigChanged();

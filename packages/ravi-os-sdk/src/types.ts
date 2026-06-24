@@ -910,6 +910,7 @@ export type ArtifactsListInput = {
   lifecycle?: string;
   limit?: string;
   offset?: string;
+  orderBy?: string;
   rich?: boolean;
   session?: string;
   tag?: string;
@@ -4654,6 +4655,28 @@ export type EvalRunReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `feedback.send`. */
+export type FeedbackSendInput = {
+  console?: string;
+  kind?: string;
+  message: string[];
+  metadataJson?: string;
+  project?: string;
+  severity?: string;
+  surface?: string;
+  tag?: string;
+  title?: string;
+  url?: string;
+};
+
+/** Return shape for `feedback.send`. */
+export type FeedbackSendReturn = {
+  consoleUrl: string;
+  feedback: Record<string, unknown>;
+  success: true;
+  url: string;
+};
+
 /** Input shape for `gmail.list`. */
 export type GmailListInput = {
   connector?: string;
@@ -6627,6 +6650,16 @@ export type MediaSendReturn = {
   };
 };
 
+/** Input shape for `meetings.finalize`. */
+export type MeetingsFinalizeInput = {
+  noPostTranscribe?: boolean;
+  runDir?: string;
+  title?: string;
+};
+
+/** Return shape for `meetings.finalize`. */
+export type MeetingsFinalizeReturn = Record<string, unknown>;
+
 /** Input shape for `metrics.dates`. */
 export type MetricsDatesInput = Record<string, never>;
 
@@ -7054,6 +7087,33 @@ export type PagesPublishReturn = {
   url: string | null;
 };
 
+/** Input shape for `pages.published`. */
+export type PagesPublishedInput = {
+  console?: string;
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `pages.published`. */
+export type PagesPublishedReturn = {
+  consoleUrl: string;
+  items: Array<Record<string, unknown>>;
+  pages: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projectRef: string;
+  success: true;
+  total: number;
+};
+
 /** Input shape for `pages.update`. */
 export type PagesUpdateInput = {
   args: string[];
@@ -7089,6 +7149,45 @@ export type PagesVisibilityReturn = {
   siteRef: string;
   success: true;
   url: string | null;
+};
+
+/** Input shape for `permissions.allow`. */
+export type PermissionsAllowInput = {
+  agent?: string;
+  apply?: boolean;
+  capabilities?: string;
+  description?: string;
+  label?: string;
+  profile: string;
+  to?: string;
+};
+
+/** Return shape for `permissions.allow`. */
+export type PermissionsAllowReturn = {
+  agentCeilings: string[];
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+  }>;
+  changedCount: number;
+  description?: string;
+  dryRun: boolean;
+  label: string;
+  nextCommand?: string;
+  operations: Array<{
+    capability?: string;
+    kind: string;
+    message: string;
+    status: "planned" | "applied" | "unchanged";
+    target?: string;
+  }>;
+  profile: string;
+  tagSlug: string;
+  targets: Array<{
+    id: string;
+    type: string;
+  }>;
 };
 
 /** Input shape for `permissions.check`. */
@@ -7128,6 +7227,31 @@ export type PermissionsCheckReturn = {
       type: string;
     };
   };
+  guidance?: {
+    breakGlass: string;
+    canonicalCapability: string;
+    inspectCommands: string[];
+    nextSteps: string[];
+    preferredPath: {
+      kind: string;
+      message: string;
+      suggestedTags: Array<{
+        capabilities: string[];
+        description?: string;
+        label: string;
+        slug: string;
+      }>;
+    };
+    rawCapabilityFallback: string;
+    requestShape: {
+      profileOrTag: string;
+      reason: string;
+      scope: string;
+      subject?: string;
+      ttl: string;
+    };
+    scope: string;
+  };
 };
 
 /** Input shape for `permissions.materialize`. */
@@ -7144,10 +7268,83 @@ export type PermissionsMaterializeReturn = {
     permission: string;
     source?: string;
   }>;
+  guidance: {
+    breakGlass: string;
+    recurringAccess: string;
+  };
   subject: {
     id: string;
     type: string;
   };
+};
+
+/** Input shape for `permissions.resolve`. */
+export type PermissionsResolveInput = {
+  apply?: boolean;
+  capabilities?: string;
+  denialId: string;
+  profile?: string;
+};
+
+/** Return shape for `permissions.resolve`. */
+export type PermissionsResolveReturn = {
+  agentCeilings: string[];
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+  }>;
+  changedCount: number;
+  denial: {
+    agentId: string | null;
+    contextId: string | null;
+    id: number;
+    missingCapability: string;
+    sessionName: string | null;
+    subject: string;
+  };
+  description?: string;
+  dryRun: boolean;
+  guidance?: {
+    breakGlass: string;
+    canonicalCapability: string;
+    inspectCommands: string[];
+    nextSteps: string[];
+    preferredPath: {
+      kind: string;
+      message: string;
+      suggestedTags: Array<{
+        capabilities: string[];
+        description?: string;
+        label: string;
+        slug: string;
+      }>;
+    };
+    rawCapabilityFallback: string;
+    requestShape: {
+      profileOrTag: string;
+      reason: string;
+      scope: string;
+      subject?: string;
+      ttl: string;
+    };
+    scope: string;
+  };
+  label: string;
+  nextCommand?: string;
+  operations: Array<{
+    capability?: string;
+    kind: string;
+    message: string;
+    status: "planned" | "applied" | "unchanged";
+    target?: string;
+  }>;
+  profile: string;
+  tagSlug: string;
+  targets: Array<{
+    id: string;
+    type: string;
+  }>;
 };
 
 /** Input shape for `permissions.status`. */
@@ -7165,8 +7362,13 @@ export type PermissionsStatusReturn = {
     required: boolean;
     version: string;
   }>;
+  guidance: {
+    breakGlass: string;
+    inspect: string[];
+    recurringAccess: string;
+  };
   mutationCommands: {
-    enabled: false;
+    enabled: boolean;
     message: string;
   };
   status: "provider-runtime";
@@ -10888,6 +11090,9 @@ export type TranscribeFileReturn = {
   transcription: {
     chunks?: number;
     duration?: number;
+    model?: string;
+    provider?: string;
+    segments?: Array<Record<string, unknown>>;
     text: string;
     [k: string]: unknown;
   };

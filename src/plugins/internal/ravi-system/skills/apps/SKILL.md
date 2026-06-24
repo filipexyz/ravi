@@ -112,7 +112,10 @@ ravi apps guide <app-id> --json
 - Nao raspe stdout quando houver JSON.
 - Nao execute health checks durante discovery.
 - Nao use manifesto como grant de permissao.
-- Mutacoes precisam de permissao declarada e autorizacao runtime real.
+- Mutacoes precisam de permissao declarada e autorizacao runtime real. Se uma
+  app bloquear por permissão recorrente, prefira `ravi permissions resolve
+  <denial-id>` ou `ravi permissions allow <profile> --to <subject> --agent
+  <agent> --capabilities <cap>`; nao peça `full-access` como caminho normal.
 - UI de app e declarativa: routes, views, actions, query e refreshOn. CSS/HTML/JS/bundles ficam fora de `ravi.app/v1`.
 - Stateful apps devem declarar storage proprio quando persistencia agrega reuse, lineage, audit ou recovery.
 - Apps eventful devem declarar eventos para UIs e agentes observarem sem scraping.

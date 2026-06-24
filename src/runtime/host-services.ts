@@ -13,6 +13,8 @@ import {
 } from "../bash/index.js";
 import { nats } from "../nats.js";
 import { authorizeRuntimeContext, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
+import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
+import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { agentCan, canWithCapabilityContext, isDelegatedAuthorityContext } from "../permissions/provider-runtime.js";
 import type { ContextRecord } from "../router/index.js";
 import type {
@@ -36,6 +38,8 @@ import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from ".
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
 let cachedRuntimeDynamicToolSpecs: RuntimeDynamicToolSpec[] | null = null;
+
+type RuntimeAuditOptions = Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName">;
 
 export interface RuntimeHostServicesOptions {
   context: ContextRecord;
@@ -127,6 +131,68 @@ function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTo
   }
 }
 
+function emitRuntimePolicyDenied(
+  options: RuntimeAuditOptions,
+  input: {
+    type?: string;
+    denied: string;
+    reason: string;
+    command?: string;
+    blockType: string;
+    detail?: Record<string, unknown>;
+  },
+): void {
+  const provenance = buildAuditContextProvenance({ context: options.context });
+  emitPermissionDeniedAudit({
+    type: input.type ?? "scope",
+    agentId: options.agentId,
+    denied: input.denied,
+    reason: input.reason,
+    command: input.command,
+    blockType: input.blockType,
+    detail: {
+      ...(input.detail ?? {}),
+      ...(provenance ? { context: provenance } : {}),
+    },
+    ...(provenance ? { context: provenance } : {}),
+  });
+}
+
+function recordRuntimeExecutablePolicyDenied(
+  options: RuntimeAuditOptions,
+  input: {
+    executable: string;
+    reason: string;
+    command: string;
+    blockType: string;
+  },
+): void {
+  const provenance = buildAuditContextProvenance({ context: options.context });
+  recordAndEmitPermissionDenial({
+    subjectType: "agent",
+    subjectId: options.agentId,
+    agentId: options.agentId,
+    sessionKey: options.context.sessionKey,
+    sessionName: options.context.sessionName ?? options.sessionName,
+    contextId: options.context.contextId,
+    relation: "execute",
+    objectType: "executable",
+    objectId: input.executable,
+    reason: input.reason,
+    command: input.command,
+    detail: provenance ? { context: provenance } : undefined,
+    audit: {
+      type: "executable",
+      agentId: options.agentId,
+      denied: input.executable,
+      reason: input.reason,
+      command: input.command,
+      blockType: input.blockType,
+      ...(provenance ? { context: provenance } : {}),
+    },
+  });
+}
+
 export function createRuntimeHostServices(options: RuntimeHostServicesOptions): RuntimeHostServices {
   return {
     authorizeCapability: (request) => authorizeRuntimeCapability(options.context, request),
@@ -186,6 +252,17 @@ async function executeRuntimeDynamicTool(
     onSkillGatePersisted: options.onSkillGatePersisted,
   });
   if (!gateDecision.allowed) {
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `tool:${tool.name}`,
+      reason: gateDecision.reason ?? `${tool.name} requires a skill.`,
+      blockType: "runtime_tool_skill_gate_denied",
+      detail: {
+        toolName: tool.name,
+        ...(gateDecision.skill ? { skill: gateDecision.skill } : {}),
+        ...(gateDecision.code ? { code: gateDecision.code } : {}),
+      },
+    });
     return {
       success: false,
       reason: gateDecision.reason,
@@ -347,6 +424,11 @@ async function authorizeRuntimeCommandExecution(
 ): Promise<RuntimeApprovalResult> {
   const command = request.command;
   if (!command.trim()) {
+    emitRuntimePolicyDenied(options, {
+      denied: "command:<empty>",
+      reason: "Runtime command approval request did not include a command.",
+      blockType: "runtime_command_empty",
+    });
     return { approved: false, reason: "Runtime command approval request did not include a command." };
   }
 
@@ -367,11 +449,25 @@ async function authorizeRuntimeCommandExecution(
 
   const dangerous = checkDangerousPatterns(command);
   if (!dangerous.safe) {
+    emitRuntimePolicyDenied(options, {
+      type: "executable",
+      denied: "command_policy:dangerous_pattern",
+      reason: dangerous.reason ?? "Command denied by Ravi policy.",
+      command,
+      blockType: "runtime_command_dangerous_pattern",
+    });
     return { approved: false, reason: dangerous.reason ?? "Command denied by Ravi policy." };
   }
 
   const parsed = parseBashCommand(command);
   if (!parsed.success) {
+    emitRuntimePolicyDenied(options, {
+      type: "executable",
+      denied: "command_policy:parse_error",
+      reason: parsed.error ?? "Failed to parse command for approval.",
+      command,
+      blockType: "runtime_command_parse_error",
+    });
     return { approved: false, reason: parsed.error ?? "Failed to parse command for approval." };
   }
 
@@ -394,7 +490,14 @@ async function authorizeRuntimeCommandExecution(
   if (!canWithCapabilityContext(options.context, "execute", "executable", "*")) {
     for (const executable of parsed.executables) {
       if (UNCONDITIONAL_BLOCKS.has(executable)) {
-        return { approved: false, reason: `${executable} is blocked by Ravi command policy.` };
+        const reason = `${executable} is blocked by Ravi command policy.`;
+        recordRuntimeExecutablePolicyDenied(options, {
+          executable,
+          reason,
+          command,
+          blockType: "runtime_executable_unconditional_block",
+        });
+        return { approved: false, reason };
       }
       if (RUNTIME_BUILTIN_EXECUTABLES.has(executable)) {
         continue;
@@ -435,7 +538,6 @@ async function authorizeRuntimeCommandExecution(
         },
       });
       if (!sessionAuthorization.allowed) {
-        emitBashDeniedAudit(command, afterExecutableApproval, options.agentId);
         return {
           approved: false,
           reason: sessionAuthorization.reason ?? afterExecutableApproval.reason ?? `Session access denied: ${target}`,
@@ -459,6 +561,17 @@ async function authorizeRuntimeCommandExecution(
     onSkillGatePersisted: options.onSkillGatePersisted,
   });
   if (!gateDecision.allowed) {
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: gateDecision.skill ? `skill:${gateDecision.skill}` : "skill:<required>",
+      reason: gateDecision.reason ?? "Command requires a skill before execution.",
+      command,
+      blockType: "runtime_command_skill_gate_denied",
+      detail: {
+        ...(gateDecision.skill ? { skill: gateDecision.skill } : {}),
+        ...(gateDecision.code ? { code: gateDecision.code } : {}),
+      },
+    });
     return {
       approved: false,
       reason: gateDecision.reason ?? "Command requires a skill before execution.",

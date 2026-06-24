@@ -66,6 +66,10 @@ describe("capability-context snapshot matcher", () => {
       expect(isDelegatedAuthorityContext({ kind: "other", metadata: { authorityMode: "delegated" } })).toBe(true);
     });
 
+    it("recognizes the agent-identity authorityMode flag", () => {
+      expect(isDelegatedAuthorityContext({ kind: "other", metadata: { authorityMode: "agent-identity" } })).toBe(true);
+    });
+
     it("treats agent-runtime as non-delegated", () => {
       expect(isDelegatedAuthorityContext({ kind: "agent-runtime" })).toBe(false);
     });

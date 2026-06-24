@@ -1260,7 +1260,7 @@ function consumeArtifactNotificationItems(items, force = false) {
     artifactNotificationsBootstrapped = true;
     persistArtifactNotificationState();
     if (freshCards.length) {
-      artifactNotificationCards = [...freshCards.reverse(), ...artifactNotificationCards].slice(0, 5);
+      artifactNotificationCards = mergeArtifactNotificationCards(freshCards.reverse());
       renderArtifactNotificationStack();
       return;
     }
@@ -1282,17 +1282,73 @@ function consumeArtifactNotificationItems(items, force = false) {
   if (!nextCards.length && !force) return;
 
   if (nextCards.length) {
-    artifactNotificationCards = [...nextCards.reverse(), ...artifactNotificationCards].slice(0, 5);
+    artifactNotificationCards = mergeArtifactNotificationCards(nextCards.reverse());
   }
   renderArtifactNotificationStack();
 }
 
-function buildArtifactNotificationCardState(item, signature) {
+function mergeArtifactNotificationCards(incomingCards) {
+  const byArtifactId = new Map();
+  for (const card of artifactNotificationCards) {
+    const artifactId = getArtifactNotificationCardArtifactId(card);
+    if (artifactId && !byArtifactId.has(artifactId)) byArtifactId.set(artifactId, card);
+  }
+
+  const nextCards = [...artifactNotificationCards];
+  for (const incoming of incomingCards) {
+    const artifactId = getArtifactNotificationCardArtifactId(incoming);
+    const previous = artifactId ? byArtifactId.get(artifactId) : null;
+    if (!previous) {
+      nextCards.unshift(incoming);
+      if (artifactId) byArtifactId.set(artifactId, incoming);
+      continue;
+    }
+
+    const merged = buildArtifactNotificationCardState(
+      incoming.item,
+      incoming.signature,
+      previous,
+    );
+    const index = nextCards.findIndex((card) => card.id === previous.id);
+    if (index >= 0) nextCards[index] = merged;
+    if (artifactId) byArtifactId.set(artifactId, merged);
+  }
+
+  return dedupeArtifactNotificationCards(nextCards).slice(0, 5);
+}
+
+function getArtifactNotificationCardArtifactId(card) {
+  const artifactId = card?.item?.id;
+  return typeof artifactId === "string" && artifactId.trim() ? artifactId.trim() : null;
+}
+
+function dedupeArtifactNotificationCards(cards) {
+  const seenArtifactIds = new Set();
+  const deduped = [];
+  for (const card of cards) {
+    const artifactId = getArtifactNotificationCardArtifactId(card);
+    if (artifactId) {
+      if (seenArtifactIds.has(artifactId)) continue;
+      seenArtifactIds.add(artifactId);
+    }
+    deduped.push(card);
+  }
+  return deduped;
+}
+
+function buildArtifactNotificationCardState(item, signature, previous = null) {
+  const previousLifecycle = previous?.item?.lifecycle || previous?.item?.status || null;
+  const nextLifecycle = item?.lifecycle || item?.status || null;
   return {
-    id: `artifact-notification-${++artifactNotificationSeq}`,
+    id: previous?.id || `artifact-notification-${++artifactNotificationSeq}`,
     signature,
     item,
-    receivedAt: Date.now(),
+    receivedAt: previous?.receivedAt || Date.now(),
+    updatedAt: Date.now(),
+    phaseChangedAt:
+      previous && previousLifecycle !== nextLifecycle
+        ? Date.now()
+        : previous?.phaseChangedAt || Date.now(),
   };
 }
 
@@ -4914,49 +4970,22 @@ function hydrateArtifactComponentSandbox(container, component, state) {
 
 function sanitizeArtifactComponentSandboxProps(props) {
   const normalized = cloneComponentProps(props);
-  const fallbackSrc = getUiComponentImageFallbackSrc(normalized);
-  normalizeArtifactComponentSandboxImageSrc(normalized, "previewSrc", fallbackSrc);
+  normalizeArtifactComponentSandboxImageSrc(normalized, "previewSrc");
   if (
     normalized.mediaPreview &&
     typeof normalized.mediaPreview === "object" &&
     !Array.isArray(normalized.mediaPreview)
   ) {
     normalized.mediaPreview = { ...normalized.mediaPreview };
-    normalizeArtifactComponentSandboxImageSrc(normalized.mediaPreview, "src", fallbackSrc);
+    normalizeArtifactComponentSandboxImageSrc(normalized.mediaPreview, "src");
   }
   return normalized;
 }
 
-function normalizeArtifactComponentSandboxImageSrc(target, key, fallbackSrc) {
+function normalizeArtifactComponentSandboxImageSrc(target, key) {
   const src = readUiComponentString(target?.[key]);
   if (!src || isSafeUiComponentImagePreviewSrc(src)) return;
-  target[key] = fallbackSrc || "";
-}
-
-function getUiComponentImageFallbackSrc(props) {
-  const mediaPreview = props?.mediaPreview && typeof props.mediaPreview === "object" ? props.mediaPreview : null;
-  const variant = readUiComponentString(props?.variant);
-  const mimeType = readUiComponentString(props?.mimeType);
-  const mediaType = readUiComponentString(mediaPreview?.type);
-  if (variant === "image" || mediaType === "image" || mimeType?.startsWith("image/")) {
-    return getUiComponentRuntimePlaceholderImageSrc();
-  }
-  return "";
-}
-
-let uiComponentRuntimePlaceholderImageSrc = "";
-
-function getUiComponentRuntimePlaceholderImageSrc() {
-  if (uiComponentRuntimePlaceholderImageSrc) return uiComponentRuntimePlaceholderImageSrc;
-  if (typeof URL === "undefined" || typeof Blob === "undefined") return "";
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420"><rect width="640" height="420" fill="#101828"/><rect x="34" y="34" width="572" height="352" rx="28" fill="#1f2937" stroke="#8b5cf6" stroke-width="4"/><circle cx="166" cy="158" r="52" fill="#22c55e"/><path d="M96 316l118-112 88 82 68-58 174 88H96z" fill="#a78bfa"/><text x="320" y="374" font-family="Arial,sans-serif" font-size="28" fill="#f8fafc" text-anchor="middle">Ravi image preview</text></svg>';
-  try {
-    uiComponentRuntimePlaceholderImageSrc = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-  } catch {
-    uiComponentRuntimePlaceholderImageSrc = "";
-  }
-  return uiComponentRuntimePlaceholderImageSrc;
+  target[key] = "";
 }
 
 function getArtifactComponentRendererSource(component) {
@@ -5064,21 +5093,29 @@ function renderUiComponentArtifactNotification(props) {
   const previewSrc = getUiComponentNotificationPreviewSrc(props);
   const previewAlt = readUiComponentString(props?.previewAlt) || title;
   const meta = [kind, provider, model].filter(Boolean).join(" · ");
-  const preview = previewSrc
-    ? `
+  const progress =
+    tone === "running" || tone === "pending"
+      ? `<div class="ravi-wa-ui-component-artifact-notification__progress" aria-hidden="true"></div>`
+      : "";
+  let preview = "";
+  if (previewSrc) {
+    preview = `
       <div class="ravi-wa-ui-component-artifact-notification__preview ravi-wa-ui-component-artifact-notification__preview--image">
         <img src="${escapeAttribute(previewSrc)}" alt="${escapeAttribute(previewAlt)}" loading="lazy" decoding="async" />
       </div>
-    `
-    : `
+    `;
+  } else if (variant !== "image") {
+    preview = `
       <div class="ravi-wa-ui-component-artifact-notification__preview ravi-wa-ui-component-artifact-notification__preview--empty">
         <span>${escapeHtml(variant)}</span>
         <strong>${escapeHtml(kind)}</strong>
       </div>
     `;
+  }
 
   return `
     <article class="ravi-wa-ui-component-artifact-notification ravi-wa-ui-component-artifact-notification--${escapeAttribute(tone)} ravi-wa-ui-component-artifact-notification--variant-${escapeAttribute(variant.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase())}">
+      ${progress}
       ${preview}
       <div class="ravi-wa-ui-component-artifact-notification__body">
         <div class="ravi-wa-ui-component-artifact-notification__meta">
@@ -6687,6 +6724,7 @@ function ensureArtifactNotificationStack() {
 
 function renderArtifactNotificationStack() {
   const stack = ensureArtifactNotificationStack();
+  artifactNotificationCards = dedupeArtifactNotificationCards(artifactNotificationCards).slice(0, 5);
   const cards = artifactNotificationCards.slice(0, 5);
   if (!cards.length && !artifactNotificationError) {
     stack.className = "ravi-wa-artifact-notification-stack ravi-hidden";
@@ -6736,10 +6774,11 @@ function renderArtifactNotificationCard(card, index) {
   const elapsed = formatElapsedCompact(item.updatedAt || item.createdAt) || "agora";
   const delayMs = Math.min(index * 90, 360);
   const props = buildArtifactNotificationComponentProps(item, elapsed);
+  const isEntering = Date.now() - (Number(card?.receivedAt) || 0) < 900;
 
   return `
     <article
-      class="ravi-wa-artifact-notification ravi-wa-artifact-notification--component ravi-wa-artifact-notification--${escapeAttribute(lifecycle)}"
+      class="ravi-wa-artifact-notification ravi-wa-artifact-notification--component ravi-wa-artifact-notification--${escapeAttribute(lifecycle)}${isEntering ? " ravi-wa-artifact-notification--entering" : ""}"
       data-ravi-artifact-notification="${escapeAttribute(card.id)}"
       style="--ravi-artifact-notification-delay: ${delayMs}ms"
       role="button"
@@ -6819,13 +6858,13 @@ function getArtifactNotificationPreviewSrc(item, variant) {
   const direct = getArtifactImageSrc(item);
   if (direct && isSafeUiComponentImagePreviewSrc(direct)) return direct;
   const blobArtifactId = getLocalArtifactImageBlobId(item);
-  if (!blobArtifactId) return getUiComponentRuntimePlaceholderImageSrc();
+  if (!blobArtifactId) return null;
   const cachedBlob = ARTIFACT_BLOB_CACHE.get(blobArtifactId);
   if (cachedBlob?.ok && isSafeUiComponentImagePreviewSrc(cachedBlob.dataUri)) {
     return cachedBlob.dataUri;
   }
   requestArtifactBlobLoad(blobArtifactId);
-  return getUiComponentRuntimePlaceholderImageSrc();
+  return null;
 }
 
 function buildArtifactNotificationSubtitle(item) {

@@ -248,6 +248,7 @@ mock.module("../../nats.js", () => ({
 }));
 
 const { ContextCommands } = await import("./context.js");
+const { setPermissionAuditPublisherForTest } = await import("../../permissions/denials.js");
 
 function callCodexBashHook(payload: Record<string, unknown>): Record<string, unknown> {
   return (new ContextCommands() as any).handleCodexBashHook(payload);
@@ -255,9 +256,14 @@ function callCodexBashHook(payload: Record<string, unknown>): Record<string, unk
 
 describe("ContextCommands", () => {
   const originalKey = process.env.RAVI_CONTEXT_KEY;
+  const originalAuditSuppression = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
 
   beforeEach(() => {
     process.env.RAVI_CONTEXT_KEY = "rctx_test_123";
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    setPermissionAuditPublisherForTest(async (topic, data) => {
+      publishedAuditEvents.push({ topic, data });
+    });
     inlineContext = undefined;
     authorizeResult = undefined;
     issuedContext = undefined;
@@ -287,6 +293,12 @@ describe("ContextCommands", () => {
   });
 
   afterEach(() => {
+    setPermissionAuditPublisherForTest();
+    if (originalAuditSuppression === undefined) {
+      delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    } else {
+      process.env.RAVI_SUPPRESS_AUDIT_EVENTS = originalAuditSuppression;
+    }
     if (originalKey === undefined) {
       delete process.env.RAVI_CONTEXT_KEY;
     } else {

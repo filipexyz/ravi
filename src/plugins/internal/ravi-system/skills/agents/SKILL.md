@@ -183,32 +183,58 @@ Keys:
 
 ## Permissões / Provider Runtime
 
-O Ravi autoriza execução pelo Permission Provider Runtime. Para permissões
-operacionais do agent, use `ravi agents permissions`: ele grava a configuração
-de runtime em `agent.defaults.runtimePermissions` e o provider
-`agent-runtime-permissions` materializa as capabilities no contexto do agent.
-A superfície normal para destravar um agent novo é `ravi agents permissions`,
-que grava config provider-owned no próprio agent.
+O Ravi autoriza execução pelo Permission Provider Runtime. Para fluxos
+recorrentes iniciados por humanos, a superfície normal é `ravi permissions`:
+ela monta um plano provider-owned que aplica o profile/tag no ator e garante o
+ceiling do executor agent no mesmo passo.
 
 ```bash
-# Ver perfil runtime atual
+# Resolver a partir de um denial real
+ravi permissions resolve <denial-id>
+ravi permissions resolve <denial-id> --apply
+
+# Criar/aplicar profile quando não há denial id
+ravi permissions allow <profile> \
+  --to contact:<contact-id> \
+  --agent <executor-agent-id> \
+  --capabilities <permission>:<objectType>:<objectId>
+
+ravi permissions allow <profile> ... --apply
+```
+
+`allow` e `resolve` fazem dry-run por padrão. Use `--apply` só depois de
+conferir o plano.
+
+Para permissões operacionais agent-only, use `ravi agents permissions`: ele
+grava a configuração de runtime em `agent.defaults.runtimePermissions` e o
+provider `agent-runtime-permissions` materializa as capabilities no contexto do
+agent.
+
+```bash
+# Ver perfil runtime salvo no agent
 ravi agents permissions <id>
 
-# Dar acesso total dentro do Ravi para o agent e suas próprias automações
-ravi agents permissions <id> full-access
+# Inspecionar materialização efetiva antes de pedir nova autoridade
+ravi permissions materialize --subject-type agent --subject-id <id> --json
 
 # Voltar ao bootstrap mínimo
 ravi agents permissions <id> none
 
-# Capability explícita sem ampliar o bootstrap global
+# Capability explícita de bootstrap quando ainda não existe profile agent-only
 ravi agents permissions <id> bootstrap --capabilities execute:executable:omni
-
-# Capabilities semânticas de comandos CLI read-only
-ravi agents permissions <id> bootstrap --capabilities read:skills:show,read:self:whoami,read:self:permissions,read:tasks.profiles:*,read:tasks:list,read:cron:show
-
-# Inspecionar capabilities provider-runtime
-ravi permissions materialize --subject-type agent --subject-id <id>
 ```
+
+Para acesso recorrente, prefira criar/aplicar um permission profile ou tag
+provider-owned com `ravi permissions allow/resolve`. Capability solta é
+diagnóstico ou bootstrap de profile novo. `full-access` é break-glass: só use
+quando o operador pedir explicitamente.
+
+Quando um agent recém-criado pedir permissão, não devolva uma lista longa de
+capabilities como primeira opção. Se houver denial id, recomende
+`ravi permissions resolve <denial-id>`. Sem denial id, recomende
+`ravi permissions allow <profile> --to contact:<id> --agent <agent>`. Use
+capability crua só em `--capabilities` para criar um profile/tag estreito
+quando não existir bundle adequado.
 
 Ver skill `permissions-manager` para documentação completa.
 
@@ -376,8 +402,8 @@ ravi agents create atendimento ~/ravi/atendimento --provider codex --model gpt-5
 # 3. Rotear grupo pro agent
 ravi instances routes add main group:120363425628305127 atendimento
 
-# 4. Configurar perfil runtime do agent
-ravi agents permissions atendimento full-access
+# 4. Inspecionar autoridade e aplicar o profile/tag mínimo necessário
+ravi permissions materialize --subject-type agent --subject-id atendimento --json
 ```
 
 ### Aprovar contato e associar a agent

@@ -2,15 +2,18 @@ import { getAccountForAgent, type AgentConfig } from "../router/index.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import {
   buildEffectiveCapabilities,
-  DELEGATED_AUTHORITY_MODE,
   hasAnyCapability,
   TURN_SCOPED_AUTHORITY_KIND,
   type AuthorityPrincipal,
 } from "../permissions/delegation.js";
 import {
-  materializeSubjectCapabilities,
-  materializeSubjectDelegationOverrides,
-} from "../permissions/provider-runtime.js";
+  AGENT_IDENTITY_AUTHORITY_MODE,
+  AGENT_IDENTITY_AUTHORITY_RESOLVER,
+  AGENT_IDENTITY_SUBJECT_TYPE,
+  buildAgentIdentitySubjectId,
+  type AgentIdentityCompartment,
+} from "../permissions/agent-identity-permissions-provider.js";
+import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
@@ -51,7 +54,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     approvalSource,
   } = options;
 
-  const capabilities = buildRuntimeContextCapabilities(agent.id, prompt);
+  const capabilities = buildRuntimeContextCapabilities(agent.id);
   const runtimeContext = createRuntimeContextForPrompt({
     agentId: agent.id,
     sessionKey: dbSessionKey,
@@ -112,7 +115,7 @@ export function refreshRuntimeRequestContextForTurn(options: {
     return options.runtimeContext;
   }
 
-  const capabilities = buildRuntimeContextCapabilities(options.agent.id, options.prompt);
+  const capabilities = buildRuntimeContextCapabilities(options.agent.id);
   const nextContext = createRuntimeContextForPrompt({
     agentId: options.agent.id,
     sessionKey: options.dbSessionKey,
@@ -162,11 +165,8 @@ export function refreshRuntimeRequestContextForTurn(options: {
   return options.runtimeContext;
 }
 
-function buildRuntimeContextCapabilities(agentId: string, prompt: RuntimeLaunchPrompt): ContextCapability[] {
-  return dedupeContextCapabilities([
-    ...snapshotAgentCapabilities(agentId),
-    ...parseObservationPermissionGrants(prompt._observation?.permissionGrants),
-  ]);
+function buildRuntimeContextCapabilities(agentId: string): ContextCapability[] {
+  return dedupeContextCapabilities(snapshotAgentCapabilities(agentId));
 }
 
 function createRuntimeContextForPrompt(options: {
@@ -227,63 +227,97 @@ function buildDelegatedRuntimeContextInput(options: {
   const surfacePrincipal = resolveSurfacePrincipal(actorMetadata);
   const actorDisplayName = cleanStringValue(actorMetadata?.senderName);
   const surfaceDisplayName = cleanStringValue(actorMetadata?.groupName);
-  const actorCapabilities = actorPrincipal
-    ? materializeSubjectCapabilities(
-        actorPrincipal.subjectType,
-        actorPrincipal.subjectId,
-        actorPrincipal.subjectType === "automation" ? { executorAgentId: options.agentId } : {},
-      )
-    : [];
-  const surfaceCapabilities = surfacePrincipal
-    ? materializeSubjectCapabilities(surfacePrincipal.subjectType, surfacePrincipal.subjectId, { includeRoles: false })
-    : [];
-  const allowDelegationOverrides = shouldApplyDelegationOverrides(actorPrincipal);
-  const agentDelegationOverrides = allowDelegationOverrides
-    ? materializeSubjectDelegationOverrides("agent", options.agentId, { includeRoles: false })
-    : [];
-  const surfaceDelegationOverrides =
-    allowDelegationOverrides && surfacePrincipal
-      ? materializeSubjectDelegationOverrides(surfacePrincipal.subjectType, surfacePrincipal.subjectId, {
-          includeRoles: false,
-        })
-      : [];
-  const actorOverrideCapabilities = [...agentDelegationOverrides, ...surfaceDelegationOverrides];
-  const surfaceOverrideCapabilities = surfaceDelegationOverrides;
-  const includeSurfaceConstraint = Boolean(surfacePrincipal) || actorPrincipal?.subjectType !== "automation";
+
+  return buildAgentIdentityRuntimeContextInput({
+    agentId: options.agentId,
+    prompt: options.prompt,
+    capabilities: options.capabilities,
+    actorPrincipal,
+    surfacePrincipal,
+    actorDisplayName,
+    surfaceDisplayName,
+  });
+}
+
+function buildAgentIdentityRuntimeContextInput(options: {
+  agentId: string;
+  prompt: RuntimeLaunchPrompt;
+  capabilities: ContextCapability[];
+  actorPrincipal: AuthorityPrincipal | null;
+  surfacePrincipal: AuthorityPrincipal | null;
+  actorDisplayName?: string;
+  surfaceDisplayName?: string;
+}): {
+  capabilities: ContextCapability[];
+  metadata: Record<string, unknown>;
+} {
   const observationCapabilities = parseObservationPermissionGrants(options.prompt._observation?.permissionGrants);
+  const compartment = resolveAgentIdentityCompartment(options.prompt, options.actorPrincipal, options.surfacePrincipal);
+  const agentIdentitySubjectId = buildAgentIdentitySubjectId(options.agentId, compartment);
+  const agentIdentityPrincipal = {
+    subjectType: AGENT_IDENTITY_SUBJECT_TYPE,
+    subjectId: agentIdentitySubjectId,
+  };
+  const agentIdentityCapabilities = options.actorPrincipal
+    ? materializeSubjectCapabilities(AGENT_IDENTITY_SUBJECT_TYPE, agentIdentitySubjectId, {
+        executorAgentId: options.agentId,
+        executorCapabilities: options.capabilities,
+        compartmentType: compartment.type,
+        compartmentId: compartment.id,
+        authorityModel: AGENT_IDENTITY_AUTHORITY_MODE,
+      })
+    : [];
   const effectiveCapabilities = buildEffectiveCapabilities({
-    agentCapabilities: options.capabilities,
-    actorCapabilities,
-    ...(includeSurfaceConstraint ? { surfaceCapabilities } : {}),
-    actorOverrideCapabilities,
-    surfaceOverrideCapabilities,
+    agentCapabilities: agentIdentityCapabilities,
+    actorCapabilities: agentIdentityCapabilities,
     turnCapabilities: hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined,
   });
-  const delegationOverridePrincipals = [
-    ...(agentDelegationOverrides.length > 0 ? [`agent:${options.agentId}`] : []),
-    ...(surfacePrincipal && surfaceDelegationOverrides.length > 0 ? [formatPrincipal(surfacePrincipal)] : []),
-  ];
 
   return {
     capabilities: effectiveCapabilities,
     metadata: {
-      authorityMode: DELEGATED_AUTHORITY_MODE,
-      authorityResolver: "turn-scoped-v1",
+      authorityMode: AGENT_IDENTITY_AUTHORITY_MODE,
+      authorityResolver: AGENT_IDENTITY_AUTHORITY_RESOLVER,
       executorAgentId: options.agentId,
-      actorPrincipal: actorPrincipal ? formatPrincipal(actorPrincipal) : "unknown",
-      actorResolution: actorPrincipal ? "resolved" : "missing_contact",
-      ...(actorDisplayName ? { actorDisplayName } : {}),
-      ...(surfacePrincipal ? { surfacePrincipal: formatPrincipal(surfacePrincipal) } : {}),
-      ...(surfaceDisplayName ? { surfaceDisplayName } : {}),
-      actorCapabilityCount: actorCapabilities.length,
-      surfaceCapabilityCount: surfaceCapabilities.length,
-      actorOverrideCapabilityCount: actorOverrideCapabilities.length,
-      surfaceOverrideCapabilityCount: surfaceOverrideCapabilities.length,
-      ...(delegationOverridePrincipals.length > 0 ? { delegationOverridePrincipals } : {}),
+      actorPrincipal: options.actorPrincipal ? formatPrincipal(options.actorPrincipal) : "unknown",
+      actorResolution: options.actorPrincipal ? "resolved" : "missing_contact",
+      actorAuthorizationMode: "invoke-only",
+      ...(options.actorDisplayName ? { actorDisplayName: options.actorDisplayName } : {}),
+      ...(options.surfacePrincipal ? { surfacePrincipal: formatPrincipal(options.surfacePrincipal) } : {}),
+      ...(options.surfaceDisplayName ? { surfaceDisplayName: options.surfaceDisplayName } : {}),
+      surfaceAuthorizationMode: "compartment",
+      agentIdentityPrincipal: formatPrincipal(agentIdentityPrincipal),
+      agentIdentityCompartment: `${compartment.type}:${compartment.id}`,
+      agentIdentityCapabilityCount: agentIdentityCapabilities.length,
+      actorCapabilityCount: 0,
+      surfaceCapabilityCount: 0,
       turnCapabilityCount: observationCapabilities.length,
       ...(observationCapabilities.length > 0 ? { turnCapabilities: observationCapabilities } : {}),
       effectiveCapabilityCount: effectiveCapabilities.length,
     },
+  };
+}
+
+function resolveAgentIdentityCompartment(
+  prompt: RuntimeLaunchPrompt,
+  actorPrincipal: AuthorityPrincipal | null,
+  surfacePrincipal: AuthorityPrincipal | null,
+): AgentIdentityCompartment {
+  if (surfacePrincipal) {
+    return {
+      type: prompt.context?.isGroup === false ? "dm" : "chat",
+      id: surfacePrincipal.subjectId,
+    };
+  }
+  if (actorPrincipal?.subjectType === "automation") {
+    return {
+      type: "automation",
+      id: actorPrincipal.subjectId,
+    };
+  }
+  return {
+    type: "workspace",
+    id: "default",
   };
 }
 
@@ -376,10 +410,6 @@ function resolveSurfacePrincipal(actorMetadata: MessageActorMetadata | undefined
   const chatId = actorMetadata?.canonicalChatId ?? (typeof rawChatId === "string" ? rawChatId : undefined);
   if (!chatId) return null;
   return { subjectType: "chat", subjectId: chatId };
-}
-
-function shouldApplyDelegationOverrides(actorPrincipal: AuthorityPrincipal | null): boolean {
-  return actorPrincipal?.subjectType === "contact";
 }
 
 function formatPrincipal(principal: AuthorityPrincipal): string {

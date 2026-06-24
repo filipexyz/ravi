@@ -7,6 +7,7 @@ capability: production-readiness
 capabilities:
   - provider-runtime
   - agent-runtime-permissions
+  - agent-identity-permissions
   - contact-policy-permissions
   - delegation
   - resource-visibility
@@ -22,6 +23,7 @@ applies_to:
   - src/permissions/provider-runtime.ts
   - src/permissions/provider-registry.ts
   - src/permissions/agent-runtime-permissions-provider.ts
+  - src/permissions/agent-identity-permissions-provider.ts
   - src/permissions/contact-policy-permissions-provider.ts
   - src/permissions/capability-context.ts
   - src/permissions/delegation.ts
@@ -43,27 +45,29 @@ This spec defines the exit criteria for declaring the provider-runtime
 permission system production ready. A criterion counts as met only when code and
 automated checks prevent regression.
 
-Readiness is judged against the live model: turn-scoped delegated authority is
-computed from executor agent, actor, surface, and turn capabilities, with
-surface inheritance, deny vetoes, role expansion, delegation overrides, and
-provider-owned resource visibility.
+Readiness is judged against the live model: turn-scoped agent identity
+authority is computed from the executor agent's provider-owned runtime
+capabilities projected into a compartment, plus turn caps when present. Actor
+and surface are required provenance/compartment context; they are not the
+default tool-authority branches.
 
 ## Readiness Gates
 
 ### G1 Model Correctness
 
-- User-initiated delegated execution MUST require the executor-agent ceiling and
-  the actor branch.
-- A surface with no explicit allow, deny, or constraint for the same object MUST
-  inherit the actor branch.
-- Explicit surface deny MUST veto inheritance, overrides, and wildcards.
-- Surface constraints MUST bound the surface to the expanded constraint
-  capabilities.
-- Delegation overrides MAY satisfy human actor/surface branches, but MUST NOT
-  exceed the executor-agent ceiling.
-- Automation and unresolved actors MUST NOT receive human delegation overrides.
+- User-initiated external execution MUST require a resolved actor before
+  materializing agent identity authority.
+- A resolved actor with zero contact capabilities MUST NOT block capabilities
+  held by `agent_identity:<agent>:<compartment>`.
+- A surface/chat with zero capabilities MUST NOT block the agent identity by
+  absence alone.
+- Turn caps, when present, MUST remain an upper bound.
+- Automation MUST run as explicit automation provenance under an automation or
+  chat compartment.
+- The legacy delegated intersection MUST NOT be reachable through runtime
+  environment flags in production context creation.
 
-Validation: `bun test src/permissions/delegation.test.ts`.
+Validation: `bun test src/runtime/runtime-request-context.test.ts`.
 
 ### G2 Provider Runtime Boundary
 
@@ -113,8 +117,12 @@ Validation:
 
 ### G5 Operational Safety
 
-- `ravi permissions` MUST be inspection-only for the active provider runtime.
+- `ravi permissions status/check/materialize` MUST remain inspection-only for
+  the active provider runtime.
+- `ravi permissions allow/resolve` MAY mutate only through provider-owned
+  orchestration and MUST dry-run unless `--apply` is explicit.
 - Mutating agent authority MUST go through provider-owned surfaces such as
+  `ravi permissions allow/resolve` or direct agent-only
   `ravi agents permissions`.
 - Skills and specs MUST teach the provider-runtime surface, not removed command
   paths.
@@ -128,7 +136,7 @@ Validation:
 
 ## Exit Checklist
 
-- [x] Delegation model has focused tests.
+- [x] Agent identity model has focused tests.
 - [x] Runtime provider boundary has tests.
 - [x] Agent visibility migration is provider-owned and idempotent.
 - [x] Agent creation persists creator visibility when a runtime creator exists.

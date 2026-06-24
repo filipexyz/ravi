@@ -1,6 +1,13 @@
 import { getContext } from "./context.js";
 import type { CommandAccessOptions } from "./decorators.js";
 import { authorizePermission, type PermissionProviderDecision } from "../permissions/provider-runtime.js";
+import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
+import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
+import {
+  buildAuthorizationGuidance,
+  formatAuthorizationGuidanceLines,
+  type AuthorizationCapability,
+} from "../permissions/authorization-guidance.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
 import type {
   CapabilityContextLike,
@@ -34,8 +41,9 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
       attempted: [],
     };
   }
+  const inputWithAccess: CliCommandAccessInput & { access: CommandAccessOptions } = { ...input, access: input.access };
 
-  const authority = resolveCommandAccessAuthority(input.source, input.access);
+  const authority = resolveCommandAccessAuthority(input.source, inputWithAccess.access);
   if (!authority.allowed) {
     return {
       allowed: false,
@@ -44,10 +52,10 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
     };
   }
 
-  const operation = buildCliCommandOperation(input);
+  const operation = buildCliCommandOperation(inputWithAccess);
   const attempted: PermissionProviderDecision[] = [];
 
-  for (const candidate of commandAccessCandidates(input)) {
+  for (const candidate of commandAccessCandidates(inputWithAccess)) {
     const decision = authorizePermission({
       ...authority.request,
       permission: candidate.permission,
@@ -61,12 +69,33 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
     }
   }
 
+  const errorMessage = buildCommandAccessDenialMessage(inputWithAccess, authority.label);
+  recordCliCommandAccessDenial(inputWithAccess, authority, attempted, operation, errorMessage);
+
   return {
     allowed: false,
-    errorMessage: `Permission denied: ${authority.label} cannot execute ${formatCommand(input)} (${input.access.kind} ${input.access.resource}.${input.access.action}, risk ${input.access.risk})`,
+    errorMessage,
     decision: attempted[attempted.length - 1],
     attempted,
   };
+}
+
+function buildCommandAccessDenialMessage(
+  input: CliCommandAccessInput & { access: CommandAccessOptions },
+  authorityLabel: string,
+): string {
+  const subject = subjectFromAuthorityLabel(authorityLabel);
+  const guidance = buildAuthorizationGuidance({
+    capability: commandAccessCapability(input.access),
+    subject,
+    scope: "recurring",
+    reason: `Needs ${formatCommand(input)} command access.`,
+    includeProviderOwnedTags: true,
+  });
+  return [
+    `Permission denied: ${authorityLabel} cannot execute ${formatCommand(input)} (${input.access.kind} ${input.access.resource}.${input.access.action}, risk ${input.access.risk})`,
+    ...formatAuthorizationGuidanceLines(guidance),
+  ].join("\n");
 }
 
 export function buildCliCommandOperation(input: CliCommandAccessInput): PermissionProviderCliCommandOperation {
@@ -176,6 +205,100 @@ function dedupeCandidates(
     result.push(candidate);
   }
   return result;
+}
+
+function recordCliCommandAccessDenial(
+  input: CliCommandAccessInput & { access: CommandAccessOptions },
+  authority: Extract<ReturnType<typeof resolveCommandAccessAuthority>, { allowed: true }>,
+  attempted: PermissionProviderDecision[],
+  operation: PermissionProviderCliCommandOperation,
+  reason: string,
+): void {
+  const context = authority.request.context as
+    | (CapabilityContextLike & {
+        contextId?: string;
+        sessionKey?: string;
+        sessionName?: string;
+      })
+    | null
+    | undefined;
+  if (!context) return;
+
+  const requested = attempted[0];
+  if (!requested) return;
+  const command = `${input.group} ${input.command}`;
+  const capability = commandAccessCapability(input.access);
+  const guidance = buildAuthorizationGuidance({
+    capability,
+    subject: context.agentId ? { type: "agent", id: context.agentId } : undefined,
+    scope: "recurring",
+    reason: `Needs ${command} command access.`,
+    includeProviderOwnedTags: true,
+  });
+
+  const provenance = buildAuditContextProvenance({
+    contextId: context.contextId,
+    kind: context.kind,
+    agentId: context.agentId,
+    sessionKey: context.sessionKey,
+    sessionName: context.sessionName,
+    capabilities: context.capabilities,
+    metadata: context.metadata,
+  });
+  recordAndEmitPermissionDenial({
+    subjectType: "agent",
+    subjectId: context.agentId ?? undefined,
+    agentId: context.agentId,
+    sessionKey: context.sessionKey,
+    sessionName: context.sessionName,
+    contextId: context.contextId,
+    relation: requested.permission,
+    objectType: requested.objectType,
+    objectId: requested.objectId,
+    reason,
+    command,
+    detail: {
+      operation,
+      guidance,
+      attempted: attempted.map((decision) => ({
+        providerId: decision.providerId,
+        permission: decision.permission,
+        objectType: decision.objectType,
+        objectId: decision.objectId,
+        reasonCode: decision.reasonCode,
+      })),
+      ...(provenance ? { context: provenance } : {}),
+    },
+    audit: {
+      type: "scope",
+      agentId: context.agentId ?? "unknown",
+      denied: `${requested.permission}:${requested.objectType}:${requested.objectId}`,
+      reason,
+      command,
+      blockType: "cli_command_access_missing_grant",
+      guidance: {
+        canonicalCapability: guidance.canonicalCapability,
+        recommendedPath: guidance.preferredPath.message,
+        suggestedTags: guidance.preferredPath.suggestedTags,
+      },
+      ...(provenance ? { context: provenance } : {}),
+    },
+  });
+}
+
+function commandAccessCapability(access: CommandAccessOptions): AuthorizationCapability {
+  return {
+    permission: access.kind,
+    objectType: access.resource,
+    objectId: access.action,
+  };
+}
+
+function subjectFromAuthorityLabel(authorityLabel: string): { type: string; id: string } | undefined {
+  const [type, ...idParts] = authorityLabel.split(":");
+  const id = idParts.join(":");
+  if (!type || !id || authorityLabel === "local operator") return undefined;
+  return { type, id };
 }
 
 function normalizeAccess(access: CommandAccessOptions): PermissionProviderCommandAccess {

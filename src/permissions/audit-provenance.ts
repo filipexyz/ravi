@@ -22,10 +22,15 @@ export interface AuditContextProvenance {
   authorityResolver?: string;
   actorPrincipal?: string;
   actorResolution?: string;
+  actorAuthorizationMode?: string;
   actorDisplayName?: string;
   surfacePrincipal?: string;
+  surfaceAuthorizationMode?: string;
   surfaceDisplayName?: string;
   executorAgentId?: string;
+  agentIdentityPrincipal?: string;
+  agentIdentityCompartment?: string;
+  agentIdentityCapabilityCount?: number;
   actorCapabilityCount?: number;
   surfaceCapabilityCount?: number;
   actorOverrideCapabilityCount?: number;
@@ -48,13 +53,18 @@ const STRING_METADATA_KEYS = [
   "authorityResolver",
   "actorPrincipal",
   "actorResolution",
+  "actorAuthorizationMode",
   "actorDisplayName",
   "surfacePrincipal",
+  "surfaceAuthorizationMode",
   "surfaceDisplayName",
   "executorAgentId",
+  "agentIdentityPrincipal",
+  "agentIdentityCompartment",
 ] as const;
 
 const NUMBER_METADATA_KEYS = [
+  "agentIdentityCapabilityCount",
   "actorCapabilityCount",
   "surfaceCapabilityCount",
   "actorOverrideCapabilityCount",

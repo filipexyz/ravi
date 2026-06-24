@@ -20,6 +20,12 @@ applies_to:
   - src/permissions/denials.ts
   - src/events/audit-stream.ts
   - src/permissions/audit-provenance.ts
+  - src/approval/service.ts
+  - src/cli/command-access.ts
+  - src/apps/permissions.ts
+  - src/bash/hook.ts
+  - src/runtime/host-services.ts
+  - src/sdk/gateway/streaming/handler.ts
 owners:
   - ravi-dev
 status: active
@@ -30,9 +36,10 @@ normative: true
 
 ## Intent
 
-Today Ravi audits only denials: `ravi.audit.denied` is published on deny
-(`scope.ts`) and denials are recorded in `permission_denials`. There is no
-allow-side audit and no tamper-evidence. In a regulated industry an action you
+Today Ravi audits only denials: denied permission decisions are recorded in
+`permission_denials` and published to `ravi.audit.denied` through the central
+helper in `src/permissions/denials.ts`. There is no allow-side audit and no
+tamper-evidence. In a regulated industry an action you
 cannot prove did not happen legally happened — so the audit log is the defense,
 and it MUST cover allows, be tamper-evident, and survive off-box.
 
@@ -78,6 +85,19 @@ default and is pushed to a customer sink, not a vendor cloud).
 ## Event Surface
 
 - The deny topic `ravi.audit.denied` MUST be preserved for compatibility.
+- Deny emission MUST be centralized through `recordAndEmitPermissionDenial` or
+  `emitPermissionDeniedAudit`; wrappers MUST NOT publish ad hoc
+  `ravi.audit.denied` payloads that bypass `permission_denials.notified_at`.
+- When a deny can be tied to a permission subject, the emitted payload MUST carry
+  the same `denialId` as the `permission_denials` row, and successful publish
+  MUST set `notified_at`.
+- Runtime/provider denials, CLI command access denials, app permission denials,
+  Bash/tool denials, and SDK gateway stream denials MUST all use the central
+  deny helper.
+- Runtime policy denials that are not grant-shaped (dangerous command pattern,
+  parser failure, skill gate) MUST still emit `ravi.audit.denied` with a
+  specific `blockType`; they MAY omit `denialId` when no permission subject
+  exists.
 - An allow/decision topic (e.g. `ravi.audit.decision` or `ravi.audit.allowed`)
   MUST carry the same provenance schema for allows of sensitive actions.
 - Both MUST share one provenance builder (`audit-provenance`) so allow and deny

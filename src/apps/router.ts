@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { dirname } from "node:path";
 import { discoverAppManifests, getAppManifest, RAVI_APP_BUILTIN_OPERATION_HANDLERS } from "./service.js";
 import type {
   RaviAppAliasInvocation,
@@ -376,9 +377,15 @@ async function runCliOperation(
     operationId: resolved.id,
     args: options.args,
   });
+  const appRoot = dirname(app.path);
   const run = await spawnShellCommand(command, {
-    cwd: options.cwd,
-    env: options.env,
+    cwd: appRoot,
+    env: {
+      ...options.env,
+      RAVI_APP_ID: appId,
+      RAVI_APP_OPERATION_ID: resolved.id,
+      RAVI_APP_ROOT: appRoot,
+    },
     capture: options.json,
   });
   const parsed = options.json ? parseJsonOutput(run.stdout) : undefined;

@@ -7,7 +7,7 @@ capability: profiles
 capabilities:
   - provider-runtime
   - roles
-  - delegated-authority
+  - agent-identity
   - capability-materialization
   - tag-policy
 tags:
@@ -35,15 +35,21 @@ normative: true
 
 Permission profiles are reusable authority bundles.
 
-The product word MAY be "profile" or "permission group", but the current
-canonical graph primitive is `role:<id>`. A role/profile grants capabilities
-to no one by itself. A principal receives those capabilities only through an
-explicit membership or scoped delegation relation.
+The product word MAY be "profile" or "permission group". In the active runtime
+model, recurring operational authority SHOULD attach to the agent identity by
+updating provider-owned executor agent runtime capabilities. A role/profile
+grants capabilities to no one by itself. A principal receives those
+capabilities only through explicit provider materialization.
 
 Tags MAY be used to manage profile membership at scale, but only through
 explicit permission policy materialization. A tag such as
 `policy.profile.trusted-dev` MUST materialize `member role:trusted-dev` before
 it has any authorization effect.
+
+Profiles are also the primary operator UX for recurring authorization. Agents
+SHOULD ask for a named profile/tag instead of emitting long lists of raw
+capabilities. Capability lists are diagnostic evidence or bootstrap material
+for creating a new profile, not the normal approval interface.
 
 ## Invariants
 
@@ -60,10 +66,11 @@ it has any authorization effect.
   authority.
 - Profile grants SHOULD be temporary by default unless marked permanent.
 - Revoked or expired profile grants and memberships MUST stop authorizing.
-- Profile expansion MUST happen before turn-scoped capability intersection.
-- Profile expansion MUST NOT union around surface constraints.
-- A profile assignment to a chat/surface is a constraint by default, not actor
-  identity.
+- Profile expansion MUST happen before turn-scoped capability materialization.
+- A profile assignment to a contact is legacy/user-overlay unless an explicit
+  provider consumes it for invocation eligibility.
+- A profile assignment to a chat/surface is compartment policy or constraint;
+  a missing chat profile MUST NOT zero agent identity authority.
 
 ## Canonical Relations
 
@@ -99,24 +106,22 @@ Semantics:
 
 ## Materialization
 
-When building a delegated runtime context, Ravi MUST:
+When building an agent identity runtime context, Ravi MUST:
 
 1. Resolve the actor principal, executor agent, and surface principal.
-2. Resolve direct actor capabilities.
-3. Expand actor profile memberships into actor capabilities.
-4. Resolve direct executor agent capabilities.
-5. Expand executor profile memberships into agent capabilities.
-6. Resolve surface constraints.
-7. Expand surface profile constraints.
-8. Intersect agent, actor, surface, and turn capabilities.
-9. Persist the effective capabilities and provenance into the context.
+2. Resolve the compartment (`chat`, `dm`, `automation`, or `workspace`).
+3. Resolve executor agent capabilities from provider-owned runtime config.
+4. Project those capabilities into
+   `agent_identity:<agent-id>:<compartment-type>:<compartment-id>`.
+5. Intersect with turn approval/observer capabilities when present.
+6. Persist effective capabilities and provenance into the context.
 
 Materialized capabilities MUST include source metadata such as:
 
 - provider id/source;
 - profile id;
-- membership source;
-- surface constraint source;
+- compartment id;
+- executor agent source;
 - reason/issuer when available.
 
 ## App Profiles
@@ -129,7 +134,7 @@ Preferred app profile pattern:
 role:ops-apps use app:apps
 role:ops-apps use app:khal-tasks
 role:ops-apps execute app:khal-tasks
-contact:<contact-id> member role:ops-apps
+  agent:<agent-id> member role:ops-apps
 ```
 
 Rules:
@@ -142,8 +147,9 @@ Rules:
 
 ## Tag-Managed Profiles
 
-For human-scale management, policy tags SHOULD assign principals or surfaces to
-profiles rather than duplicating large grant sets.
+For human-scale management, policy tags SHOULD describe reusable profiles, but
+the production default is to apply recurring tool authority to the agent
+identity/executor agent. Contact tags are for legacy/user-overlay policy.
 
 Example:
 
@@ -168,6 +174,75 @@ Rules:
   approval with short TTL.
 - Explain output MUST show the tag, policy rule, membership relation, and role
   grants that expanded from it.
+
+## Agent Request UX
+
+When a missing capability is recurring, the recommended request shape is:
+
+```text
+subject: <principal>
+scope: <optional session/chat/app/resource>
+profile/tag: <provider-owned profile id>
+reason: <why this workflow needs it>
+ttl: <temporary by default, permanent only when explicit>
+```
+
+Rules:
+
+- Agents MUST treat the authorization guidance envelope as the canonical
+  contract. Free-form CLI error text is for humans; JSON guidance is for
+  agents.
+- Agents MUST NOT ask for `full-access` unless explicitly told to request
+  break-glass.
+- Agents SHOULD run `ravi permissions materialize` before asking for new
+  authority, so the request cites current state instead of guessing.
+- Agents SHOULD prefer existing permission-scoped tags/profiles over creating
+  ad-hoc capability lists.
+- Approval/audit output MUST show the concrete capability diff behind the
+  profile/tag when available.
+- If the envelope names a provider-owned permission tag, agents SHOULD request
+  that tag by slug. If no tag/profile matches, agents MAY propose the raw
+  canonical capability as bootstrap material for a new narrow profile/tag.
+- A one-off runtime approval MUST be phrased as "current context only" and MUST
+  NOT imply a recurring grant.
+
+## Operator Workflow UX
+
+The default operator path for recurring authorization is:
+
+```bash
+ravi permissions resolve <denial-id>
+ravi permissions resolve <denial-id> --apply
+```
+
+For agent-identity denials, `resolve` MUST infer `agent:<executorAgentId>`.
+
+When no denial id exists, the default path is:
+
+```bash
+ravi permissions allow <profile> \
+  --to agent:<executor-agent-id> \
+  --capabilities <permission>:<objectType>:<objectId>
+
+ravi permissions allow <profile> ... --apply
+```
+
+Semantics:
+
+- `allow` and `resolve` MUST dry-run by default.
+- `--apply` MUST be explicit for every provider-owned mutation.
+- Applying a profile to `agent:<id>` MUST ensure the executor-agent runtime
+  config contains the concrete capabilities, without replacing existing
+  explicit capabilities.
+- Applying a profile to `contact:<id>` MAY still use the contact policy path,
+  but this is legacy/user-overlay and not the normal way to unblock
+  multiplayer agent tool authority.
+- Existing provider-owned permission tags MUST be reused when their capability
+  set matches the denied capability.
+- Non-permission tags MUST NOT be mutated by permission workflow commands.
+- Surface/chat constraints require their own materializer. Until such a
+  provider exists, the workflow command MUST not pretend that attaching a tag to
+  a chat grants authority.
 
 ## Relationship To Tool Groups
 

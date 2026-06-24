@@ -8,6 +8,7 @@ feature: turn-scoped-authority
 capabilities:
   - provider-runtime
   - runtime-context
+  - agent-identity
   - contacts
   - chats
   - host-services
@@ -39,11 +40,18 @@ normative: true
 
 ## Intent
 
-Turn scoped authority prevents a powerful agent from exposing its full toolset to every person who can message it.
+Turn scoped authority gives every external/automation turn a short-lived
+effective capability set with structured provenance.
 
 Every external inbound turn MUST carry a structured invocation principal and a short-lived effective capability set. Tools, CLI commands, executable approval, session access, contact writes, SDK gateway streams, and child contexts MUST authorize against that invocation context.
 
-Agent grants define what the executor can possibly do. They do not define what this actor is allowed to make the executor do.
+The active production model is agent identity: the agent acts as itself under a
+compartment-scoped identity. Contact/user identity proves who invoked the turn
+and drives audit/invocation policy, but it is not a required tool-authority
+branch by default.
+
+The previous delegated model (`agent ∩ actor ∩ surface ∩ turn`) is retired from
+runtime context creation and remains only as historical spec/test context.
 
 ## Definitions
 
@@ -52,46 +60,64 @@ Agent grants define what the executor can possibly do. They do not define what t
 - `actor_context`: structured identity facts for the current actor, including `actor_type`, `contact_id`, `platform_identity_id`, `chat_id`, channel, instance/account, route, and provenance.
 - `executor_agent`: the Ravi agent running the provider turn.
 - `surface_context`: chat/thread/route/instance/project/session constraints around the invocation.
-- `effective_capabilities`: intersection result used for the invocation.
-- `ambient agent authority`: any decision that allows a tool because the agent has a grant, without checking the actor/surface for user-initiated execution.
+- `agent_identity`: compartment-scoped authority principal, formatted
+  `agent_identity:<agent-id>:<compartment-type>:<compartment-id>`.
+- `effective_capabilities`: materialized agent identity capabilities,
+  intersected with turn caps when present.
+- `ambient agent authority`: long-lived root agent context reused without a
+  turn-scoped context. This remains forbidden for external turns.
 
 ## Required Actor Resolution
 
 - Ravi MUST resolve the invocation actor before building the runtime context for every external inbound turn.
 - For human inbound messages, actor resolution MUST start from persisted message metadata: `actor_type`, `contact_id`, `platform_identity_id`, `chat_id`, raw sender ids, channel, and instance/account.
 - Display name, phone string, group title, or provider JID alone MUST NOT be sufficient actor authority.
-- If the actor resolves to `contact:<id>`, that contact is the delegator.
+- If the actor resolves to `contact:<id>`, that contact is the invoker/audit
+  principal.
 - If the actor resolves to `agent:<id>`, that agent is the delegator only for agent-originated internal handoffs. It MUST NOT be confused with the executor agent.
-- If the actor is `unknown`, unresolved, blocked, opted out, or contradictory, the invocation MUST receive no delegated tool/executable/CLI/session/contact authority.
-- A group chat MUST NOT be treated as the actor. It is a surface constraint.
+- If the actor is `unknown`, unresolved, blocked, opted out, or contradictory,
+  the invocation MUST receive no agent identity tool/executable/CLI/session/contact authority.
+- A group chat MUST NOT be treated as the actor. It selects or constrains the
+  agent identity compartment.
 
 ## Effective Capability Contract
 
-For external user-initiated invocations:
+For external user-initiated invocations in the active model:
 
 ```text
 effective_capabilities =
   intersect(
-    resolveAgentCapabilities(executor_agent),
-    resolveActorCapabilities(actor_principal, actor_context),
-    resolveSurfaceCapabilities(surface_context),
+    resolveAgentIdentityCapabilities(executor_agent, compartment),
     resolveTurnApprovals(invocation)
   )
 ```
 
 Rules:
 
-- Intersection is mandatory. Union is forbidden for user-initiated tool authority.
+- Agent identity projection is mandatory. Ambient root agent context is
+  forbidden for external user-initiated tool authority.
 - Missing capability set means empty set, not wildcard.
 - Any explicit deny, block, opt-out, revoked context, disabled principal, or failed identity resolution MUST win over allow.
-- `admin system:*` in `agent_caps` MUST NOT by itself allow a user-initiated invocation.
-- `admin system:*` in `actor_caps` MAY allow break-glass authority only when the actor is an approved owner/operator principal and the invocation trace marks the mode as break-glass or admin-delegated.
-- Surface policy MAY reduce capabilities. It MUST NOT grant a capability absent from both actor and agent ceilings.
-- If the surface has no explicit grant, `deny_<relation>`, or `constrain role:<id>` decision for the same capability, the surface branch inherits the actor's effective capability for that object.
-- `deny_<relation>` on the surface is an explicit veto and MUST deny the matching capability even when the actor and executor agent allow it.
-- Surface `constrain role:<id>` grants remain explicit surface boundaries; capabilities outside the constraint are denied unless a surface-level delegation override explicitly allows them.
-- Explicit `delegate_<relation>` overrides MAY satisfy a missing actor branch, but MUST NOT bypass the executor agent ceiling or turn approval ceiling.
+- `admin system:*` in the executor's runtime config MAY materialize into an
+  agent identity only when that agent identity/profile explicitly has it.
+- Contact/user `admin system:*` MUST NOT grant tool authority in agent-identity
+  mode. Break-glass is a separate operator path.
+- A surface with no provider-owned policy MUST NOT zero the agent identity.
+- Surface/user overlays MAY reduce or require additional checks only when a
+  future provider explicitly implements that overlay on top of agent identity.
 - `contact_policies.status=allowed` permits interaction, not tools. It MUST NOT imply `use tool:*`, `execute executable:*`, `execute group:*`, session access, or contact writes.
+
+Legacy delegated fallback formula:
+
+```text
+effective_capabilities =
+  agent_caps
+  INTERSECT (actor_caps OR actor_overrides)
+  INTERSECT surface_caps
+  INTERSECT turn_caps
+```
+
+This fallback MUST NOT be the production default.
 
 ## Runtime Context Requirements
 
@@ -113,6 +139,8 @@ The context MUST include:
 - `executor_agent_id`
 - `actor_principal_type`
 - `actor_principal_id`
+- `agent_identity_principal`
+- `agent_identity_compartment`
 - `contact_id` when resolved
 - `platform_identity_id` when resolved
 - `chat_id`
@@ -128,8 +156,8 @@ The context MUST be short-lived. A user-initiated invocation context SHOULD expi
 
 ## Capability Freshness
 
-Delegated contexts snapshot graph state at turn start. Snapshots are an audit
-and intersection artifact, not a second source of truth:
+Agent identity contexts snapshot provider-owned state at turn start. Snapshots
+are audit artifacts, not a second source of truth:
 
 - A grant created after a denial MUST take effect by the next turn of the
   affected session without daemon restart or manual context surgery.
@@ -137,10 +165,10 @@ and intersection artifact, not a second source of truth:
   superadmin-boundary rule); the same freshness applies to role membership
   and constraint changes.
 - Capability counts persisted in context metadata
-  (`actorCapabilityCount`, `surfaceCapabilityCount`, ...) describe the moment
-  the context was built. Tooling, denial diagnosis, and operators MUST NOT
-  read them as live graph state; anything that reports them MUST be able to
-  re-resolve current state (see `permissions/explain`).
+  (`agentIdentityCapabilityCount`, `actorCapabilityCount`,
+  `surfaceCapabilityCount`, ...) describe the moment the context was built.
+  In agent-identity mode, `actorCapabilityCount=0` or `surfaceCapabilityCount=0`
+  is not itself a denial reason.
 - The long-term direction is to evaluate authority against the live graph at
   check time and keep per-turn snapshots only for audit provenance. Any
   caching layer MUST key on actor identity and an authority version, and a
@@ -150,8 +178,12 @@ and intersection artifact, not a second source of truth:
 ## No Cross-Actor Leakage
 
 - Runtime contexts for user-initiated turns MUST NOT be keyed only by `agent_id + session_key`.
-- A reusable context cache MUST include actor identity and authority version in its cache key, or it MUST refresh effective capabilities on every turn.
-- In a multi-participant group, a trusted speaker's capabilities MUST NOT remain available when the next speaker is untrusted.
+- A reusable context cache MUST include actor identity, compartment, and
+  authority version in its cache key, or it MUST refresh effective
+  capabilities on every turn.
+- In a multi-participant group, prompt/audit actor metadata MUST refresh when
+  the speaker changes. Tool authority remains the agent identity for that
+  compartment unless an explicit user-level overlay exists.
 - A system interruption MAY preserve conversational floor for prompt readability, but it MUST NOT create new human authority.
 - Conversation thread annotations are prompt comprehension only. Tools MUST use structured actor context.
 
@@ -161,9 +193,13 @@ Live executor-agent administrator authority is valid only for internal admin con
 
 For user-initiated invocation contexts:
 
-- `canWithCapabilityContext` MUST NOT bypass effective capabilities solely because `executor_agent_id` is superadmin.
-- Live grants MAY be considered only if they are intersected with current actor and surface authority.
-- Revoking a critical actor, role, chat, or agent grant MUST invalidate or refresh active invocation contexts before the next tool call.
+- `canWithCapabilityContext` MUST NOT bypass effective capabilities solely
+  because the root executor agent is superadmin.
+- Live grants MAY be considered only through the active agent identity
+  materializer or explicit break-glass/operator path.
+- Revoking a critical agent identity, agent runtime, turn, or future overlay
+  policy MUST invalidate or refresh active invocation contexts before the next
+  tool call.
 
 ## Tool And CLI Enforcement
 
@@ -188,7 +224,15 @@ Providers that cannot route restricted tool permission through Ravi MUST reject 
 
 ## Roles And Grants
 
-The preferred model for human delegation is role-based allow lists:
+The preferred production model is provider-owned agent identity profiles:
+
+```text
+agent:<agent-id> execute executable:curl
+agent:<agent-id> mutate image:generate
+agent_identity:<agent-id>:chat:<chat-id> materializes from agent:<agent-id>
+```
+
+Legacy human delegation role examples:
 
 ```text
 contact:<id> member role:owner
@@ -200,7 +244,9 @@ chat:<id> constrain role:group-safe
 role:group-safe use toolgroup:read-only
 ```
 
-Role expansion MUST be deterministic and auditable. If two roles disagree, the more restrictive result wins after intersection with surface policy.
+Role/profile expansion MUST be deterministic and auditable. In the active
+model, expansion feeds agent identity materialization unless a documented
+overlay provider says otherwise.
 
 ## Explicit Delegation Overrides
 
@@ -216,6 +262,8 @@ chat:<chat-id> delegate_execute group:apps_run
 
 Rules:
 
+- Delegation overrides are legacy fallback semantics and MUST NOT be presented
+  as the normal agent-identity operator workflow.
 - `delegate_<relation>` is not a normal capability and MUST NOT appear in
   `actor_caps`, `surface_caps`, or `effective_capabilities`.
 - The override maps only to the underlying relation during delegated context
@@ -241,8 +289,8 @@ Rules:
 - Automation MUST NOT inherit the last human actor in the session.
 - Cron prompts MUST resolve as `automation:cron:<job-id>`.
 - Trigger prompts MUST resolve as `automation:trigger:<trigger-id>`.
-- Automation prompts with no automation grants MUST receive an empty effective
-  capability set even when the executor agent is superadmin.
+- Automation prompts run under an automation or chat-scoped agent identity.
+  They MUST NOT inherit the last human actor in the session.
 - Automation prompts without a chat/source MAY omit the surface constraint; if
   they target or reply into a chat, that chat MAY further constrain authority.
 - Observer permission grants apply to the observer runtime context only. They MUST NOT grant tools to the source session or source actor.
@@ -256,9 +304,14 @@ The model MUST NOT be trusted to self-enforce per-user authority. The host layer
 
 ## Acceptance Criteria
 
-- A superadmin agent invoked by an untrusted contact cannot use Bash, CLI admin commands, session access, or contact writes unless that contact and surface also authorize them.
-- In the same group session, a trusted contact can invoke an allowed tool and the next untrusted contact is denied without resetting the session.
-- An unresolved sender receives a textual response path only; authority-bearing tools deny with an explainable reason.
-- A chat-level constraint can reduce an owner's power in a public group.
-- A cron job runs under its automation principal and does not inherit the last speaker.
-- Runtime traces can explain the allow/deny decision in terms of agent, actor, surface, turn, roles, and context id.
+- A resolved contact in a chat can invoke capabilities held by the
+  compartment's agent identity even when the contact has zero materialized
+  capabilities.
+- An unresolved sender receives a textual response path only; authority-bearing
+  tools deny with an explainable reason.
+- A chat with zero materialized capabilities does not zero the agent identity.
+- A cron job runs under automation provenance and an automation/chat-scoped
+  agent identity; it does not inherit the last speaker.
+- Runtime traces can explain the allow/deny decision in terms of agent
+  identity, executor agent, actor provenance, compartment, turn caps, and
+  context id.

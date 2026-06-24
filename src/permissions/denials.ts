@@ -1,7 +1,13 @@
 import { getDb } from "../router/router-db.js";
+import { publish } from "../nats.js";
+import type { AuditContextProvenance } from "./audit-provenance.js";
 
 const MAX_REASON_LENGTH = 500;
 const MAX_COMMAND_LENGTH = 500;
+type PermissionAuditPublisher = (topic: string, data: Record<string, unknown>) => Promise<void> | void;
+
+let permissionAuditPublisher: PermissionAuditPublisher = publish;
+const pendingPermissionAuditPublishes: Promise<void>[] = [];
 
 export interface PermissionDenialInput {
   subjectType?: string;
@@ -36,6 +42,27 @@ export interface PermissionDenial {
   resolvedAt: number | null;
   resolvedRelationId: number | null;
   notifiedAt: number | null;
+}
+
+export interface PermissionDeniedAuditEvent {
+  type: string;
+  agentId: string;
+  denied: string;
+  reason: string;
+  detail?: unknown;
+  blockType?: string;
+  missingPrincipals?: string[];
+  missingPrincipalDetails?: unknown[];
+  recommendedGrantSubjects?: string[];
+  command?: string;
+  denialId?: number;
+  dedupeKey?: string;
+  context?: AuditContextProvenance;
+  [key: string]: unknown;
+}
+
+export interface RecordAndEmitPermissionDenialInput extends PermissionDenialInput {
+  audit: PermissionDeniedAuditEvent;
 }
 
 interface PermissionDenialRow {
@@ -101,6 +128,49 @@ export function recordPermissionDenial(input: PermissionDenialInput): Permission
   return getPermissionDenial(id);
 }
 
+export function recordAndEmitPermissionDenial(input: RecordAndEmitPermissionDenialInput): PermissionDenial | null {
+  const { audit, ...denialInput } = input;
+  const denial = recordPermissionDenial(denialInput);
+  emitPermissionDeniedAudit({
+    ...audit,
+    ...(denial?.id ? { denialId: denial.id } : {}),
+  });
+  return denial;
+}
+
+export function emitPermissionDeniedAudit(event: PermissionDeniedAuditEvent): void {
+  if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
+  const enriched = {
+    ...event,
+    dedupeKey: event.dedupeKey ?? buildAuditDeniedDedupeKey(event),
+  };
+
+  const p = Promise.resolve(permissionAuditPublisher("ravi.audit.denied", enriched as Record<string, unknown>))
+    .then(() => {
+      if (typeof enriched.denialId === "number") {
+        markPermissionDenialNotified(enriched.denialId);
+      }
+    })
+    .catch((err) => {
+      console.error("[audit] emitPermissionDeniedAudit failed", err);
+    });
+
+  pendingPermissionAuditPublishes.push(p);
+  p.finally(() => {
+    const index = pendingPermissionAuditPublishes.indexOf(p);
+    if (index >= 0) pendingPermissionAuditPublishes.splice(index, 1);
+  }).catch(() => {});
+}
+
+export async function flushPermissionAuditEvents(): Promise<void> {
+  if (pendingPermissionAuditPublishes.length === 0) return;
+  await Promise.allSettled([...pendingPermissionAuditPublishes]);
+}
+
+export function setPermissionAuditPublisherForTest(publisher?: PermissionAuditPublisher): void {
+  permissionAuditPublisher = publisher ?? publish;
+}
+
 export function listPermissionDenials(filter?: {
   subjectType?: string;
   subjectId?: string;
@@ -133,6 +203,11 @@ export function getPermissionDenial(id: number): PermissionDenial | null {
   return row ? rowToPermissionDenial(row) : null;
 }
 
+export function markPermissionDenialNotified(id: number, notifiedAt = Date.now()): PermissionDenial | null {
+  getDb().prepare("UPDATE permission_denials SET notified_at = ? WHERE id = ?").run(notifiedAt, id);
+  return getPermissionDenial(id);
+}
+
 function rowToPermissionDenial(row: PermissionDenialRow): PermissionDenial {
   return {
     id: row.id,
@@ -158,6 +233,14 @@ function rowToPermissionDenial(row: PermissionDenialRow): PermissionDenial {
 function normalizeText(value: string | null | undefined): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+function buildAuditDeniedDedupeKey(event: { type: string; agentId: string; denied: string; reason: string }): string {
+  return ["audit.denied", event.type, event.agentId, event.denied, event.reason].map(normalizeDedupePart).join(":");
+}
+
+function normalizeDedupePart(value: string): string {
+  return value.trim().replace(/\s+/g, " ").slice(0, 240);
 }
 
 function normalizeNullableText(value: string | null | undefined): string | null {

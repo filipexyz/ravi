@@ -10,7 +10,9 @@ ravi permissions materialize --subject-type agent --subject-id main --json
 
 Expected baseline:
 
-- `ravi permissions` is inspection-only.
+- `ravi permissions status/check/materialize` are inspection-only.
+- `ravi permissions allow/resolve` are provider-owned orchestration commands
+  and require explicit `--apply` to mutate.
 - Subject authority materializes through registered providers.
 - Agent configuration is stored in `agent.defaults.runtimePermissions`.
 

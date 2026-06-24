@@ -1,6 +1,8 @@
 import { nats as runtimeNats } from "../nats.js";
 import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
-import { recordPermissionDenial } from "../permissions/denials.js";
+import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
+import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
+import { buildAuthorizationGuidance, formatCanonicalCapability } from "../permissions/authorization-guidance.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";
 import { logger } from "../utils/logger.js";
@@ -209,7 +211,11 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
   });
 
   if (!result.approved) {
-    recordPermissionDenial({
+    const reason =
+      result.reason ??
+      `Permission denied: agent:${context.agentId ?? "unknown"} requires ${permission} on ${objectType}:${objectId}`;
+    const provenance = buildAuditContextProvenance({ context });
+    recordAndEmitPermissionDenial({
       subjectType: "agent",
       subjectId: context.agentId ?? undefined,
       agentId: context.agentId,
@@ -219,13 +225,22 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
       relation: permission,
       objectType,
       objectId,
-      reason: result.reason,
+      reason,
+      detail: provenance ? { context: provenance } : undefined,
+      audit: {
+        type: permissionDeniedAuditType(objectType),
+        agentId: context.agentId ?? "unknown",
+        denied: `${objectType}:${objectId}`,
+        reason,
+        blockType: "runtime_context_permission_denied",
+        ...(provenance ? { context: provenance } : {}),
+      },
     });
     return {
       allowed: false,
       approved: false,
       inherited: false,
-      reason: result.reason,
+      reason,
       context,
     };
   }
@@ -243,6 +258,13 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     reason: result.reason,
     context,
   };
+}
+
+function permissionDeniedAuditType(objectType: string): string {
+  if (objectType === "tool") return "tool";
+  if (objectType === "executable") return "executable";
+  if (objectType === "session") return "session_scope";
+  return "scope";
 }
 
 function buildApprovalText(
@@ -265,12 +287,21 @@ function buildPermissionRequestText(
   context: ContextRecord,
 ): string {
   const sessionLabel = context.sessionName ?? context.sessionKey ?? context.contextId;
+  const capability = { permission, objectType, objectId };
+  const guidance = buildAuthorizationGuidance({
+    capability,
+    subject: context.agentId ? { type: "agent", id: context.agentId } : undefined,
+    scope: "current-context",
+    includeProviderOwnedTags: true,
+  });
   return [
     `Sessão: ${sessionLabel}`,
-    `Ação: ${permission}`,
-    `Objeto: ${objectType}:${objectId}`,
+    `Capability: ${formatCanonicalCapability(capability)}`,
+    "Escopo: contexto atual",
     "",
-    "Autorizar esta capability para o contexto atual?",
+    "Autorizar só para este contexto?",
+    `Recorrente: ${guidance.preferredPath.message}`,
+    `Fallback técnico: ${guidance.rawCapabilityFallback}`,
   ].join("\n");
 }
 

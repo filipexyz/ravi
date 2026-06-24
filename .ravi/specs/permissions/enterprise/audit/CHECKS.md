@@ -17,6 +17,14 @@ feature: audit
   timestamp).
 - A denied action still emits to `ravi.audit.denied` (compatibility preserved)
   AND carries the same provenance schema as allows.
+- Denies that are recorded in `permission_denials` emit through the central
+  deny helper with the same `denialId`; successful publish sets
+  `permission_denials.notified_at`.
+- Runtime context denial, CLI command-access denial, app permission denial,
+  Bash/tool denial, and SDK gateway stream denial each prove ledger + event
+  coverage.
+- Runtime policy denials that are not grant-shaped emit `ravi.audit.denied`
+  with a stable `blockType`, even when no `permission_denials` row is created.
 - Allow and deny records are built by the shared `audit-provenance` builder and
   are structurally comparable.
 - A record contains no secrets, no `contextKey`, no raw credentials, and no full

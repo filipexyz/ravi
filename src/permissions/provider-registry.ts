@@ -1,5 +1,6 @@
 import { contextCapabilitiesProvider } from "./context-capabilities-provider.js";
 import type { PermissionProvider } from "./provider-types.js";
+import { agentIdentityPermissionsProvider } from "./agent-identity-permissions-provider.js";
 import { agentRuntimePermissionsProvider } from "./agent-runtime-permissions-provider.js";
 import { contactPolicyPermissionsProvider } from "./contact-policy-permissions-provider.js";
 import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
@@ -29,6 +30,7 @@ const DEFAULT_PERMISSION_PROVIDERS: PermissionProvider[] = [localOperatorProvide
 const DEFAULT_CAPABILITY_MATERIALIZERS: PermissionProvider[] = [
   runtimeBootstrapProvider,
   agentRuntimePermissionsProvider,
+  agentIdentityPermissionsProvider,
   contactPolicyPermissionsProvider,
 ];
 

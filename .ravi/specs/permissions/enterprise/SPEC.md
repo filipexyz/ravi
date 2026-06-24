@@ -34,11 +34,11 @@ normative: true
 
 Ravi targets **self-hosted, on-prem, single-tenant-per-deployment** enterprise
 use: each customer runs their own Ravi, and their data never leaves their
-boundary. The existing turn-scoped delegated authority model (agent ∩ actor ∩
-surface ∩ turn, host-enforced before every tool call) is the asset and the
-differentiator. Enterprise work does NOT rewrite it — it wraps that core with
-the identity, audit, governance, and administration a regulated organization
-requires to deploy a powerful autonomous agent.
+boundary. The active turn-scoped authority model is agent identity: the agent
+acts as itself under a compartment-scoped identity, host-enforced before every
+tool call. Enterprise work wraps that core with audit, governance,
+administration, and optional user-level overlays required for regulated
+deployments.
 
 This spec is the umbrella. It defines the direction and the phase order; each
 phase has its own normative feature spec.
@@ -71,16 +71,18 @@ See `permissions/enterprise/WHY.md` for the full rationale.
 
 ## Invariants
 
-- The turn-scoped delegated intersection model MUST remain the enforcement core.
-  Enterprise features wrap it; they MUST NOT weaken per-actor host enforcement.
+- The turn-scoped agent identity model MUST remain the enforcement core.
+  Enterprise features wrap it; they MUST NOT silently revert to per-user
+  capability intersection or ambient agent authority.
 - No authority-bearing action may be authorized by the mere ABSENCE of a
   principal. Every allow MUST trace to an explicit, authenticated principal —
   agent, actor, automation, or operator. (See `enterprise/break-glass`.)
 - Every authority decision affecting state, disclosure, or external effect MUST
   be auditable, including allows. The audit record MUST be tamper-evident and
   exportable off-box. (See `enterprise/audit`.)
-- Actors MUST be mappable to a federated enterprise identity, and delegation
-  MUST be representable in a standard, auditable form. (Later phase.)
+- Actors MUST be mappable to a federated enterprise identity, and any
+  user-level overlay on top of agent identity MUST be representable in a
+  standard, auditable form. (Later phase.)
 - Governance reads ("who can do X?", access reviews) MUST be answerable from
   persisted state. (Later phase.)
 

@@ -444,6 +444,86 @@ describe("Scope Isolation", () => {
       });
       expect(JSON.stringify(denials[0].detail)).not.toContain("Grant execute group:context_codex-bash-hook to unknown");
     });
+
+    it("does not recommend granting agent identity access when the actor is unresolved", () => {
+      const context = {
+        contextId: "ctx_agent_identity_unknown_actor",
+        agentId: "audit",
+        sessionKey: "agent:audit:whatsapp:main:group:120363424239734858",
+        sessionName: "audit-2",
+        context: {
+          contextId: "ctx_agent_identity_unknown_actor",
+          contextKey: "rctx_agent_identity_unknown_actor",
+          kind: "turn-runtime",
+          agentId: "audit",
+          sessionKey: "agent:audit:whatsapp:main:group:120363424239734858",
+          sessionName: "audit-2",
+          capabilities: [],
+          metadata: {
+            authorityMode: "agent-identity",
+            authorityResolver: "agent-identity-v1",
+            executorAgentId: "audit",
+            actorPrincipal: "unknown",
+            actorResolution: "missing_contact",
+            actorAuthorizationMode: "invoke-only",
+            surfacePrincipal: "chat:chat_a6a497c4e546c5eb62c51f25",
+            surfaceAuthorizationMode: "compartment",
+            agentIdentityPrincipal: "agent_identity:audit:chat:chat_a6a497c4e546c5eb62c51f25",
+            agentIdentityCompartment: "chat:chat_a6a497c4e546c5eb62c51f25",
+            agentIdentityCapabilityCount: 0,
+            actorCapabilityCount: 0,
+            surfaceCapabilityCount: 0,
+            effectiveCapabilityCount: 0,
+          },
+          createdAt: 0,
+        },
+      } satisfies ToolContext;
+
+      const result = runWithContext(context, () => enforceScopeCheck("open", "context", "codex-bash-hook"));
+
+      expect(result.allowed).toBe(false);
+      const denials = listPermissionDenials({
+        subjectType: "agent",
+        subjectId: "audit",
+        resolved: false,
+      });
+      expect(denials).toHaveLength(1);
+      expect(denials[0]).toMatchObject({
+        detail: {
+          context: {
+            authorityMode: "agent-identity",
+            authorityResolver: "agent-identity-v1",
+            actorPrincipal: "unknown",
+            actorResolution: "missing_contact",
+            actorAuthorizationMode: "invoke-only",
+            surfacePrincipal: "chat:chat_a6a497c4e546c5eb62c51f25",
+            surfaceAuthorizationMode: "compartment",
+            agentIdentityPrincipal: "agent_identity:audit:chat:chat_a6a497c4e546c5eb62c51f25",
+            agentIdentityCompartment: "chat:chat_a6a497c4e546c5eb62c51f25",
+            agentIdentityCapabilityCount: 0,
+            effectiveCapabilityCount: 0,
+            capabilitiesCount: 0,
+          },
+          diagnosis: {
+            blockType: "agent_identity_actor_unresolved",
+            detail:
+              "Agent identity scope denied for execute group:context_codex-bash-hook: actor unknown is not resolved. Resolve the actor identity before granting execute group:context_codex-bash-hook.",
+            missingPrincipals: ["unknown"],
+            missingPrincipalDetails: [
+              {
+                branch: "actor",
+                principal: "unknown",
+                resolution: "missing_contact",
+              },
+            ],
+            recommendedGrantSubjects: [],
+          },
+        },
+      });
+      expect(JSON.stringify(denials[0].detail)).not.toContain(
+        "Grant execute group:context_codex-bash-hook to agent:audit",
+      );
+    });
   });
 
   // --------------------------------------------------------------------------

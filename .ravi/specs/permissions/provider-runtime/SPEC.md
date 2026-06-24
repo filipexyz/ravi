@@ -47,6 +47,7 @@ Required capability materializers:
 
 - `runtime-bootstrap`
 - `agent-runtime-permissions`
+- `agent-identity-permissions`
 - `contact-policy-permissions`
 
 ## Rules
@@ -54,9 +55,20 @@ Required capability materializers:
 - Runtime code MUST call the provider-runtime facade for authorization.
 - Runtime context creation MUST materialize subject capabilities through the
   registered materializer chain.
-- `ravi permissions` MUST remain inspection-only: status, check, materialize.
+- `ravi permissions status/check/materialize` MUST remain inspection-only.
+- `ravi permissions allow/resolve` MUST be provider-owned orchestration only:
+  it may create/update permission-scoped tags, attach contact policy tags, and
+  ensure agent runtime ceilings, but MUST NOT write to a native permission
+  graph.
 - Agent authority changes MUST use provider-owned config, currently
-  `agent.defaults.runtimePermissions` via `ravi agents permissions`.
+  `agent.defaults.runtimePermissions` via `ravi permissions allow/resolve` or
+  direct agent-only `ravi agents permissions`.
+- External shared-surface turns MUST use `agent-identity-permissions` as the
+  production authority projection. Contact and chat principals remain
+  provenance/invocation context unless a future overlay provider explicitly
+  gates them.
+- Denial resolution for `authorityMode=agent-identity` MUST apply recurring
+  capability to `agent:<executorAgentId>`, not to `contact:<actorId>`.
 - Direct local execution MAY be allowed only through the explicit
   `local-operator` provider.
 - A no-subject/no-context request without explicit local-operator intent MUST

@@ -12,6 +12,12 @@ import {
   RAVI_RUNTIME_CONTEXT_ENV_KEYS,
 } from "../test/ravi-state.js";
 import type { ContextRecord } from "../router/router-db.js";
+import {
+  flushPermissionAuditEvents,
+  listPermissionDenials,
+  setPermissionAuditPublisherForTest,
+} from "../permissions/denials.js";
+import { dbCreateTagDefinition } from "../tags/index.js";
 
 const ACCESS: CommandAccessOptions = {
   kind: "mutate",
@@ -25,6 +31,7 @@ const ACCESS: CommandAccessOptions = {
 let stateDir: string | null = null;
 let previousEnv: Partial<Record<(typeof RAVI_RUNTIME_CONTEXT_ENV_KEYS)[number], string>> = {};
 let previousCredentialsPath: string | undefined;
+let auditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 
 function context(capabilities: ContextRecord["capabilities"]): ContextRecord {
   return {
@@ -43,6 +50,10 @@ describe("CLI command access enforcement", () => {
     stateDir = await createIsolatedRaviState("ravi-cli-command-access-test-");
     previousEnv = {};
     previousCredentialsPath = process.env.RAVI_CREDENTIALS_PATH;
+    auditEvents = [];
+    setPermissionAuditPublisherForTest(async (topic, data) => {
+      auditEvents.push({ topic, data });
+    });
     for (const key of RAVI_RUNTIME_CONTEXT_ENV_KEYS) {
       if (process.env[key] !== undefined) {
         previousEnv[key] = process.env[key];
@@ -66,6 +77,7 @@ describe("CLI command access enforcement", () => {
       process.env.RAVI_CREDENTIALS_PATH = previousCredentialsPath;
     }
     previousCredentialsPath = undefined;
+    setPermissionAuditPublisherForTest();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
@@ -310,5 +322,75 @@ describe("CLI command access enforcement", () => {
     expect(result.errorMessage).toContain("agent:dev cannot execute demo create");
     expect(result.attempted).toHaveLength(5);
     expect(result.attempted.every((decision) => decision.providerId === "context-capabilities")).toBe(true);
+  });
+
+  it("includes matching provider-owned permission tags in command denial guidance", () => {
+    dbCreateTagDefinition({
+      slug: "permission-demo-writer",
+      label: "Demo Writer",
+      kind: "system",
+      source: "permissions",
+      metadata: {
+        permissions: {
+          capabilities: ["mutate:demo.items:create"],
+        },
+      },
+    });
+
+    const record = context([]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "demo",
+        command: "create",
+        access: ACCESS,
+        source: "gateway",
+      }),
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("Missing capability: mutate:demo.items:create");
+    expect(result.errorMessage).toContain("permission-demo-writer");
+    expect(result.errorMessage).toContain("full-access is break-glass");
+  });
+
+  it("records and emits audit denied for runtime command access denies", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const record = context([]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "demo",
+        command: "create",
+        access: ACCESS,
+        source: "gateway",
+      }),
+    );
+    await flushPermissionAuditEvents();
+
+    expect(result.allowed).toBe(false);
+    expect(auditEvents).toEqual([
+      {
+        topic: "ravi.audit.denied",
+        data: expect.objectContaining({
+          type: "scope",
+          agentId: "dev",
+          denied: "mutate:demo.items:create",
+          blockType: "cli_command_access_missing_grant",
+          denialId: expect.any(Number),
+          context: expect.objectContaining({
+            contextId: "ctx_command_access_test",
+            authorityMode: "delegated",
+          }),
+        }),
+      },
+    ]);
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+      expect.objectContaining({
+        relation: "mutate",
+        objectType: "demo.items",
+        objectId: "create",
+        command: "demo create",
+        notifiedAt: expect.any(Number),
+      }),
+    );
   });
 });

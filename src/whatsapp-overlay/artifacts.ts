@@ -572,7 +572,7 @@ function normalizeComponentNameList(value: unknown): string[] {
       const item = asPlainRecord(nested);
       return cleanComponentText(item?.id) || cleanComponentText(item?.name) || key || cleanComponentText(item?.label);
     })
-    .filter(Boolean)
+    .filter((item): item is string => Boolean(item))
     .slice(0, 12);
 }
 

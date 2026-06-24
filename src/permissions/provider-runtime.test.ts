@@ -4,6 +4,7 @@ import { join, relative, sep } from "node:path";
 import { runWithContext } from "../cli/context.js";
 import { createContact } from "../contacts.js";
 import { dbCreateAgent, dbUpdateAgent, type ContextRecord } from "../router/router-db.js";
+import { dbCreateTagDefinition } from "../tags/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getConfiguredCapabilityMaterializers, getConfiguredPermissionProviders } from "./provider-registry.js";
 import {
@@ -161,6 +162,29 @@ describe("Permission Provider Runtime", () => {
     );
   });
 
+  it("materializes compartment-scoped agent identity capabilities from the executor agent", () => {
+    dbCreateAgent({ id: "workspace-agent", cwd: "/tmp/workspace-agent" });
+    dbUpdateAgent("workspace-agent", {
+      defaults: { runtimePermissions: { capabilities: ["mutate:image:generate"] } },
+    });
+
+    const capabilities = materializeSubjectCapabilities("agent_identity", "workspace-agent:chat:chat_alpha", {
+      executorAgentId: "workspace-agent",
+      compartmentType: "chat",
+      compartmentId: "chat_alpha",
+    });
+
+    expect(capabilities).toContainEqual({
+      permission: "mutate",
+      objectType: "image",
+      objectId: "generate",
+      source: "agent-identity:workspace-agent:chat:chat_alpha:executor",
+    });
+    expect(canWithCapabilities(capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(canWithCapabilities(capabilities, "admin", "system", "*")).toBe(false);
+  });
+
   it("materializes admin authority for allowed admin-tagged contacts", () => {
     const contact = createContact({
       phone: "5511999990000",
@@ -191,6 +215,96 @@ describe("Permission Provider Runtime", () => {
     const capabilities = materializeSubjectCapabilities("contact", contact.id);
 
     expect(capabilities).toEqual([]);
+  });
+
+  it("materializes scoped family image authority for allowed family-tagged contacts", () => {
+    dbCreateTagDefinition({
+      slug: "permission-family",
+      label: "Family Image",
+      kind: "system",
+      source: "permissions",
+      metadata: {
+        permissions: {
+          capabilities: [
+            "mutate:image:generate",
+            "use:tool:image_generate",
+            "use:tool:Bash",
+            "execute:executable:ravi",
+            "read:skills:show",
+            "read:context:codex-bash-hook",
+            "read:sessions:actions",
+          ],
+        },
+      },
+    });
+    const contact = createContact({
+      phone: "5511999990002",
+      name: "Family Member",
+      tags: ["permission.family"],
+      status: "allowed",
+    });
+
+    const capabilities = materializeSubjectCapabilities("contact", contact.id);
+
+    expect(capabilities).toContainEqual({
+      permission: "mutate",
+      objectType: "image",
+      objectId: "generate",
+      source: `contact-policy:contact:${contact.id}:tag:permission-family`,
+    });
+    expect(capabilities).toContainEqual({
+      permission: "use",
+      objectType: "tool",
+      objectId: "image_generate",
+      source: `contact-policy:contact:${contact.id}:tag:permission-family`,
+    });
+    expect(capabilities).toContainEqual({
+      permission: "use",
+      objectType: "tool",
+      objectId: "Bash",
+      source: `contact-policy:contact:${contact.id}:tag:permission-family`,
+    });
+    expect(capabilities).toContainEqual({
+      permission: "execute",
+      objectType: "executable",
+      objectId: "ravi",
+      source: `contact-policy:contact:${contact.id}:tag:permission-family`,
+    });
+    expect(canWithCapabilities(capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(canWithCapabilities(capabilities, "read", "skills", "show")).toBe(true);
+    expect(canWithCapabilities(capabilities, "read", "context", "codex-bash-hook")).toBe(true);
+    expect(canWithCapabilities(capabilities, "read", "sessions", "actions")).toBe(true);
+    expect(canWithCapabilities(capabilities, "admin", "system", "*")).toBe(false);
+    expect(canWithCapabilities(capabilities, "mutate", "mail", "send")).toBe(false);
+  });
+
+  it("does not materialize family image authority for pending family-tagged contacts", () => {
+    dbCreateTagDefinition({
+      slug: "permission-family",
+      label: "Family Image",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["mutate:image:generate"] } },
+    });
+    const contact = createContact({
+      phone: "5511999990003",
+      name: "Pending Family Member",
+      tags: ["permission.family"],
+      status: "pending",
+    });
+
+    expect(materializeSubjectCapabilities("contact", contact.id)).toEqual([]);
+  });
+
+  it("does not materialize permission tags without a provider-owned tag definition", () => {
+    const contact = createContact({
+      phone: "5511999990004",
+      name: "Undefined Family Member",
+      tags: ["permission.family"],
+      status: "allowed",
+    });
+
+    expect(materializeSubjectCapabilities("contact", contact.id)).toEqual([]);
   });
 
   it("does not bootstrap actor or surface principals by default", () => {
@@ -345,6 +459,7 @@ describe("Permission Provider Runtime boundaries", () => {
     expect(getConfiguredCapabilityMaterializers().map((provider) => provider.id)).toEqual([
       "runtime-bootstrap",
       "agent-runtime-permissions",
+      "agent-identity-permissions",
       "contact-policy-permissions",
     ]);
   });

@@ -3,6 +3,11 @@ import { runWithContext, type ToolContext } from "../cli/context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
+  flushPermissionAuditEvents,
+  listPermissionDenials,
+  setPermissionAuditPublisherForTest,
+} from "../permissions/denials.js";
+import {
   assertCanRunAppOperation,
   assertCanUseApp,
   canExecuteApp,
@@ -11,6 +16,7 @@ import {
 } from "./permissions.js";
 
 let stateDir: string | null = null;
+let auditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 
 const AGENT_CONTEXT: ToolContext = { agentId: "dev" };
 const CONTEXT_ENV_KEYS = [
@@ -44,10 +50,15 @@ function contextWith(capabilities: ContextCapability[]): ToolContext {
 describe("app permission gate", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-app-permissions-test-");
+    auditEvents = [];
+    setPermissionAuditPublisherForTest(async (topic, data) => {
+      auditEvents.push({ topic, data });
+    });
     for (const key of CONTEXT_ENV_KEYS) delete process.env[key];
   });
 
   afterEach(async () => {
+    setPermissionAuditPublisherForTest();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
     for (const key of CONTEXT_ENV_KEYS) {
@@ -93,6 +104,38 @@ describe("app permission gate", () => {
       expect(() => assertCanRunAppOperation("apps", "list", false)).not.toThrow();
       expect(() => assertCanRunAppOperation("apps", "delete", true)).toThrow(/requires execute on app:apps/);
     });
+  });
+
+  it("records and emits app permission denies", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    runWithContext(contextWith([appCapability("use", "apps")]), () => {
+      expect(() => assertCanRunAppOperation("apps", "delete", true)).toThrow(/requires execute on app:apps/);
+    });
+    await flushPermissionAuditEvents();
+
+    expect(auditEvents).toEqual([
+      {
+        topic: "ravi.audit.denied",
+        data: expect.objectContaining({
+          type: "scope",
+          agentId: "dev",
+          denied: "app:apps",
+          blockType: "app_permission_missing_grant",
+          denialId: expect.any(Number),
+          context: expect.objectContaining({
+            contextId: "ctx_apps_permissions",
+          }),
+        }),
+      },
+    ]);
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+      expect.objectContaining({
+        relation: "execute",
+        objectType: "app",
+        objectId: "apps",
+        notifiedAt: expect.any(Number),
+      }),
+    );
   });
 
   it("normalizes the app id before checking", () => {

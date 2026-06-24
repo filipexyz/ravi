@@ -7,63 +7,21 @@
 
 import { getContext } from "../cli/context.js";
 import { agentCan, canWithCapabilityContext, localOperatorCan } from "./provider-runtime.js";
-import { recordPermissionDenial } from "./denials.js";
-import { buildAuditContextProvenance, type AuditContextProvenance } from "./audit-provenance.js";
-import { publish, closeNats } from "../nats.js";
+import { emitPermissionDeniedAudit, flushPermissionAuditEvents, recordPermissionDenial } from "./denials.js";
+import { buildAuditContextProvenance } from "./audit-provenance.js";
+import { closeNats } from "../nats.js";
 import type { ContextRecord, ContextSource } from "../router/router-db.js";
 import type { SessionEntry } from "../router/types.js";
 import type { ScopeType } from "../cli/decorators.js";
-
-/** Pending audit publishes — flushed before process exits */
-const pendingAudits: Promise<void>[] = [];
 
 /**
  * Flush pending audit events and exit the process.
  * Must be called instead of process.exit() when audit events may be in flight.
  */
 export async function flushAuditAndExit(code: number): Promise<never> {
-  if (pendingAudits.length > 0) {
-    await Promise.allSettled(pendingAudits);
-    await closeNats();
-  }
+  await flushPermissionAuditEvents();
+  await closeNats();
   process.exit(code);
-}
-
-/**
- * Emit an audit event via NATS (fire-and-forget, flushed on exit).
- */
-function emitAudit(event: {
-  type: string;
-  agentId: string;
-  denied: string;
-  reason: string;
-  detail?: string;
-  blockType?: string;
-  missingPrincipals?: string[];
-  missingPrincipalDetails?: MissingPrincipalDetail[];
-  recommendedGrantSubjects?: string[];
-  command?: string;
-  denialId?: number;
-  dedupeKey?: string;
-  context?: AuditContextProvenance;
-}): void {
-  if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
-  const enriched = {
-    ...event,
-    dedupeKey: event.dedupeKey ?? buildAuditDeniedDedupeKey(event),
-  };
-  const p = publish("ravi.audit.denied", enriched as unknown as Record<string, unknown>).catch((err) => {
-    console.error("[audit] emitAudit failed", err);
-  });
-  pendingAudits.push(p);
-}
-
-function buildAuditDeniedDedupeKey(event: { type: string; agentId: string; denied: string; reason: string }): string {
-  return ["audit.denied", event.type, event.agentId, event.denied, event.reason].map(normalizeDedupePart).join(":");
-}
-
-function normalizeDedupePart(value: string): string {
-  return value.trim().replace(/\s+/g, " ").slice(0, 240);
 }
 
 interface ScopeDenialDiagnosis {
@@ -144,6 +102,57 @@ function buildScopeDenialDiagnosis(
   const missingBranches: string[] = [];
   const missingBranchTypes: string[] = [];
   const resolutionHints: string[] = [];
+
+  if (provenance?.authorityMode === "agent-identity") {
+    const actorPrincipal = provenance.actorPrincipal ?? "actor:<unknown>";
+    const actorUnresolved =
+      provenance.actorResolution === "missing_contact" ||
+      actorPrincipal === "unknown" ||
+      actorPrincipal === "actor:<unknown>";
+    if (actorUnresolved) {
+      return {
+        blockType: "agent_identity_actor_unresolved",
+        detail: `Agent identity scope denied for ${grant}: actor ${formatPrincipalLabel(actorPrincipal, provenance.actorDisplayName)} is not resolved. Resolve the actor identity before granting ${grant}.`,
+        missingPrincipals: [actorPrincipal],
+        missingPrincipalDetails: [
+          {
+            branch: "actor",
+            principal: actorPrincipal,
+            ...(provenance.actorDisplayName ? { displayName: provenance.actorDisplayName } : {}),
+            ...(provenance.actorResolution ? { resolution: provenance.actorResolution } : {}),
+          },
+        ],
+        recommendedGrantSubjects: [],
+      };
+    }
+
+    const executorAgentPrincipal = provenance.executorAgentId
+      ? `agent:${provenance.executorAgentId}`
+      : input.ctx.agentId
+        ? `agent:${input.ctx.agentId}`
+        : "agent:<unknown>";
+    const identityPrincipal = provenance.agentIdentityPrincipal ?? executorAgentPrincipal;
+    const grantSubjects = isActionableGrantSubject(executorAgentPrincipal) ? [executorAgentPrincipal] : [];
+    const detailPrefix = `Agent identity scope denied for ${grant}: ${identityPrincipal}`;
+
+    if (provenance.effectiveCapabilityCount === 0) {
+      return {
+        blockType: "agent_identity_effective_capabilities_empty",
+        detail: `${detailPrefix} has zero effective capabilities for this turn. Grant ${grant} to ${executorAgentPrincipal}.`,
+        missingPrincipals: [identityPrincipal],
+        missingPrincipalDetails: [{ branch: "agent", principal: identityPrincipal }],
+        recommendedGrantSubjects: grantSubjects,
+      };
+    }
+
+    return {
+      blockType: "agent_identity_missing_grant",
+      detail: `${detailPrefix} lacks the required capability. Grant ${grant} to ${executorAgentPrincipal}.`,
+      missingPrincipals: [identityPrincipal],
+      missingPrincipalDetails: [{ branch: "agent", principal: identityPrincipal }],
+      recommendedGrantSubjects: grantSubjects,
+    };
+  }
 
   if (provenance?.authorityMode === "delegated") {
     if (provenance.actorCapabilityCount === 0) {
@@ -492,7 +501,7 @@ export function enforceScopeCheck(
       reason,
       command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
     });
-    emitAudit({
+    emitPermissionDeniedAudit({
       type: "scope",
       agentId: ctx.agentId,
       denied: target,
@@ -516,7 +525,7 @@ export function enforceScopeCheck(
           reason,
           command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
-        emitAudit({
+        emitPermissionDeniedAudit({
           type: "scope",
           agentId: ctx.agentId!,
           denied: "system:*",
@@ -552,7 +561,7 @@ export function enforceScopeCheck(
         reason,
         command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
       });
-      emitAudit({
+      emitPermissionDeniedAudit({
         type: "scope",
         agentId: ctx.agentId!,
         denied: target,
@@ -577,7 +586,7 @@ export function enforceScopeCheck(
           reason,
           command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
-        emitAudit({
+        emitPermissionDeniedAudit({
           type: "scope",
           agentId: ctx.agentId!,
           denied: "write_contacts",

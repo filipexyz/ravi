@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ContextCapability } from "../router/router-db.js";
 import { getContext } from "../cli/context.js";
 import { getConfiguredCapabilityMaterializers, getConfiguredPermissionProviders } from "./provider-registry.js";
+import { AGENT_IDENTITY_AUTHORITY_MODE } from "./agent-identity-permissions-provider.js";
 import type {
   CapabilityContextLike,
   PermissionProvider,
@@ -171,7 +172,9 @@ export function isDelegatedAuthorityContext(context: Pick<CapabilityContextLike,
   if (context.kind === "turn-runtime" || context.kind === "invocation-runtime") {
     return true;
   }
-  return context.metadata?.authorityMode === "delegated";
+  return (
+    context.metadata?.authorityMode === "delegated" || context.metadata?.authorityMode === AGENT_IDENTITY_AUTHORITY_MODE
+  );
 }
 
 function evaluateProviderChain(

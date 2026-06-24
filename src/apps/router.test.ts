@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runWithContext } from "../cli/context.js";
@@ -337,6 +337,37 @@ describe("Ravi app router", () => {
       appId: "khal-tasks",
       operationId: "khal-tasks.check",
     });
+  });
+
+  it("runs relative CLI operations from the app manifest directory", async () => {
+    const root = makeRepo();
+    const body = manifest("khal-tasks");
+    (body.operations as Record<string, unknown>)["khal-tasks.cwd"] = {
+      interface: "cli",
+      command: "bun cwd-probe.mjs --json",
+      mutating: false,
+    };
+    writeManifest(root, "khal-tasks", body);
+
+    const appDir = join(root, "src", "apps", "khal-tasks");
+    writeFileSync(
+      join(appDir, "cwd-probe.mjs"),
+      "console.log(JSON.stringify({ cwd: process.cwd(), appRoot: process.env.RAVI_APP_ROOT }))",
+    );
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "cwd",
+      json: true,
+      cwd: root,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      operationId: "khal-tasks.cwd",
+      result: { appRoot: appDir },
+    });
+    expect(realpathSync((result.result as { cwd: string }).cwd)).toBe(realpathSync(appDir));
   });
 
   it("resolves dotted operation ids from whitespace-separated CLI tokens", async () => {

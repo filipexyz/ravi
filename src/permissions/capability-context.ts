@@ -1,4 +1,5 @@
 import type { ContextCapability } from "../router/router-db.js";
+import { AGENT_IDENTITY_AUTHORITY_MODE } from "./agent-identity-permissions-provider.js";
 export { canWithCapabilities, matchPattern, objectIdMatches } from "./capability-snapshot.js";
 import { canWithCapabilities } from "./capability-snapshot.js";
 
@@ -22,7 +23,9 @@ export function isDelegatedAuthorityContext(context: Pick<CapabilityContextLike,
   if (context.kind === "turn-runtime" || context.kind === "invocation-runtime") {
     return true;
   }
-  return context.metadata?.authorityMode === "delegated";
+  return (
+    context.metadata?.authorityMode === "delegated" || context.metadata?.authorityMode === AGENT_IDENTITY_AUTHORITY_MODE
+  );
 }
 
 /**

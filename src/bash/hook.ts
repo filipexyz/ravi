@@ -13,7 +13,6 @@
  * enforceScopeCheck() in the CLI process, not here.
  */
 
-import { publish } from "../nats.js";
 import { checkDangerousPatterns, parseBashCommand, UNCONDITIONAL_BLOCKS } from "./parser.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext } from "../permissions/scope.js";
@@ -22,39 +21,12 @@ import {
   canWithCapabilityContext,
   materializeSubjectCapabilities,
 } from "../permissions/provider-runtime.js";
-import { recordPermissionDenial } from "../permissions/denials.js";
+import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "../permissions/audit-provenance.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
 import type { ContextCapability, ContextRecord, ContextSource } from "../router/router-db.js";
 
 const log = logger.child("bash:hook");
-
-/**
- * Emit an audit event via NATS (fire-and-forget).
- */
-function emitAudit(event: {
-  type: string;
-  agentId: string;
-  denied: string;
-  reason: string;
-  detail?: string;
-  dedupeKey?: string;
-  context?: AuditContextProvenance;
-}): void {
-  if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
-  publish("ravi.audit.denied", {
-    ...event,
-    dedupeKey: event.dedupeKey ?? buildAuditDeniedDedupeKey(event),
-  } as unknown as Record<string, unknown>).catch(() => {});
-}
-
-function buildAuditDeniedDedupeKey(event: { type: string; agentId: string; denied: string; reason: string }): string {
-  return ["audit.denied", event.type, event.agentId, event.denied, event.reason].map(normalizeDedupePart).join(":");
-}
-
-function normalizeDedupePart(value: string): string {
-  return value.trim().replace(/\s+/g, " ").slice(0, 240);
-}
 
 function buildBashDeniedAuditEvent(
   command: string,
@@ -388,22 +360,31 @@ export function emitBashDeniedAudit(
     return;
   }
 
-  emitAudit(event);
+  emitPermissionDeniedAudit(event);
 }
 
-function recordBashPermissionDenial(
+function recordAndEmitBashPermissionDenial(
   command: string,
   decision: BashPermissionDecision,
   ctx: BashPermissionContext,
   agentId?: string,
 ): void {
-  if (decision.allowed || decision.denialType === "env_spoofing") return;
+  if (decision.allowed) return;
+  if (decision.denialType === "env_spoofing") {
+    emitBashDeniedAudit(command, decision, agentId, ctx);
+    return;
+  }
   const subjectId = agentId ?? ctx.agentId;
-  if (!subjectId) return;
+  if (!subjectId) {
+    emitBashDeniedAudit(command, decision, agentId, ctx);
+    return;
+  }
   const provenance = buildAuditContextProvenance(ctx);
+  const audit = buildBashDeniedAuditEvent(command, decision, agentId, ctx);
+  if (!audit) return;
 
   for (const denied of decision.deniedCapabilities ?? []) {
-    recordPermissionDenial({
+    recordAndEmitPermissionDenial({
       subjectType: "agent",
       subjectId,
       agentId: subjectId,
@@ -416,7 +397,12 @@ function recordBashPermissionDenial(
       reason: decision.reason,
       command,
       detail: provenance ? { context: provenance } : undefined,
+      audit,
     });
+  }
+
+  if ((decision.deniedCapabilities ?? []).length === 0) {
+    emitPermissionDeniedAudit(audit);
   }
 }
 
@@ -495,8 +481,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
         command: command.slice(0, 200),
         reason: decision.reason,
       });
-      emitBashDeniedAudit(command, decision, agentId, bashContext);
-      recordBashPermissionDenial(command, decision, bashContext, agentId);
+      recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
 
       return buildPreToolUseDenyResult(decision.reason!);
     }
@@ -506,8 +491,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
         command: command.slice(0, 200),
         reason: decision.reason,
       });
-      emitBashDeniedAudit(command, decision, agentId, bashContext);
-      recordBashPermissionDenial(command, decision, bashContext, agentId);
+      recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
 
       return buildPreToolUseDenyResult(decision.reason!);
     }
@@ -517,8 +501,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
         command: command.slice(0, 200),
         reason: decision.reason,
       });
-      emitBashDeniedAudit(command, decision, agentId, bashContext);
-      recordBashPermissionDenial(command, decision, bashContext, agentId);
+      recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
 
       return buildPreToolUseDenyResult(decision.reason!);
     }
@@ -556,7 +539,7 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
     if (!agentId) {
       const reason = `Permission denied: missing agent identity cannot use tool:${toolName}`;
       log.warn("Tool blocked without agent identity", { tool: toolName });
-      emitAudit({
+      emitPermissionDeniedAudit({
         type: "tool",
         agentId: "unknown",
         denied: `tool:${toolName}`,
@@ -589,7 +572,7 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
       const provenance = buildAuditContextProvenance(scopeCtx);
       const reason = `Permission denied: agent:${agentId} cannot use tool:${toolName}`;
       log.warn("Tool blocked", { agentId, tool: toolName });
-      recordPermissionDenial({
+      recordAndEmitPermissionDenial({
         subjectType: "agent",
         subjectId: agentId,
         agentId,
@@ -601,13 +584,13 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
         objectId: toolName,
         reason,
         detail: provenance ? { context: provenance } : undefined,
-      });
-      emitAudit({
-        type: "tool",
-        agentId,
-        denied: `tool:${toolName}`,
-        reason,
-        ...(provenance ? { context: provenance } : {}),
+        audit: {
+          type: "tool",
+          agentId,
+          denied: `tool:${toolName}`,
+          reason,
+          ...(provenance ? { context: provenance } : {}),
+        },
       });
       return {
         hookSpecificOutput: {

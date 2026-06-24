@@ -13,21 +13,39 @@ normative: true
 
 ## Decision
 
-Ravi will treat user-initiated tool authority as delegated authority from the current actor and surface to the executor agent for one invocation.
+Ravi originally treated user-initiated tool authority as delegated authority
+from the current actor and surface to the executor agent for one invocation.
+That model is now legacy fallback/debug only.
 
-The effective capability set is an intersection:
+The active decision is agent identity authority:
 
 ```text
-agent_caps INTERSECT actor_caps INTERSECT surface_caps INTERSECT turn_caps
+agent_identity_caps INTERSECT turn_caps_when_present
 ```
+
+The actor remains mandatory provenance and unknown actors still fail closed,
+but a resolved contact does not need its own tool capability for the agent to
+operate in a shared compartment.
 
 ## Why This Is Required
 
-The existing agent-centric model answers "what can this agent do?".
+The old per-actor intersection answered "what can this person make this agent
+do from this surface right now?" That was secure but operationally too hard:
+normal group workflows required repeated grants for contact, chat, and agent,
+and denials with `surfaceCapabilityCount=0` led agents to ask for noisy
+surface grants.
 
-The security question for a multi-user channel is different: "what can this person make this agent do from this surface right now?"
+The agent identity model answers "what can this agent identity do in this
+compartment?" This matches team-agent operation: operators configure the
+agent's own authority for a channel/workspace/automation compartment, and
+members of that compartment invoke that agent without duplicating every tool
+grant onto themselves.
 
-Without turn-scoped delegation, a powerful agent in a WhatsApp group, Discord channel, Telegram DM, Slack thread, task observer, or cron-driven workflow can expose privileged tools to actors who were never authorized to operate those tools.
+This still rejects ambient root-agent authority. The authority is short-lived,
+compartment-scoped, and audit carries the actor/surface provenance.
+
+Without turn-scoped agent identity, a powerful long-lived agent root context can
+still leak tools across chats, sessions, automations, or stale actors.
 
 ## Why Roles
 
@@ -40,13 +58,18 @@ Roles match the operational model operators already understand:
 - easy audit of who has what;
 - clear blast radius when a role changes.
 
-Role/profile modeling keeps authorization understandable: roles are reusable capability bundles, and contacts/chats are explicit members or constraints.
+Role/profile modeling keeps authorization understandable. In the active model,
+profiles should primarily attach to the agent identity/executor agent. Contact
+and chat profile membership is reserved for invocation overlays, constraints,
+or legacy delegated fallback.
 
 ## Alternatives Rejected
 
-### Agent-only permissions
+### Ambient agent-only permissions
 
-Rejected because an agent can serve many humans and chats. Agent-only permissions create ambient authority.
+Rejected when implemented as a long-lived root context. Accepted when projected
+through `agent_identity:<agent>:<compartment>` into a short-lived turn context
+with actor/surface provenance.
 
 ### Session-only permissions
 
@@ -66,7 +89,10 @@ Rejected because the model can misunderstand prompt context, be prompt-injected,
 
 ### Union of agent and actor capabilities
 
-Rejected because union grants privilege escalation: a powerful agent or powerful actor can fill the other's missing authority. Delegation requires both the executor and actor to authorize the capability.
+Rejected for the legacy delegated fallback because union grants privilege
+escalation. The active model does not union actor and agent capabilities; it
+uses the agent identity only, with future user-level overlays modeled
+explicitly.
 
 ### Live superadmin bypass for every context
 
@@ -74,6 +100,8 @@ Rejected for user-initiated invocation contexts because it makes agent admin pow
 
 ## Tradeoffs
 
-- More context computation per turn is acceptable because it prevents cross-actor leakage.
+- More context computation per turn is acceptable because it preserves
+  compartment-scoped audit and freshness.
 - Short-lived invocation contexts require more context records or refresh logic, but they make revocation and auditing reliable.
-- Intersection can deny more often at first. Denials are correct until roles/surface policies are explicitly configured.
+- Agent identity reduces configuration friction but moves responsibility to
+  carefully scoped agent profiles and compartment policy.

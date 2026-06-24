@@ -105,7 +105,10 @@ ravi observers rules set observed-task-status <observer-agent> \
 
 `--permissions` aceita atalhos como `tasks.report` ou capability completa como
 `use:tool:tasks_report`. Esses grants entram apenas no runtime context do
-observer, não na sessão fonte.
+observer, não na sessão fonte. Para acesso recorrente de contato/agent fora do
+contexto do observer, use `ravi permissions resolve <denial-id>` ou
+`ravi permissions allow <profile> --to <subject> --agent <agent>
+--capabilities <cap>`.
 
 Depois:
 

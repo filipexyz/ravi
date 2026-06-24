@@ -47,6 +47,10 @@ export interface PermissionProviderCapabilityOptions {
   includeRoles?: boolean;
   includeConstraints?: boolean;
   executorAgentId?: string;
+  executorCapabilities?: ContextCapability[];
+  compartmentType?: string;
+  compartmentId?: string;
+  authorityModel?: string;
 }
 
 export interface PermissionProviderRequest {

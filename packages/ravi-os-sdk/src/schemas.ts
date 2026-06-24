@@ -4624,8 +4624,12 @@ export const ArtifactsListInputSchema = {
       "description": "Number of matching artifacts to skip (default: 0)",
       "type": "string"
     },
+    "orderBy": {
+      "description": "Sort by createdAt or updatedAt (default: createdAt)",
+      "type": "string"
+    },
     "rich": {
-      "description": "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--limit/--lifecycle/--agent; ignores --tag/--include-deleted.",
+      "description": "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--tag/--limit/--lifecycle/--agent; ignores --include-deleted.",
       "type": "boolean"
     },
     "session": {
@@ -21561,6 +21565,130 @@ export const EvalRunReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `feedback.send`. */
+export const FeedbackSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "kind": {
+      "description": "bug|idea|ux|docs|performance|security|other",
+      "type": "string"
+    },
+    "message": {
+      "description": "Feedback message",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "metadataJson": {
+      "description": "Small JSON object with extra structured context",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    },
+    "severity": {
+      "description": "low|medium|high|critical",
+      "type": "string"
+    },
+    "surface": {
+      "description": "Product surface, e.g. console/pages",
+      "type": "string"
+    },
+    "tag": {
+      "description": "Comma-separated tags; can be repeated",
+      "type": "string"
+    },
+    "title": {
+      "description": "Short feedback title",
+      "type": "string"
+    },
+    "url": {
+      "description": "Relevant URL",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `feedback.send`. */
+export const FeedbackSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "feedback": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "feedback",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `gmail.list`. */
 export const GmailListInputSchema = {
   "additionalProperties": false,
@@ -32771,6 +32899,34 @@ export const MediaSendReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `meetings.finalize`. */
+export const MeetingsFinalizeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "noPostTranscribe": {
+      "default": true,
+      "description": "Skip post-call audio transcription",
+      "type": "boolean"
+    },
+    "runDir": {
+      "description": "Completed meet-recorder run directory",
+      "type": "string"
+    },
+    "title": {
+      "description": "Optional meeting title override",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.finalize`. */
+export const MeetingsFinalizeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `metrics.dates`. */
 export const MetricsDatesInputSchema = {
   "additionalProperties": false,
@@ -34552,6 +34708,168 @@ export const PagesPublishReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `pages.published`. */
+export const PagesPublishedInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum pages to return (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of pages to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; defaults to Ravi Console scope",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.published`. */
+export const PagesPublishedReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pages": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "total",
+    "pagination",
+    "pages",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `pages.update`. */
 export const PagesUpdateInputSchema = {
   "additionalProperties": false,
@@ -34786,6 +35104,167 @@ export const PagesVisibilityReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `permissions.allow`. */
+export const PermissionsAllowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Comma-separated executor agents whose runtime ceiling must include the profile capabilities",
+      "type": "string"
+    },
+    "apply": {
+      "description": "Apply the planned provider-owned mutations",
+      "type": "boolean"
+    },
+    "capabilities": {
+      "description": "Comma-separated capabilities, e.g. mutate:image:generate,execute:executable:curl",
+      "type": "string"
+    },
+    "description": {
+      "description": "Description when creating/updating the profile tag",
+      "type": "string"
+    },
+    "label": {
+      "description": "Human label when creating/updating the profile tag",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Permission profile/tag name, with or without permission- prefix",
+      "type": "string"
+    },
+    "to": {
+      "description": "Comma-separated subjects to receive the profile. Prefer agent:<id>; contact:<id> is legacy/user-overlay.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.allow`. */
+export const PermissionsAllowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentCeilings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "description": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "label": {
+      "type": "string"
+    },
+    "nextCommand": {
+      "type": "string"
+    },
+    "operations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "applied",
+              "unchanged"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "status",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "tagSlug": {
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "dryRun",
+    "profile",
+    "tagSlug",
+    "label",
+    "capabilities",
+    "targets",
+    "agentCeilings",
+    "operations",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.check`. */
 export const PermissionsCheckInputSchema = {
   "additionalProperties": false,
@@ -34917,6 +35396,119 @@ export const PermissionsCheckReturnSchema = {
         "objectId"
       ],
       "type": "object"
+    },
+    "guidance": {
+      "additionalProperties": false,
+      "properties": {
+        "breakGlass": {
+          "type": "string"
+        },
+        "canonicalCapability": {
+          "type": "string"
+        },
+        "inspectCommands": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "nextSteps": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preferredPath": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "suggestedTags": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "capabilities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "slug",
+                  "label",
+                  "capabilities"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "message",
+            "suggestedTags"
+          ],
+          "type": "object"
+        },
+        "rawCapabilityFallback": {
+          "type": "string"
+        },
+        "requestShape": {
+          "additionalProperties": false,
+          "properties": {
+            "profileOrTag": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "ttl": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "profileOrTag",
+            "reason",
+            "ttl"
+          ],
+          "type": "object"
+        },
+        "scope": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonicalCapability",
+        "scope",
+        "inspectCommands",
+        "preferredPath",
+        "rawCapabilityFallback",
+        "breakGlass",
+        "requestShape",
+        "nextSteps"
+      ],
+      "type": "object"
     }
   },
   "required": [
@@ -34972,6 +35564,22 @@ export const PermissionsMaterializeReturnSchema = {
       },
       "type": "array"
     },
+    "guidance": {
+      "additionalProperties": false,
+      "properties": {
+        "breakGlass": {
+          "type": "string"
+        },
+        "recurringAccess": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "recurringAccess",
+        "breakGlass"
+      ],
+      "type": "object"
+    },
     "subject": {
       "additionalProperties": false,
       "properties": {
@@ -34991,7 +35599,324 @@ export const PermissionsMaterializeReturnSchema = {
   },
   "required": [
     "subject",
-    "capabilities"
+    "capabilities",
+    "guidance"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.resolve`. */
+export const PermissionsResolveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Apply the planned provider-owned mutations",
+      "type": "boolean"
+    },
+    "capabilities": {
+      "description": "Optional capabilities to merge into the profile; defaults to the denied capability",
+      "type": "string"
+    },
+    "denialId": {
+      "description": "Permission denial id",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Permission profile/tag to use instead of the suggested one",
+      "type": "string"
+    }
+  },
+  "required": [
+    "denialId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.resolve`. */
+export const PermissionsResolveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentCeilings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "denial": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "number"
+        },
+        "missingCapability": {
+          "type": "string"
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "missingCapability",
+        "subject",
+        "agentId",
+        "sessionName",
+        "contextId"
+      ],
+      "type": "object"
+    },
+    "description": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "guidance": {
+      "additionalProperties": false,
+      "properties": {
+        "breakGlass": {
+          "type": "string"
+        },
+        "canonicalCapability": {
+          "type": "string"
+        },
+        "inspectCommands": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "nextSteps": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preferredPath": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "suggestedTags": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "capabilities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "slug",
+                  "label",
+                  "capabilities"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "message",
+            "suggestedTags"
+          ],
+          "type": "object"
+        },
+        "rawCapabilityFallback": {
+          "type": "string"
+        },
+        "requestShape": {
+          "additionalProperties": false,
+          "properties": {
+            "profileOrTag": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "ttl": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "profileOrTag",
+            "reason",
+            "ttl"
+          ],
+          "type": "object"
+        },
+        "scope": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonicalCapability",
+        "scope",
+        "inspectCommands",
+        "preferredPath",
+        "rawCapabilityFallback",
+        "breakGlass",
+        "requestShape",
+        "nextSteps"
+      ],
+      "type": "object"
+    },
+    "label": {
+      "type": "string"
+    },
+    "nextCommand": {
+      "type": "string"
+    },
+    "operations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "applied",
+              "unchanged"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "status",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "tagSlug": {
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "dryRun",
+    "profile",
+    "tagSlug",
+    "label",
+    "capabilities",
+    "targets",
+    "agentCeilings",
+    "operations",
+    "changedCount",
+    "denial"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -35053,11 +35978,33 @@ export const PermissionsStatusReturnSchema = {
       },
       "type": "array"
     },
+    "guidance": {
+      "additionalProperties": false,
+      "properties": {
+        "breakGlass": {
+          "type": "string"
+        },
+        "inspect": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "recurringAccess": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "inspect",
+        "recurringAccess",
+        "breakGlass"
+      ],
+      "type": "object"
+    },
     "mutationCommands": {
       "additionalProperties": false,
       "properties": {
         "enabled": {
-          "const": false,
           "type": "boolean"
         },
         "message": {
@@ -35078,6 +36025,7 @@ export const PermissionsStatusReturnSchema = {
   "required": [
     "status",
     "mutationCommands",
+    "guidance",
     "authorizationProviders",
     "capabilityMaterializers"
   ],
@@ -49393,6 +50341,22 @@ export const TranscribeFileReturnSchema = {
         },
         "duration": {
           "type": "number"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "segments": {
+          "items": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "type": "array"
         },
         "text": {
           "type": "string"
