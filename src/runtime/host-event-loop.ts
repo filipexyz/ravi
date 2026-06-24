@@ -1590,7 +1590,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.runtimeProvider = runtimeSession.provider;
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
-        updateTokens(session.sessionKey, inputTokens, outputTokens);
+        updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel

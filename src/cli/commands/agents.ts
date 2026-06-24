@@ -37,7 +37,14 @@ import {
   setAgentSpecMode,
 } from "../../router/config.js";
 import { DmScopeSchema } from "../../router/router-db.js";
-import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
+import {
+  deleteSession,
+  getSessionTurnUsageSummary,
+  getSessionsByAgent,
+  getMainSession,
+  resolveSession,
+  type SessionTurnUsageSummary,
+} from "../../router/sessions.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
@@ -99,6 +106,13 @@ interface DebugSessionSummary {
   outputTokens?: number;
   totalTokens?: number;
   contextTokens?: number;
+  lifetimeTokens?: {
+    input: number;
+    output: number;
+    total: number;
+    context: number;
+  };
+  turnUsage?: SessionTurnUsageSummary;
   compactionCount?: number;
   tags: TagBinding[];
   createdAt: number;
@@ -193,6 +207,32 @@ function describeRuntimePermissionConfig(config: AgentRuntimePermissionsConfig |
   return parts.join(" + ");
 }
 
+function sessionLifetimeTokens(session: {
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+}): number {
+  return session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0);
+}
+
+function formatTokenCount(value: number | null | undefined): string {
+  return Math.round(value ?? 0).toLocaleString("en-US");
+}
+
+function formatDurationMs(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
+  return `${(value / 60_000).toFixed(1)}m`;
+}
+
+function formatCostUsd(value: number | null | undefined): string {
+  const n = value ?? 0;
+  if (n <= 0) return "$0";
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
+
 function buildDebugSessionSummary(session: {
   sessionKey: string;
   name?: string | null;
@@ -211,6 +251,10 @@ function buildDebugSessionSummary(session: {
   createdAt: number;
   updatedAt: number;
 }): DebugSessionSummary {
+  const input = session.inputTokens ?? 0;
+  const output = session.outputTokens ?? 0;
+  const context = session.contextTokens ?? 0;
+  const turnUsage = getSessionTurnUsageSummary(session.sessionKey);
   return {
     sessionKey: session.sessionKey,
     ...(session.name ? { name: session.name } : {}),
@@ -230,6 +274,13 @@ function buildDebugSessionSummary(session: {
     ...(session.contextTokens !== undefined && session.contextTokens !== null
       ? { contextTokens: session.contextTokens }
       : {}),
+    lifetimeTokens: {
+      input,
+      output,
+      total: session.totalTokens ?? input + output,
+      context,
+    },
+    turnUsage,
     ...(session.compactionCount !== undefined && session.compactionCount !== null
       ? { compactionCount: session.compactionCount }
       : {}),
@@ -1034,12 +1085,28 @@ export class AgentsCommands {
     }
 
     for (const session of sessions) {
-      const tokens = (session.inputTokens || 0) + (session.outputTokens || 0);
+      const turnUsage = getSessionTurnUsageSummary(session.sessionKey);
+      const lifetimeTokens = sessionLifetimeTokens(session);
+      const effectiveContextTokens =
+        session.contextTokens && session.contextTokens > 0
+          ? session.contextTokens
+          : (turnUsage.lastTurn?.effectiveContextTokens ?? 0);
       const updated = new Date(session.updatedAt).toLocaleString();
 
       console.log(`  ${session.name ?? session.sessionKey}`);
       console.log(`    Runtime: ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
-      console.log(`    Tokens: ${tokens}`);
+      console.log(`    Lifetime tokens: ${formatTokenCount(lifetimeTokens)}`);
+      console.log(`    Effective context: ${formatTokenCount(effectiveContextTokens)}`);
+      if (turnUsage.lastTurn) {
+        console.log(
+          `    Last turn: context=${formatTokenCount(turnUsage.lastTurn.effectiveContextTokens)} input=${formatTokenCount(turnUsage.lastTurn.inputTokens)} cache=${formatTokenCount(turnUsage.lastTurn.cacheReadTokens + turnUsage.lastTurn.cacheCreationTokens)} output=${formatTokenCount(turnUsage.lastTurn.outputTokens)} duration=${formatDurationMs(turnUsage.lastTurn.durationMs)}`,
+        );
+      }
+      if (turnUsage.recent.completeTurns > 0) {
+        console.log(
+          `    Recent 24h: turns=${turnUsage.recent.completeTurns} avgContext=${formatTokenCount(turnUsage.recent.effectiveContextTokensAvg)} maxContext=${formatTokenCount(turnUsage.recent.effectiveContextTokensMax)} avgInput=${formatTokenCount(turnUsage.recent.inputTokensAvg)} cost=${formatCostUsd(turnUsage.recent.costUsdTotal)}`,
+        );
+      }
       console.log(`    Updated: ${updated}`);
       console.log();
     }
@@ -1232,7 +1299,7 @@ export class AgentsCommands {
       console.log(`  Runtime ID:  ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
       console.log(`  Channel:     ${session.lastChannel ?? "-"} → ${session.lastTo ?? "-"}`);
       console.log(
-        `  Tokens:      in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
+        `  Lifetime:    in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
       );
       console.log(`  Compactions:  ${session.compactionCount}`);
       console.log(`  Created:     ${new Date(session.createdAt).toLocaleString()}`);

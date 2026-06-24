@@ -81,6 +81,49 @@ interface SessionRow {
   updated_at: number;
 }
 
+interface SessionTurnUsageRow {
+  run_id: string | null;
+  status: string;
+  started_at: number;
+  completed_at: number | null;
+  duration_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_creation_tokens: number | null;
+  cost_usd: number | null;
+}
+
+export interface SessionTurnUsage {
+  runId: string | null;
+  status: string;
+  startedAt: number;
+  completedAt: number | null;
+  durationMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  effectiveContextTokens: number;
+  costUsd: number;
+}
+
+export interface SessionRecentTurnUsage {
+  windowMs: number;
+  completeTurns: number;
+  inputTokensAvg: number;
+  outputTokensAvg: number;
+  effectiveContextTokensAvg: number;
+  effectiveContextTokensMax: number;
+  durationMsAvg: number | null;
+  costUsdTotal: number;
+}
+
+export interface SessionTurnUsageSummary {
+  lastTurn: SessionTurnUsage | null;
+  recent: SessionRecentTurnUsage;
+}
+
 function rowToEntry(row: SessionRow): SessionEntry {
   const runtimeSessionParams = parseRuntimeSessionParams(row.runtime_session_json);
   const providerSessionId = row.runtime_session_display_id ?? row.sdk_session_id ?? undefined;
@@ -125,6 +168,36 @@ function rowToEntry(row: SessionRow): SessionEntry {
     expiresAt: row.expires_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function numberFromRow(row: Record<string, unknown> | undefined, key: string): number {
+  const value = row?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function nullableNumberFromRow(row: Record<string, unknown> | undefined, key: string): number | null {
+  const value = row?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function turnUsageFromRow(row: SessionTurnUsageRow): SessionTurnUsage {
+  const inputTokens = row.input_tokens ?? 0;
+  const outputTokens = row.output_tokens ?? 0;
+  const cacheReadTokens = row.cache_read_tokens ?? 0;
+  const cacheCreationTokens = row.cache_creation_tokens ?? 0;
+  return {
+    runId: row.run_id,
+    status: row.status,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    durationMs: row.duration_ms,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    effectiveContextTokens: inputTokens + cacheReadTokens + cacheCreationTokens,
+    costUsd: row.cost_usd ?? 0,
   };
 }
 
@@ -475,6 +548,74 @@ export function clearProviderSession(sessionKey: string): void {
 export function updateTokens(sessionKey: string, input: number, output: number, context?: number): void {
   const s = getStatements();
   s.updateTokens.run(input, output, input + output, context ?? 0, Date.now(), sessionKey);
+}
+
+export function getSessionTurnUsageSummary(
+  sessionKey: string,
+  options: { windowMs?: number } = {},
+): SessionTurnUsageSummary {
+  const windowMs = options.windowMs ?? 86_400_000;
+  const since = Date.now() - windowMs;
+  const db = getDb();
+  const lastTurnRow = db
+    .prepare(
+      `
+      SELECT
+        run_id,
+        status,
+        started_at,
+        completed_at,
+        CASE
+          WHEN completed_at IS NOT NULL THEN completed_at - started_at
+          ELSE NULL
+        END AS duration_ms,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens,
+        cost_usd
+      FROM session_turns
+      WHERE session_key = ?
+      ORDER BY started_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(sessionKey) as SessionTurnUsageRow | undefined;
+  const recentRow = db
+    .prepare(
+      `
+      SELECT
+        COUNT(*) AS complete_turns,
+        AVG(input_tokens) AS input_tokens_avg,
+        AVG(output_tokens) AS output_tokens_avg,
+        AVG(input_tokens + cache_read_tokens + cache_creation_tokens) AS effective_context_tokens_avg,
+        MAX(input_tokens + cache_read_tokens + cache_creation_tokens) AS effective_context_tokens_max,
+        AVG(CASE
+          WHEN completed_at IS NOT NULL THEN completed_at - started_at
+          ELSE NULL
+        END) AS duration_ms_avg,
+        COALESCE(SUM(cost_usd), 0) AS cost_usd_total
+      FROM session_turns
+      WHERE session_key = ?
+        AND status = 'complete'
+        AND started_at >= ?
+    `,
+    )
+    .get(sessionKey, since) as Record<string, unknown> | undefined;
+
+  return {
+    lastTurn: lastTurnRow ? turnUsageFromRow(lastTurnRow) : null,
+    recent: {
+      windowMs,
+      completeTurns: numberFromRow(recentRow, "complete_turns"),
+      inputTokensAvg: numberFromRow(recentRow, "input_tokens_avg"),
+      outputTokensAvg: numberFromRow(recentRow, "output_tokens_avg"),
+      effectiveContextTokensAvg: numberFromRow(recentRow, "effective_context_tokens_avg"),
+      effectiveContextTokensMax: numberFromRow(recentRow, "effective_context_tokens_max"),
+      durationMsAvg: nullableNumberFromRow(recentRow, "duration_ms_avg"),
+      costUsdTotal: numberFromRow(recentRow, "cost_usd_total"),
+    },
+  };
 }
 
 /**

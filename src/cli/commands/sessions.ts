@@ -29,6 +29,7 @@ import {
 import {
   listSessions,
   getSessionsByAgent,
+  getSessionTurnUsageSummary,
   deleteSession,
   resetSession,
   resolveSession,
@@ -569,12 +570,21 @@ function sessionMatchesTag(session: SessionEntry, tagSlug: string | undefined): 
 
 function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {}): Record<string, unknown> {
   const runtimeId = session.providerSessionId ?? session.sdkSessionId ?? null;
+  const lifetimeInput = session.inputTokens ?? 0;
+  const lifetimeOutput = session.outputTokens ?? 0;
+  const lifetimeContext = session.contextTokens ?? 0;
+  const lifetimeTotal = session.totalTokens ?? lifetimeInput + lifetimeOutput;
   return {
     ...session,
     label: session.name ?? session.sessionKey,
     runtimeId,
-    tokenTotal:
-      session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) + (session.contextTokens ?? 0),
+    tokenTotal: lifetimeTotal,
+    lifetimeTokens: {
+      input: lifetimeInput,
+      output: lifetimeOutput,
+      total: lifetimeTotal,
+      context: lifetimeContext,
+    },
     ephemeral: Boolean(session.ephemeral),
     expiresAt: session.expiresAt ?? null,
     tags: listSessionTags(session),
@@ -889,6 +899,24 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+function formatTokenCount(value: number | null | undefined): string {
+  return Math.round(value ?? 0).toLocaleString("en-US");
+}
+
+function formatDurationMs(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
+  return `${(value / 60_000).toFixed(1)}m`;
+}
+
+function formatCostUsd(value: number | null | undefined): string {
+  const n = value ?? 0;
+  if (n <= 0) return "$0";
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
 }
 
 function parseDurationMs(str: string): number | null {
@@ -1861,7 +1889,7 @@ export class SessionCommands {
       }
     } else {
       console.log(
-        "  NAME                                  AGENT     TOKENS    ACTIVITY   TYPE       EXPIRES             TAGS             DISPLAY",
+        "  NAME                                  AGENT     LIFETIME  ACTIVITY   TYPE       EXPIRES             TAGS             DISPLAY",
       );
       console.log(
         "  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ───────────────  ──────────────────",
@@ -1922,6 +1950,7 @@ export class SessionCommands {
     const relatedContexts = dbListContexts({ sessionKey: s.sessionKey, includeInactive: true });
     const relatedAdapters = listSessionAdapters({ sessionKey: s.sessionKey });
     const suggestedCommands = buildSuggestedDebugCommands(s, relatedContexts, relatedAdapters);
+    const turnUsage = getSessionTurnUsageSummary(s.sessionKey);
 
     if (asJson) {
       const adapters = relatedAdapters.map((adapter) => {
@@ -1938,6 +1967,7 @@ export class SessionCommands {
         derivedSource: derivedSource ?? null,
         contexts: relatedContexts.map(buildRelatedContextJson),
         adapters,
+        turnUsage,
         commands: suggestedCommands,
       };
       printJson(payload);
@@ -1964,11 +1994,27 @@ export class SessionCommands {
       });
     }
     printInspectionField(
-      "Tokens",
+      "Lifetime toks",
       `input=${formatTokens(s.inputTokens ?? 0)} output=${formatTokens(s.outputTokens ?? 0)} total=${formatTokens(s.totalTokens ?? 0)} context=${formatTokens(s.contextTokens ?? 0)}`,
       RUNTIME_SNAPSHOT_META,
       { labelWidth: 14 },
     );
+    if (turnUsage.lastTurn) {
+      printInspectionField(
+        "Last turn",
+        `context=${formatTokenCount(turnUsage.lastTurn.effectiveContextTokens)} input=${formatTokenCount(turnUsage.lastTurn.inputTokens)} cache=${formatTokenCount(turnUsage.lastTurn.cacheReadTokens + turnUsage.lastTurn.cacheCreationTokens)} output=${formatTokenCount(turnUsage.lastTurn.outputTokens)} duration=${formatDurationMs(turnUsage.lastTurn.durationMs)}`,
+        RUNTIME_SNAPSHOT_META,
+        { labelWidth: 14 },
+      );
+    }
+    if (turnUsage.recent.completeTurns > 0) {
+      printInspectionField(
+        "Recent 24h",
+        `turns=${turnUsage.recent.completeTurns} avgContext=${formatTokenCount(turnUsage.recent.effectiveContextTokensAvg)} maxContext=${formatTokenCount(turnUsage.recent.effectiveContextTokensMax)} avgInput=${formatTokenCount(turnUsage.recent.inputTokensAvg)} cost=${formatCostUsd(turnUsage.recent.costUsdTotal)}`,
+        RUNTIME_SNAPSHOT_META,
+        { labelWidth: 14 },
+      );
+    }
 
     if (s.lastChannel || s.lastTo) {
       const routing = [s.lastChannel, s.lastTo].filter(Boolean).join(" -> ");
