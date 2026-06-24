@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun
 
 import { createContact, getContact } from "../../contacts.js";
 import { recordPermissionDenial } from "../../permissions/denials.js";
-import { readAgentRuntimePermissionsConfig } from "../../permissions/agent-runtime-permissions-provider.js";
+import { readAgentRuntimePermissionsConfig } from "../../permissions/agent-default-capabilities-provider.js";
 import { dbCreateAgent } from "../../router/router-db.js";
 import { dbCreateTagDefinition, dbGetTagDefinition } from "../../tags/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -22,12 +22,12 @@ mock.module("../decorators.js", () => ({
 
 mock.module("../../permissions/provider-registry.js", () => ({
   getConfiguredPermissionProviders: () => [
-    { id: "local-operator", version: "bootstrap", required: true },
+    { id: "operator-control", version: "operator-control/local-v1", required: true },
     { id: "context-capabilities", version: "snapshot/v1", required: true },
   ],
   getConfiguredCapabilityMaterializers: () => [
     { id: "runtime-bootstrap", version: "bootstrap/v1", required: true },
-    { id: "agent-runtime-permissions", version: "agent-defaults/v1", required: true },
+    { id: "agent-default-capabilities", version: "agent-defaults/v1", required: true },
     { id: "agent-identity-permissions", version: "agent-identity/v1", required: true },
     { id: "contact-policy-permissions", version: "contact-tags/v1", required: true },
   ],
@@ -42,16 +42,16 @@ mock.module("../../permissions/provider-runtime.js", () => ({
   }) => ({
     decision: request.localOperator ? "allow" : "deny",
     allowed: request.localOperator === true,
-    providerId: request.localOperator ? "local-operator" : "provider-runtime",
-    providerVersion: request.localOperator ? "bootstrap" : "runtime",
-    reasonCode: request.localOperator ? "local_operator_no_subject" : "no_permission_provider_configured",
+    providerId: request.localOperator ? "operator-control" : "provider-runtime",
+    providerVersion: request.localOperator ? "operator-control/local-v1" : "runtime",
+    reasonCode: request.localOperator ? "operator_control_local_allow" : "no_permission_provider_configured",
     permission: request.permission,
     objectType: request.objectType,
     objectId: request.objectId,
   }),
   materializeSubjectCapabilities: (subjectType: string, subjectId: string) =>
     subjectType === "agent" && subjectId === "main"
-      ? [{ permission: "view", objectType: "agent", objectId: "*", source: "agent-runtime-permissions:agent:main" }]
+      ? [{ permission: "view", objectType: "agent", objectId: "*", source: "agent-default-capabilities:agent:main" }]
       : [],
 }));
 
@@ -76,10 +76,10 @@ describe("PermissionsCommands provider-runtime surface", () => {
     expect(payload).toMatchObject({
       status: "provider-runtime",
       mutationCommands: { enabled: true },
-      authorizationProviders: [{ id: "local-operator" }, { id: "context-capabilities" }],
+      authorizationProviders: [{ id: "operator-control" }, { id: "context-capabilities" }],
       capabilityMaterializers: [
         { id: "runtime-bootstrap" },
-        { id: "agent-runtime-permissions" },
+        { id: "agent-default-capabilities" },
         { id: "agent-identity-permissions" },
         { id: "contact-policy-permissions" },
       ],
@@ -94,7 +94,7 @@ describe("PermissionsCommands provider-runtime surface", () => {
     expect(denied.allowed).toBe(false);
     expect(denied.decision.providerId).toBe("provider-runtime");
     expect(allowed.allowed).toBe(true);
-    expect(allowed.decision.providerId).toBe("local-operator");
+    expect(allowed.decision.providerId).toBe("operator-control");
   });
 
   it("suggests matching provider-owned permission tags for denied checks", () => {
@@ -142,7 +142,7 @@ describe("PermissionsCommands provider-runtime surface", () => {
           permission: "view",
           objectType: "agent",
           objectId: "*",
-          source: "agent-runtime-permissions:agent:main",
+          source: "agent-default-capabilities:agent:main",
         },
       ],
       guidance: {

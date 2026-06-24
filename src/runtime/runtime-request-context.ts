@@ -1,5 +1,5 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
-import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
+import { type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import {
   buildEffectiveCapabilities,
   hasAnyCapability,
@@ -21,7 +21,6 @@ import type { MessageActorMetadata, RuntimeLaunchPrompt } from "./message-types.
 import {
   createRuntimeContext,
   DEFAULT_DERIVED_CONTEXT_TTL_MS,
-  getOrCreateAgentRuntimeContext,
   revokeRuntimeContext,
   snapshotAgentCapabilities,
 } from "./runtime-context-store.js";
@@ -111,10 +110,6 @@ export function refreshRuntimeRequestContextForTurn(options: {
   resolvedSource?: RuntimeMessageTarget;
   approvalSource?: RuntimeMessageTarget;
 }): ContextRecord {
-  if (!isTurnScopedAuthorityEnabled()) {
-    return options.runtimeContext;
-  }
-
   const capabilities = buildRuntimeContextCapabilities(options.agent.id);
   const nextContext = createRuntimeContextForPrompt({
     agentId: options.agent.id,
@@ -178,38 +173,23 @@ function createRuntimeContextForPrompt(options: {
   capabilities: ContextCapability[];
   metadata: Record<string, unknown>;
 }): ContextRecord {
-  const delegated = buildDelegatedRuntimeContextInput(options);
-  if (delegated) {
-    return createRuntimeContext({
-      kind: TURN_SCOPED_AUTHORITY_KIND,
-      agentId: options.agentId,
-      sessionKey: options.sessionKey,
-      sessionName: options.sessionName,
-      source: buildContextSource(options.resolvedSource),
-      capabilities: delegated.capabilities,
-      metadata: {
-        ...options.metadata,
-        ...delegated.metadata,
-      },
-      ttlMs: DEFAULT_DERIVED_CONTEXT_TTL_MS,
-    });
-  }
-
-  const runtimeContext = getOrCreateAgentRuntimeContext({
+  const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
+  return createRuntimeContext({
+    kind: TURN_SCOPED_AUTHORITY_KIND,
     agentId: options.agentId,
     sessionKey: options.sessionKey,
     sessionName: options.sessionName,
     source: buildContextSource(options.resolvedSource),
-    capabilities: options.capabilities,
+    capabilities: identity.capabilities,
     metadata: {
       ...options.metadata,
-      authorityMode: "agent",
+      ...identity.metadata,
     },
+    ttlMs: DEFAULT_DERIVED_CONTEXT_TTL_MS,
   });
-  return refreshRuntimeContextCapabilities(runtimeContext, options.capabilities);
 }
 
-function buildDelegatedRuntimeContextInput(options: {
+function buildAgentIdentityRuntimeContextInputForPrompt(options: {
   agentId: string;
   prompt: RuntimeLaunchPrompt;
   resolvedSource?: RuntimeMessageTarget;
@@ -217,22 +197,20 @@ function buildDelegatedRuntimeContextInput(options: {
 }): {
   capabilities: ContextCapability[];
   metadata: Record<string, unknown>;
-} | null {
-  if (!shouldUseTurnScopedAuthorityForPrompt(options.prompt, options.resolvedSource)) {
-    return null;
-  }
-
+} {
   const actorMetadata = resolveAuthorityActorMetadata(options.prompt, options.resolvedSource);
   const actorPrincipal = resolveActorPrincipal(actorMetadata);
   const surfacePrincipal = resolveSurfacePrincipal(actorMetadata);
   const actorDisplayName = cleanStringValue(actorMetadata?.senderName);
   const surfaceDisplayName = cleanStringValue(actorMetadata?.groupName);
+  const actorResolution = resolveActorResolution(actorMetadata, actorPrincipal);
 
   return buildAgentIdentityRuntimeContextInput({
     agentId: options.agentId,
     prompt: options.prompt,
     capabilities: options.capabilities,
     actorPrincipal,
+    actorResolution,
     surfacePrincipal,
     actorDisplayName,
     surfaceDisplayName,
@@ -244,6 +222,7 @@ function buildAgentIdentityRuntimeContextInput(options: {
   prompt: RuntimeLaunchPrompt;
   capabilities: ContextCapability[];
   actorPrincipal: AuthorityPrincipal | null;
+  actorResolution: "resolved" | "missing_contact" | "not_applicable";
   surfacePrincipal: AuthorityPrincipal | null;
   actorDisplayName?: string;
   surfaceDisplayName?: string;
@@ -258,7 +237,8 @@ function buildAgentIdentityRuntimeContextInput(options: {
     subjectType: AGENT_IDENTITY_SUBJECT_TYPE,
     subjectId: agentIdentitySubjectId,
   };
-  const agentIdentityCapabilities = options.actorPrincipal
+  const shouldMaterializeIdentity = options.actorResolution !== "missing_contact";
+  const agentIdentityCapabilities = shouldMaterializeIdentity
     ? materializeSubjectCapabilities(AGENT_IDENTITY_SUBJECT_TYPE, agentIdentitySubjectId, {
         executorAgentId: options.agentId,
         executorCapabilities: options.capabilities,
@@ -280,8 +260,8 @@ function buildAgentIdentityRuntimeContextInput(options: {
       authorityResolver: AGENT_IDENTITY_AUTHORITY_RESOLVER,
       executorAgentId: options.agentId,
       actorPrincipal: options.actorPrincipal ? formatPrincipal(options.actorPrincipal) : "unknown",
-      actorResolution: options.actorPrincipal ? "resolved" : "missing_contact",
-      actorAuthorizationMode: "invoke-only",
+      actorResolution: options.actorResolution,
+      actorAuthorizationMode: options.actorResolution === "not_applicable" ? "not-applicable" : "invoke-only",
       ...(options.actorDisplayName ? { actorDisplayName: options.actorDisplayName } : {}),
       ...(options.surfacePrincipal ? { surfacePrincipal: formatPrincipal(options.surfacePrincipal) } : {}),
       ...(options.surfaceDisplayName ? { surfaceDisplayName: options.surfaceDisplayName } : {}),
@@ -325,11 +305,9 @@ export function shouldUseTurnScopedAuthorityForPrompt(
   prompt: RuntimeLaunchPrompt,
   resolvedSource?: RuntimeMessageTarget,
 ): boolean {
-  if (!isTurnScopedAuthorityEnabled()) {
-    return false;
-  }
-  const actorMetadata = resolveAuthorityActorMetadata(prompt, resolvedSource);
-  return actorMetadata?.actorType === "automation" || isExternalAuthoritySurface(actorMetadata);
+  void prompt;
+  void resolvedSource;
+  return true;
 }
 
 function resolveAuthorityActorMetadata(
@@ -393,6 +371,15 @@ function isExternalAuthoritySurface(
       actorMetadata?.chatId ||
       actorMetadata?.canonicalChatId,
   );
+}
+
+function resolveActorResolution(
+  actorMetadata: MessageActorMetadata | undefined,
+  actorPrincipal: AuthorityPrincipal | null,
+): "resolved" | "missing_contact" | "not_applicable" {
+  if (actorPrincipal) return "resolved";
+  if (isExternalAuthoritySurface(actorMetadata)) return "missing_contact";
+  return "not_applicable";
 }
 
 function resolveActorPrincipal(actorMetadata: MessageActorMetadata | undefined): AuthorityPrincipal | null {
@@ -531,12 +518,6 @@ function buildContextSource(resolvedSource?: RuntimeMessageTarget) {
     : undefined;
 }
 
-function isTurnScopedAuthorityEnabled(): boolean {
-  const value = process.env.RAVI_TURN_SCOPED_AUTHORITY?.trim().toLowerCase();
-  if (!value) return true;
-  return value !== "0" && value !== "false" && value !== "off";
-}
-
 const MANAGED_RAVI_RUNTIME_ENV_KEYS = [
   "RAVI_CONTEXT_KEY",
   "RAVI_SESSION_KEY",
@@ -634,17 +615,6 @@ function normalizeCliToolNamePart(value: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
-function refreshRuntimeContextCapabilities(context: ContextRecord, capabilities: ContextCapability[]): ContextRecord {
-  if (contextCapabilitiesEqual(context.capabilities, capabilities)) {
-    return context;
-  }
-  return dbUpdateContextCapabilities(context.contextId, capabilities);
-}
-
-function contextCapabilitiesEqual(left: ContextCapability[], right: ContextCapability[]): boolean {
-  return JSON.stringify(sortContextCapabilities(left)) === JSON.stringify(sortContextCapabilities(right));
-}
-
 function dedupeContextCapabilities(capabilities: ContextCapability[]): ContextCapability[] {
   const seen = new Set<string>();
   const result: ContextCapability[] = [];
@@ -655,14 +625,6 @@ function dedupeContextCapabilities(capabilities: ContextCapability[]): ContextCa
     result.push(capability);
   }
   return result;
-}
-
-function sortContextCapabilities(capabilities: ContextCapability[]): ContextCapability[] {
-  return [...capabilities].sort((a, b) =>
-    `${a.permission}:${a.objectType}:${a.objectId}:${a.source ?? ""}`.localeCompare(
-      `${b.permission}:${b.objectType}:${b.objectId}:${b.source ?? ""}`,
-    ),
-  );
 }
 
 export function buildRuntimeRequestEnv(options: {

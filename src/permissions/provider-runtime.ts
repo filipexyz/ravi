@@ -146,20 +146,6 @@ export function materializeSubjectCapabilities(
   );
 }
 
-export function materializeSubjectDelegationOverrides(
-  subjectType: string,
-  subjectId: string,
-  options: PermissionProviderCapabilityOptions = {},
-  providers: PermissionProvider[] = getConfiguredCapabilityMaterializers(),
-): ContextCapability[] {
-  return materializeFromProviders(
-    { type: subjectType, id: subjectId },
-    options,
-    providers,
-    (provider, subject, providerOptions) => provider.materializeDelegationOverrides?.(subject, providerOptions) ?? [],
-  );
-}
-
 export function isSuperadmin(subjectType: string, subjectId: string): boolean {
   return can(subjectType, subjectId, "admin", "system", "*");
 }

@@ -67,9 +67,11 @@ Regras:
 - `ravi agents permissions` grava em `agent.defaults.runtimePermissions`.
   Use diretamente apenas para correção agent-only; para fluxos iniciados por
   humanos, prefira `ravi permissions allow/resolve`.
-- `runtime-bootstrap`, `agent-runtime-permissions`,
+- `runtime-bootstrap`, `agent-default-capabilities`,
   `agent-identity-permissions` e `contact-policy-permissions` são os
   materializers padrão.
+- `operator-control` é o authorization provider explícito para operador local;
+  ele não materializa capabilities de agent e não autoriza execução de tools.
 - O contexto efetivo de um turno externo usa `authorityMode=agent-identity`:
   capabilities do executor agent projetadas em
   `agent_identity:<agent>:<compartment>`, intersectadas com turn caps quando

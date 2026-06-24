@@ -31,7 +31,7 @@ normative: true
 
 Historically, the absence of an agent principal was treated as full authority:
 `agentCan(undefined, …)` and scope checks could allow privileged paths when
-`ctx.agentId` was unset. That silent local-operator recovery path was an
+`ctx.agentId` was unset. That silent operator recovery path was an
 unauthenticated god-mode bypass. The provider-runtime baseline now fails closed
 for missing principals; break-glass defines the authenticated replacement for
 operator recovery.
@@ -44,7 +44,7 @@ removed.
 ## Definitions
 
 - `operator`: an authenticated human or service principal acting outside any
-  agent runtime context, e.g. `operator:<id>` or `system:<id>`.
+  agent identity or operator context, e.g. `operator:<id>` or `system:<id>`.
 - `break-glass`: a privileged action authorized by an operator rather than by
   delegated turn authority.
 - `operator credential`: the proof of operator identity (local admin key, OS
@@ -54,7 +54,7 @@ removed.
 
 - Absence of an agent principal MUST NOT, by itself, authorize an
   authority-bearing action. `agentCan(undefined, …)` MUST fail closed in all
-  modes. Local-operator authorization MUST be an explicit provider-runtime
+  modes. Operator-control authorization MUST be an explicit provider-runtime
   request, not an implicit caller branch.
 - A break-glass authorization MUST resolve to a concrete `operator:<id>` or
   `system:<id>` principal. An unauthenticated caller MUST be denied (fail
@@ -73,7 +73,7 @@ removed.
   a standing all-powerful local operator is a configuration, not the default for
   enterprise mode.
 - A compatibility mode MAY exist for local single-operator development, but it
-  MUST still route through an explicit local-operator provider and MUST be
+  MUST still route through the explicit `operator-control` provider and MUST be
   visible in `ravi doctor`. It MUST NOT revive hidden `!agentId` allow branches.
 
 ## Operator Resolution
@@ -81,8 +81,8 @@ removed.
 - The runtime MUST resolve an operator principal from the operator credential
   before treating a no-agent invocation as authorized.
 - Resolution order SHOULD be: explicit operator token/credential → bound OS/admin
-  identity → explicit local-operator provider request for development/bootstrap
-  only.
+  identity → explicit `operator-control` provider request for
+  development/bootstrap only.
 - An invocation with no resolvable operator and no agent principal MUST be
   denied for authority-bearing actions, while non-authoritative read/help paths
   MAY remain available.
@@ -92,8 +92,8 @@ removed.
 ## Enforcement Changes
 
 - `agentCan(undefined, …)` MUST return deny. `enforceScopeCheck` and other
-  no-agent gates MUST consult an explicit local-operator/operator path instead
-  of returning allow purely on missing `agentId`.
+  no-agent gates MUST consult an explicit operator-control/operator path
+  instead of returning allow purely on missing `agentId`.
 - Provider-owned authority mutation MUST require an authenticated operator in
   enterprise mode and MUST record the operator on each mutation audit event.
 - Recovery from an incident that revokes all agent admin MUST remain possible
@@ -112,6 +112,6 @@ removed.
   approval and records operator + reason + blast radius.
 - Traces and `ravi.audit.*` distinguish break-glass (operator) from delegated
   (actor) authority.
-- With enterprise mode off, any local-operator workflow still uses explicit
-  local-operator authorization and `ravi doctor` verifies that no implicit
+- With enterprise mode off, any local operator workflow still uses explicit
+  operator-control authorization and `ravi doctor` verifies that no implicit
   no-principal bypass is active.

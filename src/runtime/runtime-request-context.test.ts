@@ -12,7 +12,6 @@ import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from 
 import { getRuntimeToolAccessMode } from "./host-services.js";
 
 let stateDir: string | null = null;
-let previousTurnScopedAuthority: string | undefined;
 
 const agent: AgentConfig = {
   id: "provider-agent",
@@ -34,21 +33,15 @@ const runtimeResolution: TaskRuntimeResolution = {
 describe("runtime request context authority", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-authority-test-");
-    previousTurnScopedAuthority = process.env.RAVI_TURN_SCOPED_AUTHORITY;
-    process.env.RAVI_TURN_SCOPED_AUTHORITY = "1";
   });
 
   afterEach(async () => {
-    if (previousTurnScopedAuthority === undefined) {
-      delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
-    } else {
-      process.env.RAVI_TURN_SCOPED_AUTHORITY = previousTurnScopedAuthority;
-    }
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
 
-  it("uses turn-scoped authority by default when the env var is unset", () => {
+  it("uses agent identity authority by default when the env var is unset", () => {
+    const previous = process.env.RAVI_TURN_SCOPED_AUTHORITY;
     delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
@@ -70,6 +63,45 @@ describe("runtime request context authority", () => {
     expect(runtimeContext.metadata?.authorityMode).toBe("agent-identity");
     expect(runtimeContext.metadata?.agentIdentityPrincipal).toBe("agent_identity:provider-agent:chat:chat_group_1");
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    if (previous === undefined) {
+      delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
+    } else {
+      process.env.RAVI_TURN_SCOPED_AUTHORITY = previous;
+    }
+  });
+
+  it("ignores the retired turn-scoped env flag and still issues workspace agent identity contexts", () => {
+    const previous = process.env.RAVI_TURN_SCOPED_AUTHORITY;
+    process.env.RAVI_TURN_SCOPED_AUTHORITY = "0";
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: { prompt: "internal task without a channel surface" },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(runtimeContext.kind).toBe("turn-runtime");
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "unknown",
+      actorResolution: "not_applicable",
+      agentIdentityPrincipal: "agent_identity:provider-agent:workspace:default",
+      agentIdentityCompartment: "workspace:default",
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+    if (previous === undefined) {
+      delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
+    } else {
+      process.env.RAVI_TURN_SCOPED_AUTHORITY = previous;
+    }
   });
 
   it("keeps actor and surface as audit-only branches in agent identity turns", () => {

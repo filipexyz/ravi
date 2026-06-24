@@ -123,15 +123,9 @@ This fallback MUST NOT be the production default.
 
 User-initiated execution MUST use an invocation-scoped runtime context or equivalent turn-scoped capability overlay.
 
-Turn-scoped authority MUST be enabled by default. `RAVI_TURN_SCOPED_AUTHORITY`
-is an opt-out compatibility switch only:
-
-- unset: enabled;
-- `1`, `true`, `on`: enabled;
-- `0`, `false`, `off`: disabled for explicit legacy/debug operation.
-
-Production deployments SHOULD NOT run with this opt-out disabled except during
-controlled break-glass debugging.
+Turn-scoped authority MUST always be enabled for new dispatch. The historical
+`RAVI_TURN_SCOPED_AUTHORITY` flag is retired and MUST NOT disable
+agent-identity context creation.
 
 The context MUST include:
 
@@ -197,9 +191,8 @@ For user-initiated invocation contexts:
   because the root executor agent is superadmin.
 - Live grants MAY be considered only through the active agent identity
   materializer or explicit break-glass/operator path.
-- Revoking a critical agent identity, agent runtime, turn, or future overlay
-  policy MUST invalidate or refresh active invocation contexts before the next
-  tool call.
+- Revoking a critical agent identity, turn, or future overlay policy MUST
+  invalidate or refresh active invocation contexts before the next tool call.
 
 ## Tool And CLI Enforcement
 

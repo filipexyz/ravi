@@ -13,7 +13,10 @@ type ResponseEventPayload = { response?: string; error?: string };
 let runtimeEvents: RuntimeEventPayload[] = [];
 let claudeEvents: RuntimeEventPayload[] = [];
 let responseEvents: ResponseEventPayload[] = [];
-const publishedPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+const publishedPrompts: Array<{
+  sessionName: string;
+  payload: Record<string, unknown>;
+}> = [];
 const natsEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let listedSessions: Array<Record<string, unknown>> = [];
 let resolvedSession: Record<string, unknown> | null = null;
@@ -21,13 +24,16 @@ let sessionDerivedSource: { channel: string; accountId: string; chatId: string; 
 let listedContexts: Array<Record<string, unknown>> = [];
 let listedAdapters: Array<Record<string, unknown>> = [];
 const adapterSnapshots = new Map<string, Record<string, unknown>>();
-let routerConfig: { agents: Record<string, Record<string, unknown>> } = { agents: {} };
+let routerConfig: { agents: Record<string, Record<string, unknown>> } = {
+  agents: {},
+};
 let chatHistory: Array<Record<string, unknown>> = [];
 let chatHistoryByChat: Array<Record<string, unknown>> = [];
 let messageMetadataRows: Array<Record<string, unknown>> = [];
 const chatRecords = new Map<string, Record<string, unknown>>();
 let sessionSubscriptions: Array<Record<string, unknown>> = [];
 const sessionChatBindings = new Map<string, Record<string, unknown>>();
+const sessionTurnUsageSummaries = new Map<string, Record<string, unknown>>();
 let agentChatMessagesPage: {
   total: number;
   limit: number;
@@ -40,6 +46,26 @@ let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
 let renameSessionNameError: Error | null = null;
 let renameRouteReferencesUpdated = 0;
 const runtimeLiveStates = new Map<string, Record<string, unknown>>();
+
+function defaultTurnUsageSummary(): Record<string, unknown> {
+  return {
+    lastTurn: null,
+    recent: {
+      windowMs: 86_400_000,
+      completeTurns: 0,
+      inputTokensAvg: 0,
+      outputTokensAvg: 0,
+      effectiveContextTokensAvg: 0,
+      effectiveContextTokensMax: 0,
+      durationMsAvg: null,
+      costUsdTotal: 0,
+    },
+  };
+}
+
+beforeEach(() => {
+  sessionTurnUsageSummaries.clear();
+});
 
 function makeSubscription<T extends Record<string, unknown>>(events: T[]) {
   return (async function* () {
@@ -112,6 +138,8 @@ mock.module("../../router/sessions.js", () => ({
   },
   resetSession: () => {},
   resolveSession: () => resolvedSession,
+  getSessionTurnUsageSummary: (sessionKey: string) =>
+    sessionTurnUsageSummaries.get(sessionKey) ?? defaultTurnUsageSummary(),
   listSessionSubscriptions: (sessionKey: string) =>
     sessionSubscriptions.filter((subscription) => subscription.sessionKey === sessionKey),
   getOrCreateSession: () => null,
@@ -205,7 +233,10 @@ mock.module("../../permissions/scope.js", () => ({
 }));
 
 mock.module("../../transcripts.js", () => ({
-  locateRuntimeTranscript: () => ({ path: null, reason: "Transcript not found" }),
+  locateRuntimeTranscript: () => ({
+    path: null,
+    reason: "Transcript not found",
+  }),
 }));
 
 mock.module("../../runtime/live-state.js", () => ({
@@ -1070,6 +1101,31 @@ describe("SessionCommands info", () => {
         lastError: null,
       },
     });
+    sessionTurnUsageSummaries.set("agent:main:whatsapp:main:group:123456", {
+      lastTurn: {
+        runId: "run_1",
+        status: "complete",
+        startedAt: Date.UTC(2026, 3, 11, 12, 20, 0),
+        completedAt: Date.UTC(2026, 3, 11, 12, 21, 29),
+        durationMs: 89_000,
+        inputTokens: 188_000,
+        outputTokens: 120,
+        cacheReadTokens: 187_000,
+        cacheCreationTokens: 0,
+        effectiveContextTokens: 375_000,
+        costUsd: 1.23,
+      },
+      recent: {
+        windowMs: 86_400_000,
+        completeTurns: 34,
+        inputTokensAvg: 170_000,
+        outputTokensAvg: 300,
+        effectiveContextTokensAvg: 293_000,
+        effectiveContextTokensMax: 466_000,
+        durationMsAvg: 101_000,
+        costUsdTotal: 31.37,
+      },
+    });
 
     const output = captureLogs(() => {
       new SessionCommands().info("support-group");
@@ -1082,6 +1138,9 @@ describe("SessionCommands info", () => {
     expect(output).toContain("Model:        gpt-5  [source=config-db freshness=persisted via=router-config]");
     expect(output).toContain("Override:     gpt-5.4-mini  [source=session-db freshness=persisted]");
     expect(output).toContain("Runtime:      codex  [source=runtime-snapshot freshness=persisted]");
+    expect(output).toContain("Lifetime toks:");
+    expect(output).toContain("Last turn:    context=375.0k input=188.0k cache=187.0k output=120 duration=1.5m");
+    expect(output).toContain("Recent 24h:   turns=34 avgContext=293.0k maxContext=466.0k avgInput=170.0k cost=$31.37");
     expect(output).toContain(
       'Runtime ctx:  {"sessionId":"resp_123","cwd":"/tmp/main"}  [source=runtime-snapshot freshness=persisted]',
     );
@@ -1316,12 +1375,20 @@ describe("extractNormalizedTranscriptMessages", () => {
       JSON.stringify({
         timestamp: "2026-03-22T14:00:05.000Z",
         type: "event_msg",
-        payload: { type: "agent_message", message: "Vou olhar isso agora.", phase: "commentary" },
+        payload: {
+          type: "agent_message",
+          message: "Vou olhar isso agora.",
+          phase: "commentary",
+        },
       }),
       JSON.stringify({
         timestamp: "2026-03-22T14:00:10.000Z",
         type: "event_msg",
-        payload: { type: "agent_message", message: "Feito.", phase: "final_answer" },
+        payload: {
+          type: "agent_message",
+          message: "Feito.",
+          phase: "final_answer",
+        },
       }),
     ].join("\n");
 

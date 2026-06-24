@@ -56,9 +56,9 @@ export interface PermissionProviderCapabilityOptions {
 export interface PermissionProviderRequest {
   requestId?: string;
   /**
-   * Explicit break-glass/local operator request.
+   * Explicit operator-control local request.
    *
-   * Missing subject/context/capabilities is not enough to imply local operator
+   * Missing subject/context/capabilities is not enough to imply operator
    * authority; callers must opt in deliberately.
    */
   localOperator?: boolean;
@@ -94,10 +94,6 @@ export interface PermissionProvider {
   supports(request: PermissionProviderRequest): boolean;
   authorize(request: PermissionProviderRequest): PermissionProviderDecision;
   materializeCapabilities?(
-    subject: PermissionProviderSubject,
-    options?: PermissionProviderCapabilityOptions,
-  ): ContextCapability[];
-  materializeDelegationOverrides?(
     subject: PermissionProviderSubject,
     options?: PermissionProviderCapabilityOptions,
   ): ContextCapability[];

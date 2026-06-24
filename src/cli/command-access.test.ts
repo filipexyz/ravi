@@ -133,7 +133,7 @@ describe("CLI command access enforcement", () => {
     });
 
     expect(result.allowed).toBe(true);
-    expect(result.decision?.providerId).toBe("local-operator");
+    expect(result.decision?.providerId).toBe("operator-control");
     expect(result.decision?.permission).toBe("mutate");
     expect(result.decision?.objectType).toBe("demo.items");
     expect(result.decision?.objectId).toBe("create");
@@ -173,7 +173,7 @@ describe("CLI command access enforcement", () => {
     });
 
     expect(result.allowed).toBe(true);
-    expect(result.decision?.providerId).toBe("local-operator");
+    expect(result.decision?.providerId).toBe("operator-control");
     expect(result.decision?.permission).toBe("mutate");
     expect(result.decision?.objectType).toBe("demo.items");
     expect(result.decision?.objectId).toBe("create");

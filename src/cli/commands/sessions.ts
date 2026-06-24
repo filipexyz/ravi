@@ -43,6 +43,7 @@ import {
   makeSessionPermanent,
   attachChatToSession,
   detachChatFromSession,
+  getSessionTurnUsageSummary,
   listSessionSubscriptions,
   setSessionChatSpeechMode,
   SessionAttachConflictError,
@@ -131,13 +132,37 @@ const MESSAGE_DELETE_TOPIC = "ravi.outbound.message.delete";
 const MESSAGE_DELETE_TIMEOUT_MS = 15000;
 const MESSAGE_EDIT_TOPIC = "ravi.outbound.message.edit";
 const MESSAGE_EDIT_TIMEOUT_MS = 15000;
-const CONFIG_DB_META = { source: "config-db", freshness: "persisted", via: "router-config" } as const;
-const SESSION_DB_META = { source: "session-db", freshness: "persisted" } as const;
-const RUNTIME_SNAPSHOT_META = { source: "runtime-snapshot", freshness: "persisted" } as const;
-const CONTEXT_DB_META = { source: "context-db", freshness: "persisted" } as const;
-const ADAPTER_DB_META = { source: "adapter-db", freshness: "persisted" } as const;
-const SESSION_KEY_META = { source: "resolver", freshness: "derived-now", via: "session-key" } as const;
-const NEXT_COMMANDS_META = { source: "derived", freshness: "derived-now", via: "session-inspect" } as const;
+const CONFIG_DB_META = {
+  source: "config-db",
+  freshness: "persisted",
+  via: "router-config",
+} as const;
+const SESSION_DB_META = {
+  source: "session-db",
+  freshness: "persisted",
+} as const;
+const RUNTIME_SNAPSHOT_META = {
+  source: "runtime-snapshot",
+  freshness: "persisted",
+} as const;
+const CONTEXT_DB_META = {
+  source: "context-db",
+  freshness: "persisted",
+} as const;
+const ADAPTER_DB_META = {
+  source: "adapter-db",
+  freshness: "persisted",
+} as const;
+const SESSION_KEY_META = {
+  source: "resolver",
+  freshness: "derived-now",
+  via: "session-key",
+} as const;
+const NEXT_COMMANDS_META = {
+  source: "derived",
+  freshness: "derived-now",
+  via: "session-inspect",
+} as const;
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -549,7 +574,9 @@ function listSessionTags(session: SessionEntry): TagBinding[] {
   const seen = new Set<string>();
   const tags: TagBinding[] = [];
   for (const id of sessionTagLookupIds(session)) {
-    for (const binding of searchTagBindingsForSelector({ selector: { target: `session:${id}` } }).bindings) {
+    for (const binding of searchTagBindingsForSelector({
+      selector: { target: `session:${id}` },
+    }).bindings) {
       const key = `${binding.tagSlug}:${binding.assetType}:${binding.assetId}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -569,12 +596,22 @@ function sessionMatchesTag(session: SessionEntry, tagSlug: string | undefined): 
 
 function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {}): Record<string, unknown> {
   const runtimeId = session.providerSessionId ?? session.sdkSessionId ?? null;
+  const lifetimeInput = session.inputTokens ?? 0;
+  const lifetimeOutput = session.outputTokens ?? 0;
+  const lifetimeContext = session.contextTokens ?? 0;
+  const lifetimeTotal = session.totalTokens ?? lifetimeInput + lifetimeOutput;
   return {
     ...session,
     label: session.name ?? session.sessionKey,
     runtimeId,
-    tokenTotal:
-      session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) + (session.contextTokens ?? 0),
+    // Legacy alias. This is a lifetime accumulator, not the live context size.
+    tokenTotal: lifetimeTotal,
+    lifetimeTokens: {
+      input: lifetimeInput,
+      output: lifetimeOutput,
+      total: lifetimeTotal,
+      context: lifetimeContext,
+    },
     ephemeral: Boolean(session.ephemeral),
     expiresAt: session.expiresAt ?? null,
     tags: listSessionTags(session),
@@ -835,7 +872,9 @@ function buildSessionMutationAuditSnapshot(session: SessionEntry): SessionMutati
     ...(session.displayName ? { displayName: session.displayName } : {}),
     ...(session.runtimeProvider ? { runtimeProvider: session.runtimeProvider } : {}),
     ...(session.runtimeSessionDisplayId
-      ? { runtimeSessionDisplayIdHash: hashForAudit(session.runtimeSessionDisplayId) }
+      ? {
+          runtimeSessionDisplayIdHash: hashForAudit(session.runtimeSessionDisplayId),
+        }
       : {}),
     ...(session.providerSessionId ? { providerSessionIdHash: hashForAudit(session.providerSessionId) } : {}),
     ...(session.sdkSessionId ? { sdkSessionIdHash: hashForAudit(session.sdkSessionId) } : {}),
@@ -889,6 +928,20 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+function formatDurationMs(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
+  return `${(value / 60_000).toFixed(1)}m`;
+}
+
+function formatCostUsd(value: number | null | undefined): string {
+  const n = value ?? 0;
+  if (n <= 0) return "$0";
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
 }
 
 function parseDurationMs(str: string): number | null {
@@ -1670,10 +1723,18 @@ export function printSessionTraceHuman(
       .filter((turnId): turnId is string => Boolean(turnId)),
   );
   const items = [
-    ...trace.events.map((event) => ({ key: traceEventSortKey(event), event, turn: null as SessionTurnRecord | null })),
+    ...trace.events.map((event) => ({
+      key: traceEventSortKey(event),
+      event,
+      turn: null as SessionTurnRecord | null,
+    })),
     ...trace.turns
       .filter((turn) => !adapterTurnIds.has(turn.turnId))
-      .map((turn) => ({ key: traceTurnSortKey(turn), event: null as SessionEventRecord | null, turn })),
+      .map((turn) => ({
+        key: traceTurnSortKey(turn),
+        event: null as SessionEventRecord | null,
+        turn,
+      })),
   ].sort((a, b) => a.key.localeCompare(b.key));
 
   if (items.length === 0) {
@@ -1709,8 +1770,14 @@ export function buildSessionTraceJsonlRecords(
   explanation?: SessionTraceExplanation | null,
 ): unknown[] {
   const timeline = [
-    ...trace.events.map((event) => ({ key: traceEventSortKey(event), record: { recordType: "event", ...event } })),
-    ...trace.turns.map((turn) => ({ key: traceTurnSortKey(turn), record: { recordType: "turn", ...turn } })),
+    ...trace.events.map((event) => ({
+      key: traceEventSortKey(event),
+      record: { recordType: "event", ...event },
+    })),
+    ...trace.turns.map((turn) => ({
+      key: traceTurnSortKey(turn),
+      record: { recordType: "turn", ...turn },
+    })),
   ].sort((a, b) => a.key.localeCompare(b.key));
 
   const records: unknown[] = [
@@ -1729,7 +1796,10 @@ export function buildSessionTraceJsonlRecords(
     },
     ...(trace.systemPrompt ? [{ recordType: "system_prompt", ...trace.systemPrompt }] : []),
     ...timeline.map((item) => item.record),
-    ...Object.values(trace.blobsBySha256).map((blob) => ({ recordType: "blob", ...blob })),
+    ...Object.values(trace.blobsBySha256).map((blob) => ({
+      recordType: "blob",
+      ...blob,
+    })),
   ];
 
   if (explanation) {
@@ -1778,15 +1848,42 @@ function printSessionTraceExplanationHuman(explanation: SessionTraceExplanation)
 })
 export class SessionCommands {
   @Command({ name: "list", description: "List all sessions" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "list", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "list",
+    risk: "low",
+  })
   list(
-    @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
-    @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({ flags: "--live", description: "Include live runtime state snapshot" }) includeLive?: boolean,
-    @Option({ flags: "--tag <slug>", description: "Filter by canonical session tag slug" }) tagSlug?: string,
-    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
-    @Option({ flags: "--offset <n>", description: "Number of matching sessions to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--agent <id>", description: "Filter by agent ID" })
+    agentId?: string,
+    @Option({
+      flags: "--ephemeral",
+      description: "Show only ephemeral sessions",
+    })
+    ephemeralOnly?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+    @Option({
+      flags: "--live",
+      description: "Include live runtime state snapshot",
+    })
+    includeLive?: boolean,
+    @Option({
+      flags: "--tag <slug>",
+      description: "Filter by canonical session tag slug",
+    })
+    tagSlug?: string,
+    @Option({
+      flags: "--limit <n>",
+      description: "Page size (default: 50, max: 500)",
+    })
+    limit?: string,
+    @Option({
+      flags: "--offset <n>",
+      description: "Number of matching sessions to skip (default: 0)",
+    })
+    offset?: string,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -1861,7 +1958,7 @@ export class SessionCommands {
       }
     } else {
       console.log(
-        "  NAME                                  AGENT     TOKENS    ACTIVITY   TYPE       EXPIRES             TAGS             DISPLAY",
+        "  NAME                                  AGENT     LIFETIME  ACTIVITY   TYPE       EXPIRES             TAGS             DISPLAY",
       );
       console.log(
         "  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ───────────────  ──────────────────",
@@ -1894,10 +1991,16 @@ export class SessionCommands {
     description: "Show unified session inspection details",
     aliases: ["inspect"],
   })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "info", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "info",
+    risk: "low",
+  })
   info(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     let s = resolveSession(nameOrKey);
     if (!s) {
@@ -1919,9 +2022,13 @@ export class SessionCommands {
     const config = loadRouterConfig();
     const agentConfig = config.agents[s.agentId];
     const derivedSource = deriveSourceFromSessionKey(s.sessionKey);
-    const relatedContexts = dbListContexts({ sessionKey: s.sessionKey, includeInactive: true });
+    const relatedContexts = dbListContexts({
+      sessionKey: s.sessionKey,
+      includeInactive: true,
+    });
     const relatedAdapters = listSessionAdapters({ sessionKey: s.sessionKey });
     const suggestedCommands = buildSuggestedDebugCommands(s, relatedContexts, relatedAdapters);
+    const turnUsage = getSessionTurnUsageSummary(s.sessionKey);
 
     if (asJson) {
       const adapters = relatedAdapters.map((adapter) => {
@@ -1934,6 +2041,7 @@ export class SessionCommands {
       });
       const payload = {
         session: buildSessionJson(s),
+        turnUsage,
         agent: agentConfig ?? null,
         derivedSource: derivedSource ?? null,
         contexts: relatedContexts.map(buildRelatedContextJson),
@@ -1945,10 +2053,16 @@ export class SessionCommands {
     }
 
     console.log(`\nSession: ${s.name ?? s.sessionKey}`);
-    printInspectionField("Key", s.sessionKey, SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Key", s.sessionKey, SESSION_DB_META, {
+      labelWidth: 14,
+    });
     printInspectionField("Display", s.displayName ?? "(none)", SESSION_DB_META, { labelWidth: 14 });
-    printInspectionField("Agent", s.agentId, SESSION_DB_META, { labelWidth: 14 });
-    printInspectionField("Agent CWD", s.agentCwd, SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Agent", s.agentId, SESSION_DB_META, {
+      labelWidth: 14,
+    });
+    printInspectionField("Agent CWD", s.agentCwd, SESSION_DB_META, {
+      labelWidth: 14,
+    });
     printInspectionField("Configured", agentConfig?.provider ?? "claude", CONFIG_DB_META, { labelWidth: 14 });
     printInspectionField("Model", agentConfig?.model ?? "(default)", CONFIG_DB_META, { labelWidth: 14 });
     printInspectionField("Override", s.modelOverride ?? "(agent default)", SESSION_DB_META, { labelWidth: 14 });
@@ -1964,8 +2078,36 @@ export class SessionCommands {
       });
     }
     printInspectionField(
-      "Tokens",
+      "Lifetime toks",
       `input=${formatTokens(s.inputTokens ?? 0)} output=${formatTokens(s.outputTokens ?? 0)} total=${formatTokens(s.totalTokens ?? 0)} context=${formatTokens(s.contextTokens ?? 0)}`,
+      RUNTIME_SNAPSHOT_META,
+      { labelWidth: 14 },
+    );
+    if (turnUsage.lastTurn) {
+      printInspectionField(
+        "Last turn",
+        `context=${formatTokens(turnUsage.lastTurn.effectiveContextTokens)} input=${formatTokens(
+          turnUsage.lastTurn.inputTokens,
+        )} cache=${formatTokens(
+          turnUsage.lastTurn.cacheReadTokens + turnUsage.lastTurn.cacheCreationTokens,
+        )} output=${formatTokens(turnUsage.lastTurn.outputTokens)} duration=${formatDurationMs(
+          turnUsage.lastTurn.durationMs,
+        )}`,
+        RUNTIME_SNAPSHOT_META,
+        { labelWidth: 14 },
+      );
+    } else {
+      printInspectionField("Last turn", "(none)", RUNTIME_SNAPSHOT_META, {
+        labelWidth: 14,
+      });
+    }
+    printInspectionField(
+      "Recent 24h",
+      `turns=${turnUsage.recent.completeTurns} avgContext=${formatTokens(
+        turnUsage.recent.effectiveContextTokensAvg,
+      )} maxContext=${formatTokens(turnUsage.recent.effectiveContextTokensMax)} avgInput=${formatTokens(
+        turnUsage.recent.inputTokensAvg,
+      )} cost=${formatCostUsd(turnUsage.recent.costUsdTotal)}`,
       RUNTIME_SNAPSHOT_META,
       { labelWidth: 14 },
     );
@@ -1973,7 +2115,9 @@ export class SessionCommands {
     if (s.lastChannel || s.lastTo) {
       const routing = [s.lastChannel, s.lastTo].filter(Boolean).join(" -> ");
       const account = s.lastAccountId ? ` (account: ${s.lastAccountId})` : "";
-      printInspectionField("Channel", `${routing}${account}`, SESSION_DB_META, { labelWidth: 14 });
+      printInspectionField("Channel", `${routing}${account}`, SESSION_DB_META, {
+        labelWidth: 14,
+      });
     }
 
     if (derivedSource) {
@@ -2005,8 +2149,12 @@ export class SessionCommands {
       { labelWidth: 14 },
     );
     printInspectionField("Compactions", s.compactionCount ?? 0, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
-    printInspectionField("Created", formatDate(s.createdAt), SESSION_DB_META, { labelWidth: 14 });
-    printInspectionField("Updated", formatDate(s.updatedAt), SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Created", formatDate(s.createdAt), SESSION_DB_META, {
+      labelWidth: 14,
+    });
+    printInspectionField("Updated", formatDate(s.updatedAt), SESSION_DB_META, {
+      labelWidth: 14,
+    });
 
     console.log();
     console.log(formatInspectionSection(`Related contexts (${relatedContexts.length}):`, CONTEXT_DB_META));
@@ -2044,18 +2192,51 @@ export class SessionCommands {
     };
   }
 
-  @Command({ name: "goal", description: "Inspect or mutate persisted session goal state" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "goal", risk: "low" })
+  @Command({
+    name: "goal",
+    description: "Inspect or mutate persisted session goal state",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "goal",
+    risk: "low",
+  })
   goal(
-    @Arg("action", { description: "get|set|create|pause|resume|complete|clear|account" }) action: string,
+    @Arg("action", {
+      description: "get|set|create|pause|resume|complete|clear|account",
+    })
+    action: string,
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("objective", { description: "Goal objective for set/create", required: false }) objective?: string,
-    @Option({ flags: "--budget <tokens>", description: "Positive token budget for set/create" }) budgetStr?: string,
-    @Option({ flags: "--task <id>", description: "Optional task id link for set/create" }) taskId?: string,
-    @Option({ flags: "--project <id>", description: "Optional project id link for set/create" }) projectId?: string,
-    @Option({ flags: "--tokens <n>", description: "Token delta for account" }) tokenDeltaStr?: string,
-    @Option({ flags: "--seconds <n>", description: "Elapsed seconds delta for account" }) secondsStr?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("objective", {
+      description: "Goal objective for set/create",
+      required: false,
+    })
+    objective?: string,
+    @Option({
+      flags: "--budget <tokens>",
+      description: "Positive token budget for set/create",
+    })
+    budgetStr?: string,
+    @Option({
+      flags: "--task <id>",
+      description: "Optional task id link for set/create",
+    })
+    taskId?: string,
+    @Option({
+      flags: "--project <id>",
+      description: "Optional project id link for set/create",
+    })
+    projectId?: string,
+    @Option({ flags: "--tokens <n>", description: "Token delta for account" })
+    tokenDeltaStr?: string,
+    @Option({
+      flags: "--seconds <n>",
+      description: "Elapsed seconds delta for account",
+    })
+    secondsStr?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const normalizedAction = action.trim().toLowerCase();
     const session = this.resolveTarget(nameOrKey);
@@ -2165,11 +2346,20 @@ export class SessionCommands {
     return payload;
   }
 
-  @Command({ name: "visibility", description: "Show runtime session visibility state" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "visibility", risk: "low" })
+  @Command({
+    name: "visibility",
+    description: "Show runtime session visibility state",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "visibility",
+    risk: "low",
+  })
   visibility(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     let session = resolveSession(nameOrKey);
     if (!session) {
@@ -2195,7 +2385,9 @@ export class SessionCommands {
 
     console.log(`\nSession Visibility: ${session.name ?? session.sessionKey}`);
     printInspectionField("Session Key", payload.sessionKey, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
-    printInspectionField("Agent", payload.agentId, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Agent", payload.agentId, RUNTIME_SNAPSHOT_META, {
+      labelWidth: 14,
+    });
     printInspectionField("Provider", payload.provider ?? "-", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
     printInspectionField("Tokens Used", payload.tokens.used ?? "-", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
     printInspectionField("Compact Count", payload.compact.count, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
@@ -2212,11 +2404,17 @@ export class SessionCommands {
   }
 
   @Command({ name: "set-display", description: "Set session display label" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "set-display", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "set-display",
+    risk: "medium",
+  })
   setDisplay(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("displayName", { description: "Display label" }) displayName: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -2255,11 +2453,18 @@ export class SessionCommands {
   }
 
   @Command({ name: "rename", description: "Rename canonical session name" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "rename", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "rename",
+    risk: "medium",
+  })
   rename(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("newName", { description: "New canonical session name" }) newName: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("newName", { description: "New canonical session name" })
+    newName: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -2306,11 +2511,20 @@ export class SessionCommands {
   }
 
   @Command({ name: "set-model", description: "Set session model override" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "set-model", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "set-model",
+    risk: "medium",
+  })
   async setModel(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("model", { description: "Model name (sonnet, opus, haiku) or 'clear' to remove override" }) model: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("model", {
+      description: "Model name (sonnet, opus, haiku) or 'clear' to remove override",
+    })
+    model: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -2351,7 +2565,10 @@ export class SessionCommands {
       if (!asJson)
         console.log("Live daemon notified; active session will switch without daemon restart when supported.");
     } catch (err) {
-      notification = { delivered: false, error: err instanceof Error ? err.message : String(err) };
+      notification = {
+        delivered: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
       if (!asJson) console.log("Saved override. Live daemon notification failed; next cold session will use it.");
     }
 
@@ -2377,11 +2594,20 @@ export class SessionCommands {
   }
 
   @Command({ name: "set-thinking", description: "Set session thinking level" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "set-thinking", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "set-thinking",
+    risk: "medium",
+  })
   setThinking(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("level", { description: "Thinking level (off, normal, verbose) or 'clear'" }) level: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("level", {
+      description: "Thinking level (off, normal, verbose) or 'clear'",
+    })
+    level: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -2432,10 +2658,16 @@ export class SessionCommands {
   }
 
   @Command({ name: "reset", description: "Reset a session (fresh start)" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "reset", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "reset",
+    risk: "medium",
+  })
   async reset(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -2457,7 +2689,10 @@ export class SessionCommands {
     });
     const before = buildSessionMutationAuditSnapshot(s);
     const startedAt = Date.now();
-    await emitSessionMutationAudit("reset", "requested", { cliInvocation, before });
+    await emitSessionMutationAudit("reset", "requested", {
+      cliInvocation,
+      before,
+    });
 
     // Abort active SDK subprocess so it doesn't keep the old context
     try {
@@ -2508,10 +2743,16 @@ export class SessionCommands {
   }
 
   @Command({ name: "delete", description: "Delete a session permanently" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "delete", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "delete",
+    risk: "destructive",
+  })
   async delete(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -2533,7 +2774,10 @@ export class SessionCommands {
     });
     const before = buildSessionMutationAuditSnapshot(s);
     const startedAt = Date.now();
-    await emitSessionMutationAudit("delete", "requested", { cliInvocation, before });
+    await emitSessionMutationAudit("delete", "requested", {
+      cliInvocation,
+      before,
+    });
 
     // Abort SDK subprocess first
     try {
@@ -2580,21 +2824,41 @@ export class SessionCommands {
     }
   }
 
-  @Command({ name: "prune", description: "Prune sessions inactive for a duration (dry-run by default)" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "prune", risk: "destructive" })
+  @Command({
+    name: "prune",
+    description: "Prune sessions inactive for a duration (dry-run by default)",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "prune",
+    risk: "destructive",
+  })
   async prune(
-    @Option({ flags: "--inactive-for <duration>", description: "Only match sessions inactive for this duration" })
+    @Option({
+      flags: "--inactive-for <duration>",
+      description: "Only match sessions inactive for this duration",
+    })
     inactiveFor?: string,
-    @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
-    @Option({ flags: "--ephemeral", description: "Only match ephemeral sessions" }) ephemeralOnly?: boolean,
+    @Option({ flags: "--agent <id>", description: "Filter by agent ID" })
+    agentId?: string,
+    @Option({
+      flags: "--ephemeral",
+      description: "Only match ephemeral sessions",
+    })
+    ephemeralOnly?: boolean,
     @Option({
       flags: "--name-prefix <prefix>",
       description: "Only match sessions whose name or key starts with prefix",
     })
     namePrefix?: string,
-    @Option({ flags: "--execute", description: "Actually delete matching sessions; default is dry-run" })
+    @Option({
+      flags: "--execute",
+      description: "Actually delete matching sessions; default is dry-run",
+    })
     execute?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const inactiveDuration = normalizeOptionalFilter(inactiveFor);
     if (!inactiveDuration) {
@@ -2683,7 +2947,10 @@ export class SessionCommands {
 
     for (const session of candidates) {
       const before = buildSessionMutationAuditSnapshot(session);
-      await emitSessionMutationAudit("prune", "requested", { cliInvocation, before });
+      await emitSessionMutationAudit("prune", "requested", {
+        cliInvocation,
+        before,
+      });
 
       try {
         await nats.emit("ravi.session.abort", {
@@ -2743,12 +3010,22 @@ export class SessionCommands {
   // Ephemeral Commands
   // ===========================================================================
 
-  @Command({ name: "set-ttl", description: "Make a session ephemeral with a TTL" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "set-ttl", risk: "medium" })
+  @Command({
+    name: "set-ttl",
+    description: "Make a session ephemeral with a TTL",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "set-ttl",
+    risk: "medium",
+  })
   setTtl(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("duration", { description: "TTL duration (e.g. 5h, 30m, 1d)" }) duration: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("duration", { description: "TTL duration (e.g. 5h, 30m, 1d)" })
+    duration: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -2793,11 +3070,21 @@ export class SessionCommands {
   }
 
   @Command({ name: "extend", description: "Extend an ephemeral session's TTL" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "extend", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "extend",
+    risk: "low",
+  })
   extend(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("duration", { description: "Duration to add (default: 5h)", required: false }) duration?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("duration", {
+      description: "Duration to add (default: 5h)",
+      required: false,
+    })
+    duration?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -2847,10 +3134,16 @@ export class SessionCommands {
   }
 
   @Command({ name: "keep", description: "Make an ephemeral session permanent" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "keep", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "keep",
+    risk: "low",
+  })
   keep(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -2901,29 +3194,80 @@ export class SessionCommands {
     name: "send",
     description: "Send a prompt to a session (fire-and-forget). Use -w to wait for response, -i for interactive.",
   })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "send", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "send",
+    risk: "high",
+  })
   async send(
     @Arg("nameOrKey", { description: "Session name" }) nameOrKey: string,
-    @Arg("prompt", { description: "Prompt to send (omit for interactive mode)", required: false }) prompt?: string,
-    @Option({ flags: "-i, --interactive", description: "Interactive mode" }) interactive?: boolean,
-    @Option({ flags: "-w, --wait", description: "Wait for response (chat mode)" }) wait?: boolean,
-    @Option({ flags: "-a, --agent <id>", description: "Agent to use when creating a new session" }) agentId?: string,
-    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--thread <thread>", description: "Attach or auto-create a Ravi thread" })
+    @Arg("prompt", {
+      description: "Prompt to send (omit for interactive mode)",
+      required: false,
+    })
+    prompt?: string,
+    @Option({ flags: "-i, --interactive", description: "Interactive mode" })
+    interactive?: boolean,
+    @Option({
+      flags: "-w, --wait",
+      description: "Wait for response (chat mode)",
+    })
+    wait?: boolean,
+    @Option({
+      flags: "-a, --agent <id>",
+      description: "Agent to use when creating a new session",
+    })
+    agentId?: string,
+    @Option({
+      flags: "--channel <channel>",
+      description: "Override delivery channel",
+    })
+    channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" })
+    to?: string,
+    @Option({
+      flags: "--thread <thread>",
+      description: "Attach or auto-create a Ravi thread",
+    })
     threadRef?: string,
-    @Option({ flags: "--thread-title <title>", description: "Title required when --thread auto-creates" })
+    @Option({
+      flags: "--thread-title <title>",
+      description: "Title required when --thread auto-creates",
+    })
     threadTitle?: string,
-    @Option({ flags: "--thread-summary <summary>", description: "Initial summary when --thread auto-creates" })
+    @Option({
+      flags: "--thread-summary <summary>",
+      description: "Initial summary when --thread auto-creates",
+    })
     threadSummary?: string,
-    @Option({ flags: "--thread-scope <type:id>", description: "Scope for thread lookup/create" }) threadScope?: string,
-    @Option({ flags: "--thread-owner <type:id>", description: "Owner for thread auto-create" }) threadOwner?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    @Option({
+      flags: "--thread-scope <type:id>",
+      description: "Scope for thread lookup/create",
+    })
+    threadScope?: string,
+    @Option({
+      flags: "--thread-owner <type:id>",
+      description: "Owner for thread auto-create",
+    })
+    threadOwner?: string,
+    @Option({
+      flags: "--barrier <barrier>",
+      description: "Delivery barrier: followup|steer|p0|p1|p2|p3",
+    })
     barrier?: string,
-    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
-    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    @Option({
+      flags: "--steer",
+      description: "Steer the active turn after safe tool barriers",
+    })
+    steer?: boolean,
+    @Option({
+      flags: "--immediate",
+      description: "Deliver immediately instead of queueing as a follow-up",
+    })
     immediate?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     let createdSession = false;
     const session = this.resolveTarget(nameOrKey, agentId, {
@@ -3027,7 +3371,10 @@ export class SessionCommands {
             },
           );
           if (preparedThread) {
-            preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
+            preparedThread = {
+              ...preparedThread,
+              handoff: markThreadHandoffDelivered(preparedThread.handoff.id),
+            };
           }
         } catch (error) {
           if (preparedThread) markThreadHandoffFailed(preparedThread.handoff.id, errorToMessage(error));
@@ -3069,7 +3416,10 @@ export class SessionCommands {
           },
         );
         if (preparedThread) {
-          preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
+          preparedThread = {
+            ...preparedThread,
+            handoff: markThreadHandoffDelivered(preparedThread.handoff.id),
+          };
         }
       } catch (error) {
         if (preparedThread) markThreadHandoffFailed(preparedThread.handoff.id, errorToMessage(error));
@@ -3090,7 +3440,10 @@ export class SessionCommands {
           promptPayload,
         );
         if (preparedThread) {
-          preparedThread = { ...preparedThread, handoff: markThreadHandoffDelivered(preparedThread.handoff.id) };
+          preparedThread = {
+            ...preparedThread,
+            handoff: markThreadHandoffDelivered(preparedThread.handoff.id),
+          };
         }
       } catch (error) {
         if (preparedThread) markThreadHandoffFailed(preparedThread.handoff.id, errorToMessage(error));
@@ -3114,20 +3467,48 @@ export class SessionCommands {
     }
   }
 
-  @Command({ name: "ask", description: "Ask a question to another session (fire-and-forget)" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "ask", risk: "low" })
+  @Command({
+    name: "ask",
+    description: "Ask a question to another session (fire-and-forget)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "ask",
+    risk: "low",
+  })
   async ask(
     @Arg("target", { description: "Target session name" }) target: string,
     @Arg("message", { description: "Question to ask" }) message: string,
-    @Arg("sender", { required: false, description: "Who originally asked (for attribution)" }) sender?: string,
-    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    @Arg("sender", {
+      required: false,
+      description: "Who originally asked (for attribution)",
+    })
+    sender?: string,
+    @Option({
+      flags: "--channel <channel>",
+      description: "Override delivery channel",
+    })
+    channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" })
+    to?: string,
+    @Option({
+      flags: "--barrier <barrier>",
+      description: "Delivery barrier: followup|steer|p0|p1|p2|p3",
+    })
     barrier?: string,
-    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
-    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    @Option({
+      flags: "--steer",
+      description: "Steer the active turn after safe tool barriers",
+    })
+    steer?: boolean,
+    @Option({
+      flags: "--immediate",
+      description: "Deliver immediately instead of queueing as a follow-up",
+    })
     immediate?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -3158,20 +3539,49 @@ export class SessionCommands {
     console.log(`✓ [ask] sent to ${session.name ?? target}`);
   }
 
-  @Command({ name: "answer", description: "Answer a question from another session (fire-and-forget)" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "answer", risk: "low" })
+  @Command({
+    name: "answer",
+    description: "Answer a question from another session (fire-and-forget)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "answer",
+    risk: "low",
+  })
   async answer(
-    @Arg("target", { description: "Target session name (the one that asked)" }) target: string,
+    @Arg("target", { description: "Target session name (the one that asked)" })
+    target: string,
     @Arg("message", { description: "Answer to send back" }) message: string,
-    @Arg("sender", { required: false, description: "Who is answering (for attribution)" }) sender?: string,
-    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    @Arg("sender", {
+      required: false,
+      description: "Who is answering (for attribution)",
+    })
+    sender?: string,
+    @Option({
+      flags: "--channel <channel>",
+      description: "Override delivery channel",
+    })
+    channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" })
+    to?: string,
+    @Option({
+      flags: "--barrier <barrier>",
+      description: "Delivery barrier: followup|steer|p0|p1|p2|p3",
+    })
     barrier?: string,
-    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
-    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    @Option({
+      flags: "--steer",
+      description: "Steer the active turn after safe tool barriers",
+    })
+    steer?: boolean,
+    @Option({
+      flags: "--immediate",
+      description: "Deliver immediately instead of queueing as a follow-up",
+    })
     immediate?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -3202,19 +3612,43 @@ export class SessionCommands {
     console.log(`✓ [answer] sent to ${session.name ?? target}`);
   }
 
-  @Command({ name: "execute", description: "Send an execute command to another session (fire-and-forget)" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "execute", risk: "high" })
+  @Command({
+    name: "execute",
+    description: "Send an execute command to another session (fire-and-forget)",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "execute",
+    risk: "high",
+  })
   async execute(
     @Arg("target", { description: "Target session name" }) target: string,
     @Arg("message", { description: "Task to execute" }) message: string,
-    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    @Option({
+      flags: "--channel <channel>",
+      description: "Override delivery channel",
+    })
+    channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" })
+    to?: string,
+    @Option({
+      flags: "--barrier <barrier>",
+      description: "Delivery barrier: followup|steer|p0|p1|p2|p3",
+    })
     barrier?: string,
-    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
-    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    @Option({
+      flags: "--steer",
+      description: "Steer the active turn after safe tool barriers",
+    })
+    steer?: boolean,
+    @Option({
+      flags: "--immediate",
+      description: "Deliver immediately instead of queueing as a follow-up",
+    })
     immediate?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -3242,19 +3676,43 @@ export class SessionCommands {
     console.log(`✓ [execute] sent to ${session.name ?? target}`);
   }
 
-  @Command({ name: "inform", description: "Send an informational message to another session (fire-and-forget)" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "inform", risk: "low" })
+  @Command({
+    name: "inform",
+    description: "Send an informational message to another session (fire-and-forget)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "inform",
+    risk: "low",
+  })
   async inform(
     @Arg("target", { description: "Target session name" }) target: string,
     @Arg("message", { description: "Information to send" }) message: string,
-    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
-    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    @Option({
+      flags: "--channel <channel>",
+      description: "Override delivery channel",
+    })
+    channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" })
+    to?: string,
+    @Option({
+      flags: "--barrier <barrier>",
+      description: "Delivery barrier: followup|steer|p0|p1|p2|p3",
+    })
     barrier?: string,
-    @Option({ flags: "--steer", description: "Steer the active turn after safe tool barriers" }) steer?: boolean,
-    @Option({ flags: "--immediate", description: "Deliver immediately instead of queueing as a follow-up" })
+    @Option({
+      flags: "--steer",
+      description: "Steer the active turn after safe tool barriers",
+    })
+    steer?: boolean,
+    @Option({
+      flags: "--immediate",
+      description: "Deliver immediately instead of queueing as a follow-up",
+    })
     immediate?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -3282,17 +3740,29 @@ export class SessionCommands {
     console.log(`✓ [inform] sent to ${session.name ?? target}`);
   }
 
-  @Command({ name: "read", description: "Read message history of a session (normalized)" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "read", risk: "low" })
+  @Command({
+    name: "read",
+    description: "Read message history of a session (normalized)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "read",
+    risk: "low",
+  })
   read(
     @Arg("nameOrKey", {
       description: "Optional session name/key override (defaults to current session)",
       required: false,
     })
     nameOrKey?: string,
-    @Option({ flags: "-n, --count <count>", description: "Number of messages to show (default: 20)" })
+    @Option({
+      flags: "-n, --count <count>",
+      description: "Number of messages to show (default: 20)",
+    })
     countStr?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
     @Option({
       flags: "--workspace",
       description: "Return workspace projection: merged provider+chat history with flat timeline (history-only)",
@@ -3579,39 +4049,74 @@ export class SessionCommands {
     name: "trace",
     description: "Read the SQLite session trace timeline",
   })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "trace", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "trace",
+    risk: "low",
+  })
   trace(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--since <time>", description: "Start time: ISO, epoch ms, or duration like 2h" })
+    @Option({
+      flags: "--since <time>",
+      description: "Start time: ISO, epoch ms, or duration like 2h",
+    })
     sinceStr?: string,
-    @Option({ flags: "--until <time>", description: "End time: ISO, epoch ms, or duration like 30m" })
+    @Option({
+      flags: "--until <time>",
+      description: "End time: ISO, epoch ms, or duration like 30m",
+    })
     untilStr?: string,
     @Option({ flags: "--turn <id>", description: "Filter by turn id" })
     turnId?: string,
     @Option({ flags: "--run <id>", description: "Filter by run id" })
     runId?: string,
-    @Option({ flags: "--message <id>", description: "Filter by source message id" })
+    @Option({
+      flags: "--message <id>",
+      description: "Filter by source message id",
+    })
     messageId?: string,
-    @Option({ flags: "--correlation <id>", description: "Filter by payload correlation/request id" })
+    @Option({
+      flags: "--correlation <id>",
+      description: "Filter by payload correlation/request id",
+    })
     correlationId?: string,
     @Option({ flags: "--json", description: "Print structured JSONL" })
     asJson?: boolean,
-    @Option({ flags: "--raw", description: "Include raw payloads and request blobs" })
+    @Option({
+      flags: "--raw",
+      description: "Include raw payloads and request blobs",
+    })
     raw?: boolean,
-    @Option({ flags: "--show-system-prompt", description: "Include full system prompt blob when available" })
+    @Option({
+      flags: "--show-system-prompt",
+      description: "Include full system prompt blob when available",
+    })
     showSystemPrompt?: boolean,
-    @Option({ flags: "--show-user-prompt", description: "Include full user prompt blob when available" })
+    @Option({
+      flags: "--show-user-prompt",
+      description: "Include full user prompt blob when available",
+    })
     showUserPrompt?: boolean,
-    @Option({ flags: "--include-stream", description: "Include provider stream/delta events" })
+    @Option({
+      flags: "--include-stream",
+      description: "Include provider stream/delta events",
+    })
     includeStream?: boolean,
     @Option({
       flags: "--only <filter>",
       description: "Only show an event group or event type, e.g. adapter/tools/delivery",
     })
     only?: string,
-    @Option({ flags: "--limit <count>", description: "Show only the latest N timeline rows after filters" })
+    @Option({
+      flags: "--limit <count>",
+      description: "Show only the latest N timeline rows after filters",
+    })
     limitStr?: string,
-    @Option({ flags: "--explain", description: "Explain likely interruption, abort, timeout, or delivery issues" })
+    @Option({
+      flags: "--explain",
+      description: "Explain likely interruption, abort, timeout, or delivery issues",
+    })
     explain?: boolean,
   ) {
     const target = this.resolveTraceTarget(nameOrKey);
@@ -3654,13 +4159,24 @@ export class SessionCommands {
     name: "debug",
     description: "Tail live runtime events for a session (defaults to current session when available)",
   })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "debug", risk: "low", input: ["nameOrKey"] })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "debug",
+    risk: "low",
+    input: ["nameOrKey"],
+  })
   @CliOnly()
   async debug(
-    @Arg("nameOrKey", { description: "Session name or key", required: false }) nameOrKey?: string,
-    @Option({ flags: "-t, --timeout <seconds>", description: "Stop after N seconds (default: 60)" })
+    @Arg("nameOrKey", { description: "Session name or key", required: false })
+    nameOrKey?: string,
+    @Option({
+      flags: "-t, --timeout <seconds>",
+      description: "Stop after N seconds (default: 60)",
+    })
     timeoutStr?: string,
-    @Option({ flags: "--json", description: "Print raw events as JSONL" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw events as JSONL" })
+    asJson?: boolean,
   ) {
     const fallbackTarget = getContext()?.sessionName ?? getContext()?.sessionKey;
     const target = nameOrKey?.trim() || fallbackTarget?.trim();
@@ -3801,7 +4317,10 @@ export class SessionCommands {
   private resolveTarget(
     nameOrKey: string,
     createWithAgent?: string,
-    options: { silent?: boolean; onCreated?: (session: SessionEntry | null) => void } = {},
+    options: {
+      silent?: boolean;
+      onCreated?: (session: SessionEntry | null) => void;
+    } = {},
   ): SessionEntry | null {
     let session = resolveSession(nameOrKey);
 
@@ -3844,7 +4363,9 @@ export class SessionCommands {
       }
 
       const agentCwd = expandHome(agent.cwd);
-      getOrCreateSession(nameOrKey, createWithAgent, agentCwd, { name: nameOrKey });
+      getOrCreateSession(nameOrKey, createWithAgent, agentCwd, {
+        name: nameOrKey,
+      });
       if (!options.silent) {
         console.log(`Created session: ${nameOrKey} (agent: ${createWithAgent})`);
       }
@@ -3862,8 +4383,23 @@ export class SessionCommands {
     session: SessionEntry,
     channelOverride?: string,
     toOverride?: string,
-  ): { source?: { channel: string; accountId: string; chatId: string; threadId?: string }; context?: ChannelContext } {
-    let source: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
+  ): {
+    source?: {
+      channel: string;
+      accountId: string;
+      chatId: string;
+      threadId?: string;
+    };
+    context?: ChannelContext;
+  } {
+    let source:
+      | {
+          channel: string;
+          accountId: string;
+          chatId: string;
+          threadId?: string;
+        }
+      | undefined;
     let context: ChannelContext | undefined;
 
     if (channelOverride && toOverride) {
@@ -3973,7 +4509,11 @@ export class SessionCommands {
     toOverride?: string,
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
     deliveryBarrierSource: DeliveryBarrierSource = "default",
-    options: { silent?: boolean; onResponse?: (chunk: string) => void; promptPayload?: Record<string, unknown> } = {},
+    options: {
+      silent?: boolean;
+      onResponse?: (chunk: string) => void;
+      promptPayload?: Record<string, unknown>;
+    } = {},
   ): Promise<number> {
     let responseLength = 0;
     let settled = false;
@@ -4187,12 +4727,26 @@ export class SessionCommands {
     name: "attach",
     description: "Attach a chat as the session output target and input source",
   })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "attach", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "attach",
+    risk: "medium",
+  })
   attach(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
-    @Option({ flags: "--reason <text>", description: "Why the chat is being attached (audit)" }) reason?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--chat <id>",
+      description: "Canonical chat id (or platform/normalized id)",
+    })
+    chatRef?: string,
+    @Option({
+      flags: "--reason <text>",
+      description: "Why the chat is being attached (audit)",
+    })
+    reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const session = resolveSession(nameOrKey);
     if (!session) {
@@ -4225,7 +4779,12 @@ export class SessionCommands {
           outputAttached: result.outputAttached,
           subscription: result.subscription,
           session: { name: session.name, sessionKey: session.sessionKey },
-          chat: { id: chat.id, title: chat.title, channel: chat.channel, instanceId: chat.instanceId },
+          chat: {
+            id: chat.id,
+            title: chat.title,
+            channel: chat.channel,
+            instanceId: chat.instanceId,
+          },
           hints: {
             detach: detachCommand,
           },
@@ -4239,7 +4798,12 @@ export class SessionCommands {
     } catch (err) {
       if (err instanceof SessionAttachConflictError) {
         if (asJson) {
-          printJson({ error: err.code, message: err.message, currentOwner: err.currentSessionKey, chatId: err.chatId });
+          printJson({
+            error: err.code,
+            message: err.message,
+            currentOwner: err.currentSessionKey,
+            chatId: err.chatId,
+          });
           return;
         }
         fail(err.message);
@@ -4249,12 +4813,25 @@ export class SessionCommands {
     }
   }
 
-  @Command({ name: "detach", description: "Detach a chat/output target from a session" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "detach", risk: "medium" })
+  @Command({
+    name: "detach",
+    description: "Detach a chat/output target from a session",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "detach",
+    risk: "medium",
+  })
   detach(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--chat <id>",
+      description: "Canonical chat id (or platform/normalized id)",
+    })
+    chatRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const session = resolveSession(nameOrKey);
     if (!session) {
@@ -4292,12 +4869,25 @@ export class SessionCommands {
     }
   }
 
-  @Command({ name: "mute", description: "Keep a subscribed chat as listen-only for a session" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "mute", risk: "medium" })
+  @Command({
+    name: "mute",
+    description: "Keep a subscribed chat as listen-only for a session",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "mute",
+    risk: "medium",
+  })
   mute(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--chat <id>",
+      description: "Canonical chat id (or platform/normalized id)",
+    })
+    chatRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const session = resolveSession(nameOrKey);
     if (!session) {
@@ -4320,18 +4910,36 @@ export class SessionCommands {
       reason: "cli-mute",
     });
     if (asJson) {
-      printJson({ sessionKey: session.sessionKey, chatId: chat.id, speechMode: subscription.speechMode, subscription });
+      printJson({
+        sessionKey: session.sessionKey,
+        chatId: chat.id,
+        speechMode: subscription.speechMode,
+        subscription,
+      });
       return;
     }
     console.log(`Muted chat ${chat.id} for session ${session.name ?? session.sessionKey}; inbound remains subscribed`);
   }
 
-  @Command({ name: "unmute", description: "Allow a subscribed chat to receive session responses" })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "unmute", risk: "medium" })
+  @Command({
+    name: "unmute",
+    description: "Allow a subscribed chat to receive session responses",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "unmute",
+    risk: "medium",
+  })
   unmute(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--chat <id>", description: "Canonical chat id (or platform/normalized id)" }) chatRef?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--chat <id>",
+      description: "Canonical chat id (or platform/normalized id)",
+    })
+    chatRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const session = resolveSession(nameOrKey);
     if (!session) {
@@ -4354,7 +4962,12 @@ export class SessionCommands {
       reason: "cli-unmute",
     });
     if (asJson) {
-      printJson({ sessionKey: session.sessionKey, chatId: chat.id, speechMode: subscription.speechMode, subscription });
+      printJson({
+        sessionKey: session.sessionKey,
+        chatId: chat.id,
+        speechMode: subscription.speechMode,
+        subscription,
+      });
       return;
     }
     console.log(`Unmuted chat ${chat.id} for session ${session.name ?? session.sessionKey}`);
@@ -4364,15 +4977,25 @@ export class SessionCommands {
     name: "actions",
     description: "Show available chat actions and recent own messages for a session",
   })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "actions", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "actions",
+    risk: "low",
+  })
   actions(
     @Arg("nameOrKey", {
       description: "Optional session name/key override (defaults to current session)",
       required: false,
     })
     nameOrKey?: string,
-    @Option({ flags: "--limit <n>", description: "Recent own messages to include (default: 10)" }) limit?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--limit <n>",
+      description: "Recent own messages to include (default: 10)",
+    })
+    limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const target = nameOrKey?.trim() || resolveCurrentSessionRef();
     if (!target) {
@@ -4385,7 +5008,9 @@ export class SessionCommands {
     const session = this.resolveTarget(target);
     if (!session) return;
 
-    const payload = buildSessionActionsPayload(session, { limit: parseSessionActionsLimit(limit) });
+    const payload = buildSessionActionsPayload(session, {
+      limit: parseSessionActionsLimit(limit),
+    });
     if (asJson) {
       printJson(payload);
       return payload;
@@ -4402,7 +5027,10 @@ export class SessionCommands {
       console.log(`\nPrompt hint:\n${payload.promptHint}`);
     }
 
-    const recent = payload.recentOwnMessages as { items: Array<Record<string, unknown>>; total: number };
+    const recent = payload.recentOwnMessages as {
+      items: Array<Record<string, unknown>>;
+      total: number;
+    };
     console.log(`\nRecent own messages (${recent.items.length} returned of ${recent.total}):`);
     if (recent.items.length === 0) {
       console.log("  (none)");
@@ -4423,14 +5051,24 @@ export class SessionCommands {
     name: "delete-message",
     description: "Delete one of this session agent's own channel messages",
   })
-  @CommandAccess({ kind: "mutate", resource: "sessions", action: "delete-message", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "delete-message",
+    risk: "destructive",
+  })
   async deleteMessage(
     @Arg("sessionOrMessage", {
       description: "Session name/key, or message id when running inside a session",
     })
     sessionOrMessage: string,
-    @Arg("messageRef", { description: "Canonical or provider message id", required: false }) messageRef?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("messageRef", {
+      description: "Canonical or provider message id",
+      required: false,
+    })
+    messageRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const inferredSession = !messageRef?.trim();
     const target = messageRef?.trim() ? sessionOrMessage.trim() : resolveCurrentSessionRef();
@@ -4523,17 +5161,31 @@ export class SessionCommands {
     name: "edit-message",
     description: "Edit one of this session agent's own text channel messages",
   })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "edit-message", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "edit-message",
+    risk: "low",
+  })
   async editMessage(
     @Arg("sessionOrMessage", {
       description: "Session name/key, or message id when running inside a session",
     })
     sessionOrMessage: string,
-    @Arg("messageOrText", { description: "Message id, or new text when running inside a session", required: false })
+    @Arg("messageOrText", {
+      description: "Message id, or new text when running inside a session",
+      required: false,
+    })
     messageOrText?: string,
-    @Arg("textArg", { description: "New text for explicit session mode", required: false }) textArg?: string,
-    @Option({ flags: "--text <text>", description: "New text content" }) textOption?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("textArg", {
+      description: "New text for explicit session mode",
+      required: false,
+    })
+    textArg?: string,
+    @Option({ flags: "--text <text>", description: "New text content" })
+    textOption?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const explicitText = textOption !== undefined;
     const inferredSession = !textArg?.trim() && (!explicitText || !messageOrText?.trim());
@@ -4633,11 +5285,20 @@ export class SessionCommands {
     return payload;
   }
 
-  @Command({ name: "subscriptions", description: "List chats attached to a session" })
-  @CommandAccess({ kind: "read", resource: "sessions", action: "subscriptions", risk: "low" })
+  @Command({
+    name: "subscriptions",
+    description: "List chats attached to a session",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "subscriptions",
+    risk: "low",
+  })
   subscriptions(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const session = resolveSession(nameOrKey);
     if (!session) {
@@ -4650,10 +5311,21 @@ export class SessionCommands {
         const chat = dbGetChat(s.chatId);
         return {
           ...s,
-          chat: chat ? { id: chat.id, title: chat.title, channel: chat.channel, instanceId: chat.instanceId } : null,
+          chat: chat
+            ? {
+                id: chat.id,
+                title: chat.title,
+                channel: chat.channel,
+                instanceId: chat.instanceId,
+              }
+            : null,
         };
       });
-      printJson({ sessionKey: session.sessionKey, sessionName: session.name, subscriptions: enriched });
+      printJson({
+        sessionKey: session.sessionKey,
+        sessionName: session.name,
+        subscriptions: enriched,
+      });
       return;
     }
     if (subs.length === 0) {
@@ -4761,7 +5433,10 @@ function extractClaudeTranscriptMessages(raw: string): NormalizedTranscriptMessa
           time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
         });
       } else if (entry.type === "assistant" && entry.message?.content) {
-        const parts = entry.message.content as Array<{ type: string; text?: string }>;
+        const parts = entry.message.content as Array<{
+          type: string;
+          text?: string;
+        }>;
         const text = parts
           .filter((p) => p.type === "text")
           .map((p) => p.text ?? "")

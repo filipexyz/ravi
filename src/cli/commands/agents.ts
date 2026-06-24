@@ -37,7 +37,14 @@ import {
   setAgentSpecMode,
 } from "../../router/config.js";
 import { DmScopeSchema } from "../../router/router-db.js";
-import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
+import {
+  deleteSession,
+  getSessionTurnUsageSummary,
+  getSessionsByAgent,
+  getMainSession,
+  resolveSession,
+  type SessionTurnUsageSummary,
+} from "../../router/sessions.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
@@ -57,7 +64,7 @@ import {
   getAgentRuntimePermissionsConfigFromDefaults,
   normalizeAgentRuntimePermissionProfile,
   type AgentRuntimePermissionsConfig,
-} from "../../permissions/agent-runtime-permissions-provider.js";
+} from "../../permissions/agent-default-capabilities-provider.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -99,6 +106,13 @@ interface DebugSessionSummary {
   outputTokens?: number;
   totalTokens?: number;
   contextTokens?: number;
+  lifetimeTokens?: {
+    input: number;
+    output: number;
+    total: number;
+    context: number;
+  };
+  turnUsage?: SessionTurnUsageSummary;
   compactionCount?: number;
   tags: TagBinding[];
   createdAt: number;
@@ -127,6 +141,29 @@ function formatTagSlugs(tags: TagBinding[]): string {
   return tags.length > 0 ? tags.map((tag) => tag.tagSlug).join(", ") : "-";
 }
 
+function sessionLifetimeTokens(session: { inputTokens?: number | null; outputTokens?: number | null }): number {
+  return (session.inputTokens ?? 0) + (session.outputTokens ?? 0);
+}
+
+function formatTokenCount(value: number | null | undefined): string {
+  const n = Math.round(value ?? 0);
+  return n.toLocaleString("en-US");
+}
+
+function formatDurationMs(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
+  return `${(value / 60_000).toFixed(1)}m`;
+}
+
+function formatCostUsd(value: number | null | undefined): string {
+  const n = value ?? 0;
+  if (n <= 0) return "$0";
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
+
 function listAgentTags(agentId: string): TagBinding[] {
   return searchTagBindingsForSelector({ selector: { agent: agentId } }).bindings;
 }
@@ -136,7 +173,9 @@ function listSessionTagsForSummary(session: { sessionKey: string; name?: string 
   const seen = new Set<string>();
   const tags: TagBinding[] = [];
   for (const id of ids) {
-    for (const binding of searchTagBindingsForSelector({ selector: { target: `session:${id}` } }).bindings) {
+    for (const binding of searchTagBindingsForSelector({
+      selector: { target: `session:${id}` },
+    }).bindings) {
       const key = `${binding.tagSlug}:${binding.assetType}:${binding.assetId}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -211,13 +250,19 @@ function buildDebugSessionSummary(session: {
   createdAt: number;
   updatedAt: number;
 }): DebugSessionSummary {
+  const turnUsage = getSessionTurnUsageSummary(session.sessionKey);
+  const input = session.inputTokens ?? 0;
+  const output = session.outputTokens ?? 0;
+  const context = session.contextTokens ?? 0;
   return {
     sessionKey: session.sessionKey,
     ...(session.name ? { name: session.name } : {}),
     agentId: session.agentId,
     agentCwd: session.agentCwd,
     ...((session.providerSessionId ?? session.sdkSessionId)
-      ? { runtimeId: session.providerSessionId ?? session.sdkSessionId ?? undefined }
+      ? {
+          runtimeId: session.providerSessionId ?? session.sdkSessionId ?? undefined,
+        }
       : {}),
     ...(session.runtimeProvider ? { runtimeProvider: session.runtimeProvider } : {}),
     ...(session.lastChannel ? { channel: session.lastChannel } : {}),
@@ -230,6 +275,13 @@ function buildDebugSessionSummary(session: {
     ...(session.contextTokens !== undefined && session.contextTokens !== null
       ? { contextTokens: session.contextTokens }
       : {}),
+    lifetimeTokens: {
+      input,
+      output,
+      total: input + output,
+      context,
+    },
+    turnUsage,
     ...(session.compactionCount !== undefined && session.compactionCount !== null
       ? { compactionCount: session.compactionCount }
       : {}),
@@ -239,7 +291,10 @@ function buildDebugSessionSummary(session: {
   };
 }
 
-function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, unknown>[]; turns: DebugTurn[] } {
+function parseTranscriptEntries(raw: string): {
+  parsedEntries: Record<string, unknown>[];
+  turns: DebugTurn[];
+} {
   const lines = raw.trim().split("\n").filter(Boolean);
   const parsedEntries: Record<string, unknown>[] = [];
   const turns: DebugTurn[] = [];
@@ -260,7 +315,12 @@ function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, un
           text: content.slice(0, 300),
         });
       } else if (entry.type === "assistant" && entry.message?.content) {
-        const parts = entry.message.content as Array<{ type: string; text?: string; name?: string; input?: unknown }>;
+        const parts = entry.message.content as Array<{
+          type: string;
+          text?: string;
+          name?: string;
+          input?: unknown;
+        }>;
         const textParts = parts
           .filter((p: { type: string }) => p.type === "text")
           .map((p: { text?: string }) => p.text ?? "");
@@ -289,12 +349,30 @@ function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, un
 })
 export class AgentsCommands {
   @Command({ name: "list", description: "List all agents" })
-  @CommandAccess({ kind: "read", resource: "agents", action: "list", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "list",
+    risk: "low",
+  })
   list(
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({ flags: "--tag <slug>", description: "Filter by canonical tag slug" }) tagSlug?: string,
-    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
-    @Option({ flags: "--offset <n>", description: "Number of matching agents to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+    @Option({
+      flags: "--tag <slug>",
+      description: "Filter by canonical tag slug",
+    })
+    tagSlug?: string,
+    @Option({
+      flags: "--limit <n>",
+      description: "Page size (default: 50, max: 500)",
+    })
+    limit?: string,
+    @Option({
+      flags: "--offset <n>",
+      description: "Number of matching agents to skip (default: 0)",
+    })
+    offset?: string,
   ) {
     const ctx = getScopeContext();
     const agents = filterItemsByCanonicalTag(
@@ -356,10 +434,16 @@ export class AgentsCommands {
   }
 
   @Command({ name: "show", description: "Show agent details" })
-  @CommandAccess({ kind: "read", resource: "agents", action: "show", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "show",
+    risk: "low",
+  })
   show(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const ctx = getScopeContext();
     if (!canViewAgent(ctx, id)) {
@@ -415,18 +499,29 @@ export class AgentsCommands {
   }
 
   @Command({ name: "create", description: "Create a new agent" })
-  @CommandAccess({ kind: "mutate", resource: "agents", action: "create", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "create",
+    risk: "medium",
+  })
   create(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("cwd", { description: "Working directory" }) cwd: string,
-    @Option({ flags: "--provider <provider>", description: "Runtime provider id" }) provider?: string,
-    @Option({ flags: "--model <model>", description: "Runtime model selector" }) model?: string,
+    @Option({
+      flags: "--provider <provider>",
+      description: "Runtime provider id",
+    })
+    provider?: string,
+    @Option({ flags: "--model <model>", description: "Runtime model selector" })
+    model?: string,
     @Option({
       flags: "--allow-runtime-mismatch",
       description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
     })
     allowRuntimeMismatch?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const normalizedProvider = provider?.trim() || undefined;
     const normalizedModel = model?.trim() || undefined;
@@ -502,16 +597,26 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "sync-instructions", description: "Migrate agent workspaces to AGENTS.md as the canonical file" })
-  @CommandAccess({ kind: "mutate", resource: "agents", action: "sync-instructions", risk: "high" })
+  @Command({
+    name: "sync-instructions",
+    description: "Migrate agent workspaces to AGENTS.md as the canonical file",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "sync-instructions",
+    risk: "high",
+  })
   syncInstructions(
-    @Option({ flags: "--agent <id>", description: "Sync only one agent" }) agentId?: string,
+    @Option({ flags: "--agent <id>", description: "Sync only one agent" })
+    agentId?: string,
     @Option({
       flags: "--materialize-missing",
       description: "Create a default AGENTS.md stub when both instruction files are missing",
     })
     materializeMissing?: boolean,
-    @Option({ flags: "--json", description: "Print machine-readable output" }) json?: boolean,
+    @Option({ flags: "--json", description: "Print machine-readable output" })
+    json?: boolean,
   ) {
     const ctx = getScopeContext();
     const visibleAgents = filterVisibleAgents(ctx, getAllAgents());
@@ -527,7 +632,9 @@ export class AgentsCommands {
       ensureAgentInstructionFiles(
         cwd,
         materializeMissing && before.state === "missing-both"
-          ? { createAgentsStub: `# ${agent.id}\n\nInstruções do agente aqui.\n` }
+          ? {
+              createAgentsStub: `# ${agent.id}\n\nInstruções do agente aqui.\n`,
+            }
           : {},
       );
       const after = inspectAgentInstructionFiles(cwd);
@@ -583,10 +690,16 @@ export class AgentsCommands {
   }
 
   @Command({ name: "delete", description: "Delete an agent" })
-  @CommandAccess({ kind: "mutate", resource: "agents", action: "delete", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "delete",
+    risk: "destructive",
+  })
   delete(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     try {
       const before = getAgent(id);
@@ -613,12 +726,18 @@ export class AgentsCommands {
   }
 
   @Command({ name: "set", description: "Set agent property" })
-  @CommandAccess({ kind: "mutate", resource: "agents", action: "set", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "set",
+    risk: "medium",
+  })
   async set(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("key", { description: "Property key" }) key: string,
     @Arg("value", { description: "Property value" }) value: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -776,18 +895,34 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "permissions", description: "Set or show an agent runtime permission profile" })
-  @CommandAccess({ kind: "mutate", resource: "agents", action: "permissions", risk: "high" })
+  @Command({
+    name: "permissions",
+    description: "Set or show an agent runtime permission profile",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "permissions",
+    risk: "high",
+  })
   permissions(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("profile", { required: false, description: "Profile: bootstrap, full-access, none" }) profile?: string,
+    @Arg("profile", {
+      required: false,
+      description: "Profile: bootstrap, full-access, none",
+    })
+    profile?: string,
     @Option({
       flags: "--capabilities <list>",
       description: "Comma-separated explicit capabilities (permission:objectType:objectId)",
     })
     capabilitiesInput?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({ flags: "--clear-capabilities", description: "Remove explicit capabilities while preserving profile" })
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+    @Option({
+      flags: "--clear-capabilities",
+      description: "Remove explicit capabilities while preserving profile",
+    })
     clearCapabilities?: boolean,
   ) {
     const agent = getAgent(id);
@@ -879,11 +1014,21 @@ export class AgentsCommands {
   }
 
   @Command({ name: "debounce", description: "Set message debounce time" })
-  @CommandAccess({ kind: "read", resource: "agents", action: "debounce", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "debounce",
+    risk: "low",
+  })
   debounce(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("ms", { required: false, description: "Debounce time in ms (0 to disable)" }) ms?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("ms", {
+      required: false,
+      description: "Debounce time in ms (0 to disable)",
+    })
+    ms?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -948,12 +1093,22 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "spec-mode", description: "Enable or disable spec mode for an agent" })
-  @CommandAccess({ kind: "read", resource: "agents", action: "spec-mode", risk: "low" })
+  @Command({
+    name: "spec-mode",
+    description: "Enable or disable spec mode for an agent",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "spec-mode",
+    risk: "low",
+  })
   specMode(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("enabled", { required: false, description: "true/false" }) enabled?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("enabled", { required: false, description: "true/false" })
+    enabled?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -1003,10 +1158,16 @@ export class AgentsCommands {
   }
 
   @Command({ name: "session", description: "Show agent session status" })
-  @CommandAccess({ kind: "read", resource: "agents", action: "session", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "session",
+    risk: "low",
+  })
   session(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -1034,12 +1195,39 @@ export class AgentsCommands {
     }
 
     for (const session of sessions) {
-      const tokens = (session.inputTokens || 0) + (session.outputTokens || 0);
+      const lifetimeTokens = sessionLifetimeTokens(session);
+      const turnUsage = getSessionTurnUsageSummary(session.sessionKey);
+      const lastTurn = turnUsage.lastTurn;
+      const recent = turnUsage.recent;
+      const contextTokens = session.contextTokens || lastTurn?.effectiveContextTokens || 0;
       const updated = new Date(session.updatedAt).toLocaleString();
 
       console.log(`  ${session.name ?? session.sessionKey}`);
       console.log(`    Runtime: ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
-      console.log(`    Tokens: ${tokens}`);
+      console.log(
+        `    Lifetime tokens: ${formatTokenCount(lifetimeTokens)} (input=${formatTokenCount(
+          session.inputTokens ?? 0,
+        )} output=${formatTokenCount(session.outputTokens ?? 0)})`,
+      );
+      console.log(`    Effective context: ${formatTokenCount(contextTokens)}`);
+      if (lastTurn) {
+        console.log(
+          `    Last turn: context=${formatTokenCount(lastTurn.effectiveContextTokens)} input=${formatTokenCount(
+            lastTurn.inputTokens,
+          )} cache=${formatTokenCount(lastTurn.cacheReadTokens + lastTurn.cacheCreationTokens)} output=${formatTokenCount(
+            lastTurn.outputTokens,
+          )} duration=${formatDurationMs(lastTurn.durationMs)}`,
+        );
+      } else {
+        console.log("    Last turn: (none)");
+      }
+      console.log(
+        `    Recent 24h: turns=${recent.completeTurns} avgContext=${formatTokenCount(
+          recent.effectiveContextTokensAvg,
+        )} maxContext=${formatTokenCount(recent.effectiveContextTokensMax)} avgInput=${formatTokenCount(
+          recent.inputTokensAvg,
+        )} cost=${formatCostUsd(recent.costUsdTotal)}`,
+      );
       console.log(`    Updated: ${updated}`);
       console.log();
     }
@@ -1047,12 +1235,21 @@ export class AgentsCommands {
   }
 
   @Command({ name: "reset", description: "Reset agent session" })
-  @CommandAccess({ kind: "mutate", resource: "agents", action: "reset", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "reset",
+    risk: "medium",
+  })
   async reset(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("nameOrKey", { required: false, description: "Session name/key, 'all' to reset all, or omit for main" })
+    @Arg("nameOrKey", {
+      required: false,
+      description: "Session name/key, 'all' to reset all, or omit for main",
+    })
     nameOrKey?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -1094,7 +1291,11 @@ export class AgentsCommands {
         return emptyPayload;
       }
       let count = 0;
-      const resetSessions: Array<{ sessionKey: string; name?: string; deleted: boolean }> = [];
+      const resetSessions: Array<{
+        sessionKey: string;
+        name?: string;
+        deleted: boolean;
+      }> = [];
       for (const s of sessions) {
         const deleted = await resetOne(s.sessionKey, s.name);
         if (deleted) count++;
@@ -1179,14 +1380,30 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "debug", description: "Show last turns of an agent session (what it received, what it responded)" })
-  @CommandAccess({ kind: "read", resource: "agents", action: "debug", risk: "low" })
+  @Command({
+    name: "debug",
+    description: "Show last turns of an agent session (what it received, what it responded)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "debug",
+    risk: "low",
+  })
   debug(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("nameOrKey", { required: false, description: "Session name/key (omit for main)" }) nameOrKey?: string,
-    @Option({ flags: "-n, --turns <count>", description: "Number of recent turns to show (default: 5)" })
+    @Arg("nameOrKey", {
+      required: false,
+      description: "Session name/key (omit for main)",
+    })
+    nameOrKey?: string,
+    @Option({
+      flags: "-n, --turns <count>",
+      description: "Number of recent turns to show (default: 5)",
+    })
     turnsStr?: string,
-    @Option({ flags: "--json", description: "Output raw debug data as JSON" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Output raw debug data as JSON" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -1232,7 +1449,7 @@ export class AgentsCommands {
       console.log(`  Runtime ID:  ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
       console.log(`  Channel:     ${session.lastChannel ?? "-"} → ${session.lastTo ?? "-"}`);
       console.log(
-        `  Tokens:      in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
+        `  Lifetime:    in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
       );
       console.log(`  Compactions:  ${session.compactionCount}`);
       console.log(`  Created:     ${new Date(session.createdAt).toLocaleString()}`);

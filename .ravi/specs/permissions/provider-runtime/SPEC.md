@@ -40,13 +40,13 @@ provider-owned subject configuration.
 
 Required authorization providers:
 
-- `local-operator`: explicit local bootstrap path.
+- `operator-control`: explicit local operator control path.
 - `context-capabilities`: checks already materialized runtime snapshots.
 
 Required capability materializers:
 
 - `runtime-bootstrap`
-- `agent-runtime-permissions`
+- `agent-default-capabilities`
 - `agent-identity-permissions`
 - `contact-policy-permissions`
 
@@ -58,25 +58,47 @@ Required capability materializers:
 - `ravi permissions status/check/materialize` MUST remain inspection-only.
 - `ravi permissions allow/resolve` MUST be provider-owned orchestration only:
   it may create/update permission-scoped tags, attach contact policy tags, and
-  ensure agent runtime ceilings, but MUST NOT write to a native permission
+  ensure agent default capability ceilings, but MUST NOT write to a native permission
   graph.
 - Agent authority changes MUST use provider-owned config, currently
   `agent.defaults.runtimePermissions` via `ravi permissions allow/resolve` or
   direct agent-only `ravi agents permissions`.
+- The `agent.defaults.runtimePermissions` key is a compatibility storage name;
+  the active materializer id is `agent-default-capabilities`.
 - External shared-surface turns MUST use `agent-identity-permissions` as the
   production authority projection. Contact and chat principals remain
   provenance/invocation context unless a future overlay provider explicitly
   gates them.
 - Denial resolution for `authorityMode=agent-identity` MUST apply recurring
   capability to `agent:<executorAgentId>`, not to `contact:<actorId>`.
-- Direct local execution MAY be allowed only through the explicit
-  `local-operator` provider.
-- A no-subject/no-context request without explicit local-operator intent MUST
+- Direct local management MAY be allowed only through the explicit
+  `operator-control` provider.
+- `operator-control` MUST support local requests only when the caller
+  deliberately sets `localOperator=true`; missing subject/context is never
+  enough to infer operator authority.
+- `operator-control` MUST NOT materialize runtime capabilities for agents,
+  contacts, chats, automations, sessions, or apps.
+- A no-subject/no-context request without explicit operator-control intent MUST
   deny.
 - Resource discovery is authorization. List/show/search surfaces MUST filter by
   provider-runtime visibility capabilities.
 - Provider errors, timeouts, malformed output, and required provider denials
   MUST fail closed.
+
+## Operator Control Boundary
+
+`operator-control` is a provider-runtime control-plane branch for operator
+actions such as inspecting decisions, resolving denials, and applying
+provider-owned profiles. It is not part of the agent identity execution branch.
+
+The local implementation is intentionally narrow. A future remote management
+plane MAY add an authenticated operator identity provider, but MUST keep the
+same separation:
+
+- operator authorization decides whether the human/operator can manage policy;
+- agent identity authorization decides whether a runtime action may execute;
+- short-lived runtime grants remain bounded to the target context or profile
+  selected by the operator.
 
 ## Agent Visibility Migration
 

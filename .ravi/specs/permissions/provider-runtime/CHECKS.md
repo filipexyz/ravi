@@ -12,9 +12,12 @@
 ## Runtime Checks
 
 - No-subject/no-context without `localOperator=true` denies.
-- Explicit local operator allows through the `local-operator` provider.
+- Explicit local operator allows through the `operator-control` provider.
+- `operator-control` appears before `context-capabilities` in the default
+  authorization provider chain.
+- `operator-control` has no capability materializer.
 - Context snapshots authorize only through `context-capabilities`.
-- Agent runtime config materializes through `agent-runtime-permissions`.
+- Agent runtime config materializes through `agent-default-capabilities`.
 - Agent identity materializes through `agent-identity-permissions`.
 - Contact permission tags materialize through `contact-policy-permissions`.
 - External resolved contact turns use `authorityMode=agent-identity` and do

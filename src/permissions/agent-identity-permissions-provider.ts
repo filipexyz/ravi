@@ -1,5 +1,5 @@
 import type { ContextCapability } from "../router/router-db.js";
-import { materializeAgentRuntimePermissionCapabilities } from "./agent-runtime-permissions-provider.js";
+import { materializeAgentDefaultCapabilities } from "./agent-default-capabilities-provider.js";
 import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
 import type {
   PermissionProvider,
@@ -53,9 +53,6 @@ export const agentIdentityPermissionsProvider: PermissionProvider = {
       })),
     );
   },
-  materializeDelegationOverrides() {
-    return [];
-  },
 };
 
 export function buildAgentIdentitySubjectId(agentId: string, compartment: AgentIdentityCompartment): string {
@@ -83,7 +80,7 @@ export function parseAgentIdentitySubjectId(
 function materializeExecutorAgentCapabilities(agentId: string): ContextCapability[] {
   return dedupeCapabilities([
     ...(runtimeBootstrapProvider.materializeCapabilities?.({ type: "agent", id: agentId }) ?? []),
-    ...materializeAgentRuntimePermissionCapabilities(agentId),
+    ...materializeAgentDefaultCapabilities(agentId),
   ]);
 }
 

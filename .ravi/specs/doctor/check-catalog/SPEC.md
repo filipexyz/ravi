@@ -101,8 +101,8 @@ solely from a name heuristic.
 
 Retired permission storage drift belongs to migration tooling, not the default
 doctor permissions domain. The default doctor MUST validate the active
-Permission Provider Runtime chain, boundary invariants, explicit local-operator
-semantics, and runtime bootstrap scope.
+Permission Provider Runtime chain, boundary invariants, explicit
+operator-control semantics, and runtime bootstrap scope.
 
 ## Costs
 

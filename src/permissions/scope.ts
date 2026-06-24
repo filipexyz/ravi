@@ -285,7 +285,7 @@ export function getScopeContext(): ScopeContext {
 /**
  * Check if scope enforcement is active.
  * Returns false (no enforcement) when:
- * - Explicit local-operator authorization is available
+ * - Explicit operator-control authorization is available
  * - Agent is superadmin (has admin relation)
  */
 export function isScopeEnforced(ctx: ScopeContext): boolean {
@@ -314,7 +314,7 @@ function scopeCan(ctx: ScopeContext, permission: string, objectType: string, obj
  * Check if the current context can access a target session.
  *
  * Access is allowed when:
- * 1. No agent context (CLI direct) → explicit local-operator access
+ * 1. No agent context (CLI direct) → explicit operator-control access
  * 2. Target is the agent's own session
  * 3. Agent has 'access' relation on session:<target> (including wildcards)
  */
@@ -344,7 +344,7 @@ export function filterAccessibleSessions(ctx: ScopeContext, sessions: SessionEnt
  * Check if the current context can modify a session (reset/delete/rename).
  *
  * Allowed when:
- * 1. No agent context → explicit local-operator modify
+ * 1. No agent context → explicit operator-control modify
  * 2. Target is own session
  * 3. Agent has 'modify' relation on session:<target>
  */
@@ -401,7 +401,7 @@ export function canAccessContact(
  * Check if the current context can view a specific agent.
  *
  * Allowed when:
- * 1. No agent context (CLI direct) → explicit local-operator access
+ * 1. No agent context (CLI direct) → explicit operator-control access
  * 2. Agent is viewing itself
  * 3. Agent has 'view' relation on agent:<targetId>
  */

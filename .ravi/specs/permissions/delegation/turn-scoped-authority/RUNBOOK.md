@@ -42,7 +42,9 @@ normative: true
 
 1. Confirm whether the context is internal admin, automation, or user-initiated.
 2. If user-initiated, check whether `canWithCapabilityContext` used live `isAgentSuperadmin(agentId)` as a bypass.
-3. Check whether the context kind is a long-lived `agent-runtime` root reused across actors.
+3. Check whether the context kind is a historical `agent-runtime` root. If yes,
+   treat it as a production-readiness failure and clean it through the explicit
+   context cleanup path after reviewing blast radius.
 4. Check whether the cached context key omitted `contact_id` or actor authority version.
 5. Check whether an observer rule grant was accidentally applied to the source session.
 6. Check whether a role expansion used union instead of intersection.

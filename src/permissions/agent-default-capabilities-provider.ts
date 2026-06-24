@@ -14,8 +14,8 @@ export interface AgentRuntimePermissionsConfig {
   capabilities?: Array<string | Partial<ContextCapability>>;
 }
 
-export const agentRuntimePermissionsProvider: PermissionProvider = {
-  id: "agent-runtime-permissions",
+export const agentDefaultCapabilitiesProvider: PermissionProvider = {
+  id: "agent-default-capabilities",
   version: "agent-defaults/v1",
   required: true,
   supports() {
@@ -26,21 +26,18 @@ export const agentRuntimePermissionsProvider: PermissionProvider = {
   },
   materializeCapabilities(subject, options) {
     if (subject.type === "agent") {
-      return materializeAgentRuntimePermissionCapabilities(subject.id, {
-        source: `agent-runtime-permissions:agent:${subject.id}`,
+      return materializeAgentDefaultCapabilities(subject.id, {
+        source: `agent-default-capabilities:agent:${subject.id}`,
       });
     }
 
     const executorAgentId = options?.executorAgentId?.trim();
     if (subject.type === "automation" && executorAgentId) {
-      return materializeAgentRuntimePermissionCapabilities(executorAgentId, {
-        source: `agent-runtime-permissions:automation:${subject.id}:agent:${executorAgentId}`,
+      return materializeAgentDefaultCapabilities(executorAgentId, {
+        source: `agent-default-capabilities:automation:${subject.id}:agent:${executorAgentId}`,
       });
     }
 
-    return [];
-  },
-  materializeDelegationOverrides() {
     return [];
   },
 };
@@ -80,19 +77,21 @@ export function getAgentRuntimePermissionsConfigFromDefaults(
   return normalizeAgentRuntimePermissionsConfig(defaults[AGENT_RUNTIME_PERMISSIONS_DEFAULTS_KEY]);
 }
 
-export function materializeAgentRuntimePermissionCapabilities(
+export function materializeAgentDefaultCapabilities(
   agentId: string,
   options: { source?: string } = {},
 ): ContextCapability[] {
   const config = readAgentRuntimePermissionsConfig(agentId);
   if (!config) return [];
 
-  const source = options.source ?? `agent-runtime-permissions:agent:${agentId}`;
+  const source = options.source ?? `agent-default-capabilities:agent:${agentId}`;
   return dedupeCapabilities([
     ...profileCapabilities(config.profile, source),
     ...explicitCapabilities(config.capabilities, source),
   ]);
 }
+
+export const materializeAgentRuntimePermissionCapabilities = materializeAgentDefaultCapabilities;
 
 export function ensureAgentRuntimeCapability(
   agentId: string,
@@ -256,9 +255,9 @@ function notApplicableDecision(request: PermissionProviderRequest): PermissionPr
   return {
     decision: "not_applicable",
     allowed: false,
-    providerId: agentRuntimePermissionsProvider.id,
-    providerVersion: agentRuntimePermissionsProvider.version,
-    reasonCode: "agent_runtime_permissions_materializer_only",
+    providerId: agentDefaultCapabilitiesProvider.id,
+    providerVersion: agentDefaultCapabilitiesProvider.version,
+    reasonCode: "agent_default_capabilities_materializer_only",
     permission: request.permission,
     objectType: request.objectType,
     objectId: request.objectId,

@@ -2,24 +2,43 @@
 
 ## Decision
 
-`agent-runtime` context keys are session-scoped. A session receives one live context per `(agentId, sessionKey)` and reuses that context across turns until it is revoked or expires.
+Active provider dispatch issues invocation-scoped `turn-runtime` credentials
+with `authorityMode=agent-identity`. The executor agent acts through a
+compartment-scoped agent identity, and each turn receives its own auditable
+snapshot.
 
-## Why Not Turn-Scoped
+## Why Agent Identity
 
-Turn-scoped issuance creates many active credentials for the same durable session. With the default seven-day TTL, every turn leaves an active `agent-runtime` record behind. Agents with broad provider-owned grants also snapshot broad capabilities into each record, which makes operational inspection noisy and can confuse admin bootstrap checks if those checks treat all live admin-capable contexts the same.
+The previous delegated/intersection model made common operation depend on the
+agent, contact, chat, and surface all carrying matching capabilities. That was
+secure but too difficult to operate: a valid agent workflow could fail because
+the chat had zero capabilities, and agents had to tell operators to grant long
+lists of raw command ids.
 
-The runtime already has a stable `dbSessionKey`. That key is the correct lifecycle boundary for provider env, tool context, audit attribution, and child CLI issuance.
+Agent identity moves durable tool authority to the executor agent profile and
+projects it into a compartment such as workspace, chat, DM, or automation.
+Contacts and chats remain provenance, interaction policy, and compartment
+selectors unless a future overlay provider explicitly constrains them.
 
 ## Capability Drift
 
-Capabilities intentionally remain a snapshot from context issuance time. If Permission Provider Runtime changes mid-session, the active context does not drift. This matches child context semantics and avoids silent privilege changes while a provider session is alive.
+Capabilities are snapshotted at turn issuance for audit. A grant added after a
+denial must be visible on the next turn, and a revoke must stop authorizing by
+the next authority check. Long-lived root contexts are not the source of truth.
 
-To force a new snapshot, revoke or reset the session context. The next dispatch creates a fresh `agent-runtime` context.
+To force a new snapshot, start a new turn or reset/revoke the session runtime
+contexts. The next dispatch creates a fresh agent-identity `turn-runtime`
+context.
 
 ## Metadata Drift
 
-Runtime metadata can change turn to turn: model override, effort, thinking, provider, source, and approval source. Reusing the context while refreshing metadata keeps the key stable for tools and audit while preserving the latest operational state for inspection.
+Runtime metadata can change turn to turn: model override, effort, thinking,
+provider, source, approval source, actor resolution, and compartment. The
+turn-scoped context records the metadata that was true when that invocation was
+created.
 
 ## Lifecycle
 
-Session reset and runtime abort are the explicit lifecycle boundaries for forcing a new session snapshot. Cleanup of old turn-scoped records is an operator action, not a daemon side effect.
+Session reset and runtime abort are explicit lifecycle boundaries for revoking
+live runtime contexts. Cleanup of historical `agent-runtime` records is an
+operator action, not a daemon side effect.

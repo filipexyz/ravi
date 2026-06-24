@@ -70,7 +70,7 @@ channels.inbound_contact_unresolved
   `permissions.provider_runtime_default_chain`.
 - Provider runtime boundary drift emits
   `permissions.provider_runtime_boundaries`.
-- Hidden local-operator authorization drift emits
+- Hidden operator-control authorization drift emits
   `permissions.local_operator_explicit`.
 - Runtime bootstrap actor/surface/admin drift emits
   `permissions.runtime_bootstrap_scope`.
