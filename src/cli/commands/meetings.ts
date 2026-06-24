@@ -29,6 +29,7 @@ import { getSessionByName } from "../../router/sessions.js";
 import { buildRuntimeSystemPrompt } from "../../runtime/runtime-system-prompt.js";
 import type { ChannelContext } from "../../runtime/message-types.js";
 import { getRaviStateDir } from "../../utils/paths.js";
+import { getRecentHistory, type Message } from "../../db.js";
 
 const RAVI_REALTIME_INSTRUCTIONS_ENV = "RAVI_REALTIME_INSTRUCTIONS";
 
@@ -244,6 +245,7 @@ function writeRealtimeToolManifestForCurrentContext(
 async function buildRealtimeInstructionsForRegisteredAgent(input: {
   agentId?: string;
   meetingContext?: string;
+  includeSessionContext?: boolean;
   callerInstructions?: string;
 }): Promise<{ text: string; charCount: number; agentId: string; sessionName?: string }> {
   const context = requireRuntimeContext();
@@ -258,6 +260,7 @@ async function buildRealtimeInstructionsForRegisteredAgent(input: {
   }
 
   const sessionName = context.sessionName ?? context.sessionKey;
+  const recentSessionContext = input.includeSessionContext ? buildRecentSessionContextSection(context) : undefined;
   const prompt = await buildRuntimeSystemPrompt({
     agent,
     cwd: getAgentCwd(agent),
@@ -278,6 +281,14 @@ async function buildRealtimeInstructionsForRegisteredAgent(input: {
           "Se o usuário pedir para sair, encerrar participação ou desligar, fale qualquer confirmação necessária e depois use a tool de sair da reunião.",
         ].join("\n"),
       },
+      ...(recentSessionContext
+        ? [
+            {
+              title: "Current Ravi Session Context",
+              content: recentSessionContext,
+            },
+          ]
+        : []),
       ...(input.meetingContext?.trim()
         ? [
             {
@@ -303,6 +314,58 @@ async function buildRealtimeInstructionsForRegisteredAgent(input: {
     agentId,
     ...(sessionName ? { sessionName } : {}),
   };
+}
+
+function buildRecentSessionContextSection(context: ContextRecord): string | undefined {
+  const sessionName = context.sessionName?.trim() || context.sessionKey?.trim();
+  if (!sessionName) return undefined;
+  const messages = getRecentHistory(sessionName, 36)
+    .map(formatRecentSessionMessage)
+    .filter((message): message is string => Boolean(message));
+  if (messages.length === 0) return undefined;
+
+  const header = [
+    "Contexto recente da sessão Ravi que originou esta entrada na reunião.",
+    "Use isso como histórico operacional do trabalho atual. Não leia este bloco em voz e não mencione mensagens internas.",
+    "",
+  ].join("\n");
+  return truncateText(`${header}${truncateJoinedMessages(messages, 14_000)}`, 16_000);
+}
+
+function formatRecentSessionMessage(message: Message): string | undefined {
+  const content = sanitizeRecentSessionMessage(message.content);
+  if (!content) return undefined;
+  return `- ${message.created_at} ${message.role}: ${truncateText(content, 1_200)}`;
+}
+
+function sanitizeRecentSessionMessage(content: string): string {
+  const lines = content
+    .split(/\r?\n/)
+    .filter((line) => !line.startsWith("[session surfaces]"))
+    .filter((line) => !line.includes("source_chat is speak-enabled"))
+    .filter((line) => !line.startsWith("<turn_aborted>"))
+    .filter((line) => !line.startsWith("</turn_aborted>"));
+  return lines
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function truncateJoinedMessages(messages: string[], maxChars: number): string {
+  const selected: string[] = [];
+  let total = 0;
+  for (const message of [...messages].reverse()) {
+    const nextTotal = total + message.length + 2;
+    if (nextTotal > maxChars && selected.length > 0) break;
+    selected.push(message);
+    total = nextTotal;
+  }
+  return selected.reverse().join("\n\n");
+}
+
+function truncateText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(0, maxChars - 16)).trimEnd()}\n[truncated]`;
 }
 
 function resolveMeetingChannelContext(context: ContextRecord): ChannelContext | undefined {
@@ -413,6 +476,7 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   live?: boolean;
   liveAgentId?: string;
   liveContext?: string;
+  includeSessionContext?: boolean;
   toolsManifestPath?: string;
   skipFinalize?: boolean;
   artifactId: string;
@@ -430,6 +494,7 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   pushOption(args, "--realtime-instructions", input.realtimeInstructions);
   pushOption(args, "--agent", input.liveAgentId);
   pushOption(args, "--context", input.liveContext);
+  pushFlag(args, "--include-session-context", input.includeSessionContext);
   pushOption(args, "--tools-manifest", input.toolsManifestPath);
   pushFlag(args, "--realtime-transcribe", input.realtimeTranscribe);
   pushFlag(args, "--realtime-agent", input.realtimeAgent);
@@ -576,6 +641,11 @@ export class MeetingsCommands {
     liveAgentId?: string,
     @Option({ flags: "--context <text>", description: "Freeform context injected into the live meeting agent prompt" })
     liveContext?: string,
+    @Option({
+      flags: "--include-session-context",
+      description: "Inject recent Ravi session history into the live meeting prompt",
+    })
+    includeSessionContext?: boolean,
     @Option({ flags: "--live", description: "Enable Realtime live agent mode with Ravi-authorized CLI tools" })
     live?: boolean,
     @Option({ flags: "--tools-manifest <path>", description: "Internal Realtime tools manifest path" })
@@ -591,7 +661,7 @@ export class MeetingsCommands {
     @Option({ flags: "--dry-run", description: "Validate and print provider invocation without joining" })
     dryRun?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({ flags: "--tools <names>", description: "Comma-separated Ravi tool names for live mode, or all" })
+    @Option({ flags: "--tools <names>", description: "Comma-separated Ravi tool names allowlist for live mode" })
     liveTools?: string,
   ) {
     const selectedProvider = provider?.trim() || "google-meet";
@@ -613,6 +683,7 @@ export class MeetingsCommands {
       ? await buildRealtimeInstructionsForRegisteredAgent({
           agentId: liveAgentId,
           meetingContext: liveContext,
+          includeSessionContext,
           callerInstructions: realtimeInstructions,
         })
       : undefined;
@@ -673,6 +744,7 @@ export class MeetingsCommands {
       liveAgentId: liveInstructions?.agentId ?? liveAgentId?.trim() ?? null,
       liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
       liveContext: liveContext?.trim() || null,
+      includeSessionContext: Boolean(includeSessionContext),
       liveTools: explicitLiveTools || null,
       realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
       realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
@@ -701,6 +773,7 @@ export class MeetingsCommands {
         liveAgentId: liveInstructions?.agentId ?? liveAgentId?.trim() ?? null,
         liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
         liveContext: liveContext?.trim() || null,
+        includeSessionContext: Boolean(includeSessionContext),
         liveTools: explicitLiveTools || null,
         realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
         realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
@@ -763,15 +836,16 @@ export class MeetingsCommands {
         speakBack: effectiveSpeakBack,
         realtimeVoice,
         realtimeLanguage,
-        realtimeInstructions: liveMode ? undefined : effectiveRealtimeInstructions,
+        realtimeInstructions: realtimeInstructionsEnv ? undefined : effectiveRealtimeInstructions,
         live: liveMode,
         liveAgentId: liveInstructions?.agentId ?? liveAgentId,
         liveContext,
+        includeSessionContext,
         toolsManifestPath: realtimeToolsManifest?.path,
         skipFinalize,
         artifactId: artifact.id,
       });
-      const pid = spawnDetachedCli(workerArgs, liveMode ? undefined : realtimeInstructionsEnv);
+      const pid = spawnDetachedCli(workerArgs, realtimeInstructionsEnv);
       appendArtifactEvent(artifact.id, {
         eventType: "worker_started",
         status: "pending",
