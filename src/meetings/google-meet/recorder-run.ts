@@ -228,7 +228,8 @@ async function addPostCallAudioTranscription(
   session: MeetingSession,
   options: { language: string },
 ): Promise<MeetingSession> {
-  if ((session.transcriptSegments ?? []).length > 0) return session;
+  const existingSegments = session.transcriptSegments ?? [];
+  if (!shouldAddPostCallAudioTranscription(existingSegments)) return session;
 
   const audioRef = selectPostCallAudioRef(session.mediaRefs ?? []);
   if (!audioRef?.path) {
@@ -254,8 +255,8 @@ async function addPostCallAudioTranscription(
       mimeType,
       language: options.language,
     });
-    const segments = transcriptionResultToMeetingSegments(result, audioRef, session);
-    if (segments.length === 0) {
+    const audioSegments = transcriptionResultToMeetingSegments(result, audioRef, session);
+    if (audioSegments.length === 0) {
       return appendSessionDiagnostic(session, {
         level: "warning",
         code: "transcription.post_call_empty",
@@ -272,7 +273,7 @@ async function addPostCallAudioTranscription(
       {
         ...session,
         participants: ensureMeetingAudioParticipant(session.participants),
-        transcriptSegments: segments,
+        transcriptSegments: sortTranscriptSegments([...audioSegments, ...existingSegments]),
         rawProvenance: {
           ...(isRecord(session.rawProvenance) ? session.rawProvenance : {}),
           postCallTranscription: {
@@ -288,7 +289,7 @@ async function addPostCallAudioTranscription(
       {
         level: "info",
         code: "transcription.post_call_audio",
-        message: `Generated ${segments.length} post-call audio transcription segment(s) from ${audioRef.path}.`,
+        message: `Generated ${audioSegments.length} post-call audio transcription segment(s) from ${audioRef.path}.`,
         rawProvenance: {
           mediaPath: audioRef.path,
           provider: result.provider ?? null,
@@ -318,8 +319,8 @@ export function importGoogleMeetRecorderRun(input: GoogleMeetRecorderImportInput
   const realtimeEventsPath = resolveRealtimeEventsPath(runDir, metadata);
   const transcriptSegments = realtimeEventsPath ? extractTranscriptSegments(realtimeEventsPath, metadata.botName) : [];
   const mediaRefs = mergeMediaRefs([
-    ...mediaRefsFromMetadata(metadata),
     ...mediaRefsFromManifest(manifest),
+    ...mediaRefsFromMetadata(metadata),
     ...(realtimeEventsPath ? [logMediaRef(realtimeEventsPath, "Realtime transcription events")] : []),
   ]);
   const participants = buildParticipants(metadata, transcriptSegments);
@@ -367,9 +368,41 @@ export function importGoogleMeetRecorderRun(input: GoogleMeetRecorderImportInput
 }
 
 function selectPostCallAudioRef(mediaRefs: MeetingMediaRef[]): MeetingMediaRef | undefined {
-  return mediaRefs
-    .filter((ref) => ref.kind === "audio" && typeof ref.path === "string" && existsSync(ref.path))
-    .sort((left, right) => (right.sizeBytes ?? 0) - (left.sizeBytes ?? 0))[0];
+  const candidates = mediaRefs.filter(
+    (ref) =>
+      ref.kind === "audio" && typeof ref.path === "string" && existsSync(ref.path) && !isRealtimeOutputAudioRef(ref),
+  );
+  const preferredWebRtcTap = candidates.filter(isWebRtcTapAudioRef);
+  return (preferredWebRtcTap.length > 0 ? preferredWebRtcTap : candidates).sort(
+    (left, right) => (right.sizeBytes ?? 0) - (left.sizeBytes ?? 0),
+  )[0];
+}
+
+function shouldAddPostCallAudioTranscription(segments: MeetingTranscriptSegment[]): boolean {
+  if (segments.length === 0) return true;
+  return !segments.some((segment) => isMeetingAudioTranscriptSegment(segment));
+}
+
+function isMeetingAudioTranscriptSegment(segment: MeetingTranscriptSegment): boolean {
+  if (segment.source === "audio_transcription") return true;
+  if (segment.source === "captions" || segment.source === "imported_transcript" || segment.source === "provider")
+    return true;
+  return segment.speakerId === "meeting-audio";
+}
+
+function isRealtimeOutputAudioRef(ref: MeetingMediaRef): boolean {
+  return getRecordValue(ref.rawProvenance, "kind") === "realtime-audio";
+}
+
+function isWebRtcTapAudioRef(ref: MeetingMediaRef): boolean {
+  const provenanceSource = stringValue(getRecordValue(ref.rawProvenance, "source"));
+  const provenanceKind = stringValue(getRecordValue(ref.rawProvenance, "kind"));
+  return (
+    provenanceKind === "webrtc-track" ||
+    provenanceSource === "webrtc-tap" ||
+    ref.source === "webrtc-tap manifest" ||
+    Boolean(ref.path?.includes("/webrtc-tap/"))
+  );
 }
 
 function resolveAudioMimeType(mediaRef: MeetingMediaRef): string | undefined {
@@ -412,21 +445,49 @@ function transcriptionResultToMeetingSegments(
 
   return transcriptSegments
     .filter((segment) => segment.text.trim())
-    .map((segment, index) => ({
-      id: `audio-${index}`,
-      speakerId: "meeting-audio",
-      speakerName: "Audio da reunião",
-      startOffsetMs: Math.round(segment.startSec * 1000),
-      ...(segment.endSec !== undefined ? { endOffsetMs: Math.round(segment.endSec * 1000) } : {}),
-      capturedAt: session.endedAt,
-      text: segment.text.trim(),
-      source: "audio_transcription",
-      rawProvenance: {
-        ...source,
-        chunkIndex: segment.index,
-        chunkDuration: segment.duration ?? null,
-      },
-    }));
+    .map((segment, index) => {
+      const startAt = absoluteIsoFromOffset(mediaRef.startedAt, segment.startSec);
+      const endAt =
+        segment.endSec !== undefined ? absoluteIsoFromOffset(mediaRef.startedAt, segment.endSec) : undefined;
+      return {
+        id: `audio-${index}`,
+        speakerId: "meeting-audio",
+        speakerName: "Audio da reunião",
+        ...(startAt ? { startAt } : {}),
+        ...(endAt ? { endAt } : {}),
+        startOffsetMs: Math.round(segment.startSec * 1000),
+        ...(segment.endSec !== undefined ? { endOffsetMs: Math.round(segment.endSec * 1000) } : {}),
+        capturedAt: session.endedAt,
+        text: segment.text.trim(),
+        source: "audio_transcription",
+        rawProvenance: {
+          ...source,
+          chunkIndex: segment.index,
+          chunkDuration: segment.duration ?? null,
+        },
+      };
+    });
+}
+
+function absoluteIsoFromOffset(startedAt: string | undefined, offsetSec: number): string | undefined {
+  if (!startedAt) return undefined;
+  const startedMs = Date.parse(startedAt);
+  if (!Number.isFinite(startedMs)) return undefined;
+  return new Date(startedMs + Math.round(offsetSec * 1000)).toISOString();
+}
+
+function sortTranscriptSegments(segments: MeetingTranscriptSegment[]): MeetingTranscriptSegment[] {
+  return [...segments].sort((left, right) => transcriptSortKey(left) - transcriptSortKey(right));
+}
+
+function transcriptSortKey(segment: MeetingTranscriptSegment): number {
+  const absolute = segment.startAt ?? segment.capturedAt;
+  if (absolute) {
+    const parsed = Date.parse(absolute);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  if (segment.startOffsetMs !== undefined) return segment.startOffsetMs;
+  return Number.MAX_SAFE_INTEGER;
 }
 
 function ensureMeetingAudioParticipant(participants: MeetingParticipant[] | undefined): MeetingParticipant[] {
@@ -628,7 +689,7 @@ function mediaRefsFromManifest(manifest: RecorderTrackManifest | null): MeetingM
       startedAt: track.startedAt,
       endedAt: track.stoppedAt,
       source: "webrtc-tap manifest",
-      rawProvenance: { mid: track.mid, trackId: track.trackId },
+      rawProvenance: { source: "webrtc-tap", mid: track.mid, trackId: track.trackId },
     }));
 }
 
