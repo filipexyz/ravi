@@ -1921,6 +1921,22 @@ function getDb(): Database {
     log.info("Added matrix_account column to agents table");
   }
 
+  // Migration: Phase 1 CRM business-unit pointer on instances. Unenforced TEXT
+  // pointer — NO foreign key, not even in Phase 3. The router owns ravi.db while
+  // crm_business_units lives in chat.db (src/contacts.ts), and SQLite foreign
+  // keys cannot cross database files. An inline REFERENCES to a table absent
+  // from ravi.db is worse than useless: under foreign_keys=ON it makes SQLite
+  // reject every prepared INSERT/UPDATE on instances ("no such table:
+  // crm_business_units" at prepare time), which would crash the router. The
+  // pointer is resolved/validated at the app layer by the Phase 2 resolver,
+  // which already performs the cross-DB lookup; unmapped instances stay NULL
+  // and resolve to the default business unit.
+  const instanceColumns = db.prepare("PRAGMA table_info(instances)").all() as Array<{ name: string }>;
+  if (!instanceColumns.some((c) => c.name === "crm_business_unit_id")) {
+    db.exec("ALTER TABLE instances ADD COLUMN crm_business_unit_id TEXT");
+    log.info("Added crm_business_unit_id column to instances table");
+  }
+
   // Migration: add heartbeat columns to agents if not exists
   if (!agentColumns.some((c) => c.name === "heartbeat_enabled")) {
     db.exec(`
