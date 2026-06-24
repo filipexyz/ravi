@@ -241,7 +241,9 @@ describe("Google Meet recorder adapter", () => {
         source: "audio_transcription",
       },
     ]);
-    expect(result.registeredArtifact.markdown).toContain("### +00:00:00 to +00:00:30 - Audio da reunião");
+    expect(result.registeredArtifact.markdown).toContain(
+      "- [+00:00:00 to +00:00:30] Audio da reunião: Primeiro trecho",
+    );
     expect(result.registeredArtifact.markdown).toContain("Primeiro trecho");
     expect(result.registeredArtifact.markdown).toContain("Segundo trecho");
     expect(result.diagnostics).toEqual(

@@ -34,10 +34,12 @@ describe("meeting raw artifact", () => {
     expect(markdown).toContain("- Origin session: agent:ravi-meet-v0:whatsapp:group:120363428094858911");
     expect(markdown).toContain("Luís Filipe (kind=human, id=human-luis)");
     expect(markdown).toContain("Ravi (kind=agent, id=agent-ravi-meet-v0)");
-    expect(markdown).toContain("### 2026-06-22T01:41:11.000Z to 2026-06-22T01:41:18.000Z - Luís Filipe");
-    expect(markdown).toContain("Source: captions");
+    expect(markdown).toContain(
+      "- [2026-06-22T01:41:11.000Z to 2026-06-22T01:41:18.000Z] Luís Filipe: A gente precisa de um artifact no final.",
+    );
+    expect(markdown).not.toContain("Source: captions");
     expect(markdown).toContain("A gente precisa de um artifact no final.");
-    expect(markdown).toContain("### +00:01:12 to +00:01:18 - Ravi");
+    expect(markdown).toContain("- [+00:01:12 to +00:01:18] Ravi: P0 = gerar um artifact meet.md ao final da sessão.");
     expect(markdown).toContain("P0 = gerar um artifact meet.md ao final da sessão.");
     expect(markdown).toContain("recording: /recordings/ravi-v0.mp4");
     expect(markdown).toContain("audio: /recordings/ravi-v0.wav");

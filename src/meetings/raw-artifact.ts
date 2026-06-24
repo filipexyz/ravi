@@ -69,16 +69,8 @@ export function renderMeetingRawArtifactMarkdown(input: RenderMeetingRawArtifact
   if (segments.length === 0) {
     lines.push("- unavailable");
   } else {
-    segments.forEach((segment, index) => {
-      lines.push(
-        `### ${formatSegmentTimestamp(segment)} - ${segment.speakerName ?? segment.speakerId ?? "Unknown speaker"}`,
-      );
-      lines.push("");
-      lines.push(formatSegmentMetadata(segment, index));
-      lines.push("");
-      lines.push(normalizeMarkdownText(segment.text));
-      lines.push("");
-    });
+    for (const segment of segments) lines.push(formatTranscriptSegment(segment));
+    lines.push("");
   }
 
   lines.push("## Media References", "");
@@ -319,15 +311,16 @@ function formatSegmentTimestamp(segment: MeetingTranscriptSegment): string {
   return "timestamp unavailable";
 }
 
-function formatSegmentMetadata(segment: MeetingTranscriptSegment, index: number): string {
-  const fields = [
-    `Segment: ${segment.id ?? index + 1}`,
-    `Source: ${segment.source}`,
-    segment.speakerId ? `Speaker ID: ${segment.speakerId}` : null,
-    segment.confidence !== undefined ? `Confidence: ${segment.confidence}` : null,
-    segment.capturedAt ? `Captured at: ${segment.capturedAt}` : null,
-  ].filter(Boolean);
-  return fields.join(" | ");
+function formatTranscriptSegment(segment: MeetingTranscriptSegment): string {
+  const timestamp = formatSegmentTimestamp(segment);
+  const speaker = segment.speakerName ?? segment.speakerId ?? "Unknown speaker";
+  const text = normalizeMarkdownText(segment.text);
+  if (!text.includes("\n")) return `- [${timestamp}] ${speaker}: ${text}`;
+  const indented = text
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
+  return `- [${timestamp}] ${speaker}:\n${indented}`;
 }
 
 function formatMediaRef(mediaRef: MeetingMediaRef): string {
