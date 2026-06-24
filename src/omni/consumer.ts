@@ -88,7 +88,7 @@ import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./gro
 import { extractInboundMentionTargets, normalizeInboundMentionText } from "./mentions.js";
 import { TypingPresenceHeartbeat, type TypingPresenceEvent } from "./typing-presence.js";
 import { runTagRulesForContact } from "../tag-rules/index.js";
-import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
+import { fetchCachedOmniMedia, fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { firstProviderTimestampMs, timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
@@ -97,6 +97,18 @@ import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
 const log = logger.child("omni:consumer");
 const sc = StringCodec();
 const execFileAsync = promisify(execFile);
+
+export function supportsOmniReadReceipts(channelType: string): boolean {
+  switch (channelType.toLowerCase()) {
+    case "whatsapp":
+    case "whatsapp-baileys":
+    case "twilio-whatsapp":
+    case "gupshup":
+      return true;
+    default:
+      return false;
+  }
+}
 
 function emitPendingReviewEvent(input: {
   channel: string;
@@ -1455,7 +1467,7 @@ export class OmniConsumer {
 
     // Process media (download from omni disk → agent attachments, transcribe audio)
     const agentCwd = expandHome(agent.cwd);
-    const mediaResult = await this.processMedia(payload, agentCwd);
+    const mediaResult = await this.processMedia(payload, agentCwd, instanceId);
 
     saveInboundMessageMeta({
       transcription: mediaResult?.transcript,
@@ -1660,8 +1672,10 @@ export class OmniConsumer {
 
     await this.activateTarget(sessionName, source, instanceId, chatJid);
 
-    // Mark message as read (blue check)
-    if (payload.externalId) {
+    // Read receipts are real only on WhatsApp-compatible channels. Slack,
+    // Discord, and Telegram either do not expose a bot read receipt or only
+    // expose a token-local cursor, so avoid calling Omni's receipt endpoint.
+    if (payload.externalId && supportsOmniReadReceipts(channelType)) {
       this.sender.markRead(instanceId, chatJid, [payload.externalId]).catch(() => {});
     }
 
@@ -2339,6 +2353,7 @@ export class OmniConsumer {
   private async processMedia(
     payload: MessageReceivedPayload,
     agentCwd: string,
+    instanceId: string,
   ): Promise<{ localPath?: string; transcript?: string } | null> {
     const { content } = payload;
     if (!content.mediaUrl || content.type === "text" || !content.type) return null;
@@ -2347,7 +2362,15 @@ export class OmniConsumer {
     const isAudio = content.type === "audio" || content.type === "voice";
     const maxBytes = isAudio ? MAX_AUDIO_BYTES : undefined;
 
-    const buffer = await fetchOmniMedia(content.mediaUrl, this.omniApiUrl, this.omniApiKey, maxBytes);
+    const buffer = content.mediaUrl.startsWith("http")
+      ? ((await fetchCachedOmniMedia(
+          { instanceId, chatExternalId: payload.chatId, externalId: payload.externalId },
+          this.omniApiUrl,
+          this.omniApiKey,
+          maxBytes,
+          mimeType,
+        )) ?? (await fetchOmniMedia(content.mediaUrl, this.omniApiUrl, this.omniApiKey, maxBytes, mimeType)))
+      : await fetchOmniMedia(content.mediaUrl, this.omniApiUrl, this.omniApiKey, maxBytes, mimeType);
     if (!buffer) return null;
 
     // Audio: transcribe, save to attachments as fallback

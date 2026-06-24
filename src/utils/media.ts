@@ -38,6 +38,30 @@ function resolveExtension(mimetype: string, filename?: string): string {
   return sub ? `.${sub}` : ".bin";
 }
 
+function normalizeMimeType(value: string | null | undefined): string | undefined {
+  return value?.split(";")[0]?.trim().toLowerCase() || undefined;
+}
+
+function isHtmlMime(value: string | null | undefined): boolean {
+  const mimeType = normalizeMimeType(value);
+  return mimeType === "text/html" || mimeType === "application/xhtml+xml";
+}
+
+function looksLikeHtml(buffer: Buffer): boolean {
+  const preview = buffer.subarray(0, 512).toString("utf8").trimStart().toLowerCase();
+  return preview.startsWith("<!doctype html") || preview.startsWith("<html") || preview.includes("<html");
+}
+
+function shouldRejectHtmlMedia(
+  expectedMimeType: string | undefined,
+  responseMimeType: string | undefined,
+  buffer: Buffer,
+): boolean {
+  const expected = normalizeMimeType(expectedMimeType);
+  if (!expected || isHtmlMime(expected)) return false;
+  return isHtmlMime(responseMimeType) || looksLikeHtml(buffer);
+}
+
 /**
  * Download media from omni HTTP API.
  *
@@ -51,6 +75,7 @@ export async function fetchOmniMedia(
   omniApiUrl: string,
   omniApiKey: string,
   maxBytes = MAX_MEDIA_BYTES,
+  expectedMimeType?: string,
 ): Promise<Buffer | null> {
   const url = mediaUrl.startsWith("http") ? mediaUrl : `${omniApiUrl}${mediaUrl}`;
   try {
@@ -72,9 +97,56 @@ export async function fetchOmniMedia(
       log.warn("Media too large", { url, size: ab.byteLength });
       return null;
     }
-    return Buffer.from(ab);
+    const buffer = Buffer.from(ab);
+    const responseMimeType = res.headers.get("content-type") ?? undefined;
+    if (shouldRejectHtmlMedia(expectedMimeType, responseMimeType, buffer)) {
+      log.warn("Media response was HTML, refusing to save as media", { url, expectedMimeType, responseMimeType });
+      return null;
+    }
+    return buffer;
   } catch (err) {
     log.warn("Failed to fetch media from omni", { url, error: err });
+    return null;
+  }
+}
+
+interface OmniMediaDownloadRef {
+  instanceId: string;
+  chatExternalId: string;
+  externalId: string;
+}
+
+export async function fetchCachedOmniMedia(
+  ref: OmniMediaDownloadRef,
+  omniApiUrl: string,
+  omniApiKey: string,
+  maxBytes = MAX_MEDIA_BYTES,
+  expectedMimeType?: string,
+): Promise<Buffer | null> {
+  const url = `${omniApiUrl}/api/v2/messages/media/download`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": omniApiKey,
+      },
+      body: JSON.stringify(ref),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) {
+      log.warn("Omni media cache request failed", { status: res.status });
+      return null;
+    }
+    const payload = (await res.json()) as { data?: { downloadUrl?: unknown } };
+    const downloadUrl = payload.data?.downloadUrl;
+    if (typeof downloadUrl !== "string" || !downloadUrl) {
+      log.warn("Omni media cache response missing downloadUrl");
+      return null;
+    }
+    return fetchOmniMedia(downloadUrl, omniApiUrl, omniApiKey, maxBytes, expectedMimeType);
+  } catch (err) {
+    log.warn("Failed to cache media through omni", { error: err });
     return null;
   }
 }

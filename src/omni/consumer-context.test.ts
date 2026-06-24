@@ -245,6 +245,7 @@ mock.module("../session-trace/runtime-trace.js", () => ({
 }));
 
 mock.module("../utils/media.js", () => ({
+  fetchCachedOmniMedia: mock(async () => null),
   fetchOmniMedia: mock(async () => null),
   saveToAgentAttachments: mock(async () => null),
   MAX_AUDIO_BYTES: 16 * 1024 * 1024,
@@ -264,11 +265,23 @@ const loggerChildSpy = spyOn(logger, "child").mockImplementation(
     }) as never,
 );
 
-const { OmniConsumer } = await import("./consumer.js");
+const { OmniConsumer, supportsOmniReadReceipts } = await import("./consumer.js");
 
 afterAll(() => {
   loggerChildSpy.mockRestore();
   mock.restore();
+});
+
+describe("supportsOmniReadReceipts", () => {
+  it("only enables Omni read receipts for channels that expose real receipt semantics", () => {
+    expect(supportsOmniReadReceipts("whatsapp")).toBe(true);
+    expect(supportsOmniReadReceipts("whatsapp-baileys")).toBe(true);
+    expect(supportsOmniReadReceipts("twilio-whatsapp")).toBe(true);
+    expect(supportsOmniReadReceipts("gupshup")).toBe(true);
+    expect(supportsOmniReadReceipts("slack")).toBe(false);
+    expect(supportsOmniReadReceipts("discord")).toBe(false);
+    expect(supportsOmniReadReceipts("telegram")).toBe(false);
+  });
 });
 
 describe("OmniConsumer channel context", () => {
