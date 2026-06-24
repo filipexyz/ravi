@@ -50,6 +50,7 @@ export interface ArtifactPublishOptions {
   replaceRelease?: boolean;
   reason?: string;
   tool?: string;
+  publishToPages?: boolean;
   json?: boolean;
 }
 
@@ -202,6 +203,7 @@ export async function publishArtifactToConsole(
     uploadPolicy,
   });
 
+  const shouldPublishPage = Boolean(publishOptions.publishToPages || publishOptions.site);
   const finalizePayload = await client.finalizeArtifactPublish(
     {
       uploadSessionId: resolvedUploadSessionId,
@@ -213,10 +215,10 @@ export async function publishArtifactToConsole(
         localArtifactId: packageBuild.artifactDefaults.localArtifactId,
       },
       packageManifest: manifest,
-      ...(publishOptions.site
+      ...(shouldPublishPage
         ? {
             publish: {
-              siteRef: publishOptions.site,
+              ...(publishOptions.site ? { siteRef: publishOptions.site } : {}),
               activate: publishOptions.activate !== false,
               replaceRelease: Boolean(publishOptions.replaceRelease),
               reason: publishOptions.reason ?? null,

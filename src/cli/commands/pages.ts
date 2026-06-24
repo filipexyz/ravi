@@ -41,7 +41,7 @@ export interface PagesCommandDeps extends PagesClientDeps, Pick<ArtifactPublishD
 
 @Group({
   name: "pages",
-  description: "Manage Ravi Pages sites and publish content through Console",
+  description: "Manage project-owned Ravi Pages and publish content through Console",
   scope: "open",
 })
 export class PagesCommands {
@@ -121,7 +121,10 @@ export class PagesCommands {
     });
   }
 
-  @Command({ name: "create", description: "Create a Ravi Pages site record; does not upload HTML or assets" })
+  @Command({
+    name: "create",
+    description: "Compatibility: ensure a Ravi Pages host record; does not upload HTML or assets",
+  })
   @CommandAccess({ kind: "mutate", resource: "pages", action: "create", risk: "medium" })
   async create(
     @Arg("args", { variadic: true, description: "[project] <slug>; project defaults to Ravi Console scope" })
@@ -154,12 +157,13 @@ export class PagesCommands {
     });
   }
 
-  @Command({ name: "publish", description: "Publish a directory, file, or local artifact to a Ravi Pages site" })
+  @Command({ name: "publish", description: "Publish a directory, file, or local artifact to a project Pages host" })
   @CommandAccess({ kind: "mutate", resource: "pages", action: "publish", risk: "high" })
   async publish(
     @Arg("args", {
       variadic: true,
-      description: "[project] <site> <source>; project defaults to Ravi Console scope",
+      description:
+        "[project] [site] <source>; project defaults to Ravi Console scope and site defaults to the project Pages host",
     })
     args: string[],
     @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
@@ -188,9 +192,11 @@ export class PagesCommands {
     activate?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--site <site>", description: "Legacy site slug/id; defaults to the project Pages host" })
+    siteOption?: string,
   ) {
     return runPagesCommand(asJson, async () => {
-      const parsed = parsePublishArgs(args, projectOption);
+      const parsed = parsePublishArgs(args, projectOption, siteOption);
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await publishArtifactToConsole(
         parsed.source,
@@ -213,6 +219,7 @@ export class PagesCommands {
           activate,
           console: consoleUrl,
           tool: "ravi pages publish",
+          publishToPages: true,
           json: asJson,
         },
         this.deps,
@@ -363,17 +370,40 @@ function parseCreateArgs(args: string[], projectOption: string | undefined): { p
 function parsePublishArgs(
   args: string[],
   projectOption: string | undefined,
-): { project?: string; site: string; source: string } {
+  siteOption?: string,
+): { project?: string; site?: string; source: string } {
   const clean = cleanArgs(args);
+  const explicitSite = stringValue(siteOption);
   if (projectOption) {
-    if (clean.length !== 2) {
-      throw new CloudAuthError("PAYLOAD_INVALID", "Usage: ravi pages publish <site> <source> --project <project-ref>.");
+    if (explicitSite) {
+      if (clean.length !== 1) {
+        throw new CloudAuthError(
+          "PAYLOAD_INVALID",
+          "Usage: ravi pages publish <source> --project <project-ref> --site <site>.",
+        );
+      }
+      return { project: projectOption, site: explicitSite, source: clean[0] };
     }
-    return { project: projectOption, site: clean[0], source: clean[1] };
+    if (clean.length === 1) {
+      return { project: projectOption, source: clean[0] };
+    }
+    if (clean.length === 2) return { project: projectOption, site: clean[0], source: clean[1] };
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      "Usage: ravi pages publish <source> --project <project-ref> or ravi pages publish <site> <source> --project <project-ref>.",
+    );
   }
-  if (clean.length === 2) return { site: clean[0], source: clean[1] };
+
+  if (explicitSite) {
+    if (clean.length === 1) return { site: explicitSite, source: clean[0] };
+    if (clean.length === 2) return { project: clean[0], site: explicitSite, source: clean[1] };
+    throw new CloudAuthError("PAYLOAD_INVALID", "Usage: ravi pages publish [project] <source> --site <site>.");
+  }
+
+  if (clean.length === 1) return { source: clean[0] };
+  if (clean.length === 2) return { project: clean[0], source: clean[1] };
   if (clean.length === 3) return { project: clean[0], site: clean[1], source: clean[2] };
-  throw new CloudAuthError("PAYLOAD_INVALID", "Usage: ravi pages publish [project] <site> <source>.");
+  throw new CloudAuthError("PAYLOAD_INVALID", "Usage: ravi pages publish [project] [site] <source>.");
 }
 
 function parseSiteArgs(
