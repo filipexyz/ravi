@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, mkdirSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { z } from "zod";
 import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
@@ -15,6 +15,15 @@ import {
 } from "../../artifacts/store.js";
 import { looseObjectSchema } from "./operational-return-schemas.js";
 import { finalizeGoogleMeetRecorderRun } from "../../meetings/google-meet/recorder-run.js";
+import {
+  buildRaviRealtimeToolManifest,
+  serializeRuntimeDynamicToolResultForRealtime,
+  type RaviRealtimeToolManifest,
+} from "../../meetings/realtime-tools.js";
+import { createRuntimeHostServices } from "../../runtime/host-services.js";
+import { RAVI_CONTEXT_KEY_ENV, resolveRuntimeContextOrThrow } from "../../runtime/context-registry.js";
+import type { ContextRecord } from "../../router/router-db.js";
+import { getRaviStateDir } from "../../utils/paths.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -137,6 +146,93 @@ function pushFlag(args: string[], flag: string, enabled?: boolean): void {
   if (enabled) args.push(flag);
 }
 
+function requireRuntimeContext(): ContextRecord {
+  const inlineContext = getContext()?.context;
+  if (inlineContext) return inlineContext;
+
+  const contextKey = process.env[RAVI_CONTEXT_KEY_ENV];
+  if (!contextKey) {
+    fail(`Missing ${RAVI_CONTEXT_KEY_ENV}; live meeting tools require a Ravi runtime context.`);
+  }
+
+  try {
+    return resolveRuntimeContextOrThrow(contextKey);
+  } catch (error) {
+    fail(`Failed to resolve Ravi runtime context: ${errorMessage(error)}`);
+  }
+}
+
+function buildToolContext(context: ContextRecord): Record<string, unknown> {
+  return {
+    contextId: context.contextId,
+    context,
+    agentId: context.agentId,
+    sessionKey: context.sessionKey,
+    sessionName: context.sessionName,
+    source: context.source,
+    suppressCliOutput: true,
+  };
+}
+
+function createMeetingRuntimeHostServices(context: ContextRecord) {
+  const agentId = context.agentId?.trim();
+  if (!agentId) fail("Live meeting tools require a runtime context with an agent id.");
+  return createRuntimeHostServices({
+    context,
+    agentId,
+    sessionName: context.sessionName ?? context.sessionKey ?? "meeting-live",
+    toolContext: buildToolContext(context),
+  });
+}
+
+function parseRealtimeToolSelection(value: string | undefined): Set<string> | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === "all" || trimmed === "*") return undefined;
+  const names = trimmed
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (names.length === 0) return undefined;
+  return new Set(names);
+}
+
+function buildRealtimeToolManifestForCurrentContext(toolSelection?: string): RaviRealtimeToolManifest {
+  const context = requireRuntimeContext();
+  const hostServices = createMeetingRuntimeHostServices(context);
+  const selectedTools = parseRealtimeToolSelection(toolSelection);
+  const tools = hostServices.listDynamicTools().filter((tool) => (selectedTools ? selectedTools.has(tool.name) : true));
+  return buildRaviRealtimeToolManifest({
+    tools,
+    agentId: context.agentId,
+    sessionName: context.sessionName ?? context.sessionKey,
+    contextId: context.contextId,
+  });
+}
+
+function writeRealtimeToolManifestForCurrentContext(
+  label?: string,
+  toolSelection?: string,
+): { manifest: RaviRealtimeToolManifest; path: string } {
+  const manifest = buildRealtimeToolManifestForCurrentContext(toolSelection);
+  const dir = join(getRaviStateDir(), "meetings", "realtime-tools");
+  mkdirSync(dir, { recursive: true });
+  const safeLabel = (label || `${manifest.contextId ?? "context"}-${Date.now()}`)
+    .replace(/[^A-Za-z0-9_.-]+/g, "-")
+    .slice(0, 120);
+  const path = join(dir, `${safeLabel || "tools"}.json`);
+  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  return { manifest, path };
+}
+
+function parseJsonArgument(value: string | undefined, flag: string): unknown {
+  if (!value?.trim()) return {};
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    fail(`Invalid ${flag}: ${errorMessage(error)}`);
+  }
+}
+
 function buildGoogleMeetJoinArgs(input: {
   url: string;
   name?: string;
@@ -152,6 +248,7 @@ function buildGoogleMeetJoinArgs(input: {
   realtimeVoice?: string;
   realtimeLanguage?: string;
   realtimeInstructions?: string;
+  toolsManifestPath?: string;
   skipFinalize?: boolean;
 }): string[] {
   const args = ["--url", input.url, "--until-empty", "--out", input.out?.trim() || "~/.ravi/meetings/runs"];
@@ -164,6 +261,7 @@ function buildGoogleMeetJoinArgs(input: {
   pushOption(args, "--realtime-voice", input.realtimeVoice);
   pushOption(args, "--realtime-language", input.realtimeLanguage);
   pushOption(args, "--realtime-instructions", input.realtimeInstructions);
+  pushOption(args, "--tools", input.toolsManifestPath);
   if (input.realtimeTranscribe) args.push("--realtime-transcribe");
   if (input.realtimeAgent) args.push("--realtime-agent");
   if (input.speakBack) args.push("--speak-back");
@@ -187,6 +285,8 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   realtimeVoice?: string;
   realtimeLanguage?: string;
   realtimeInstructions?: string;
+  live?: boolean;
+  toolsManifestPath?: string;
   skipFinalize?: boolean;
   artifactId: string;
 }): string[] {
@@ -201,9 +301,11 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   pushOption(args, "--realtime-voice", input.realtimeVoice);
   pushOption(args, "--realtime-language", input.realtimeLanguage);
   pushOption(args, "--realtime-instructions", input.realtimeInstructions);
+  pushOption(args, "--tools-manifest", input.toolsManifestPath);
   pushFlag(args, "--realtime-transcribe", input.realtimeTranscribe);
   pushFlag(args, "--realtime-agent", input.realtimeAgent);
   pushFlag(args, "--speak-back", input.speakBack);
+  pushFlag(args, "--live", input.live);
   pushFlag(args, "--skip-finalize", input.skipFinalize);
   args.push("--artifact-id", input.artifactId, "--async-worker", "--json");
   return args;
@@ -336,6 +438,10 @@ export class MeetingsCommands {
     realtimeLanguage?: string,
     @Option({ flags: "--realtime-instructions <text>", description: "Realtime agent instructions override" })
     realtimeInstructions?: string,
+    @Option({ flags: "--live", description: "Enable Realtime live agent mode with Ravi-authorized CLI tools" })
+    live?: boolean,
+    @Option({ flags: "--tools-manifest <path>", description: "Internal Realtime tools manifest path" })
+    toolsManifestPath?: string,
     @Option({ flags: "--skip-finalize", description: "Skip final meeting.raw artifact registration" })
     skipFinalize?: boolean,
     @Option({ flags: "--sync", description: "Wait for provider completion before returning" })
@@ -347,6 +453,8 @@ export class MeetingsCommands {
     @Option({ flags: "--dry-run", description: "Validate and print provider invocation without joining" })
     dryRun?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tools <names>", description: "Comma-separated Ravi tool names for live mode, or all" })
+    liveTools?: string,
   ) {
     const selectedProvider = provider?.trim() || "google-meet";
     if (selectedProvider !== "google-meet") fail(`Unsupported meeting provider: ${selectedProvider}.`);
@@ -357,6 +465,14 @@ export class MeetingsCommands {
     const command = resolveGoogleMeetRecorderExecutable();
     const ctx = contextDefaults();
     const shouldRunAsync = syncMode !== true && asyncWorker !== true && dryRun !== true;
+    const liveMode = Boolean(live);
+    const effectiveRealtimeAgent = Boolean(realtimeAgent || liveMode);
+    const effectiveSpeakBack = Boolean(speakBack || liveMode);
+    const realtimeToolsManifest = toolsManifestPath?.trim()
+      ? { path: toolsManifestPath.trim(), manifest: undefined }
+      : liveMode
+        ? writeRealtimeToolManifestForCurrentContext(`meeting-live-${Date.now()}`, liveTools)
+        : undefined;
     const args = buildGoogleMeetJoinArgs({
       url: url.trim(),
       name,
@@ -367,11 +483,12 @@ export class MeetingsCommands {
       emptyGrace,
       capture,
       realtimeTranscribe,
-      realtimeAgent,
-      speakBack,
+      realtimeAgent: effectiveRealtimeAgent,
+      speakBack: effectiveSpeakBack,
       realtimeVoice,
       realtimeLanguage,
       realtimeInstructions,
+      toolsManifestPath: realtimeToolsManifest?.path,
       skipFinalize,
     });
 
@@ -393,8 +510,12 @@ export class MeetingsCommands {
       emptyGrace: emptyGrace ?? null,
       capture: capture ?? null,
       realtimeTranscribe: Boolean(realtimeTranscribe),
-      realtimeAgent: Boolean(realtimeAgent),
-      speakBack: Boolean(speakBack),
+      realtimeAgent: effectiveRealtimeAgent,
+      speakBack: effectiveSpeakBack,
+      live: liveMode,
+      liveTools: liveTools?.trim() || (liveMode ? "all" : null),
+      realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
+      realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
       realtimeVoice: realtimeVoice ?? null,
       realtimeLanguage: realtimeLanguage ?? null,
       skipFinalize: Boolean(skipFinalize),
@@ -413,8 +534,12 @@ export class MeetingsCommands {
         async: shouldRunAsync || asyncWorker === true,
         skipFinalize: Boolean(skipFinalize),
         realtimeTranscribe: Boolean(realtimeTranscribe),
-        realtimeAgent: Boolean(realtimeAgent),
-        speakBack: Boolean(speakBack),
+        realtimeAgent: effectiveRealtimeAgent,
+        speakBack: effectiveSpeakBack,
+        live: liveMode,
+        liveTools: liveTools?.trim() || (liveMode ? "all" : null),
+        realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
+        realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
       },
       lineage: {
         source: "ravi meetings join",
@@ -460,11 +585,13 @@ export class MeetingsCommands {
         emptyGrace,
         capture,
         realtimeTranscribe,
-        realtimeAgent,
-        speakBack,
+        realtimeAgent: effectiveRealtimeAgent,
+        speakBack: effectiveSpeakBack,
         realtimeVoice,
         realtimeLanguage,
         realtimeInstructions,
+        live: liveMode,
+        toolsManifestPath: realtimeToolsManifest?.path,
         skipFinalize,
         artifactId: artifact.id,
       });
@@ -718,6 +845,73 @@ export class MeetingsCommands {
       console.log(`Path: ${result.artifactPath}`);
       console.log(`Transcript segments: ${result.transcriptSegments.length}`);
       console.log(`Media refs: ${result.mediaRefs.length}`);
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "realtime-tools",
+    description: "Export Ravi-authorized CLI tools as OpenAI Realtime function tools",
+  })
+  @CommandAccess({ kind: "read", resource: "meetings", action: "realtime-tools", risk: "low" })
+  @CliOnly()
+  @Returns(looseObjectSchema)
+  realtimeTools(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tools <names>", description: "Comma-separated Ravi tool names, or all" }) tools?: string,
+  ) {
+    const manifest = buildRealtimeToolManifestForCurrentContext(tools);
+
+    if (asJson) {
+      printJson(manifest);
+    } else {
+      console.log(`Realtime tools: ${manifest.toolCount}`);
+      console.log(`Agent: ${manifest.agentId ?? "-"}`);
+      console.log(`Session: ${manifest.sessionName ?? "-"}`);
+    }
+    return manifest;
+  }
+
+  @Command({
+    name: "realtime-call",
+    description: "Execute one Ravi dynamic tool call from an OpenAI Realtime session",
+  })
+  @CommandAccess({ kind: "mutate", resource: "meetings", action: "realtime-call", risk: "high" })
+  @CliOnly()
+  @Returns(looseObjectSchema)
+  async realtimeCall(
+    @Option({ flags: "--tool <name>", description: "Runtime dynamic tool name" }) toolName?: string,
+    @Option({ flags: "--arguments-json <json>", description: "Function call arguments JSON" }) argumentsJson?: string,
+    @Option({ flags: "--call-id <id>", description: "Provider function call id" }) callId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!toolName?.trim()) fail("Missing --tool <name>.");
+    const context = requireRuntimeContext();
+    const hostServices = createMeetingRuntimeHostServices(context);
+    const result = await hostServices.executeDynamicTool(
+      {
+        toolName: toolName.trim(),
+        callId,
+        arguments: parseJsonArgument(argumentsJson, "--arguments-json"),
+        rawRequest: {
+          source: "ravi.meetings.realtime",
+          callId: callId ?? null,
+        },
+      },
+      {
+        eventData: {
+          source: "ravi.meetings.realtime",
+          toolName: toolName.trim(),
+          callId: callId ?? null,
+        },
+      },
+    );
+    const payload = serializeRuntimeDynamicToolResultForRealtime(toolName.trim(), result);
+
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`${payload.ok ? "ok" : "failed"}: ${toolName.trim()}`);
     }
     return payload;
   }

@@ -46,6 +46,8 @@ describe("MeetingsCommands", () => {
         undefined,
         false,
         undefined,
+        false,
+        undefined,
         undefined,
         undefined,
         true,
