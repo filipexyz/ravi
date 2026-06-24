@@ -24,6 +24,7 @@ export interface BuildMeetingEventPayloadInput {
   session: MeetingSession;
   artifactId?: string;
   artifactPath?: string;
+  transcriptionJsonPath?: string;
 }
 
 export function buildMeetingEventPayload(input: BuildMeetingEventPayloadInput): Record<string, unknown> {
@@ -39,6 +40,7 @@ export function buildMeetingEventPayload(input: BuildMeetingEventPayloadInput): 
     originAgentId: session.originAgentId ?? null,
     artifactId: input.artifactId ?? session.artifactId ?? null,
     artifactPath: input.artifactPath ?? null,
+    transcriptionJsonPath: input.transcriptionJsonPath ?? null,
     title: session.title ?? null,
     url: session.url ?? null,
     startedAt: session.startedAt ?? null,

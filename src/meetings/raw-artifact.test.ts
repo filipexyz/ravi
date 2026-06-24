@@ -8,6 +8,7 @@ import {
   buildMeetingRawArtifactHandoffMessage,
   registerMeetingRawArtifact,
   renderMeetingRawArtifactMarkdown,
+  renderMeetingTranscriptionJson,
 } from "./raw-artifact.js";
 import type { MeetingSession } from "./types.js";
 
@@ -49,6 +50,34 @@ describe("meeting raw artifact", () => {
     expect(markdown).not.toContain("## Decisions");
     expect(markdown).not.toContain("## Action Items");
     expect(markdown).not.toContain("## Backlog");
+
+    expect(renderMeetingTranscriptionJson({ session: sampleMeetingSession() })).toMatchObject({
+      kind: "meeting.transcription",
+      version: 1,
+      transcription: {
+        sourceTypes: ["captions", "imported_transcript"],
+        provider: null,
+        model: null,
+        mediaPath: null,
+        segmentCount: 2,
+      },
+      segments: [
+        {
+          id: "seg-001",
+          speaker: "Luís Filipe",
+          startAt: "2026-06-22T01:41:11.000Z",
+          endAt: "2026-06-22T01:41:18.000Z",
+          text: "A gente precisa de um artifact no final.",
+        },
+        {
+          id: "seg-002",
+          speaker: "Ravi",
+          startSec: 72,
+          endSec: 78,
+          text: "P0 = gerar um artifact meet.md ao final da sessão.",
+        },
+      ],
+    });
   });
 
   it("writes and registers meet.md in the artifact ledger", () => {
@@ -67,6 +96,11 @@ describe("meeting raw artifact", () => {
     expect(result.filePath.endsWith("/meet.md")).toBe(true);
     expect(existsSync(result.filePath)).toBe(true);
     expect(readFileSync(result.filePath, "utf8")).toBe(result.markdown);
+    expect(result.transcriptionJson).toBeDefined();
+    const transcriptionJson = result.transcriptionJson!;
+    expect(transcriptionJson.filePath.endsWith("/transcription.json")).toBe(true);
+    expect(transcriptionJson.data.transcription.segmentCount).toBe(2);
+    expect(readFileSync(transcriptionJson.filePath, "utf8")).toBe(transcriptionJson.json);
 
     expect(result.artifact).toMatchObject({
       kind: "meeting.raw",
@@ -87,6 +121,7 @@ describe("meeting raw artifact", () => {
       providerMeetingId: "bdw-wzcp-fse",
       participantCount: 2,
       transcriptSegmentCount: 2,
+      transcriptionJsonPath: transcriptionJson.filePath,
     });
     expect(result.artifact.lineage).toMatchObject({
       source: "meetings.raw-artifact",
@@ -124,6 +159,7 @@ describe("meeting raw artifact", () => {
         provider: "google-meet",
         artifactId: result.artifact.id,
         artifactPath: result.filePath,
+        transcriptionJsonPath: transcriptionJson.filePath,
         transcriptSegmentCount: 2,
       },
     });
@@ -133,6 +169,7 @@ describe("meeting raw artifact", () => {
         session: { ...session, artifactId: result.artifact.id },
         artifact: result.artifact,
         filePath: result.filePath,
+        transcriptionJsonPath: transcriptionJson.filePath,
       }),
     );
     expect(result.handoffMessage).toContain("Meeting raw artifact generated.");

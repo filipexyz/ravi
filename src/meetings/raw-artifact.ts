@@ -30,12 +30,50 @@ export interface RegisterMeetingRawArtifactInput extends WriteMeetingRawArtifact
 export interface WriteMeetingRawArtifactResult {
   markdown: string;
   filePath: string;
+  transcriptionJson?: MeetingTranscriptionJsonWriteResult;
 }
 
 export interface RegisterMeetingRawArtifactResult extends WriteMeetingRawArtifactResult {
   artifact: ArtifactRecord;
   completedEvent: ArtifactEvent;
   handoffMessage: string;
+}
+
+export interface MeetingTranscriptionJsonWriteResult {
+  data: MeetingTranscriptionJson;
+  json: string;
+  filePath: string;
+}
+
+export interface MeetingTranscriptionJson {
+  kind: "meeting.transcription";
+  version: 1;
+  meeting: {
+    id: string;
+    provider: string;
+    providerMeetingId?: string | null;
+    title?: string | null;
+    startedAt?: string | null;
+    endedAt?: string | null;
+    durationMs?: number | null;
+  };
+  transcription: {
+    sourceTypes: string[];
+    provider?: string | null;
+    model?: string | null;
+    mediaPath?: string | null;
+    segmentCount: number;
+  };
+  text: string;
+  segments: Array<{
+    id?: string;
+    speaker?: string;
+    startAt?: string;
+    endAt?: string;
+    startSec?: number;
+    endSec?: number;
+    text: string;
+  }>;
 }
 
 export function renderMeetingRawArtifactMarkdown(input: RenderMeetingRawArtifactInput): string {
@@ -104,7 +142,58 @@ export function writeMeetingRawArtifact(input: WriteMeetingRawArtifactInput): Wr
   mkdirSync(outputDir, { recursive: true });
   const filePath = join(outputDir, fileName);
   writeFileSync(filePath, markdown, "utf8");
-  return { markdown, filePath };
+  const transcriptionJson = writeMeetingTranscriptionJson({ session: input.session, outputDir });
+  return { markdown, filePath, ...(transcriptionJson ? { transcriptionJson } : {}) };
+}
+
+export function renderMeetingTranscriptionJson(input: RenderMeetingRawArtifactInput): MeetingTranscriptionJson | null {
+  const { session } = input;
+  const segments = session.transcriptSegments ?? [];
+  if (segments.length === 0) return null;
+  const postCallTranscription = getRecordValue(session.rawProvenance, "postCallTranscription");
+
+  return {
+    kind: "meeting.transcription",
+    version: 1,
+    meeting: {
+      id: session.id,
+      provider: session.provider,
+      providerMeetingId: session.providerMeetingId ?? null,
+      title: session.title ?? null,
+      startedAt: session.startedAt ?? null,
+      endedAt: session.endedAt ?? null,
+      durationMs: session.durationMs ?? null,
+    },
+    transcription: {
+      sourceTypes: uniqueStrings(segments.map((segment) => segment.source)),
+      provider: stringValue(getRecordValue(postCallTranscription, "provider")) ?? null,
+      model: stringValue(getRecordValue(postCallTranscription, "model")) ?? null,
+      mediaPath: stringValue(getRecordValue(postCallTranscription, "mediaPath")) ?? null,
+      segmentCount: segments.length,
+    },
+    text: segments.map((segment) => normalizeMarkdownText(segment.text)).join("\n"),
+    segments: segments.map((segment) => ({
+      ...(segment.id ? { id: segment.id } : {}),
+      ...(segment.speakerName || segment.speakerId ? { speaker: segment.speakerName ?? segment.speakerId } : {}),
+      ...(segment.startAt ? { startAt: segment.startAt } : {}),
+      ...(segment.endAt ? { endAt: segment.endAt } : {}),
+      ...(segment.startOffsetMs !== undefined ? { startSec: msToSeconds(segment.startOffsetMs) } : {}),
+      ...(segment.endOffsetMs !== undefined ? { endSec: msToSeconds(segment.endOffsetMs) } : {}),
+      text: normalizeMarkdownText(segment.text),
+    })),
+  };
+}
+
+function writeMeetingTranscriptionJson(input: {
+  session: MeetingSession;
+  outputDir: string;
+}): MeetingTranscriptionJsonWriteResult | undefined {
+  const data = renderMeetingTranscriptionJson({ session: input.session });
+  if (!data) return undefined;
+  const json = `${JSON.stringify(data, null, 2)}\n`;
+  const filePath = join(input.outputDir, "transcription.json");
+  writeFileSync(filePath, json, "utf8");
+  return { data, json, filePath };
 }
 
 export function registerMeetingRawArtifact(input: RegisterMeetingRawArtifactInput): RegisterMeetingRawArtifactResult {
@@ -127,7 +216,7 @@ export function registerMeetingRawArtifact(input: RegisterMeetingRawArtifactInpu
     chatId: session.chatId,
     threadId: session.threadId,
     durationMs: session.durationMs,
-    metadata: buildArtifactMetadata(session),
+    metadata: buildArtifactMetadata(session, written),
     lineage: buildArtifactLineage(session),
     tags: ["meeting", "meeting-raw", "meet-md", session.provider],
   });
@@ -143,6 +232,7 @@ export function registerMeetingRawArtifact(input: RegisterMeetingRawArtifactInpu
       provider: session.provider,
       providerMeetingId: session.providerMeetingId ?? null,
       filePath: written.filePath,
+      transcriptionJsonPath: written.transcriptionJson?.filePath ?? null,
       transcriptSegmentCount: session.transcriptSegments?.length ?? 0,
     },
   });
@@ -153,6 +243,7 @@ export function registerMeetingRawArtifact(input: RegisterMeetingRawArtifactInpu
       session: { ...session, artifactId: artifact.id },
       artifactId: artifact.id,
       artifactPath: written.filePath,
+      transcriptionJsonPath: written.transcriptionJson?.filePath,
     }),
   );
 
@@ -164,6 +255,7 @@ export function registerMeetingRawArtifact(input: RegisterMeetingRawArtifactInpu
       session: { ...session, artifactId: artifact.id },
       artifact,
       filePath: written.filePath,
+      transcriptionJsonPath: written.transcriptionJson?.filePath,
     }),
   };
 }
@@ -172,23 +264,29 @@ export function buildMeetingRawArtifactHandoffMessage(input: {
   session: MeetingSession;
   artifact: Pick<ArtifactRecord, "id">;
   filePath: string;
+  transcriptionJsonPath?: string;
 }): string {
   const { session } = input;
-  return [
+  const lines = [
     "[System] Inform: Meeting raw artifact generated.",
     "",
     `Artifact: ${input.artifact.id}`,
     `Path: ${input.filePath}`,
+    input.transcriptionJsonPath ? `Transcription JSON: ${input.transcriptionJsonPath}` : null,
     `Provider: ${session.provider}`,
     `Meeting: ${session.title ?? session.providerMeetingId ?? session.id}`,
     `Started: ${session.startedAt ?? "-"}`,
     `Ended: ${session.endedAt ?? "-"}`,
     "",
     "Use the artifact as the raw source of truth for post-meeting work.",
-  ].join("\n");
+  ].filter((line): line is string => line !== null);
+  return lines.join("\n");
 }
 
-function buildArtifactMetadata(session: MeetingSession): Record<string, unknown> {
+function buildArtifactMetadata(
+  session: MeetingSession,
+  written?: Pick<WriteMeetingRawArtifactResult, "transcriptionJson">,
+): Record<string, unknown> {
   return {
     meetingId: session.id,
     provider: session.provider,
@@ -200,6 +298,7 @@ function buildArtifactMetadata(session: MeetingSession): Record<string, unknown>
     durationMs: session.durationMs ?? null,
     participantCount: session.participants?.length ?? 0,
     transcriptSegmentCount: session.transcriptSegments?.length ?? 0,
+    transcriptionJsonPath: written?.transcriptionJson?.filePath ?? null,
     mediaRefs: (session.mediaRefs ?? []).map((mediaRef) => ({
       kind: mediaRef.kind,
       path: mediaRef.path ?? null,
@@ -348,6 +447,24 @@ function normalizeMarkdownText(value: string): string {
 
 function valueOrDash(value: string | undefined): string {
   return value && value.trim() ? value : "-";
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value?.trim())))];
+}
+
+function getRecordValue(value: unknown, key: string): unknown {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)[key]
+    : undefined;
+}
+
+function msToSeconds(value: number): number {
+  return Number((value / 1000).toFixed(3));
 }
 
 function formatDuration(durationMs: number): string {
