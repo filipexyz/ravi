@@ -32,6 +32,7 @@ import { getRaviStateDir } from "../../utils/paths.js";
 import { getRecentHistory, type Message } from "../../db.js";
 
 const RAVI_REALTIME_INSTRUCTIONS_ENV = "RAVI_REALTIME_INSTRUCTIONS";
+const RAVI_MEET_INITIAL_PROMPT_ENV = "RAVI_MEET_INITIAL_PROMPT";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -152,6 +153,11 @@ function pushOption(args: string[], flag: string, value?: string): void {
 
 function pushFlag(args: string[], flag: string, enabled?: boolean): void {
   if (enabled) args.push(flag);
+}
+
+function mergeEnvOverrides(...overrides: Array<NodeJS.ProcessEnv | undefined>): NodeJS.ProcessEnv | undefined {
+  const merged = Object.assign({}, ...overrides.filter(Boolean));
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 function requireRuntimeContext(): ContextRecord {
@@ -436,6 +442,8 @@ function buildGoogleMeetJoinArgs(input: {
   realtimeVoice?: string;
   realtimeLanguage?: string;
   realtimeInstructions?: string;
+  initialPrompt?: string;
+  initialPromptDelay?: string;
   toolsManifestPath?: string;
   skipFinalize?: boolean;
 }): string[] {
@@ -449,6 +457,8 @@ function buildGoogleMeetJoinArgs(input: {
   pushOption(args, "--realtime-voice", input.realtimeVoice);
   pushOption(args, "--realtime-language", input.realtimeLanguage);
   pushOption(args, "--realtime-instructions", input.realtimeInstructions);
+  pushOption(args, "--initial-prompt", input.initialPrompt);
+  pushOption(args, "--initial-prompt-delay", input.initialPromptDelay);
   pushOption(args, "--tools", input.toolsManifestPath);
   if (input.realtimeTranscribe) args.push("--realtime-transcribe");
   if (input.realtimeAgent) args.push("--realtime-agent");
@@ -473,6 +483,8 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   realtimeVoice?: string;
   realtimeLanguage?: string;
   realtimeInstructions?: string;
+  initialPrompt?: string;
+  initialPromptDelay?: string;
   live?: boolean;
   liveAgentId?: string;
   liveContext?: string;
@@ -492,6 +504,8 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   pushOption(args, "--realtime-voice", input.realtimeVoice);
   pushOption(args, "--realtime-language", input.realtimeLanguage);
   pushOption(args, "--realtime-instructions", input.realtimeInstructions);
+  pushOption(args, "--initial-prompt", input.initialPrompt);
+  pushOption(args, "--initial-prompt-delay", input.initialPromptDelay);
   pushOption(args, "--agent", input.liveAgentId);
   pushOption(args, "--context", input.liveContext);
   pushFlag(args, "--include-session-context", input.includeSessionContext);
@@ -637,6 +651,13 @@ export class MeetingsCommands {
     realtimeLanguage?: string,
     @Option({ flags: "--realtime-instructions <text>", description: "Realtime agent instructions override" })
     realtimeInstructions?: string,
+    @Option({
+      flags: "--initial-prompt <text>",
+      description: "Initial prompt spoken by the live Realtime agent after join",
+    })
+    initialPrompt?: string,
+    @Option({ flags: "--initial-prompt-delay <seconds>", description: "Delay before --initial-prompt is spoken" })
+    initialPromptDelay?: string,
     @Option({ flags: "--agent <id>", description: "Registered Ravi agent id for live meeting mode" })
     liveAgentId?: string,
     @Option({ flags: "--context <text>", description: "Freeform context injected into the live meeting agent prompt" })
@@ -692,6 +713,12 @@ export class MeetingsCommands {
     const realtimeInstructionsEnv = effectiveRealtimeInstructions?.trim()
       ? { [RAVI_REALTIME_INSTRUCTIONS_ENV]: effectiveRealtimeInstructions.trim() }
       : undefined;
+    const inheritedInitialPrompt = process.env[RAVI_MEET_INITIAL_PROMPT_ENV]?.trim();
+    const effectiveInitialPrompt = initialPrompt?.trim() || inheritedInitialPrompt;
+    const initialPromptEnv = effectiveInitialPrompt
+      ? { [RAVI_MEET_INITIAL_PROMPT_ENV]: effectiveInitialPrompt }
+      : undefined;
+    const envOverrides = mergeEnvOverrides(realtimeInstructionsEnv, initialPromptEnv);
     const explicitLiveTools = liveTools?.trim();
     if (explicitLiveTools === "all" || explicitLiveTools === "*") {
       fail("Live meeting --tools must be an explicit allowlist. `all` and `*` are not allowed.");
@@ -716,6 +743,8 @@ export class MeetingsCommands {
       realtimeVoice,
       realtimeLanguage,
       realtimeInstructions: realtimeInstructionsEnv ? undefined : effectiveRealtimeInstructions,
+      initialPrompt: initialPromptEnv ? undefined : effectiveInitialPrompt,
+      initialPromptDelay,
       toolsManifestPath: realtimeToolsManifest?.path,
       skipFinalize,
     });
@@ -745,6 +774,8 @@ export class MeetingsCommands {
       liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
       liveContext: liveContext?.trim() || null,
       includeSessionContext: Boolean(includeSessionContext),
+      initialPromptChars: effectiveInitialPrompt?.length ?? null,
+      initialPromptDelay: initialPromptDelay ?? null,
       liveTools: explicitLiveTools || null,
       realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
       realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
@@ -774,6 +805,8 @@ export class MeetingsCommands {
         liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
         liveContext: liveContext?.trim() || null,
         includeSessionContext: Boolean(includeSessionContext),
+        initialPromptChars: effectiveInitialPrompt?.length ?? null,
+        initialPromptDelay: initialPromptDelay ?? null,
         liveTools: explicitLiveTools || null,
         realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
         realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
@@ -792,11 +825,17 @@ export class MeetingsCommands {
     };
 
     if (dryRun) {
+      const dryRunEnv = {
+        ...(realtimeInstructionsEnv
+          ? { [RAVI_REALTIME_INSTRUCTIONS_ENV]: `[set:${effectiveRealtimeInstructions?.length ?? 0} chars]` }
+          : {}),
+        ...(initialPromptEnv
+          ? { [RAVI_MEET_INITIAL_PROMPT_ENV]: `[set:${effectiveInitialPrompt?.length ?? 0} chars]` }
+          : {}),
+      };
       const dryRunPayload = {
         ...basePayload,
-        env: realtimeInstructionsEnv
-          ? { [RAVI_REALTIME_INSTRUCTIONS_ENV]: `[set:${effectiveRealtimeInstructions?.length ?? 0} chars]` }
-          : undefined,
+        ...(Object.keys(dryRunEnv).length > 0 ? { env: dryRunEnv } : {}),
       };
       if (asJson) printJson(dryRunPayload);
       else {
@@ -805,6 +844,9 @@ export class MeetingsCommands {
         console.log(`Args: ${args.join(" ")}`);
         if (realtimeInstructionsEnv) {
           console.log(`${RAVI_REALTIME_INSTRUCTIONS_ENV}: [set:${effectiveRealtimeInstructions?.length ?? 0} chars]`);
+        }
+        if (initialPromptEnv) {
+          console.log(`${RAVI_MEET_INITIAL_PROMPT_ENV}: [set:${effectiveInitialPrompt?.length ?? 0} chars]`);
         }
       }
       return dryRunPayload;
@@ -837,6 +879,8 @@ export class MeetingsCommands {
         realtimeVoice,
         realtimeLanguage,
         realtimeInstructions: realtimeInstructionsEnv ? undefined : effectiveRealtimeInstructions,
+        initialPrompt: initialPromptEnv ? undefined : effectiveInitialPrompt,
+        initialPromptDelay,
         live: liveMode,
         liveAgentId: liveInstructions?.agentId ?? liveAgentId,
         liveContext,
@@ -845,7 +889,7 @@ export class MeetingsCommands {
         skipFinalize,
         artifactId: artifact.id,
       });
-      const pid = spawnDetachedCli(workerArgs, realtimeInstructionsEnv);
+      const pid = spawnDetachedCli(workerArgs, envOverrides);
       appendArtifactEvent(artifact.id, {
         eventType: "worker_started",
         status: "pending",
@@ -899,7 +943,7 @@ export class MeetingsCommands {
 
       const startedAt = Date.now();
       try {
-        const result = await runGoogleMeetRecorder(command, args, true, realtimeInstructionsEnv);
+        const result = await runGoogleMeetRecorder(command, args, true, envOverrides);
         if (result.exitCode !== 0) {
           const details = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
           throw new Error(`Google Meet provider exited with code ${result.exitCode}.${details ? `\n${details}` : ""}`);
@@ -1022,7 +1066,7 @@ export class MeetingsCommands {
       }
     }
 
-    const result = await runGoogleMeetRecorder(command, args, Boolean(asJson));
+    const result = await runGoogleMeetRecorder(command, args, Boolean(asJson), envOverrides);
     if (result.exitCode !== 0) {
       const details = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
       throw new Error(`Google Meet provider exited with code ${result.exitCode}.${details ? `\n${details}` : ""}`);
