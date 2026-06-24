@@ -7062,6 +7062,7 @@ export type PagesPublishInput = {
   reason?: string;
   replaceRelease?: boolean;
   route?: string;
+  site?: string;
   title?: string;
   uploadSession?: string;
   visibility?: string;
