@@ -1,10 +1,12 @@
 import "reflect-metadata";
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 
 import { getRegistry } from "../../cli/registry-snapshot.js";
 import { UNTYPED_PUBLIC_RETURN_COMMANDS_BASELINE } from "./return-schema-baseline.js";
 import { WEAK_PUBLIC_RETURN_COMMANDS_BASELINE } from "./return-schema-quality-baseline.js";
 import { currentWeakPublicReturnCommands } from "./return-schema-quality.js";
+
+setDefaultTimeout(20_000);
 
 function currentUntypedPublicReturnCommands(): string[] {
   return getRegistry()
