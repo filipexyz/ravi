@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
+import { z } from "zod";
 import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
@@ -18,6 +19,29 @@ import { finalizeGoogleMeetRecorderRun } from "../../meetings/google-meet/record
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
+
+const nullableStringSchema = z.string().nullable();
+
+const meetingFinalizeReturnSchema = z
+  .object({
+    artifactId: z.string(),
+    artifactPath: z.string(),
+    handoffMessage: z.string(),
+    transcriptSegmentCount: z.number(),
+    mediaRefCount: z.number(),
+    diagnosticCount: z.number(),
+    session: z
+      .object({
+        id: z.string(),
+        provider: z.string(),
+        providerMeetingId: nullableStringSchema,
+        title: nullableStringSchema,
+        startedAt: nullableStringSchema,
+        endedAt: nullableStringSchema,
+      })
+      .strict(),
+  })
+  .strict();
 
 function contextDefaults() {
   const ctx = getContext();
@@ -646,7 +670,7 @@ export class MeetingsCommands {
     description: "Finalize a completed meeting recorder run into a Ravi meeting.raw artifact",
   })
   @CommandAccess({ kind: "mutate", resource: "meetings", action: "finalize", risk: "medium" })
-  @Returns(looseObjectSchema)
+  @Returns(meetingFinalizeReturnSchema)
   async finalize(
     @Option({ flags: "--run-dir <dir>", description: "Completed meet-recorder run directory" }) runDir?: string,
     @Option({ flags: "--title <title>", description: "Optional meeting title override" }) title?: string,

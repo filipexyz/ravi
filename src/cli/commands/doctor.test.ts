@@ -79,6 +79,7 @@ function makeHealthyDeps() {
         },
       ] as any,
     dbListRoutes: () => [] as any,
+    getDefaultAgentId: () => "main",
     inspectAgentInstructionFiles: () => ({
       state: "agents-canonical" as const,
       agents: null,
@@ -90,6 +91,16 @@ function makeHealthyDeps() {
         { id: "a2", enabled: false },
       ] as any,
     getRuntimeCompatibilityIssues: () => [],
+    listRegisteredRuntimeProviderIds: () => ["codex", "claude"] as any,
+    getConfiguredPermissionProviders: () => [{ id: "local-operator" }, { id: "context-capabilities" }] as any,
+    getConfiguredCapabilityMaterializers: () =>
+      [{ id: "runtime-bootstrap" }, { id: "agent-runtime-permissions" }, { id: "contact-policy-permissions" }] as any,
+    authorizePermission: () => ({ allowed: false, reasonCode: "missing_subject" }) as any,
+    localOperatorCan: () => true,
+    materializeSubjectCapabilities: (subjectType: string, subjectId: string) =>
+      subjectType === "agent" && subjectId === "main"
+        ? [{ permission: "view", objectType: "agent", objectId: "*" }]
+        : [],
     checkAppManifests: () => [] as any,
     discoverAppManifests: () => [] as any,
     getRegistry: () => ({ commands: [] }) as any,

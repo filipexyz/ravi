@@ -220,6 +220,7 @@ mock.module("../../router/router-db.js", () => ({
   }),
   getFirstAccountName: () => firstAccountName,
   dbGetInstance: (accountId: string) => ({ instanceId: `instance-${accountId}` }),
+  dbGetAgent: (id: string) => knownAgents.get(id) ?? null,
   dbFindChat: () => ({
     id: "chat-whatsapp-instance-main-group-120363",
     channel: "whatsapp",
@@ -264,6 +265,12 @@ mock.module("../../router/router-db.js", () => ({
     return input;
   },
   dbBindSessionToChat: (input: Record<string, unknown>) => input,
+  dbUpdateAgent: (id: string, updates: Partial<{ cwd: string; provider?: string; model?: string }>) => {
+    const current = knownAgents.get(id) ?? { id, cwd: "/tmp" };
+    const updated = { ...current, ...updates, id };
+    knownAgents.set(id, updated);
+    return updated;
+  },
   dbCreateRoute: (input: Record<string, unknown>) => {
     routeCreates.push(input);
     return {

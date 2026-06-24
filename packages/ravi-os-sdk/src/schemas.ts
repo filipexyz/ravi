@@ -32922,8 +32922,96 @@ export const MeetingsFinalizeInputSchema = {
 
 /** JSON Schema for the return shape of `meetings.finalize`. */
 export const MeetingsFinalizeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "artifactId": {
+      "type": "string"
+    },
+    "artifactPath": {
+      "type": "string"
+    },
+    "diagnosticCount": {
+      "type": "number"
+    },
+    "handoffMessage": {
+      "type": "string"
+    },
+    "mediaRefCount": {
+      "type": "number"
+    },
+    "session": {
+      "additionalProperties": false,
+      "properties": {
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "providerMeetingId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "providerMeetingId",
+        "title",
+        "startedAt",
+        "endedAt"
+      ],
+      "type": "object"
+    },
+    "transcriptSegmentCount": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "artifactId",
+    "artifactPath",
+    "handoffMessage",
+    "transcriptSegmentCount",
+    "mediaRefCount",
+    "diagnosticCount",
+    "session"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

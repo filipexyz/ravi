@@ -6658,7 +6658,22 @@ export type MeetingsFinalizeInput = {
 };
 
 /** Return shape for `meetings.finalize`. */
-export type MeetingsFinalizeReturn = Record<string, unknown>;
+export type MeetingsFinalizeReturn = {
+  artifactId: string;
+  artifactPath: string;
+  diagnosticCount: number;
+  handoffMessage: string;
+  mediaRefCount: number;
+  session: {
+    endedAt: string | null;
+    id: string;
+    provider: string;
+    providerMeetingId: string | null;
+    startedAt: string | null;
+    title: string | null;
+  };
+  transcriptSegmentCount: number;
+};
 
 /** Input shape for `metrics.dates`. */
 export type MetricsDatesInput = Record<string, never>;
