@@ -40,6 +40,27 @@ let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
 let renameSessionNameError: Error | null = null;
 let renameRouteReferencesUpdated = 0;
 const runtimeLiveStates = new Map<string, Record<string, unknown>>();
+const sessionTurnUsageSummaries = new Map<string, Record<string, unknown>>();
+
+function defaultTurnUsageSummary(): Record<string, unknown> {
+  return {
+    lastTurn: null,
+    recent: {
+      windowMs: 86_400_000,
+      completeTurns: 0,
+      inputTokensAvg: 0,
+      outputTokensAvg: 0,
+      effectiveContextTokensAvg: 0,
+      effectiveContextTokensMax: 0,
+      durationMsAvg: null,
+      costUsdTotal: 0,
+    },
+  };
+}
+
+beforeEach(() => {
+  sessionTurnUsageSummaries.clear();
+});
 
 function makeSubscription<T extends Record<string, unknown>>(events: T[]) {
   return (async function* () {
@@ -104,6 +125,8 @@ mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   listSessions: () => listedSessions,
   getSessionsByAgent: (agentId: string) => listedSessions.filter((session) => session.agentId === agentId),
+  getSessionTurnUsageSummary: (sessionKey: string) =>
+    sessionTurnUsageSummaries.get(sessionKey) ?? defaultTurnUsageSummary(),
   deleteSession: (sessionKey: string) => {
     deletedSessionKeys.push(sessionKey);
     listedSessions = listedSessions.filter((session) => session.sessionKey !== sessionKey);
@@ -1070,6 +1093,31 @@ describe("SessionCommands info", () => {
         lastError: null,
       },
     });
+    sessionTurnUsageSummaries.set("agent:main:whatsapp:main:group:123456", {
+      lastTurn: {
+        runId: "run_1",
+        status: "complete",
+        startedAt: 1000,
+        completedAt: 90_000,
+        durationMs: 89_000,
+        inputTokens: 188_000,
+        outputTokens: 120,
+        cacheReadTokens: 187_000,
+        cacheCreationTokens: 0,
+        effectiveContextTokens: 375_000,
+        costUsd: 1.23,
+      },
+      recent: {
+        windowMs: 86_400_000,
+        completeTurns: 34,
+        inputTokensAvg: 170_000,
+        outputTokensAvg: 300,
+        effectiveContextTokensAvg: 293_000,
+        effectiveContextTokensMax: 466_000,
+        durationMsAvg: 101_000,
+        costUsdTotal: 31.37,
+      },
+    });
 
     const output = captureLogs(() => {
       new SessionCommands().info("support-group");
@@ -1084,6 +1132,15 @@ describe("SessionCommands info", () => {
     expect(output).toContain("Runtime:      codex  [source=runtime-snapshot freshness=persisted]");
     expect(output).toContain(
       'Runtime ctx:  {"sessionId":"resp_123","cwd":"/tmp/main"}  [source=runtime-snapshot freshness=persisted]',
+    );
+    expect(output).toContain(
+      "Lifetime toks:input=1.2k output=300 total=1.5k context=2.2k  [source=runtime-snapshot freshness=persisted]",
+    );
+    expect(output).toContain(
+      "Last turn:    context=375,000 input=188,000 cache=187,000 output=120 duration=1.5m  [source=runtime-snapshot freshness=persisted]",
+    );
+    expect(output).toContain(
+      "Recent 24h:   turns=34 avgContext=293,000 maxContext=466,000 avgInput=170,000 cost=$31.37  [source=runtime-snapshot freshness=persisted]",
     );
     expect(output).toContain("Derived route:[source=resolver freshness=derived-now via=session-key]");
     expect(output).toContain("thread=thread-1");
