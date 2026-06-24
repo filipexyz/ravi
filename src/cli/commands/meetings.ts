@@ -30,6 +30,8 @@ import { buildRuntimeSystemPrompt } from "../../runtime/runtime-system-prompt.js
 import type { ChannelContext } from "../../runtime/message-types.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 
+const RAVI_REALTIME_INSTRUCTIONS_ENV = "RAVI_REALTIME_INSTRUCTIONS";
+
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
@@ -71,7 +73,7 @@ function contextDefaults() {
   };
 }
 
-function spawnDetachedCli(args: string[]): number | undefined {
+function spawnDetachedCli(args: string[], envOverrides?: NodeJS.ProcessEnv): number | undefined {
   const entrypoint = process.argv[1];
   if (!entrypoint) {
     throw new Error("Cannot resolve Ravi CLI entrypoint for async worker.");
@@ -79,7 +81,7 @@ function spawnDetachedCli(args: string[]): number | undefined {
   const child = spawn(process.execPath, [entrypoint, ...args], {
     detached: true,
     stdio: "ignore",
-    env: process.env,
+    env: envOverrides ? { ...process.env, ...envOverrides } : process.env,
   });
   child.unref();
   return child.pid;
@@ -190,22 +192,31 @@ function createMeetingRuntimeHostServices(context: ContextRecord) {
   });
 }
 
-function parseRealtimeToolSelection(value: string | undefined): Set<string> | undefined {
+function parseRealtimeToolSelection(value: string): Set<string> {
   const trimmed = value?.trim();
-  if (!trimmed || trimmed === "all" || trimmed === "*") return undefined;
+  if (!trimmed) return new Set();
+  if (trimmed === "all" || trimmed === "*") {
+    fail("Live meeting --tools must be an explicit allowlist. `all` and `*` are not allowed.");
+  }
   const names = trimmed
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean);
-  if (names.length === 0) return undefined;
   return new Set(names);
 }
 
-function buildRealtimeToolManifestForCurrentContext(toolSelection?: string): RaviRealtimeToolManifest {
+function buildRealtimeToolManifestForCurrentContext(toolSelection: string): RaviRealtimeToolManifest {
   const context = requireRuntimeContext();
   const hostServices = createMeetingRuntimeHostServices(context);
   const selectedTools = parseRealtimeToolSelection(toolSelection);
-  const tools = hostServices.listDynamicTools().filter((tool) => (selectedTools ? selectedTools.has(tool.name) : true));
+  if (selectedTools.size === 0) fail("Live meeting --tools must include at least one tool name.");
+  const availableTools = hostServices.listDynamicTools();
+  const availableNames = new Set(availableTools.map((tool) => tool.name));
+  const missingTools = [...selectedTools].filter((name) => !availableNames.has(name));
+  if (missingTools.length > 0) {
+    fail(`Unknown live meeting tool(s): ${missingTools.join(", ")}.`);
+  }
+  const tools = availableTools.filter((tool) => selectedTools.has(tool.name));
   return buildRaviRealtimeToolManifest({
     tools,
     agentId: context.agentId,
@@ -218,6 +229,7 @@ function writeRealtimeToolManifestForCurrentContext(
   label?: string,
   toolSelection?: string,
 ): { manifest: RaviRealtimeToolManifest; path: string } {
+  if (!toolSelection?.trim()) fail("Live meeting --tools must include at least one tool name.");
   const manifest = buildRealtimeToolManifestForCurrentContext(toolSelection);
   const dir = join(getRaviStateDir(), "meetings", "realtime-tools");
   mkdirSync(dir, { recursive: true });
@@ -434,10 +446,15 @@ interface GoogleMeetJoinRunResult {
   stderr: string;
 }
 
-function runGoogleMeetRecorder(command: string, args: string[], asJson: boolean): Promise<GoogleMeetJoinRunResult> {
+function runGoogleMeetRecorder(
+  command: string,
+  args: string[],
+  asJson: boolean,
+  envOverrides?: NodeJS.ProcessEnv,
+): Promise<GoogleMeetJoinRunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, asJson ? [...args, "--json"] : args, {
-      env: process.env,
+      env: envOverrides ? { ...process.env, ...envOverrides } : process.env,
       stdio: asJson ? ["ignore", "pipe", "pipe"] : "inherit",
     });
     let stdout = "";
@@ -589,7 +606,9 @@ export class MeetingsCommands {
     const liveMode = Boolean(live);
     const effectiveRealtimeAgent = Boolean(realtimeAgent || liveMode);
     const effectiveSpeakBack = Boolean(speakBack || liveMode);
-    const shouldRenderLiveInstructions = liveMode && !(asyncWorker && realtimeInstructions?.trim());
+    const inheritedRealtimeInstructions = process.env[RAVI_REALTIME_INSTRUCTIONS_ENV]?.trim();
+    const shouldRenderLiveInstructions =
+      liveMode && !inheritedRealtimeInstructions && !(asyncWorker && realtimeInstructions?.trim());
     const liveInstructions = shouldRenderLiveInstructions
       ? await buildRealtimeInstructionsForRegisteredAgent({
           agentId: liveAgentId,
@@ -597,11 +616,19 @@ export class MeetingsCommands {
           callerInstructions: realtimeInstructions,
         })
       : undefined;
-    const effectiveRealtimeInstructions = liveInstructions?.text ?? realtimeInstructions;
+    const effectiveRealtimeInstructions =
+      liveInstructions?.text ?? realtimeInstructions?.trim() ?? inheritedRealtimeInstructions;
+    const realtimeInstructionsEnv = effectiveRealtimeInstructions?.trim()
+      ? { [RAVI_REALTIME_INSTRUCTIONS_ENV]: effectiveRealtimeInstructions.trim() }
+      : undefined;
+    const explicitLiveTools = liveTools?.trim();
+    if (explicitLiveTools === "all" || explicitLiveTools === "*") {
+      fail("Live meeting --tools must be an explicit allowlist. `all` and `*` are not allowed.");
+    }
     const realtimeToolsManifest = toolsManifestPath?.trim()
       ? { path: toolsManifestPath.trim(), manifest: undefined }
-      : liveMode
-        ? writeRealtimeToolManifestForCurrentContext(`meeting-live-${Date.now()}`, liveTools)
+      : liveMode && explicitLiveTools
+        ? writeRealtimeToolManifestForCurrentContext(`meeting-live-${Date.now()}`, explicitLiveTools)
         : undefined;
     const args = buildGoogleMeetJoinArgs({
       url: url.trim(),
@@ -617,7 +644,7 @@ export class MeetingsCommands {
       speakBack: effectiveSpeakBack,
       realtimeVoice,
       realtimeLanguage,
-      realtimeInstructions: effectiveRealtimeInstructions,
+      realtimeInstructions: realtimeInstructionsEnv ? undefined : effectiveRealtimeInstructions,
       toolsManifestPath: realtimeToolsManifest?.path,
       skipFinalize,
     });
@@ -646,7 +673,7 @@ export class MeetingsCommands {
       liveAgentId: liveInstructions?.agentId ?? liveAgentId?.trim() ?? null,
       liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
       liveContext: liveContext?.trim() || null,
-      liveTools: liveTools?.trim() || (liveMode ? "all" : null),
+      liveTools: explicitLiveTools || null,
       realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
       realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
       realtimeInstructionsChars: liveInstructions?.charCount ?? effectiveRealtimeInstructions?.length ?? null,
@@ -674,7 +701,7 @@ export class MeetingsCommands {
         liveAgentId: liveInstructions?.agentId ?? liveAgentId?.trim() ?? null,
         liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
         liveContext: liveContext?.trim() || null,
-        liveTools: liveTools?.trim() || (liveMode ? "all" : null),
+        liveTools: explicitLiveTools || null,
         realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
         realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
         realtimeInstructionsChars: liveInstructions?.charCount ?? effectiveRealtimeInstructions?.length ?? null,
@@ -692,13 +719,22 @@ export class MeetingsCommands {
     };
 
     if (dryRun) {
-      if (asJson) printJson(basePayload);
+      const dryRunPayload = {
+        ...basePayload,
+        env: realtimeInstructionsEnv
+          ? { [RAVI_REALTIME_INSTRUCTIONS_ENV]: `[set:${effectiveRealtimeInstructions?.length ?? 0} chars]` }
+          : undefined,
+      };
+      if (asJson) printJson(dryRunPayload);
       else {
         console.log("Meeting provider invocation validated.");
         console.log(`Provider: ${selectedProvider}`);
         console.log(`Args: ${args.join(" ")}`);
+        if (realtimeInstructionsEnv) {
+          console.log(`${RAVI_REALTIME_INSTRUCTIONS_ENV}: [set:${effectiveRealtimeInstructions?.length ?? 0} chars]`);
+        }
       }
-      return basePayload;
+      return dryRunPayload;
     }
 
     if (shouldRunAsync) {
@@ -727,7 +763,7 @@ export class MeetingsCommands {
         speakBack: effectiveSpeakBack,
         realtimeVoice,
         realtimeLanguage,
-        realtimeInstructions: effectiveRealtimeInstructions,
+        realtimeInstructions: liveMode ? undefined : effectiveRealtimeInstructions,
         live: liveMode,
         liveAgentId: liveInstructions?.agentId ?? liveAgentId,
         liveContext,
@@ -735,7 +771,7 @@ export class MeetingsCommands {
         skipFinalize,
         artifactId: artifact.id,
       });
-      const pid = spawnDetachedCli(workerArgs);
+      const pid = spawnDetachedCli(workerArgs, liveMode ? undefined : realtimeInstructionsEnv);
       appendArtifactEvent(artifact.id, {
         eventType: "worker_started",
         status: "pending",
@@ -789,7 +825,7 @@ export class MeetingsCommands {
 
       const startedAt = Date.now();
       try {
-        const result = await runGoogleMeetRecorder(command, args, true);
+        const result = await runGoogleMeetRecorder(command, args, true, realtimeInstructionsEnv);
         if (result.exitCode !== 0) {
           const details = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
           throw new Error(`Google Meet provider exited with code ${result.exitCode}.${details ? `\n${details}` : ""}`);
@@ -998,9 +1034,9 @@ export class MeetingsCommands {
   @Returns(looseObjectSchema)
   realtimeTools(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({ flags: "--tools <names>", description: "Comma-separated Ravi tool names, or all" }) tools?: string,
+    @Option({ flags: "--tools <names>", description: "Comma-separated Ravi tool names allowlist" }) tools?: string,
   ) {
-    const manifest = buildRealtimeToolManifestForCurrentContext(tools);
+    const manifest = buildRealtimeToolManifestForCurrentContext(tools ?? "");
 
     if (asJson) {
       printJson(manifest);
