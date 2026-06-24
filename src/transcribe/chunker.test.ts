@@ -44,6 +44,8 @@ describe("audio chunker", () => {
       const chunks = await splitAudioChunks(input, "ogg", { chunkDuration: 0.5, overlap: 0.1 });
 
       expect(chunks.length).toBeGreaterThan(1);
+      expect(chunks[0].startSec).toBe(0);
+      expect(chunks[1].startSec).toBeCloseTo(0.4, 3);
       for (const chunk of chunks) {
         expect(chunk.mimetype).toBe("audio/mpeg");
         expect(chunk.duration).toBeGreaterThanOrEqual(0.1);

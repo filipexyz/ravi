@@ -11,8 +11,21 @@ const log = logger.child("transcribe");
 
 export interface TranscriptionResult {
   text: string;
+  provider?: string;
+  model?: string;
   duration?: number;
   chunks?: number;
+  segments?: TranscriptionSegment[];
+}
+
+export interface TranscriptionSegment {
+  index: number;
+  text: string;
+  startSec: number;
+  endSec?: number;
+  duration?: number;
+  provider: string;
+  model: string;
 }
 
 const EXT_MAP: Record<string, string> = {
@@ -22,6 +35,8 @@ const EXT_MAP: Record<string, string> = {
   "audio/mp4": "m4a",
   "audio/wav": "wav",
   "audio/webm": "webm",
+  "audio/webm;codecs=opus": "webm",
+  "audio/webm; codecs=opus": "webm",
 };
 
 interface TranscribeProvider {
@@ -32,6 +47,10 @@ interface TranscribeProvider {
 
 /** Max duration in seconds before chunking (10 minutes) */
 const CHUNK_THRESHOLD_SEC = 600;
+
+export interface TranscriptionOptions {
+  language?: string;
+}
 
 function getProvider(): TranscribeProvider {
   const groqKey = process.env.GROQ_API_KEY;
@@ -58,18 +77,29 @@ function getProvider(): TranscribeProvider {
 /**
  * Transcribe a single audio buffer (no chunking).
  */
-async function transcribeChunk(provider: TranscribeProvider, buffer: Buffer, mimetype: string): Promise<string> {
-  const ext = EXT_MAP[mimetype] ?? "ogg";
+async function transcribeChunk(
+  provider: TranscribeProvider,
+  buffer: Buffer,
+  mimetype: string,
+  options: TranscriptionOptions = {},
+): Promise<string> {
+  const ext = extensionForMimeType(mimetype);
   const filename = `audio.${ext}`;
   const file = new File([buffer], filename, { type: mimetype });
 
   const response = await provider.client.audio.transcriptions.create({
     file,
     model: provider.model,
-    language: "pt",
+    language: options.language ?? "pt",
   });
 
   return response.text;
+}
+
+function extensionForMimeType(mimetype: string): string {
+  const normalized = mimetype.toLowerCase().replace(/\s*;\s*/g, "; ");
+  const base = normalized.split(";")[0]?.trim();
+  return EXT_MAP[mimetype] ?? EXT_MAP[normalized] ?? (base ? EXT_MAP[base] : undefined) ?? "ogg";
 }
 
 function isAudioTooShortError(err: unknown): boolean {
@@ -81,9 +111,13 @@ function isAudioTooShortError(err: unknown): boolean {
  * Transcribe audio using Groq (preferred) or OpenAI.
  * Automatically chunks audio longer than 10 minutes.
  */
-export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise<TranscriptionResult> {
+export async function transcribeAudio(
+  buffer: Buffer,
+  mimetype: string,
+  options: TranscriptionOptions = {},
+): Promise<TranscriptionResult> {
   const provider = getProvider();
-  const ext = EXT_MAP[mimetype] ?? "ogg";
+  const ext = extensionForMimeType(mimetype);
 
   log.debug("Transcribing audio", { provider: provider.name, model: provider.model, mimetype, size: buffer.length });
 
@@ -98,9 +132,27 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
 
   // Short audio or unknown duration — transcribe directly
   if (!duration || duration <= CHUNK_THRESHOLD_SEC) {
-    const text = await transcribeChunk(provider, buffer, mimetype);
+    const text = await transcribeChunk(provider, buffer, mimetype, options);
     log.info("Transcription complete", { provider: provider.name, textLength: text.length, duration });
-    return { text, duration };
+    return {
+      text,
+      provider: provider.name,
+      model: provider.model,
+      duration,
+      chunks: 1,
+      segments: text.trim()
+        ? [
+            {
+              index: 0,
+              text: text.trim(),
+              startSec: 0,
+              ...(duration !== undefined ? { endSec: duration, duration } : {}),
+              provider: provider.name,
+              model: provider.model,
+            },
+          ]
+        : [],
+    };
   }
 
   // Long audio — split into chunks and transcribe each
@@ -111,6 +163,7 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
   });
 
   const texts: string[] = [];
+  const segments: TranscriptionSegment[] = [];
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     log.debug("Transcribing chunk", {
@@ -121,7 +174,7 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
     });
     let text = "";
     try {
-      text = await transcribeChunk(provider, chunk.buffer, chunk.mimetype ?? mimetype);
+      text = await transcribeChunk(provider, chunk.buffer, chunk.mimetype ?? mimetype, options);
     } catch (err) {
       if (isAudioTooShortError(err)) {
         log.warn("Skipping too-short audio chunk rejected by provider", {
@@ -134,8 +187,17 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
       }
       throw err;
     }
-    if (text.trim()) {
-      texts.push(text.trim());
+    const trimmed = text.trim();
+    if (trimmed) {
+      texts.push(trimmed);
+      segments.push({
+        index: i,
+        text: trimmed,
+        startSec: chunk.startSec,
+        ...(chunk.duration !== undefined ? { duration: chunk.duration, endSec: chunk.startSec + chunk.duration } : {}),
+        provider: provider.name,
+        model: provider.model,
+      });
     }
     log.debug("Chunk transcribed", { index: i, textLength: text.length });
   }
@@ -148,5 +210,12 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
     duration,
   });
 
-  return { text: fullText, duration, chunks: chunks.length };
+  return {
+    text: fullText,
+    provider: provider.name,
+    model: provider.model,
+    duration,
+    chunks: chunks.length,
+    segments,
+  };
 }

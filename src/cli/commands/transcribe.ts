@@ -3,20 +3,21 @@
  */
 
 import "reflect-metadata";
-import { readFile } from "node:fs/promises";
-import { extname } from "node:path";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
-import { transcribeAudio } from "../../transcribe/openai.js";
+import { SUPPORTED_AUDIO_EXTENSIONS, inferAudioMimeType, transcribeFile } from "../../transcribe/service.js";
 
 const transcribeFileReturnSchema = z.object({
   success: z.literal(true),
   transcription: z
     .object({
       text: z.string(),
+      provider: z.string().optional(),
+      model: z.string().optional(),
       duration: z.number().optional(),
       chunks: z.number().optional(),
+      segments: z.array(z.record(z.string(), z.unknown())).optional(),
     })
     .passthrough(),
   source: z.object({
@@ -29,16 +30,6 @@ const transcribeFileReturnSchema = z.object({
     lang: z.string(),
   }),
 });
-
-const EXT_MIME: Record<string, string> = {
-  ".ogg": "audio/ogg",
-  ".opus": "audio/ogg; codecs=opus",
-  ".mp3": "audio/mpeg",
-  ".m4a": "audio/mp4",
-  ".mp4": "audio/mp4",
-  ".wav": "audio/wav",
-  ".webm": "audio/webm",
-};
 
 @Group({
   name: "transcribe",
@@ -54,39 +45,33 @@ export class TranscribeCommands {
     @Option({ flags: "--lang <lang>", description: "Language code (default: pt)", defaultValue: "pt" }) _lang?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const ext = extname(filePath).toLowerCase();
-    const mimetype = EXT_MIME[ext];
+    const mimetype = inferAudioMimeType(filePath);
     if (!mimetype) {
-      fail(`Unsupported audio format: ${ext}. Supported: ${Object.keys(EXT_MIME).join(", ")}`);
+      fail(`Unsupported audio format. Supported: ${SUPPORTED_AUDIO_EXTENSIONS.join(", ")}`);
     }
 
-    let buffer: Buffer;
-    try {
-      buffer = await readFile(filePath);
-    } catch (_err) {
-      fail(`Cannot read file: ${filePath}`);
-    }
-
-    const sizeMB = (buffer.length / 1024 / 1024).toFixed(1);
     if (!asJson) {
-      console.log(`Transcribing ${filePath} (${sizeMB}MB, ${mimetype})...`);
+      console.log(`Transcribing ${filePath} (${mimetype})...`);
     }
 
-    const result = await transcribeAudio(buffer, mimetype);
+    let result: Awaited<ReturnType<typeof transcribeFile>>;
+    try {
+      result = await transcribeFile({ filePath, mimeType: mimetype, language: _lang ?? "pt" });
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
 
     const payload = {
       success: true,
       transcription: {
         text: result.text,
+        ...(result.provider ? { provider: result.provider } : {}),
+        ...(result.model ? { model: result.model } : {}),
         ...(result.duration !== undefined ? { duration: result.duration } : {}),
         ...(result.chunks !== undefined ? { chunks: result.chunks } : {}),
+        ...(result.segments !== undefined ? { segments: result.segments } : {}),
       },
-      source: {
-        filePath,
-        mimeType: mimetype,
-        sizeBytes: buffer.length,
-        sizeMB: Number(sizeMB),
-      },
+      source: result.source,
       options: {
         lang: _lang ?? "pt",
       },

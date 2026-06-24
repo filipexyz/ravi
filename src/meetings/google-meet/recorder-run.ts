@@ -17,6 +17,12 @@ import type {
   MeetingSession,
   MeetingTranscriptSegment,
 } from "../types.js";
+import {
+  inferAudioMimeType,
+  transcribeFile,
+  type TranscribeFileInput,
+  type TranscribeFileResult,
+} from "../../transcribe/service.js";
 
 export interface GoogleMeetRecorderImportInput {
   runDir: string;
@@ -34,6 +40,8 @@ export interface GoogleMeetRecorderImportInput {
 export interface GoogleMeetRecorderFinalizeInput extends GoogleMeetRecorderImportInput {
   outputDir?: string;
   actor?: string;
+  postTranscribe?: boolean;
+  transcriptionLanguage?: string;
 }
 
 export interface GoogleMeetRecorderFinalizeResult extends MeetingFinalizeResult {
@@ -112,6 +120,14 @@ interface RealtimeEventEnvelope {
   event: Record<string, unknown>;
 }
 
+let transcribeFileForMeeting: (input: TranscribeFileInput) => Promise<TranscribeFileResult> = transcribeFile;
+
+export function setGoogleMeetRecorderTranscriberForTests(
+  implementation: (input: TranscribeFileInput) => Promise<TranscribeFileResult> = transcribeFile,
+): void {
+  transcribeFileForMeeting = implementation;
+}
+
 export class GoogleMeetRecorderProvider implements MeetingProvider {
   readonly id = "google-meet-recorder";
 
@@ -162,7 +178,7 @@ class GoogleMeetRecorderSessionHandle implements MeetingSessionHandle {
     if (typeof runDir !== "string" || !runDir.trim()) {
       throw new Error("Google Meet recorder runDir is missing from session provenance.");
     }
-    return finalizeGoogleMeetRecorderRun({
+    return await finalizeGoogleMeetRecorderRun({
       runDir,
       outputDir: this.options.outputDir,
       actor: this.options.actor,
@@ -179,10 +195,16 @@ class GoogleMeetRecorderSessionHandle implements MeetingSessionHandle {
   }
 }
 
-export function finalizeGoogleMeetRecorderRun(
+export async function finalizeGoogleMeetRecorderRun(
   input: GoogleMeetRecorderFinalizeInput,
-): GoogleMeetRecorderFinalizeResult {
-  const session = importGoogleMeetRecorderRun(input);
+): Promise<GoogleMeetRecorderFinalizeResult> {
+  const importedSession = importGoogleMeetRecorderRun(input);
+  const session =
+    input.postTranscribe === false
+      ? importedSession
+      : await addPostCallAudioTranscription(importedSession, {
+          language: input.transcriptionLanguage ?? "pt",
+        });
   const registeredArtifact = registerMeetingRawArtifact({
     session,
     outputDir: input.outputDir,
@@ -200,6 +222,92 @@ export function finalizeGoogleMeetRecorderRun(
     handoffMessage: registeredArtifact.handoffMessage,
     registeredArtifact,
   };
+}
+
+async function addPostCallAudioTranscription(
+  session: MeetingSession,
+  options: { language: string },
+): Promise<MeetingSession> {
+  if ((session.transcriptSegments ?? []).length > 0) return session;
+
+  const audioRef = selectPostCallAudioRef(session.mediaRefs ?? []);
+  if (!audioRef?.path) {
+    return appendSessionDiagnostic(session, {
+      level: "warning",
+      code: "transcription.audio_missing",
+      message: "Post-call transcription skipped because no captured audio file was available.",
+    });
+  }
+
+  const mimeType = resolveAudioMimeType(audioRef);
+  if (!mimeType) {
+    return appendSessionDiagnostic(session, {
+      level: "warning",
+      code: "transcription.audio_type_unsupported",
+      message: `Post-call transcription skipped because audio type could not be inferred for ${audioRef.path}.`,
+    });
+  }
+
+  try {
+    const result = await transcribeFileForMeeting({
+      filePath: audioRef.path,
+      mimeType,
+      language: options.language,
+    });
+    const segments = transcriptionResultToMeetingSegments(result, audioRef, session);
+    if (segments.length === 0) {
+      return appendSessionDiagnostic(session, {
+        level: "warning",
+        code: "transcription.post_call_empty",
+        message: `Post-call transcription completed but returned no text for ${audioRef.path}.`,
+        rawProvenance: {
+          mediaPath: audioRef.path,
+          provider: result.provider ?? null,
+          model: result.model ?? null,
+        },
+      });
+    }
+
+    return appendSessionDiagnostic(
+      {
+        ...session,
+        participants: ensureMeetingAudioParticipant(session.participants),
+        transcriptSegments: segments,
+        rawProvenance: {
+          ...(isRecord(session.rawProvenance) ? session.rawProvenance : {}),
+          postCallTranscription: {
+            mediaPath: audioRef.path,
+            mimeType,
+            provider: result.provider ?? null,
+            model: result.model ?? null,
+            chunks: result.chunks ?? null,
+            duration: result.duration ?? null,
+          },
+        },
+      },
+      {
+        level: "info",
+        code: "transcription.post_call_audio",
+        message: `Generated ${segments.length} post-call audio transcription segment(s) from ${audioRef.path}.`,
+        rawProvenance: {
+          mediaPath: audioRef.path,
+          provider: result.provider ?? null,
+          model: result.model ?? null,
+          chunks: result.chunks ?? null,
+        },
+      },
+    );
+  } catch (error) {
+    return appendSessionDiagnostic(session, {
+      level: "warning",
+      code: "transcription.post_call_failed",
+      message: `Post-call transcription failed for ${audioRef.path}: ${error instanceof Error ? error.message : String(error)}`,
+      rawProvenance: {
+        mediaPath: audioRef.path,
+        mimeType,
+      },
+    });
+  }
 }
 
 export function importGoogleMeetRecorderRun(input: GoogleMeetRecorderImportInput): MeetingSession {
@@ -256,6 +364,79 @@ export function importGoogleMeetRecorderRun(input: GoogleMeetRecorderImportInput
       realtimeTranscriptionModel: metadata.options?.realtimeTranscriptionModel ?? null,
     },
   };
+}
+
+function selectPostCallAudioRef(mediaRefs: MeetingMediaRef[]): MeetingMediaRef | undefined {
+  return mediaRefs
+    .filter((ref) => ref.kind === "audio" && typeof ref.path === "string" && existsSync(ref.path))
+    .sort((left, right) => (right.sizeBytes ?? 0) - (left.sizeBytes ?? 0))[0];
+}
+
+function resolveAudioMimeType(mediaRef: MeetingMediaRef): string | undefined {
+  if (mediaRef.mimeType?.startsWith("audio/")) return mediaRef.mimeType;
+  return mediaRef.path ? inferAudioMimeType(mediaRef.path) : undefined;
+}
+
+function transcriptionResultToMeetingSegments(
+  result: TranscribeFileResult,
+  mediaRef: MeetingMediaRef,
+  session: MeetingSession,
+): MeetingTranscriptSegment[] {
+  const provider = result.provider ?? "transcribe";
+  const model = result.model ?? "unknown";
+  const source = {
+    mediaPath: mediaRef.path ?? null,
+    mediaProviderId: mediaRef.providerId ?? null,
+    provider,
+    model,
+  };
+  const transcriptSegments = result.segments?.length
+    ? result.segments.map((segment) => ({
+        index: segment.index,
+        text: segment.text,
+        startSec: segment.startSec,
+        endSec: segment.endSec,
+        duration: segment.duration,
+      }))
+    : result.text.trim()
+      ? [
+          {
+            index: 0,
+            text: result.text.trim(),
+            startSec: 0,
+            endSec: result.duration,
+            duration: result.duration,
+          },
+        ]
+      : [];
+
+  return transcriptSegments
+    .filter((segment) => segment.text.trim())
+    .map((segment, index) => ({
+      id: `audio-${index}`,
+      speakerId: "meeting-audio",
+      speakerName: "Audio da reunião",
+      startOffsetMs: Math.round(segment.startSec * 1000),
+      ...(segment.endSec !== undefined ? { endOffsetMs: Math.round(segment.endSec * 1000) } : {}),
+      capturedAt: session.endedAt,
+      text: segment.text.trim(),
+      source: "audio_transcription",
+      rawProvenance: {
+        ...source,
+        chunkIndex: segment.index,
+        chunkDuration: segment.duration ?? null,
+      },
+    }));
+}
+
+function ensureMeetingAudioParticipant(participants: MeetingParticipant[] | undefined): MeetingParticipant[] {
+  const existing = participants ?? [];
+  if (existing.some((participant) => participant.id === "meeting-audio")) return existing;
+  return [...existing, { id: "meeting-audio", displayName: "Audio da reunião", kind: "unknown" }];
+}
+
+function appendSessionDiagnostic(session: MeetingSession, diagnostic: MeetingCaptureDiagnostic): MeetingSession {
+  return { ...session, diagnostics: [...(session.diagnostics ?? []), diagnostic] };
 }
 
 function extractTranscriptSegments(eventsPath: string, botName?: string): MeetingTranscriptSegment[] {

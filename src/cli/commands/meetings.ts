@@ -647,17 +647,20 @@ export class MeetingsCommands {
   })
   @CommandAccess({ kind: "mutate", resource: "meetings", action: "finalize", risk: "medium" })
   @Returns(looseObjectSchema)
-  finalize(
+  async finalize(
     @Option({ flags: "--run-dir <dir>", description: "Completed meet-recorder run directory" }) runDir?: string,
     @Option({ flags: "--title <title>", description: "Optional meeting title override" }) title?: string,
+    @Option({ flags: "--no-post-transcribe", description: "Skip post-call audio transcription" })
+    noPostTranscribe?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!runDir?.trim()) fail("Missing --run-dir <dir>.");
     const ctx = contextDefaults();
-    const result = finalizeGoogleMeetRecorderRun({
+    const result = await finalizeGoogleMeetRecorderRun({
       runDir,
       actor: ctx.agentId ?? "ravi-meet-recorder",
       title: title?.trim() || undefined,
+      postTranscribe: !noPostTranscribe,
       originSessionKey: ctx.sessionKey,
       originSessionName: ctx.sessionName,
       originAgentId: ctx.agentId,
