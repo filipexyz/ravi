@@ -20,12 +20,12 @@ capability: explain
   identical inputs.
 - `ravi permissions materialize --subject-type agent --subject-id a1 --json`
   attributes each capability to a materializer source such as
-  `runtime-bootstrap`, `agent-runtime-permissions`, or
+  `runtime-bootstrap`, `agent-default-capabilities`, or
   `contact-policy-permissions`.
 - Actor/surface capability counts surfaced anywhere in explain or denial output
   carry the snapshot timestamp of the context that produced them.
-- Diagnostics invoked from an agent runtime context apply resource-visibility
-  filtering; a hidden session/chat behaves as not-found.
+- Diagnostics invoked from an agent identity runtime context apply
+  resource-visibility filtering; a hidden session/chat behaves as not-found.
 
 ## Audit Queries
 

@@ -7,7 +7,7 @@ capability: agent-identity
 capabilities:
   - provider-runtime
   - runtime-context
-  - agent-runtime-permissions
+  - agent-default-capabilities
   - audit
   - compartments
 tags:

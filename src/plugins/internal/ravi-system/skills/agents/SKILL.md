@@ -207,7 +207,7 @@ conferir o plano.
 
 Para permissões operacionais agent-only, use `ravi agents permissions`: ele
 grava a configuração de runtime em `agent.defaults.runtimePermissions` e o
-provider `agent-runtime-permissions` materializa as capabilities no contexto do
+provider `agent-default-capabilities` materializa as capabilities no contexto do
 agent.
 
 ```bash

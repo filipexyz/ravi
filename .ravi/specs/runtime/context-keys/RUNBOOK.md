@@ -3,25 +3,27 @@
 ## Inspect Current Contexts
 
 ```bash
-ravi context list --kind agent-runtime --json
-ravi context list --agent dev --kind agent-runtime --json
+ravi context list --kind turn-runtime --json
+ravi context list --agent dev --kind turn-runtime --json
 ravi context info <context-id> --json
 ```
 
 Use `lastUsedAt ?? createdAt` as the operational last-seen timestamp.
 
-## Verify Session Reuse
+## Verify Agent Identity Dispatch
 
 1. Send multiple turns to the same Ravi session.
 2. List contexts for that session:
 
 ```bash
-ravi context list --session <session-key> --kind agent-runtime --json
+ravi context list --session <session-key> --kind turn-runtime --json
 ```
 
-3. Confirm there is one live `agent-runtime` context for that session.
-4. Confirm `contextId` stays stable and `lastUsedAt` advances after each turn.
-5. Confirm `capabilities` do not change unless the session context is revoked and a new dispatch creates a fresh context.
+3. Confirm new contexts use `kind=turn-runtime`.
+4. Confirm metadata has `authorityMode=agent-identity`.
+5. Confirm no new live `agent-runtime` context is created by dispatch.
+6. Confirm external unresolved actors receive no tool authority, while internal
+   workspace prompts use `agent_identity:<agent>:workspace:default`.
 
 ## Cleanup Historical Turn-Scoped Contexts
 
@@ -52,6 +54,8 @@ After `ravi sessions reset <session>`, the session should have no live `agent-ru
 
 ```bash
 ravi context list --session <session-key> --kind agent-runtime --json
+ravi context list --session <session-key> --kind turn-runtime --json
 ```
 
-The next dispatch should create one fresh context with a new capability snapshot.
+The next dispatch should create a fresh `turn-runtime` context with
+`authorityMode=agent-identity`.

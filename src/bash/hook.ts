@@ -238,7 +238,7 @@ function canWithBashContext(
 
 function isDelegatedBashContext(ctx: Pick<BashPermissionContext, "kind" | "metadata">): boolean {
   if (ctx.kind === "turn-runtime" || ctx.kind === "invocation-runtime") return true;
-  return ctx.metadata?.authorityMode === "delegated";
+  return ctx.metadata?.authorityMode === "delegated" || ctx.metadata?.authorityMode === "agent-identity";
 }
 
 function isMaterializedAgentSuperadmin(ctx: Pick<BashPermissionContext, "agentId">): boolean {

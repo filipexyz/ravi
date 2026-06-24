@@ -112,12 +112,13 @@ describe("delegated turn enforcement (end-to-end)", () => {
     stateDir = null;
   });
 
-  it("does not authorize a resolved actor without provider-owned actor authority", () => {
+  it("authorizes a resolved actor through agent identity without actor or surface grants", () => {
     const ctx = turnContext(contactPrompt("luis"));
 
+    expect(ctx.context?.kind).toBe("turn-runtime");
+    expect(ctx.context?.metadata?.authorityMode).toBe("agent-identity");
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
-    expect(decision.allowed).toBe(false);
-    expect(decision.errorMessage).toContain("execute on group:sessions_info");
+    expect(decision.allowed).toBe(true);
   });
 
   it("fails closed for an unresolved actor in the same powerful agent session", () => {
@@ -130,7 +131,7 @@ describe("delegated turn enforcement (end-to-end)", () => {
 
   it("does not leak resolved actor state to the next unresolved speaker", () => {
     const trusted = turnContext(contactPrompt("luis"));
-    expect(runWithContext(trusted, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(false);
+    expect(runWithContext(trusted, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(true);
 
     // Next turn, same session/surface, but actor identity resolution failed.
     const untrusted = turnContext(unknownPrompt());
@@ -161,10 +162,11 @@ describe("delegated turn enforcement (end-to-end)", () => {
     expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
   });
 
-  it("keeps contact turns denied without provider-owned actor and surface authority", () => {
+  it("keeps contact turns bounded to provider-owned agent identity authority", () => {
     const ctx = turnContext(contactPrompt("luis"));
 
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
-    expect(decision.allowed).toBe(false);
+    expect(decision.allowed).toBe(true);
+    expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
   });
 });

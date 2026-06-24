@@ -43,9 +43,6 @@ export const runtimeBootstrapProvider: PermissionProvider = {
     if (!isTrustedBootstrapSubject(subject.type, subject.id)) return [];
     return bootstrapCapabilitiesFor(subject.type);
   },
-  materializeDelegationOverrides() {
-    return [];
-  },
 };
 
 function isTrustedBootstrapSubject(subjectType: string, subjectId: string): boolean {

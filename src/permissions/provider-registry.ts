@@ -1,35 +1,17 @@
 import { contextCapabilitiesProvider } from "./context-capabilities-provider.js";
 import type { PermissionProvider } from "./provider-types.js";
 import { agentIdentityPermissionsProvider } from "./agent-identity-permissions-provider.js";
-import { agentRuntimePermissionsProvider } from "./agent-runtime-permissions-provider.js";
+import { agentDefaultCapabilitiesProvider } from "./agent-default-capabilities-provider.js";
 import { contactPolicyPermissionsProvider } from "./contact-policy-permissions-provider.js";
+import { operatorControlProvider } from "./operator-control-provider.js";
 import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
 
-export const localOperatorProvider: PermissionProvider = {
-  id: "local-operator",
-  version: "bootstrap",
-  required: true,
-  supports(request) {
-    return request.localOperator === true && !request.context && !request.subject && !request.capabilities;
-  },
-  authorize(request) {
-    return {
-      decision: "allow",
-      allowed: true,
-      providerId: this.id,
-      providerVersion: this.version,
-      reasonCode: "local_operator_no_subject",
-      permission: request.permission,
-      objectType: request.objectType,
-      objectId: request.objectId,
-    };
-  },
-};
+export const localOperatorProvider: PermissionProvider = operatorControlProvider;
 
-const DEFAULT_PERMISSION_PROVIDERS: PermissionProvider[] = [localOperatorProvider, contextCapabilitiesProvider];
+const DEFAULT_PERMISSION_PROVIDERS: PermissionProvider[] = [operatorControlProvider, contextCapabilitiesProvider];
 const DEFAULT_CAPABILITY_MATERIALIZERS: PermissionProvider[] = [
   runtimeBootstrapProvider,
-  agentRuntimePermissionsProvider,
+  agentDefaultCapabilitiesProvider,
   agentIdentityPermissionsProvider,
   contactPolicyPermissionsProvider,
 ];

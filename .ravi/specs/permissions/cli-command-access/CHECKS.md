@@ -70,5 +70,5 @@ permissions.command_access.open_high_risk = 0
 - Add command-access tests proving semantic `read/mutate` capabilities allow,
   semantic resource wildcard allows, dotted transition alias allows, and legacy
   `execute:group` fallback still works.
-- Add local-operator tests proving direct terminal mode is explicit and never
+- Add operator-control tests proving direct terminal mode is explicit and never
   used for runtime contexts.

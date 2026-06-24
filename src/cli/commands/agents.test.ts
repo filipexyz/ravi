@@ -43,6 +43,27 @@ let mainSession: SessionLike | null = null;
 let sessionsByAgent: SessionLike[] = [];
 let transcriptPath: string | null = null;
 const instructionStates = new Map<string, string>();
+const sessionTurnUsageSummaries = new Map<string, Record<string, unknown>>();
+
+function defaultTurnUsageSummary(): Record<string, unknown> {
+  return {
+    lastTurn: null,
+    recent: {
+      windowMs: 86_400_000,
+      completeTurns: 0,
+      inputTokensAvg: 0,
+      outputTokensAvg: 0,
+      effectiveContextTokensAvg: 0,
+      effectiveContextTokensMax: 0,
+      durationMsAvg: null,
+      costUsdTotal: 0,
+    },
+  };
+}
+
+beforeEach(() => {
+  sessionTurnUsageSummaries.clear();
+});
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -119,7 +140,12 @@ mock.module("../../runtime/agent-instructions.js", () => ({
     const current = instructionStates.get(cwd) ?? "missing-both";
     if (current === "missing-both" && options?.createAgentsStub) {
       instructionStates.set(cwd, "agents-canonical");
-      return { createdClaude: true, createdAgents: true, updatedClaude: false, updatedAgents: false };
+      return {
+        createdClaude: true,
+        createdAgents: true,
+        updatedClaude: false,
+        updatedAgents: false,
+      };
     }
     if (
       current === "legacy-claude-canonical" ||
@@ -129,9 +155,19 @@ mock.module("../../runtime/agent-instructions.js", () => ({
       current === "duplicated-custom"
     ) {
       instructionStates.set(cwd, "agents-canonical");
-      return { createdClaude: false, createdAgents: false, updatedClaude: true, updatedAgents: true };
+      return {
+        createdClaude: false,
+        createdAgents: false,
+        updatedClaude: true,
+        updatedAgents: true,
+      };
     }
-    return { createdClaude: false, createdAgents: false, updatedClaude: false, updatedAgents: false };
+    return {
+      createdClaude: false,
+      createdAgents: false,
+      updatedClaude: false,
+      updatedAgents: false,
+    };
   },
   inspectAgentInstructionFiles: (cwd: string) => ({
     state: instructionStates.get(cwd) ?? "missing-both",
@@ -149,6 +185,8 @@ mock.module("../../router/router-db.js", () => ({
 mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   deleteSession: () => true,
+  getSessionTurnUsageSummary: (sessionKey: string) =>
+    sessionTurnUsageSummaries.get(sessionKey) ?? defaultTurnUsageSummary(),
   getSessionsByAgent: () => sessionsByAgent,
   getMainSession: () => mainSession,
   resolveSession: () => resolvedSession,
@@ -181,6 +219,7 @@ describe("AgentsCommands set model validation", () => {
     mainSession = null;
     sessionsByAgent = [];
     transcriptPath = null;
+    sessionTurnUsageSummaries.clear();
     instructionStates.clear();
   });
 
@@ -236,7 +275,11 @@ describe("AgentsCommands set model validation", () => {
     const payload = await commands.create("dev", "/tmp/dev", "codex", "gpt-5.5", true, true);
 
     expect(createAgentCalls).toEqual([{ id: "dev", cwd: "/tmp/dev", provider: "codex", model: "gpt-5.5" }]);
-    expect(payload?.agent).toMatchObject({ id: "dev", provider: "codex", model: "gpt-5.5" });
+    expect(payload?.agent).toMatchObject({
+      id: "dev",
+      provider: "codex",
+      model: "gpt-5.5",
+    });
   });
 
   it("validates model when creating an agent", async () => {
@@ -261,6 +304,7 @@ describe("AgentsCommands permissions", () => {
     mainSession = null;
     sessionsByAgent = [];
     transcriptPath = null;
+    sessionTurnUsageSummaries.clear();
     instructionStates.clear();
   });
 
@@ -289,7 +333,9 @@ describe("AgentsCommands permissions", () => {
     expect(updateAgentCalls).toEqual([
       {
         id: "dev",
-        partial: { defaults: { runtimePermissions: { profile: "full-access" } } },
+        partial: {
+          defaults: { runtimePermissions: { profile: "full-access" } },
+        },
       },
     ]);
   });
@@ -382,7 +428,10 @@ describe("AgentsCommands permissions", () => {
         action: "permissions",
         changed: true,
         agentId: "dev",
-        before: { profile: "bootstrap", capabilities: [{ permission: "execute", objectType: "executable" }] },
+        before: {
+          profile: "bootstrap",
+          capabilities: [{ permission: "execute", objectType: "executable" }],
+        },
         after: { profile: "bootstrap" },
         defaults: { runtimePermissions: { profile: "bootstrap" } },
       });
@@ -417,6 +466,83 @@ describe("AgentsCommands permissions", () => {
   });
 });
 
+describe("AgentsCommands session", () => {
+  beforeEach(() => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev" };
+    allAgents = [];
+    createAgentCalls = [];
+    updateAgentCalls = [];
+    resolvedSession = null;
+    mainSession = null;
+    sessionsByAgent = [];
+    transcriptPath = null;
+    instructionStates.clear();
+  });
+
+  it("labels lifetime tokens separately from recent turn context", () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:main",
+        name: "dev",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        providerSessionId: "provider-1",
+        inputTokens: 82_000_000,
+        outputTokens: 150_000,
+        totalTokens: 82_150_000,
+        contextTokens: 375_000,
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+    ];
+    sessionTurnUsageSummaries.set("agent:dev:main", {
+      lastTurn: {
+        runId: "run_1",
+        status: "complete",
+        startedAt: 1000,
+        completedAt: 90_000,
+        durationMs: 89_000,
+        inputTokens: 188_000,
+        outputTokens: 120,
+        cacheReadTokens: 187_000,
+        cacheCreationTokens: 0,
+        effectiveContextTokens: 375_000,
+        costUsd: 1.23,
+      },
+      recent: {
+        windowMs: 86_400_000,
+        completeTurns: 34,
+        inputTokensAvg: 170_000,
+        outputTokensAvg: 300,
+        effectiveContextTokensAvg: 293_000,
+        effectiveContextTokensMax: 466_000,
+        durationMsAvg: 101_000,
+        costUsdTotal: 31.37,
+      },
+    });
+
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logCalls.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      commands.session("dev");
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = logCalls.join("\n");
+    expect(output).toContain("Lifetime tokens: 82,150,000");
+    expect(output).toContain("Effective context: 375,000");
+    expect(output).toContain("Last turn: context=375,000 input=188,000 cache=187,000 output=120 duration=1.5m");
+    expect(output).toContain("Recent 24h: turns=34 avgContext=293,000 maxContext=466,000 avgInput=170,000 cost=$31.37");
+    expect(output).not.toContain("Tokens: 82150000");
+  });
+});
+
 describe("AgentsCommands debug --json", () => {
   beforeEach(() => {
     currentAgent = { id: "dev", cwd: "/tmp/dev" };
@@ -427,6 +553,7 @@ describe("AgentsCommands debug --json", () => {
     mainSession = null;
     sessionsByAgent = [];
     transcriptPath = null;
+    sessionTurnUsageSummaries.clear();
     instructionStates.clear();
   });
 

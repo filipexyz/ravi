@@ -190,7 +190,7 @@ describe("Scope Isolation", () => {
     it("allows superadmin commands for a direct operator even when no agent holds admin", () => {
       // Break-glass recovery: an incident that revokes every agent's admin must
       // not lock out the operator CLI. With no agent principal, superadmin-scoped
-      // recovery commands stay allowed through the explicit local-operator path.
+      // recovery commands stay allowed through the explicit operator-control path.
       const result = enforceScopeCheck("superadmin", "permissions", "grant");
       expect(result.allowed).toBe(true);
     });

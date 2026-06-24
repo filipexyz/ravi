@@ -51,14 +51,14 @@ Use focused fixtures or local test databases to cover:
 - route points to a missing instance: `routes.instance_missing` is `error`;
 - public mutating command lacks permission metadata:
   `permissions.command_mutation_unclassified` is `warn`;
-- provider runtime default chain matches the expected local-operator/context
-  providers and runtime-bootstrap/agent-runtime-permissions/contact-policy-permissions
+- provider runtime default chain matches the expected operator-control/context
+  providers and runtime-bootstrap/agent-default-capabilities/contact-policy-permissions
   materializers:
   `permissions.provider_runtime_default_chain` is emitted;
 - provider runtime boundary is isolated from native engines and relation stores:
   `permissions.provider_runtime_boundaries` is emitted;
 - no-subject/no-context permission requests fail closed unless explicit
-  local-operator mode is requested: `permissions.local_operator_explicit` is
+  operator-control mode is requested: `permissions.local_operator_explicit` is
   emitted;
 - runtime bootstrap does not grant actor/surface or admin authority:
   `permissions.runtime_bootstrap_scope` is emitted;

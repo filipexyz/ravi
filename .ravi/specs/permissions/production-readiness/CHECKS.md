@@ -52,9 +52,10 @@ Any mismatch MUST fail.
 
 - `capabilitiesAllow` for exact/wildcard/pattern/tool-group;
 - `admin system:*` short-circuit;
-- `canWithCapabilityContext` lets live superadmin win for `agent-runtime` but
-  NOT for delegated/turn-runtime;
-- `agent-runtime` context picks up a live grant added after issuance.
+- `canWithCapabilityContext` MUST NOT let live executor superadmin bypass the
+  materialized capabilities of `turn-runtime` agent-identity contexts;
+- historical `agent-runtime` fixtures remain bounded to their issued snapshot
+  and are not emitted by new dispatch.
 
 ## G5 — Recovery Paths (partially missing, required)
 
@@ -95,4 +96,6 @@ ravi permissions check "agent:audit" execute "group:whatsapp_group_create"  # DE
 # delegated explain on a zeroed surface with an authorized actor inherits
 ravi permissions explain execute group:sessions_info \
   --agent audit --actor agent:audit --chat chat:<any> --json
+# prod cutover gate
+ravi doctor --domain permissions --json
 ```

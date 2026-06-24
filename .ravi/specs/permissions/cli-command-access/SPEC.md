@@ -76,8 +76,8 @@ Optional fields:
   permission request after redaction.
 - `redactions`: command-specific input fields that MUST be redacted before
   provider execution or audit.
-- `localOperator`: whether direct local CLI with no principal may use the
-  explicit local-operator provider path.
+- `localOperator`: whether direct local CLI with no principal may request the
+  explicit `operator-control` provider path.
 - `notes`: short human-readable operator note for doctor/review output.
 
 ## Relationship To `@Scope`
@@ -108,7 +108,7 @@ The registry entry MUST include:
 - `access.resource`
 - `access.action`
 - `access.risk`
-- optional context, resource-id, input, redaction, and local-operator metadata
+- optional context, resource-id, input, redaction, and operator-control metadata
 
 Commands marked `@CliOnly` MAY omit `@CommandAccess` when they are strictly
 interactive, streaming, process-local, or not exposed to remote/tool execution.
@@ -178,7 +178,7 @@ Rules:
 ## Local Operator
 
 Direct terminal use without a resolved runtime principal MAY be authorized by
-the explicit `local-operator` provider only when the command metadata allows
+the explicit `operator-control` provider only when the command metadata allows
 that path.
 
 Rules:
@@ -246,7 +246,7 @@ lacks `@CommandAccess` MUST fail the relevant quality gate.
 - CLI command authorization accepts semantic `read/mutate` capabilities derived
   from `@CommandAccess` and uses legacy `execute:group` capabilities only as a
   compatibility fallback.
-- Direct local CLI without principal uses explicit local-operator mode only.
+- Direct local CLI without principal uses explicit operator-control mode only.
 - `ravi doctor --domain permissions` reports missing command access metadata
   and can distinguish missing metadata from intentionally read-only commands.
 - Adding a new public mutating command without `@CommandAccess` fails tests or

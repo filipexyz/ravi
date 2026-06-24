@@ -7,7 +7,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { addContactTag, getContact } from "../../contacts.js";
-import { ensureAgentRuntimeCapability } from "../../permissions/agent-runtime-permissions-provider.js";
+import { ensureAgentRuntimeCapability } from "../../permissions/agent-default-capabilities-provider.js";
 import {
   buildAuthorizationGuidance,
   formatCanonicalCapability,
@@ -238,7 +238,7 @@ export class PermissionsCommands {
     @Option({ flags: "--permission <permission>", description: "Permission/relation to check" }) permission?: string,
     @Option({ flags: "--object-type <type>", description: "Object type" }) objectType?: string,
     @Option({ flags: "--object-id <id>", description: "Object id" }) objectId?: string,
-    @Option({ flags: "--local-operator", description: "Evaluate as explicit local operator" })
+    @Option({ flags: "--local-operator", description: "Evaluate through explicit operator-control local path" })
     localOperator?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {

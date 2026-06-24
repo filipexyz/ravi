@@ -317,6 +317,8 @@ const MUTATING_VERBS = new Set([
 const READ_COMMAND_ACCESS_MUTATION_ALLOWLIST = new Set([
   // This command only renders the plan for a policy materialization and never writes.
   "permissions.policies.dry-run",
+  // This command only evaluates metadata.send_window and never sends or writes.
+  "crm.pipeline.policy.send-window-check",
 ]);
 
 export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: InspectDoctorOptions = {}): DoctorReport {
@@ -457,6 +459,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildPermissionProviderRuntimeBoundaryCheck(deps));
   addCheck(checks, () => buildPermissionLocalOperatorExplicitCheck(deps));
   addCheck(checks, () => buildPermissionBootstrapScopeCheck(deps));
+  addCheck(checks, () => buildPermissionAgentIdentityReadinessCheck(deps));
   const filtered = filterChecksByDomain(checks, options.domain);
   return buildReport(filtered, {
     generatedAt: deps.now().toISOString(),
@@ -1879,8 +1882,13 @@ function isLikelyMutatingCommand(fullName: string): boolean {
 function buildPermissionProviderRuntimeChainCheck(deps: DoctorDeps): LegacyDoctorCheck {
   const authorizationProviders = deps.getConfiguredPermissionProviders().map((provider) => provider.id);
   const capabilityMaterializers = deps.getConfiguredCapabilityMaterializers().map((provider) => provider.id);
-  const expectedAuthorization = ["local-operator", "context-capabilities"];
-  const expectedMaterializers = ["runtime-bootstrap", "agent-runtime-permissions", "contact-policy-permissions"];
+  const expectedAuthorization = ["operator-control", "context-capabilities"];
+  const expectedMaterializers = [
+    "runtime-bootstrap",
+    "agent-default-capabilities",
+    "agent-identity-permissions",
+    "contact-policy-permissions",
+  ];
   const authOk = sameStringList(authorizationProviders, expectedAuthorization);
   const materializersOk = sameStringList(capabilityMaterializers, expectedMaterializers);
 
@@ -1971,13 +1979,13 @@ function buildPermissionLocalOperatorExplicitCheck(deps: DoctorDeps): LegacyDoct
     return {
       id: "permissions.local_operator_explicit",
       domain: "permissions",
-      title: "Explicit local operator authorization",
+      title: "Explicit operator-control authorization",
       status: "fail",
       severity: "error",
-      summary: "local operator authorization is not explicit and fail-closed",
+      summary: "operator-control authorization is not explicit and fail-closed",
       details: [
         `implicit no-subject decision: ${implicit.allowed ? "allowed" : "denied"} (${implicit.reasonCode})`,
-        `explicit local operator decision: ${explicitAllowed ? "allowed" : "denied"}`,
+        `explicit operator-control decision: ${explicitAllowed ? "allowed" : "denied"}`,
       ],
       fixHint: "missing subject/context requests must deny; direct local CLI must opt into localOperator explicitly",
       data: {
@@ -1991,9 +1999,9 @@ function buildPermissionLocalOperatorExplicitCheck(deps: DoctorDeps): LegacyDoct
   return {
     id: "permissions.local_operator_explicit",
     domain: "permissions",
-    title: "Explicit local operator authorization",
+    title: "Explicit operator-control authorization",
     status: "ok",
-    summary: "missing subject/context denies unless the caller explicitly requests local operator mode",
+    summary: "missing subject/context denies unless the caller explicitly requests operator-control mode",
     data: {
       implicitAllowed: false,
       explicitAllowed: true,
@@ -2052,6 +2060,92 @@ function buildPermissionBootstrapScopeCheck(deps: DoctorDeps): LegacyDoctorCheck
       privilegedBootstrap: 0,
     },
   };
+}
+
+function buildPermissionAgentIdentityReadinessCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const now = deps.now().getTime();
+  const rows = deps.queryRows<{
+    context_id: string;
+    kind: string;
+    agent_id: string | null;
+    session_name: string | null;
+    metadata_json: string | null;
+  }>(
+    `SELECT context_id, kind, agent_id, session_name, metadata_json
+     FROM contexts
+     WHERE (revoked_at IS NULL OR revoked_at > ?)
+       AND (expires_at IS NULL OR expires_at > ?)`,
+    [now, now],
+  );
+
+  const nonAgentIdentityTurns = rows.filter((row) => {
+    if (row.kind !== "turn-runtime") return false;
+    const metadata = parseDoctorJsonRecord(row.metadata_json);
+    return metadata.authorityMode !== "agent-identity";
+  });
+  const liveAgentRuntime = rows.filter((row) => row.kind === "agent-runtime");
+  const liveAdminBootstrap = rows.filter((row) => row.kind === "admin-bootstrap");
+
+  const failures: string[] = [];
+  if (nonAgentIdentityTurns.length > 0) {
+    failures.push(`${nonAgentIdentityTurns.length} live turn-runtime context(s) are not agent-identity`);
+  }
+  if (liveAgentRuntime.length > 0) {
+    failures.push(`${liveAgentRuntime.length} live agent-runtime context(s) remain`);
+  }
+  if (liveAdminBootstrap.length > 0) {
+    failures.push(`${liveAdminBootstrap.length} live admin-bootstrap context(s) remain`);
+  }
+
+  const sample = [...nonAgentIdentityTurns, ...liveAgentRuntime, ...liveAdminBootstrap].slice(0, 10).map((row) => ({
+    contextId: row.context_id,
+    kind: row.kind,
+    agentId: row.agent_id,
+    sessionName: row.session_name,
+  }));
+
+  if (failures.length > 0) {
+    return {
+      id: "permissions.agent_identity_readiness",
+      domain: "permissions",
+      title: "Agent identity production readiness",
+      status: "fail",
+      severity: "error",
+      summary: "live context inventory still contains non-agent-identity authority roots",
+      details: failures,
+      fixHint:
+        "new dispatch must issue agent-identity turn-runtime contexts only; revoke or migrate remaining agent-runtime/admin-bootstrap roots before full production cutover",
+      data: {
+        nonAgentIdentityTurns: nonAgentIdentityTurns.length,
+        liveAgentRuntime: liveAgentRuntime.length,
+        liveAdminBootstrap: liveAdminBootstrap.length,
+        sample,
+      },
+    };
+  }
+
+  return {
+    id: "permissions.agent_identity_readiness",
+    domain: "permissions",
+    title: "Agent identity production readiness",
+    status: "ok",
+    summary: "all live runtime authority roots are agent-identity turn-runtime contexts",
+    data: {
+      nonAgentIdentityTurns: 0,
+      liveAgentRuntime: 0,
+      liveAdminBootstrap: 0,
+    },
+  };
+}
+
+function parseDoctorJsonRecord(value: string | null): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 function sameStringList(actual: string[], expected: string[]): boolean {

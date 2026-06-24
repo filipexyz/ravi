@@ -11,6 +11,7 @@ capabilities:
   - profiles
   - tag-policy
   - runtime-context
+  - operator-control
   - least-privilege
   - explain
   - production-readiness
@@ -48,13 +49,13 @@ core. Ravi core MUST NOT embed a native permission graph as policy.
 
 Authorization providers:
 
-- `local-operator`
+- `operator-control`
 - `context-capabilities`
 
 Capability materializers:
 
 - `runtime-bootstrap`
-- `agent-runtime-permissions`
+- `agent-default-capabilities`
 - `agent-identity-permissions`
 - `contact-policy-permissions`
 
@@ -81,7 +82,7 @@ provider-owned surfaces already used by materializers:
 
 - permission-scoped tags: `kind=system`, `source=permissions`;
 - `agent.defaults.runtimePermissions` consumed by
-  `agent-runtime-permissions` and projected into
+  `agent-default-capabilities` and projected into
   `agent-identity-permissions`;
 - contact policy tags consumed by `contact-policy-permissions` for
   legacy/user-overlay policy, not the default multiplayer tool authority path.
@@ -92,6 +93,12 @@ but operator and agent guidance SHOULD prefer `ravi permissions allow/resolve`
 for recurring user/workflow access because it updates the agent identity in one
 explainable plan. Contact/user profile changes are legacy/user-overlay unless a
 future policy explicitly uses them for invocation eligibility.
+
+`operator-control` is the explicit operator authorization provider for local
+management actions. It MUST NOT be used as agent tool authority and MUST NOT
+materialize agent capabilities. The current CLI compatibility flag
+`--local-operator` MAY continue to request this path, but provider ids,
+diagnostics, doctor checks, and specs MUST name the provider `operator-control`.
 
 ## Agent-Facing Authorization UX
 
@@ -199,8 +206,9 @@ Canonical visibility capabilities:
   provider output.
 
 Direct local CLI execution without a resolved principal MAY remain an explicit
-local-operator path. Runtime execution with an agent context MUST NOT use local
-discovery as an authorization bypass.
+operator-control path requested by compatibility metadata such as
+`localOperator=true`. Runtime execution with an agent context MUST NOT use
+local discovery as an authorization bypass.
 
 ## Agent Visibility Migration
 

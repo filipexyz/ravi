@@ -16,7 +16,7 @@ import {
   localOperatorCan,
   materializeSubjectCapabilities,
 } from "./provider-runtime.js";
-import { ensureAgentCanViewAgent, ensureAgentCanViewAllAgents } from "./agent-runtime-permissions-provider.js";
+import { ensureAgentCanViewAgent, ensureAgentCanViewAllAgents } from "./agent-default-capabilities-provider.js";
 
 let stateDir: string | null = null;
 
@@ -43,7 +43,7 @@ describe("Permission Provider Runtime", () => {
     expect(agentCan(undefined, "execute", "group", "daemon")).toBe(false);
   });
 
-  it("keeps explicit direct operator calls in the bootstrap provider", () => {
+  it("keeps explicit direct operator calls in the operator-control provider", () => {
     const decision = authorizePermission({
       localOperator: true,
       permission: "execute",
@@ -52,8 +52,9 @@ describe("Permission Provider Runtime", () => {
     });
 
     expect(decision.allowed).toBe(true);
-    expect(decision.providerId).toBe("local-operator");
-    expect(decision.reasonCode).toBe("local_operator_no_subject");
+    expect(decision.providerId).toBe("operator-control");
+    expect(decision.reasonCode).toBe("operator_control_local_allow");
+    expect(decision.evidence).toEqual([{ kind: "operator-control", mode: "local" }]);
     expect(decision.requestId).toBeString();
     expect(decision.durationMs).toBeGreaterThanOrEqual(0);
     expect(localOperatorCan("execute", "group", "daemon")).toBe(true);
@@ -108,7 +109,7 @@ describe("Permission Provider Runtime", () => {
       permission: "view",
       objectType: "agent",
       objectId: "created",
-      source: "agent-runtime-permissions:agent:creator",
+      source: "agent-default-capabilities:agent:creator",
     });
   });
 
@@ -121,7 +122,7 @@ describe("Permission Provider Runtime", () => {
       permission: "view",
       objectType: "agent",
       objectId: "*",
-      source: "agent-runtime-permissions:agent:main",
+      source: "agent-default-capabilities:agent:main",
     });
     expect(canWithCapabilities(capabilities, "view", "agent", "worker")).toBe(true);
   });
@@ -138,7 +139,7 @@ describe("Permission Provider Runtime", () => {
       permission: "admin",
       objectType: "system",
       objectId: "*",
-      source: "agent-runtime-permissions:agent:trusted-agent",
+      source: "agent-default-capabilities:agent:trusted-agent",
     });
     expect(canWithCapabilities(capabilities, "execute", "executable", "omni")).toBe(true);
   });
@@ -155,7 +156,7 @@ describe("Permission Provider Runtime", () => {
       permission: "execute",
       objectType: "executable",
       objectId: "omni",
-      source: "agent-runtime-permissions:agent:omni-agent",
+      source: "agent-default-capabilities:agent:omni-agent",
     });
     expect(canWithCapabilities(materializeSubjectCapabilities("agent", "dev"), "execute", "executable", "omni")).toBe(
       false,
@@ -453,12 +454,12 @@ describe("Permission Provider Runtime boundaries", () => {
 
   it("keeps provider-owned config behind the materializer chain", () => {
     expect(getConfiguredPermissionProviders().map((provider) => provider.id)).toEqual([
-      "local-operator",
+      "operator-control",
       "context-capabilities",
     ]);
     expect(getConfiguredCapabilityMaterializers().map((provider) => provider.id)).toEqual([
       "runtime-bootstrap",
-      "agent-runtime-permissions",
+      "agent-default-capabilities",
       "agent-identity-permissions",
       "contact-policy-permissions",
     ]);

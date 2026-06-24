@@ -22,9 +22,6 @@ export const contactPolicyPermissionsProvider: PermissionProvider = {
     if (subject.type !== "contact") return [];
     return materializeContactPolicyCapabilities(subject.id);
   },
-  materializeDelegationOverrides() {
-    return [];
-  },
 };
 
 export function materializeContactPolicyCapabilities(contactId: string): ContextCapability[] {

@@ -6,7 +6,7 @@ domain: permissions
 capability: production-readiness
 capabilities:
   - provider-runtime
-  - agent-runtime-permissions
+  - agent-default-capabilities
   - agent-identity-permissions
   - contact-policy-permissions
   - delegation
@@ -22,7 +22,7 @@ tags:
 applies_to:
   - src/permissions/provider-runtime.ts
   - src/permissions/provider-registry.ts
-  - src/permissions/agent-runtime-permissions-provider.ts
+  - src/permissions/agent-default-capabilities-provider.ts
   - src/permissions/agent-identity-permissions-provider.ts
   - src/permissions/contact-policy-permissions-provider.ts
   - src/permissions/capability-context.ts

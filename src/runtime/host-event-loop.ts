@@ -224,9 +224,14 @@ function recordRuntimeCredentialTurnSuccess(streaming: RuntimeHostStreamingSessi
   if (!credentialId) return;
   try {
     recordRuntimeCredentialSuccess(credentialId);
-    completeRuntimeCredentialAttempt(credential?.attemptId, { status: "succeeded" });
+    completeRuntimeCredentialAttempt(credential?.attemptId, {
+      status: "succeeded",
+    });
   } catch (error) {
-    log.warn("Failed to record runtime credential success", { credentialId, error });
+    log.warn("Failed to record runtime credential success", {
+      credentialId,
+      error,
+    });
   }
 }
 
@@ -269,7 +274,10 @@ function recordRuntimeCredentialTurnFailure(input: {
 
   try {
     recordRuntimeCredentialFailure(credential.credentialId, signal);
-    completeRuntimeCredentialAttempt(credential.attemptId, { status: "failed", signal });
+    completeRuntimeCredentialAttempt(credential.attemptId, {
+      status: "failed",
+      signal,
+    });
   } catch (error) {
     log.warn("Failed to record runtime credential failure", {
       credentialId: credential.credentialId,
@@ -962,7 +970,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       resolvedTarget = resolution.target;
       resolvedSource = resolution.source;
       if (!resolution.target) {
-        log.warn("Response target unresolved — dropping emit", { sessionName, source: resolvedSource });
+        log.warn("Response target unresolved — dropping emit", {
+          sessionName,
+          source: resolvedSource,
+        });
         return;
       }
     }
@@ -1030,7 +1041,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           streaming.abortController.abort();
         }
         Promise.resolve(runtimeEventIterator.return?.()).catch((error) => {
-          log.warn("Failed to close inactive provider event iterator", { runId, sessionName, error });
+          log.warn("Failed to close inactive provider event iterator", {
+            runId,
+            sessionName,
+            error,
+          });
         });
         resolve({ done: true, value: undefined as never });
       }, PROVIDER_TURN_INACTIVITY_CHECK_MS);
@@ -1590,7 +1605,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.runtimeProvider = runtimeSession.provider;
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
-        updateTokens(session.sessionKey, inputTokens, outputTokens);
+        updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel
@@ -1646,7 +1661,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                     fetchedAt: resolvedCost.pricing?.fetchedAt ?? null,
                     stale: resolvedCost.pricing?.stale ?? null,
                   }
-                : { status: resolvedCost?.pricingStatus ?? "skipped", error: resolvedCost?.pricingError ?? null },
+                : {
+                    status: resolvedCost?.pricingStatus ?? "skipped",
+                    error: resolvedCost?.pricingError ?? null,
+                  },
             promptTooLongReset: streaming._promptTooLong ?? false,
           },
         });
@@ -1664,7 +1682,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
           })
         ) {
-          applyTaskSessionTtlForAgent(session, agent.id, { source: "runtime.turn.complete" });
+          applyTaskSessionTtlForAgent(session, agent.id, {
+            source: "runtime.turn.complete",
+          });
         }
 
         // Auto-reset session when prompt is too long (compact failed)
@@ -2097,7 +2117,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         metadata: { phase: "runtime.event_loop.finally" },
       });
       if (restartStashedReason && restartStashedSession) {
-        await restartStashedSession({ sessionName, reason: restartStashedReason });
+        await restartStashedSession({
+          sessionName,
+          reason: restartStashedReason,
+        });
       }
       drainPendingStarts();
     }

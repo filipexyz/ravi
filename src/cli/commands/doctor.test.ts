@@ -92,9 +92,14 @@ function makeHealthyDeps() {
       ] as any,
     getRuntimeCompatibilityIssues: () => [],
     listRegisteredRuntimeProviderIds: () => ["codex", "claude"] as any,
-    getConfiguredPermissionProviders: () => [{ id: "local-operator" }, { id: "context-capabilities" }] as any,
+    getConfiguredPermissionProviders: () => [{ id: "operator-control" }, { id: "context-capabilities" }] as any,
     getConfiguredCapabilityMaterializers: () =>
-      [{ id: "runtime-bootstrap" }, { id: "agent-runtime-permissions" }, { id: "contact-policy-permissions" }] as any,
+      [
+        { id: "runtime-bootstrap" },
+        { id: "agent-default-capabilities" },
+        { id: "agent-identity-permissions" },
+        { id: "contact-policy-permissions" },
+      ] as any,
     authorizePermission: () => ({ allowed: false, reasonCode: "missing_subject" }) as any,
     localOperatorCan: () => true,
     materializeSubjectCapabilities: (subjectType: string, subjectId: string) =>
@@ -312,6 +317,28 @@ describe("inspectDoctor", () => {
       total: 1,
       readMutating: ["daemon.restart"],
     });
+  });
+
+  it("does not flag explicitly allowlisted read-only commands with mutating-looking names", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      getRegistry: () =>
+        ({
+          commands: [
+            {
+              fullName: "crm.pipeline.policy.send-window-check",
+              scope: "open",
+              returns: true,
+              access: { kind: "read", resource: "crm.pipeline.policy", action: "send-window-check", risk: "low" },
+            },
+          ],
+        }) as any,
+    });
+
+    const check = report.checks.find((item) => item.id === "permissions.command_mutation_unclassified");
+    expect(check?.status).toBe("pass");
+    expect(check?.data).toMatchObject({ total: 0 });
   });
 
   it("fails command access coverage when a public command lacks metadata", () => {
