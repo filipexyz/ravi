@@ -389,6 +389,100 @@ describe("pages CLI commands", () => {
     });
   });
 
+  it("publishes to the project Pages host without an explicit site slug", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-project-publish-command-test-");
+    const dir = await tempDir();
+    await writeFile(join(dir, "index.html"), "<h1>Project Docs</h1>");
+    const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
+    const client = {
+      me: mock(async () => ({
+        user: { email: "alice@example.com" },
+        organization: { id: "org_1" },
+      })),
+      createPageUploadSession: mock(async (input: Record<string, unknown>, accessToken: string) => {
+        expect(accessToken).toBe("access-secret");
+        calls.push({ method: "createPageUploadSession", payload: input });
+        expect(input).toMatchObject({
+          projectRef: "proj",
+          siteRef: null,
+          packageManifest: {
+            entrypoint: "index.html",
+            files: [{ path: "index.html" }],
+          },
+        });
+        return {
+          uploadSession: { id: "upl_project_host" },
+          uploadPolicy: { directUpload: false },
+        };
+      }),
+      finalizeArtifactPublish: mock(async (input: Record<string, unknown>, accessToken: string) => {
+        expect(accessToken).toBe("access-secret");
+        calls.push({ method: "finalizeArtifactPublish", payload: input });
+        expect(input).toMatchObject({
+          uploadSessionId: "upl_project_host",
+          publish: {
+            activate: true,
+            replaceRelease: false,
+            route: {
+              path: "/",
+            },
+          },
+          source: {
+            tool: "ravi pages publish",
+          },
+        });
+        expect((input.publish as Record<string, unknown>).siteRef).toBeUndefined();
+        return {
+          artifact: { id: "cloud_art_project" },
+          artifactVersion: { id: "cloud_ver_project", versionNumber: 1 },
+          site: {
+            id: "site_1",
+            slug: "rbbt-core",
+            defaultHostname: "rbbt-core.ravi.page",
+            defaultVisibility: "public",
+          },
+          publish: { id: "pub_project" },
+          release: { id: "rel_project", url: "https://rbbt-core.ravi.page/" },
+          routes: [{ id: "route_project", path: "/" }],
+          url: "https://rbbt-core.ravi.page/",
+        };
+      }),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.publish(
+        ["proj", dir],
+        undefined,
+        undefined,
+        undefined,
+        "Project Docs",
+        undefined,
+        undefined,
+        "index.html",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls.map((call) => call.method)).toEqual(["createPageUploadSession", "finalizeArtifactPublish"]);
+    expect(payload).toMatchObject({
+      success: true,
+      url: "https://rbbt-core.ravi.page/",
+      site: { slug: "rbbt-core" },
+      release: { id: "rel_project" },
+    });
+  });
+
   it("uses the saved Console scope when the Pages project is omitted", async () => {
     stateDir = await createIsolatedRaviState("ravi-pages-scope-command-test-");
     upsertConsoleScopeDefault({

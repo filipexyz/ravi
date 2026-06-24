@@ -218,7 +218,7 @@ export interface ArtifactPublishFinalizeInput {
     }>;
   };
   publish?: {
-    siteRef: string;
+    siteRef?: string | null;
     activate?: boolean;
     route?: {
       path?: string;
