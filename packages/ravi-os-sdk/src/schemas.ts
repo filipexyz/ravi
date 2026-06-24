@@ -34497,7 +34497,7 @@ export const PagesPublishInputSchema = {
   "additionalProperties": false,
   "properties": {
     "args": {
-      "description": "[project] <site> <source>; project defaults to Ravi Console scope",
+      "description": "[project] [site] <source>; project defaults to Ravi Console scope and site defaults to the project Pages host",
       "items": {
         "type": "string"
       },
@@ -34554,6 +34554,10 @@ export const PagesPublishInputSchema = {
     },
     "route": {
       "description": "Pages route path to mount content at (default: /)",
+      "type": "string"
+    },
+    "site": {
+      "description": "Legacy site slug/id; defaults to the project Pages host",
       "type": "string"
     },
     "title": {
@@ -35358,7 +35362,7 @@ export const PermissionsCheckInputSchema = {
   "additionalProperties": false,
   "properties": {
     "localOperator": {
-      "description": "Evaluate as explicit local operator",
+      "description": "Evaluate through explicit operator-control local path",
       "type": "boolean"
     },
     "objectId": {

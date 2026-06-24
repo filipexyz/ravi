@@ -2257,7 +2257,7 @@ export class RaviClient {
         body: {},
       });
     },
-    /** Bootstrap the admin runtime context-key. Refuses to run if any live admin context already exists. */
+    /** Retired. Admin-bootstrap context keys no longer authorize Ravi; use local operator-control. */
     initAdminKey: async (options?: {
       fromEnv?: boolean;
       label?: string;
@@ -3729,7 +3729,7 @@ export class RaviClient {
   };
 
   readonly pages = {
-    /** Create a Ravi Pages site record; does not upload HTML or assets */
+    /** Compatibility: ensure a Ravi Pages host record; does not upload HTML or assets */
     create: async (args: string[], options?: {
       console?: string;
       defaultSite?: boolean;
@@ -3766,7 +3766,7 @@ export class RaviClient {
         body: { project, ...(options ?? {}) },
       });
     },
-    /** Publish a directory, file, or local artifact to a Ravi Pages site */
+    /** Publish a directory, file, or local artifact to a project Pages host */
     publish: async (args: string[], options?: {
       artifactSlug?: string;
       artifactVersion?: string;
@@ -3781,6 +3781,7 @@ export class RaviClient {
       reason?: string;
       replaceRelease?: boolean;
       route?: string;
+      site?: string;
       title?: string;
       uploadSession?: string;
       visibility?: string;
