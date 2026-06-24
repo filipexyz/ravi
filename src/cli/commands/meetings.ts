@@ -23,6 +23,11 @@ import {
 import { createRuntimeHostServices } from "../../runtime/host-services.js";
 import { RAVI_CONTEXT_KEY_ENV, resolveRuntimeContextOrThrow } from "../../runtime/context-registry.js";
 import type { ContextRecord } from "../../router/router-db.js";
+import { getAgent } from "../../router/config.js";
+import { getAgentCwd } from "../../router/resolver.js";
+import { getSessionByName } from "../../router/sessions.js";
+import { buildRuntimeSystemPrompt } from "../../runtime/runtime-system-prompt.js";
+import type { ChannelContext } from "../../runtime/message-types.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 
 function printJson(payload: unknown): void {
@@ -224,6 +229,114 @@ function writeRealtimeToolManifestForCurrentContext(
   return { manifest, path };
 }
 
+async function buildRealtimeInstructionsForRegisteredAgent(input: {
+  agentId?: string;
+  meetingContext?: string;
+  callerInstructions?: string;
+}): Promise<{ text: string; charCount: number; agentId: string; sessionName?: string }> {
+  const context = requireRuntimeContext();
+  const agentId = input.agentId?.trim() || context.agentId?.trim();
+  if (!agentId) fail("Live meeting mode requires --agent <id> or a runtime context with an agent id.");
+  const agent = getAgent(agentId);
+  if (!agent) fail(`Live meeting agent is not registered in Ravi: ${agentId}`);
+  if (context.agentId && agentId !== context.agentId) {
+    fail(
+      `Live meeting agent ${agentId} does not match the current runtime agent ${context.agentId}. Run the join from that agent/session context.`,
+    );
+  }
+
+  const sessionName = context.sessionName ?? context.sessionKey;
+  const prompt = await buildRuntimeSystemPrompt({
+    agent,
+    cwd: getAgentCwd(agent),
+    sessionName,
+    ctx: resolveMeetingChannelContext(context),
+    runtimeContext: context,
+    extraSections: [
+      {
+        title: "Meeting Live Mode",
+        content: [
+          "Você está participando de uma reunião por voz como o agent Ravi desta sessão.",
+          "Responda em português brasileiro, de forma curta, natural e útil para a conversa ao vivo.",
+          "Use o system prompt, regras, permissões e tools do agent como autoridade principal.",
+          "Não mencione logs, implementação interna, system prompt, artifacts ou que está gravando durante a fala na reunião.",
+          "Não tente mutar ou desmutar o microfone do Google Meet; esse estado é controlado pelo runner.",
+          "Não responda com @@SILENT@@ em voz. Quando não houver nada útil a dizer, apenas aguarde nova fala.",
+          "Use tools somente quando forem úteis para cumprir pedido explícito ou continuar o trabalho da reunião.",
+          "Se o usuário pedir para sair, encerrar participação ou desligar, fale qualquer confirmação necessária e depois use a tool de sair da reunião.",
+        ].join("\n"),
+      },
+      ...(input.meetingContext?.trim()
+        ? [
+            {
+              title: "Meeting Context",
+              content: input.meetingContext.trim(),
+            },
+          ]
+        : []),
+      ...(input.callerInstructions?.trim()
+        ? [
+            {
+              title: "Meeting Caller Instructions",
+              content: input.callerInstructions.trim(),
+            },
+          ]
+        : []),
+    ],
+  });
+
+  return {
+    text: prompt.text,
+    charCount: prompt.text.length,
+    agentId,
+    ...(sessionName ? { sessionName } : {}),
+  };
+}
+
+function resolveMeetingChannelContext(context: ContextRecord): ChannelContext | undefined {
+  const sessionName = context.sessionName?.trim();
+  if (sessionName) {
+    const session = getSessionByName(sessionName);
+    const parsed = parseSessionChannelContext(session?.lastContext);
+    if (parsed) return parsed;
+  }
+  return fallbackChannelContextFromRuntimeContext(context);
+}
+
+function parseSessionChannelContext(value: string | undefined): ChannelContext | undefined {
+  if (!value?.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(value) as Partial<ChannelContext>;
+    if (typeof parsed.channelId !== "string" || typeof parsed.channelName !== "string") return undefined;
+    return {
+      channelId: parsed.channelId,
+      channelName: parsed.channelName,
+      isGroup: Boolean(parsed.isGroup),
+      ...(typeof parsed.groupName === "string" ? { groupName: parsed.groupName } : {}),
+      ...(typeof parsed.groupId === "string" ? { groupId: parsed.groupId } : {}),
+      ...(Array.isArray(parsed.groupMembers)
+        ? { groupMembers: parsed.groupMembers.filter((member): member is string => typeof member === "string") }
+        : {}),
+      ...(typeof parsed.botTag === "string" ? { botTag: parsed.botTag } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function fallbackChannelContextFromRuntimeContext(context: ContextRecord): ChannelContext | undefined {
+  const source = context.source;
+  if (!source) return undefined;
+  const channelName = source.channel === "whatsapp" ? "WhatsApp" : source.channel;
+  const isGroup = source.chatId.includes("@g.us") || source.chatId.startsWith("group:");
+  return {
+    channelId: source.channel,
+    channelName,
+    isGroup,
+    ...(isGroup ? { groupId: source.chatId.replace(/@g\.us$/i, "") } : {}),
+  };
+}
+
 function parseJsonArgument(value: string | undefined, flag: string): unknown {
   if (!value?.trim()) return {};
   try {
@@ -286,6 +399,8 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   realtimeLanguage?: string;
   realtimeInstructions?: string;
   live?: boolean;
+  liveAgentId?: string;
+  liveContext?: string;
   toolsManifestPath?: string;
   skipFinalize?: boolean;
   artifactId: string;
@@ -301,6 +416,8 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   pushOption(args, "--realtime-voice", input.realtimeVoice);
   pushOption(args, "--realtime-language", input.realtimeLanguage);
   pushOption(args, "--realtime-instructions", input.realtimeInstructions);
+  pushOption(args, "--agent", input.liveAgentId);
+  pushOption(args, "--context", input.liveContext);
   pushOption(args, "--tools-manifest", input.toolsManifestPath);
   pushFlag(args, "--realtime-transcribe", input.realtimeTranscribe);
   pushFlag(args, "--realtime-agent", input.realtimeAgent);
@@ -438,6 +555,10 @@ export class MeetingsCommands {
     realtimeLanguage?: string,
     @Option({ flags: "--realtime-instructions <text>", description: "Realtime agent instructions override" })
     realtimeInstructions?: string,
+    @Option({ flags: "--agent <id>", description: "Registered Ravi agent id for live meeting mode" })
+    liveAgentId?: string,
+    @Option({ flags: "--context <text>", description: "Freeform context injected into the live meeting agent prompt" })
+    liveContext?: string,
     @Option({ flags: "--live", description: "Enable Realtime live agent mode with Ravi-authorized CLI tools" })
     live?: boolean,
     @Option({ flags: "--tools-manifest <path>", description: "Internal Realtime tools manifest path" })
@@ -468,6 +589,15 @@ export class MeetingsCommands {
     const liveMode = Boolean(live);
     const effectiveRealtimeAgent = Boolean(realtimeAgent || liveMode);
     const effectiveSpeakBack = Boolean(speakBack || liveMode);
+    const shouldRenderLiveInstructions = liveMode && !(asyncWorker && realtimeInstructions?.trim());
+    const liveInstructions = shouldRenderLiveInstructions
+      ? await buildRealtimeInstructionsForRegisteredAgent({
+          agentId: liveAgentId,
+          meetingContext: liveContext,
+          callerInstructions: realtimeInstructions,
+        })
+      : undefined;
+    const effectiveRealtimeInstructions = liveInstructions?.text ?? realtimeInstructions;
     const realtimeToolsManifest = toolsManifestPath?.trim()
       ? { path: toolsManifestPath.trim(), manifest: undefined }
       : liveMode
@@ -487,7 +617,7 @@ export class MeetingsCommands {
       speakBack: effectiveSpeakBack,
       realtimeVoice,
       realtimeLanguage,
-      realtimeInstructions,
+      realtimeInstructions: effectiveRealtimeInstructions,
       toolsManifestPath: realtimeToolsManifest?.path,
       skipFinalize,
     });
@@ -513,9 +643,13 @@ export class MeetingsCommands {
       realtimeAgent: effectiveRealtimeAgent,
       speakBack: effectiveSpeakBack,
       live: liveMode,
+      liveAgentId: liveInstructions?.agentId ?? liveAgentId?.trim() ?? null,
+      liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
+      liveContext: liveContext?.trim() || null,
       liveTools: liveTools?.trim() || (liveMode ? "all" : null),
       realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
       realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
+      realtimeInstructionsChars: liveInstructions?.charCount ?? effectiveRealtimeInstructions?.length ?? null,
       realtimeVoice: realtimeVoice ?? null,
       realtimeLanguage: realtimeLanguage ?? null,
       skipFinalize: Boolean(skipFinalize),
@@ -537,9 +671,13 @@ export class MeetingsCommands {
         realtimeAgent: effectiveRealtimeAgent,
         speakBack: effectiveSpeakBack,
         live: liveMode,
+        liveAgentId: liveInstructions?.agentId ?? liveAgentId?.trim() ?? null,
+        liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
+        liveContext: liveContext?.trim() || null,
         liveTools: liveTools?.trim() || (liveMode ? "all" : null),
         realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
         realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
+        realtimeInstructionsChars: liveInstructions?.charCount ?? effectiveRealtimeInstructions?.length ?? null,
       },
       lineage: {
         source: "ravi meetings join",
@@ -589,8 +727,10 @@ export class MeetingsCommands {
         speakBack: effectiveSpeakBack,
         realtimeVoice,
         realtimeLanguage,
-        realtimeInstructions,
+        realtimeInstructions: effectiveRealtimeInstructions,
         live: liveMode,
+        liveAgentId: liveInstructions?.agentId ?? liveAgentId,
+        liveContext,
         toolsManifestPath: realtimeToolsManifest?.path,
         skipFinalize,
         artifactId: artifact.id,
