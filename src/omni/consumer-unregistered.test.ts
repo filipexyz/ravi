@@ -82,6 +82,7 @@ const capturedLogger = {
 const loggerChildSpy = spyOn(logger, "child").mockImplementation(() => capturedLogger as never);
 
 mock.module("../utils/media.js", () => ({
+  fetchCachedOmniMedia: mock(async () => null),
   fetchOmniMedia: mock(async () => null),
   saveToAgentAttachments: mock(async () => null),
   MAX_AUDIO_BYTES: 16 * 1024 * 1024,
