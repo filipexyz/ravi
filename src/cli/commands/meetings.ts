@@ -525,20 +525,20 @@ interface GoogleMeetJoinRunResult {
   stderr: string;
 }
 
-function runGoogleMeetRecorder(
+function runGoogleMeetProviderCommand(
   command: string,
   args: string[],
-  asJson: boolean,
+  captureOutput: boolean,
   envOverrides?: NodeJS.ProcessEnv,
 ): Promise<GoogleMeetJoinRunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, asJson ? [...args, "--json"] : args, {
+    const child = spawn(command, args, {
       env: envOverrides ? { ...process.env, ...envOverrides } : process.env,
-      stdio: asJson ? ["ignore", "pipe", "pipe"] : "inherit",
+      stdio: captureOutput ? ["ignore", "pipe", "pipe"] : "inherit",
     });
     let stdout = "";
     let stderr = "";
-    if (asJson) {
+    if (captureOutput) {
       child.stdout?.setEncoding("utf8");
       child.stderr?.setEncoding("utf8");
       child.stdout?.on("data", (chunk: string) => {
@@ -551,6 +551,29 @@ function runGoogleMeetRecorder(
     child.on("error", reject);
     child.on("close", (exitCode) => resolve({ exitCode, stdout, stderr }));
   });
+}
+
+function runGoogleMeetRecorder(
+  command: string,
+  args: string[],
+  asJson: boolean,
+  envOverrides?: NodeJS.ProcessEnv,
+): Promise<GoogleMeetJoinRunResult> {
+  return runGoogleMeetProviderCommand(command, asJson ? [...args, "--json"] : args, asJson, envOverrides);
+}
+
+function buildGoogleMeetLoginArgs(input: {
+  profileDir?: string;
+  browserChannel?: string;
+  url?: string;
+  viewport?: string;
+}): string[] {
+  const args = ["login"];
+  pushOption(args, "--profile-dir", input.profileDir);
+  pushOption(args, "--browser-channel", input.browserChannel);
+  pushOption(args, "--url", input.url);
+  pushOption(args, "--viewport", input.viewport);
+  return args;
 }
 
 function parseRecorderJson(stdout: string): unknown | undefined {
@@ -621,6 +644,59 @@ function buildMeetingJoinTitle(url: string): string {
   scope: "open",
 })
 export class MeetingsCommands {
+  @Command({
+    name: "login",
+    description: "Open Google login for the persistent Google Meet recorder browser profile",
+  })
+  @CommandAccess({ kind: "mutate", resource: "meetings", action: "login", risk: "medium" })
+  @CliOnly()
+  @Returns(looseObjectSchema)
+  async login(
+    @Option({ flags: "--provider <provider>", description: "Meeting provider id. Currently: google-meet" })
+    provider?: string,
+    @Option({ flags: "--profile-dir <dir>", description: "Persistent browser profile directory" }) profileDir?: string,
+    @Option({ flags: "--browser-channel <channel>", description: "Playwright Chromium channel" })
+    browserChannel?: string,
+    @Option({ flags: "--url <url>", description: "Optional Meet URL to open after Google account login" }) url?: string,
+    @Option({ flags: "--viewport <size>", description: "Browser viewport, e.g. 1280x720" }) viewport?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const selectedProvider = provider?.trim() || "google-meet";
+    if (selectedProvider !== "google-meet") fail(`Unsupported meeting provider: ${selectedProvider}.`);
+
+    const command = resolveGoogleMeetRecorderExecutable();
+    const args = buildGoogleMeetLoginArgs({ profileDir, browserChannel, url, viewport });
+    const result = await runGoogleMeetProviderCommand(command, args, Boolean(asJson));
+    if (result.exitCode !== 0) {
+      const details = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+      throw new Error(
+        `Google Meet provider login exited with code ${result.exitCode}.${details ? `\n${details}` : ""}`,
+      );
+    }
+
+    const payload = {
+      provider: selectedProvider,
+      providerRuntime: "google-meet-recorder",
+      profileDir: profileDir?.trim() || "~/.ravi/meet-recorder/chrome-profile",
+      browserChannel: browserChannel?.trim() || "chrome",
+      url: url?.trim() || null,
+      viewport: viewport?.trim() || "1280x720",
+      args,
+      exitCode: result.exitCode,
+      ...(asJson
+        ? {
+            stdout: result.stdout.trim() || null,
+            stderr: result.stderr.trim() || null,
+          }
+        : {}),
+    };
+
+    if (asJson) {
+      printJson(payload);
+    }
+    return payload;
+  }
+
   @Command({
     name: "join",
     description: "Join a meeting through a native Ravi meeting provider",

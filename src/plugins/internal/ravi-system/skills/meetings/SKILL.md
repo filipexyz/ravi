@@ -69,6 +69,40 @@ ravi meetings join \
 O retorno contem um artifact `meeting.join` e, quando finalizar, a propria
 sessao recebe o handoff com o `meeting.raw` final.
 
+## Login Google Meet
+
+O provider usa um perfil Chrome persistente. A conta Google usada e a conta
+logada nesse perfil, nao necessariamente a conta do Chrome aberto manualmente.
+
+Perfil default:
+
+```bash
+~/.ravi/meet-recorder/chrome-profile
+```
+
+Para autenticar ou trocar a conta de um perfil:
+
+```bash
+ravi meetings login \
+  --provider google-meet \
+  --profile-dir ~/.ravi/meet-recorder/chrome-profile-ravi \
+  --url https://meet.google.com/abc-defg-hij
+```
+
+Depois use o mesmo perfil no join:
+
+```bash
+ravi meetings join \
+  --provider google-meet \
+  --url https://meet.google.com/abc-defg-hij \
+  --profile-dir ~/.ravi/meet-recorder/chrome-profile-ravi \
+  --json
+```
+
+Use profiles separados para contas diferentes. Nao autentique esse perfil com
+Chrome aberto manualmente; use `ravi meetings login`, que abre o Chrome pelo
+mesmo caminho Playwright do recorder.
+
 Use `--dry-run --json` antes de um comando novo, arriscado ou com muitas flags:
 
 ```bash

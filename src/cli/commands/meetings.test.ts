@@ -83,6 +83,50 @@ describe("MeetingsCommands", () => {
       ]),
     );
   });
+
+  it("opens Google Meet provider login with the selected persistent profile", async () => {
+    const { output, result } = await captureConsole(() =>
+      new MeetingsCommands().login(
+        "google-meet",
+        "/tmp/ravi-meetings-login-profile",
+        "chrome-beta",
+        "https://meet.google.com/abc-defg-hij",
+        "1440x900",
+        true,
+      ),
+    );
+
+    const payload = JSON.parse(output) as {
+      provider: string;
+      profileDir: string;
+      browserChannel: string;
+      url: string;
+      viewport: string;
+      args: string[];
+      exitCode: number;
+    };
+    expect(result).toMatchObject({
+      provider: "google-meet",
+      providerRuntime: "google-meet-recorder",
+      profileDir: "/tmp/ravi-meetings-login-profile",
+      browserChannel: "chrome-beta",
+      url: "https://meet.google.com/abc-defg-hij",
+      viewport: "1440x900",
+      exitCode: 0,
+    });
+    expect(payload).toMatchObject(result);
+    expect(payload.args).toEqual([
+      "login",
+      "--profile-dir",
+      "/tmp/ravi-meetings-login-profile",
+      "--browser-channel",
+      "chrome-beta",
+      "--url",
+      "https://meet.google.com/abc-defg-hij",
+      "--viewport",
+      "1440x900",
+    ]);
+  });
 });
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
