@@ -5,6 +5,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { dbCreateAgent, dbGetContext, dbUpdateAgent } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
+import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 import type { AgentConfig } from "../router/index.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
@@ -211,6 +212,55 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(false);
   });
 
+  it("expands observation CLI shortcuts to both tool and command-gate capabilities", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "observe");
+    prompt._observation = {
+      sourceSessionKey: "source-session",
+      sourceSessionName: "source",
+      bindingId: "binding-1",
+      ruleId: "rule-1",
+      role: "observer",
+      mode: "report",
+      permissionGrants: ["tasks.report"],
+      eventIds: ["event-1"],
+    };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      turnCapabilityCount: 2,
+      turnCapabilities: [
+        {
+          permission: "use",
+          objectType: "tool",
+          objectId: "tasks_report",
+          source: "observer-rule",
+        },
+        {
+          permission: "execute",
+          objectType: "group",
+          objectId: "tasks_report",
+          source: "observer-rule",
+        },
+      ],
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "tasks_report")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "tasks_report")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(false);
+  });
+
   it("does not let turn permission grants widen agent identity authority", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
@@ -244,6 +294,54 @@ describe("runtime request context authority", () => {
       agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "executable", "curl")).toBe(false);
+  });
+
+  it("adds task-scoped self capabilities for the active task session only", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const ownTask = dbCreateTask({
+      title: "Own Task",
+      instructions: "Report from the assigned runtime session",
+      createdBy: "test",
+      createdByAgentId: agent.id,
+      createdBySessionName: "launcher",
+    }).task;
+    const otherTask = dbCreateTask({
+      title: "Other Task",
+      instructions: "Must remain isolated",
+      createdBy: "test",
+      createdByAgentId: agent.id,
+      createdBySessionName: "launcher",
+    }).task;
+    dbDispatchTask(ownTask.id, {
+      agentId: agent.id,
+      sessionName,
+      assignedBy: "test",
+    });
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: {
+        prompt: "Report progress",
+        taskBarrierTaskId: ownTask.id,
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      taskSelfCapabilityCount: 2,
+      taskSelfTaskId: ownTask.id,
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "read", "task", ownTask.id)).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "task", ownTask.id)).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "task", otherTask.id)).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "tasks", "report")).toBe(false);
   });
 
   it("allows turn permission grants when the agent identity already has the capability", () => {

@@ -167,6 +167,11 @@ Rules:
 - `access.resource` maps to the capability object type.
 - `access.action` maps to the capability object id.
 - `<kind>:<resource>:*` MAY authorize every action for that semantic resource.
+- When `access.resourceId` is declared and the command input contains that
+  value, the command MAY also be authorized by a concrete resource capability:
+  `<kind>:<concrete-resource>:<input-resource-id>`. For `tasks`, the concrete
+  resource type is `task`, so `ravi tasks report <task-id>` can be authorized by
+  `mutate:task:<task-id>` without granting `mutate:tasks:*` or every task.
 - During migration only, `<kind>:<resource>.<action>:*` MAY be accepted as a
   compatibility alias for agents that produced dotted action resource ids.
 - Legacy `execute:group:<group>_<command>` and `execute:group:<group>` MAY

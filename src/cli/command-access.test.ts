@@ -265,6 +265,66 @@ describe("CLI command access enforcement", () => {
     expect(result.decision?.objectId).toBe("*");
   });
 
+  it("authorizes resource-scoped commands through concrete resource capabilities", () => {
+    const record = context([{ permission: "mutate", objectType: "task", objectId: "task-own" }]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "tasks",
+        command: "report",
+        access: {
+          kind: "mutate",
+          resource: "tasks",
+          action: "report",
+          risk: "medium",
+          resourceId: "taskId",
+          input: ["taskId"],
+        },
+        input: { taskId: "task-own" },
+        source: "tool",
+      }),
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.decision?.permission).toBe("mutate");
+    expect(result.decision?.objectType).toBe("task");
+    expect(result.decision?.objectId).toBe("task-own");
+    expect(
+      result.attempted.map((decision) => `${decision.permission}:${decision.objectType}:${decision.objectId}`),
+    ).toEqual(["mutate:tasks:report", "mutate:tasks:*", "mutate:tasks.report:*", "mutate:task:task-own"]);
+  });
+
+  it("does not let a concrete resource capability authorize a different input resource", () => {
+    const record = context([{ permission: "mutate", objectType: "task", objectId: "task-own" }]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "tasks",
+        command: "report",
+        access: {
+          kind: "mutate",
+          resource: "tasks",
+          action: "report",
+          risk: "medium",
+          resourceId: "taskId",
+          input: ["taskId"],
+        },
+        input: { taskId: "task-other" },
+        source: "tool",
+      }),
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(
+      result.attempted.map((decision) => `${decision.permission}:${decision.objectType}:${decision.objectId}`),
+    ).toEqual([
+      "mutate:tasks:report",
+      "mutate:tasks:*",
+      "mutate:tasks.report:*",
+      "mutate:task:task-other",
+      "execute:group:tasks_report",
+      "execute:group:tasks",
+    ]);
+  });
+
   it("falls back to legacy command-specific execute capabilities", () => {
     const record = context([{ permission: "execute", objectType: "group", objectId: "demo_create" }]);
     const result = runWithContext({ agentId: "dev", context: record }, () =>

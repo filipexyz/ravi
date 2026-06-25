@@ -205,11 +205,11 @@ Permission grants MUST be limited by observer mode. A rule with `observe` mode M
 
 Permission grant strings MAY use either full capability syntax or CLI shortcut syntax:
 
-- full capability: `use:tool:tasks_report`, `execute:group:tasks`, `admin:system:*`;
+- full capability: `use:tool:tasks_report`, `mutate:tasks:report`, `execute:group:tasks_report`, `admin:system:*`;
 - shortcut: `tasks.report`, `tasks.block`, `tasks.done`, `tasks.fail`;
 - wildcard shortcut: `tasks.*`.
 
-Shortcut grants MUST be expanded only for the observer runtime context and MUST NOT grant capabilities to the source session.
+Shortcut grants MUST be expanded only for the observer runtime context and MUST NOT grant capabilities to the source session. A single-command shortcut MUST include both the CLI tool capability and the matching command-gate capability so the observer does not pass tool gating and then fail the command-access gate.
 
 ## Lifecycle
 

@@ -159,13 +159,11 @@ function commandObjectCandidates(group: string, command: string): string[] {
   return [`${group}_${command}`, group];
 }
 
-function commandAccessCandidates(input: CliCommandAccessInput): Array<{
+function commandAccessCandidates(input: CliCommandAccessInput & { access: CommandAccessOptions }): Array<{
   permission: string;
   objectType: string;
   objectId: string;
 }> {
-  if (!input.access) return [];
-
   const semanticCandidates = [
     {
       permission: input.access.kind,
@@ -184,13 +182,41 @@ function commandAccessCandidates(input: CliCommandAccessInput): Array<{
     },
   ];
 
+  const concreteResourceCandidates = commandAccessConcreteResourceCandidates(input);
   const legacyCandidates = commandObjectCandidates(input.group, input.command).map((objectId) => ({
     permission: "execute",
     objectType: "group",
     objectId,
   }));
 
-  return dedupeCandidates([...semanticCandidates, ...legacyCandidates]);
+  return dedupeCandidates([...semanticCandidates, ...concreteResourceCandidates, ...legacyCandidates]);
+}
+
+function commandAccessConcreteResourceCandidates(
+  input: CliCommandAccessInput & { access: CommandAccessOptions },
+): Array<{
+  permission: string;
+  objectType: string;
+  objectId: string;
+}> {
+  const resourceInputKey = input.access.resourceId;
+  if (!resourceInputKey) return [];
+  const resourceIdValue = input.input?.[resourceInputKey];
+  if (typeof resourceIdValue !== "string") return [];
+  const objectId = resourceIdValue.trim();
+  if (!objectId) return [];
+  return [
+    {
+      permission: input.access.kind,
+      objectType: commandAccessConcreteResourceType(input.access.resource),
+      objectId,
+    },
+  ];
+}
+
+function commandAccessConcreteResourceType(resource: string): string {
+  if (resource === "tasks") return "task";
+  return resource;
 }
 
 function dedupeCandidates(
