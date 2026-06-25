@@ -37,12 +37,14 @@ import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
+  shutdownRuntimeStreamingSession,
   stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   createObservationEvent,
@@ -72,7 +74,9 @@ const log = logger.child("bot");
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
 const MAX_TURN_FAILURE_RESPONSE = 320;
+const PROVIDER_INACTIVE_AFTER_TOOL_REASON = "provider_inactive";
 const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
+const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
@@ -742,7 +746,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   // recovering quickly from the silent hang.
   // Override via `RAVI_RUNTIME_PROVIDER_INACTIVITY_MS`.
   const PROVIDER_INACTIVITY_TIMEOUT_MS = Math.max(
-    30_000,
+    1_000,
     Number(process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS) || 3 * 60 * 1000,
   );
   const PROVIDER_TURN_INACTIVITY_TIMEOUT_MS = Math.max(
@@ -753,6 +757,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     30_000,
     Math.max(1_000, Math.floor(PROVIDER_TURN_INACTIVITY_TIMEOUT_MS / 10)),
   );
+  const IDLE_SESSION_TTL_MS = resolveRuntimeIdleSessionTtlMs();
   let toolStuckTimer: ReturnType<typeof setTimeout> | undefined;
   let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
   const clearProviderInactivityWatch = () => {
@@ -775,10 +780,56 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         sessionName,
       }).catch(() => {});
       if (!streaming.abortController.signal.aborted) {
-        streaming.internalAbortReason = "provider_inactive";
+        streaming.internalAbortReason = PROVIDER_INACTIVE_AFTER_TOOL_REASON;
         streaming.abortController.abort();
       }
     }, PROVIDER_INACTIVITY_TIMEOUT_MS);
+  };
+  const clearIdleSessionEvictionTimer = () => {
+    if (streaming.idleSessionEvictionTimer) {
+      clearTimeout(streaming.idleSessionEvictionTimer);
+      streaming.idleSessionEvictionTimer = undefined;
+    }
+  };
+  const scheduleIdleSessionEviction = () => {
+    if (IDLE_SESSION_TTL_MS <= 0) {
+      return;
+    }
+    clearIdleSessionEvictionTimer();
+    streaming.idleSessionEvictionTimer = setTimeout(() => {
+      streaming.idleSessionEvictionTimer = undefined;
+      if (
+        streaming.done ||
+        streaming.starting ||
+        streaming.turnActive ||
+        streaming.compacting ||
+        streaming.toolRunning ||
+        streaming.pendingMessages.length > 0
+      ) {
+        return;
+      }
+
+      log.info("Evicting idle runtime session", {
+        runId,
+        sessionName,
+        timeoutMs: IDLE_SESSION_TTL_MS,
+      });
+      recordTraceEvent({
+        provider: runtimeSession.provider,
+        model,
+        eventType: "session.idle_evicted",
+        eventGroup: "session",
+        status: "evicted",
+        source: streaming.currentSource,
+        payloadJson: {
+          reason: IDLE_SESSION_TTL_REASON,
+          timeoutMs: IDLE_SESSION_TTL_MS,
+          lastActivity: streaming.lastActivity,
+        },
+      });
+      shutdownRuntimeStreamingSession(streaming, IDLE_SESSION_TTL_REASON);
+    }, IDLE_SESSION_TTL_MS);
+    streaming.idleSessionEvictionTimer.unref?.();
   };
   const clearActiveToolState = () => {
     if (toolStuckTimer !== undefined) {
@@ -876,6 +927,66 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
       idleMs,
       autoRecovered: true,
+    });
+  };
+
+  const recordUnterminatedTurnExit = () => {
+    const currentTurnId = streaming.currentTraceTurnId;
+    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded) {
+      return;
+    }
+
+    const reason =
+      streaming.internalAbortReason ??
+      (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
+    const timedOut =
+      reason === PROVIDER_INACTIVE_AFTER_TOOL_REASON ||
+      reason === PROVIDER_TURN_INACTIVITY_REASON ||
+      reason === "stuck_tool";
+    const status = timedOut ? "timeout" : "aborted";
+    const eventType = timedOut ? "turn.failed" : "turn.interrupted";
+
+    log.warn("Runtime event loop ended with unterminated active turn", {
+      runId,
+      sessionName,
+      turnId: currentTurnId,
+      reason,
+      status,
+      toolRunning: streaming.toolRunning,
+      compacting: streaming.compacting,
+      pendingMessages: streaming.pendingMessages.length,
+      currentTurnPendingIds: streaming.currentTurnPendingIds ?? [],
+    });
+
+    recordTraceEvent({
+      turnId: currentTurnId,
+      provider: runtimeSession.provider,
+      model,
+      eventType: "session.unterminated_turn",
+      eventGroup: "session",
+      status,
+      source: streaming.currentSource,
+      payloadJson: {
+        reason,
+        phase: "runtime.event_loop.finally",
+        activeTurn: streaming.turnActive,
+        toolRunning: streaming.toolRunning,
+        compacting: streaming.compacting,
+        pendingMessages: streaming.pendingMessages.length,
+        currentTurnPendingIds: streaming.currentTurnPendingIds ?? [],
+      },
+    });
+
+    recordTerminalTraceOnce({
+      status,
+      eventType,
+      abortReason: reason,
+      error: timedOut ? `Runtime ended without a terminal provider event after ${reason}.` : null,
+      payloadJson: {
+        reason,
+        phase: "runtime.event_loop.finally",
+        autoRecovered: Boolean(restartStashedReason),
+      },
     });
   };
 
@@ -1016,6 +1127,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const readNextRuntimeEvent = async (): Promise<IteratorResult<RuntimeEvent>> => {
     const nextEvent = runtimeEventIterator.next();
     let interval: ReturnType<typeof setInterval> | undefined;
+    let removeAbortListener: (() => void) | undefined;
     let timedOut = false;
     const timeout = new Promise<IteratorResult<RuntimeEvent>>((resolve) => {
       interval = setInterval(() => {
@@ -1051,11 +1163,22 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }, PROVIDER_TURN_INACTIVITY_CHECK_MS);
       interval.unref?.();
     });
+    const abort = new Promise<IteratorResult<RuntimeEvent>>((resolve) => {
+      const signal = streaming.abortController.signal;
+      if (signal.aborted) {
+        resolve({ done: true, value: undefined as never });
+        return;
+      }
+      const onAbort = () => resolve({ done: true, value: undefined as never });
+      signal.addEventListener("abort", onAbort, { once: true });
+      removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+    });
 
     try {
-      return await Promise.race([nextEvent, timeout]);
+      return await Promise.race([nextEvent, timeout, abort]);
     } finally {
       if (interval) clearInterval(interval);
+      removeAbortListener?.();
     }
   };
 
@@ -1750,6 +1873,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
+        scheduleIdleSessionEviction();
         continue;
       }
 
@@ -2087,13 +2211,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   } finally {
     log.info("Streaming session ended", { runId, sessionName });
 
+    recordUnterminatedTurnExit();
+    clearTraceTurnState();
     clearProviderInactivityWatch();
+    clearIdleSessionEvictionTimer();
     if (toolStuckTimer !== undefined) {
       clearTimeout(toolStuckTimer);
       toolStuckTimer = undefined;
     }
     streaming.done = true;
     streaming.starting = false;
+    streaming.turnActive = false;
     streaming.compacting = false;
 
     // Unblock generator if it is waiting (between turns or waiting for turn complete)

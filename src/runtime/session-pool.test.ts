@@ -4,9 +4,11 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import {
   DEFAULT_RUNTIME_INTERACTIVE_RESERVED_SLOTS,
+  DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS,
   DEFAULT_RUNTIME_SESSION_POOL_MAX,
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
+  resolveRuntimeIdleSessionTtlMs,
   resolveRuntimeInteractiveReservedSlots,
   resolveRuntimeSessionPoolMax,
   resolveRuntimeStreamingSession,
@@ -48,6 +50,8 @@ function createStreamingSession(agentId: string, overrides: Partial<RuntimeHostS
 
 describe("runtime session pool", () => {
   it("resolves the pool limit from env-compatible values", () => {
+    expect(DEFAULT_RUNTIME_SESSION_POOL_MAX).toBe(12);
+    expect(resolveRuntimeSessionPoolMax("")).toBe(DEFAULT_RUNTIME_SESSION_POOL_MAX);
     expect(resolveRuntimeSessionPoolMax("72")).toBe(72);
     expect(resolveRuntimeSessionPoolMax("0")).toBe(DEFAULT_RUNTIME_SESSION_POOL_MAX);
     expect(resolveRuntimeSessionPoolMax("nope")).toBe(DEFAULT_RUNTIME_SESSION_POOL_MAX);
@@ -60,6 +64,15 @@ describe("runtime session pool", () => {
     expect(resolveRuntimeInteractiveReservedSlots("0", 5)).toBe(0);
     expect(resolveRuntimeInteractiveReservedSlots("-1", 5)).toBe(4);
     expect(resolveRuntimeInteractiveReservedSlots(undefined, 1)).toBe(0);
+  });
+
+  it("resolves idle runtime session TTL from env-compatible values", () => {
+    expect(DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS).toBe(5 * 60 * 1000);
+    expect(resolveRuntimeIdleSessionTtlMs("")).toBe(DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS);
+    expect(resolveRuntimeIdleSessionTtlMs("60000")).toBe(60_000);
+    expect(resolveRuntimeIdleSessionTtlMs("0")).toBe(0);
+    expect(resolveRuntimeIdleSessionTtlMs("-1")).toBe(DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS);
+    expect(resolveRuntimeIdleSessionTtlMs("nope")).toBe(DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS);
   });
 
   it("classifies runtime starts into interactive and background lanes", () => {

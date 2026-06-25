@@ -116,6 +116,8 @@ export interface RuntimeHostStreamingSession {
   currentRuntimeCredential?: RuntimeCredentialAttemptBinding;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
+  /** Timer that evicts an idle provider process from the runtime pool. */
+  idleSessionEvictionTimer?: ReturnType<typeof setTimeout>;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}
@@ -174,6 +176,10 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
   if (session.idleGapRecoveryTimer) {
     clearTimeout(session.idleGapRecoveryTimer);
     session.idleGapRecoveryTimer = undefined;
+  }
+  if (session.idleSessionEvictionTimer) {
+    clearTimeout(session.idleSessionEvictionTimer);
+    session.idleSessionEvictionTimer = undefined;
   }
 
   session.queryHandle.interrupt().catch(() => {});
