@@ -2257,7 +2257,7 @@ export class RaviClient {
         body: {},
       });
     },
-    /** Retired. Admin-bootstrap context keys no longer authorize Ravi; use local operator-control. */
+    /** Bootstrap the admin runtime context-key. Refuses to run if any live admin context already exists. */
     initAdminKey: async (options?: {
       fromEnv?: boolean;
       label?: string;

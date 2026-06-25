@@ -3,7 +3,7 @@ name: trigger-manager
 description: |
   Gerencia triggers de eventos do sistema Ravi. Use quando o usuário quiser:
   - Criar, listar, ver ou deletar triggers
-  - Configurar reações automáticas a eventos CLI, watch, audit e inbound normalizado
+  - Configurar reações automáticas a eventos CLI, watch, audit, TTS, artifacts e inbound normalizado
   - Ativar/desativar triggers existentes
   - Testar triggers manualmente
 ---
@@ -106,6 +106,15 @@ Aliases como `whatsapp.*.reaction`, `whatsapp.*.inbound` e `matrix.*.inbound` n�
 | `ravi.console.inbox.item` | Mirror técnico de item entregue pelo Console |
 | `ravi.watch.*.*` | Evento normalizado de watch |
 | `ravi.task.*.event` | Evento de ciclo de vida de task |
+
+### TTS, Artifacts e Meetings
+
+| Pattern | Descrição |
+|---------|-----------|
+| `ravi.tts` | Solicitação de TTS |
+| `ravi.tts.*` | Lifecycle de TTS: `started`, `ready`, `failed` |
+| `ravi.artifacts.*` | Lifecycle de artifacts: `created`, `running`, `completed`, `failed`, `archived` |
+| `ravi.meetings.*` | Lifecycle de reuniões: `ended`, `transcript_available`, `artifact_generated` |
 
 ### Delivery / Receipts
 
