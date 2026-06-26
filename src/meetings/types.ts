@@ -3,13 +3,14 @@ export const MEETING_RAW_ARTIFACT_KIND = "meeting.raw";
 export type MeetingParticipantKind = "human" | "agent" | "unknown" | (string & {});
 export type MeetingTranscriptSource =
   | "captions"
-  | "realtime_transcription"
   | "audio_transcription"
   | "imported_transcript"
   | "provider"
   | (string & {});
 export type MeetingMediaRefKind = "recording" | "audio" | "video" | "screenshot" | "log" | "diagnostic" | (string & {});
 export type MeetingDiagnosticLevel = "info" | "warning" | "error" | (string & {});
+export type MeetingTextMessageDirection = "inbound" | "outbound" | (string & {});
+export type MeetingAgentOutputKind = "speech" | "text" | (string & {});
 
 export interface MeetingParticipant {
   id?: string;
@@ -34,6 +35,37 @@ export interface MeetingTranscriptSegment {
   text: string;
   source: MeetingTranscriptSource;
   confidence?: number;
+  rawProvenance?: unknown;
+}
+
+export interface MeetingTextMessage {
+  id?: string;
+  providerMessageId?: string;
+  senderId?: string;
+  senderName?: string;
+  direction?: MeetingTextMessageDirection;
+  sentAt?: string;
+  capturedAt?: string;
+  threadId?: string;
+  replyToId?: string;
+  text: string;
+  source?: string;
+  rawProvenance?: unknown;
+}
+
+export interface MeetingAgentOutput {
+  id?: string;
+  kind: MeetingAgentOutputKind;
+  agentId?: string;
+  agentName?: string;
+  providerMessageId?: string;
+  startedAt?: string;
+  endedAt?: string;
+  sentAt?: string;
+  capturedAt?: string;
+  text: string;
+  deliveryStatus?: "sent" | "delivered" | "failed" | "unknown" | (string & {});
+  source?: string;
   rawProvenance?: unknown;
 }
 
@@ -69,6 +101,11 @@ export interface MeetingSession {
   originSessionKey?: string;
   originSessionName?: string;
   originAgentId?: string;
+  meetingChannel?: string;
+  meetingAccountId?: string;
+  meetingChatId?: string;
+  meetingThreadId?: string;
+  meetingMessageId?: string;
   channel?: string;
   accountId?: string;
   chatId?: string;
@@ -79,6 +116,8 @@ export interface MeetingSession {
   durationMs?: number;
   participants?: MeetingParticipant[];
   transcriptSegments?: MeetingTranscriptSegment[];
+  textMessages?: MeetingTextMessage[];
+  agentOutputs?: MeetingAgentOutput[];
   mediaRefs?: MeetingMediaRef[];
   diagnostics?: MeetingCaptureDiagnostic[];
   artifactId?: string;

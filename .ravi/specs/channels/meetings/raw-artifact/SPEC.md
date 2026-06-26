@@ -62,12 +62,20 @@ The artifact MAY include mechanical headings and formatting as long as they do n
    - speaker per segment when available;
    - timestamp per segment when available;
    - provenance marker when segments come from captions, realtime, audio transcription, or imported transcript.
-4. Media References
+4. Text Chat
+   - inbound meeting chat messages when captured;
+   - outbound Ravi agent chat messages when sent;
+   - sender, timestamp, provider message id, and provenance when available.
+5. Agent Output
+   - outbound Ravi speech utterances when the agent spoke in the meeting;
+   - outbound Ravi text chat when the agent sent text;
+   - delivery diagnostics or failure notes when available.
+6. Media References
    - recording refs when available;
    - audio refs when available;
    - video refs when available;
    - diagnostic/log refs when available.
-5. Capture Diagnostics
+7. Capture Diagnostics
    - provider failures or partial-capture notes;
    - missing fields that affect transcript fidelity.
 
@@ -101,6 +109,15 @@ The artifact MAY include mechanical headings and formatting as long as they do n
 ## Media References
 
 - <kind>: <path-or-uri>
+
+## Text Chat
+
+- <timestamp> <sender>: <raw text>
+
+## Agent Output
+
+- <timestamp> speech <agent>: <raw utterance>
+- <timestamp> text <agent>: <raw text>
 
 ## Capture Diagnostics
 
@@ -161,8 +178,9 @@ Use the artifact as the raw source of truth for post-meeting work.
 - It contains meeting metadata.
 - It contains detected participants when available.
 - It contains complete transcript segments with speaker and timestamps when available.
+- It contains captured meeting text chat when available.
+- It contains outbound Ravi agent speech/text when produced.
 - It contains media references for recording/audio/video/diagnostics when available.
 - It contains no AI-generated summary, decisions, action items, or interpretation.
 - It is registered as a Ravi artifact with lineage.
 - The origin session receives the artifact as context after generation.
-

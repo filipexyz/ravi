@@ -62,6 +62,7 @@ const CHUNK_THRESHOLD_SEC = 600;
 
 export interface TranscriptionOptions {
   language?: string;
+  durationHintSec?: number;
 }
 
 function getProvider(): TranscribeProvider {
@@ -214,6 +215,7 @@ export async function transcribeAudio(
   } catch (err) {
     log.warn("Could not detect audio duration, attempting direct transcription", { error: err });
   }
+  duration = sanitizeDuration(duration) ?? sanitizeDuration(options.durationHintSec);
 
   // Short audio or unknown duration — transcribe directly
   if (!duration || duration <= CHUNK_THRESHOLD_SEC) {
@@ -242,6 +244,7 @@ export async function transcribeAudio(
   const chunks = await splitAudioChunks(buffer, ext, {
     chunkDuration: CHUNK_THRESHOLD_SEC,
     overlap: 15,
+    durationHintSec: duration,
   });
 
   const texts: string[] = [];
@@ -301,4 +304,9 @@ export async function transcribeAudio(
     chunks: chunks.length,
     segments,
   };
+}
+
+function sanitizeDuration(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
+  return value;
 }

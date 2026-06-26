@@ -950,6 +950,117 @@ export const taskProfileInitReturnSchema = z
   })
   .passthrough();
 
+export const meetingProfileReturnSchema = z
+  .object({
+    id: z.string(),
+    version: z.string(),
+    label: z.string(),
+    sourceKind: z.string(),
+    source: z.string(),
+    provider: z.string(),
+    chrome: z
+      .object({
+        profileDir: z.string().nullable(),
+        browserChannel: z.string().nullable(),
+      })
+      .strict(),
+    voice: z
+      .object({
+        runtime: z.string(),
+      })
+      .strict(),
+    live: z
+      .object({
+        enabled: z.boolean(),
+        agentId: z.string().nullable(),
+        contextChars: z.number(),
+        includeSessionContext: z.boolean(),
+        initialPromptChars: z.number(),
+        initialPromptDelay: z.string().nullable(),
+        tools: z.array(z.string()),
+      })
+      .strict(),
+    defaults: z
+      .object({
+        name: z.string().optional(),
+        out: z.string().optional(),
+        duration: z.string().optional(),
+        maxDuration: z.string().optional(),
+        emptyGrace: z.string().optional(),
+        capture: z.string().optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const meetingOffsetPaginationReturnSchema = z
+  .object({
+    limit: z.number(),
+    offset: z.number(),
+    returned: z.number(),
+    total: z.number(),
+    hasMore: z.boolean(),
+    nextOffset: z.number().nullable(),
+    nextCommand: z.string().nullable(),
+  })
+  .strict();
+
+export const meetingProfilesListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: meetingOffsetPaginationReturnSchema,
+    items: z.array(meetingProfileReturnSchema),
+    profiles: z.array(meetingProfileReturnSchema),
+  })
+  .strict();
+
+export const meetingProfileInitReturnSchema = z
+  .object({
+    sourceKind: z.string(),
+    profileDir: z.string(),
+    profilePath: z.string(),
+  })
+  .strict();
+
+export const meetingProfilesValidateReturnSchema = z
+  .object({
+    valid: z.boolean(),
+    results: z.array(
+      z
+        .object({
+          id: z.string(),
+          sourceKind: z.string(),
+          source: z.string(),
+          valid: z.boolean(),
+          error: z.string().optional(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const meetingVoiceRuntimeCandidateReturnSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    availability: z.string(),
+    kind: z.string(),
+    defaultModel: z.string().optional(),
+    providerRuntime: z.string().optional(),
+    docsUrl: z.string(),
+    strengths: z.array(z.string()),
+    constraints: z.array(z.string()),
+  })
+  .strict();
+
+export const meetingVoiceRuntimesReturnSchema = z
+  .object({
+    defaultRuntimeId: z.string(),
+    recommendation: z.string(),
+    candidates: z.array(meetingVoiceRuntimeCandidateReturnSchema),
+  })
+  .strict();
+
 export const taskAutomationsListReturnSchema = pagedItemsReturnSchema
   .extend({
     filters: looseObjectSchema,

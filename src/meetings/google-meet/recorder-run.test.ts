@@ -41,31 +41,16 @@ describe("Google Meet recorder adapter", () => {
       id: "meet-ravi-v0-backlog-refiner-v2",
       provider: "google-meet",
       providerMeetingId: "bdw-wzcp-fse",
+      meetingChannel: "meet",
+      meetingAccountId: "google-meet",
+      meetingChatId: "bdw-wzcp-fse",
       title: "Google Meet bdw-wzcp-fse",
       url: "https://meet.google.com/bdw-wzcp-fse",
       originSessionName: "ravi-meet-v0",
       durationMs: 1_800_958,
     });
-    expect(session.participants).toEqual([
-      { id: "ravi", displayName: "Ravi", kind: "agent" },
-      { id: "meeting-audio", displayName: "Audio da reunião", kind: "unknown" },
-    ]);
-    expect(session.transcriptSegments).toMatchObject([
-      {
-        id: "input-item-luis",
-        speakerName: "Audio da reunião",
-        startAt: "2026-06-22T01:42:47.519Z",
-        text: "A gente precisa de um artifact no final.",
-        source: "realtime_transcription",
-      },
-      {
-        id: "output-item-ravi",
-        speakerName: "Ravi",
-        startAt: "2026-06-22T01:44:02.559Z",
-        text: "P0 é gerar um artifact meet.md raw no final da sessão.",
-        source: "realtime_transcription",
-      },
-    ]);
+    expect(session.participants).toEqual([{ id: "ravi", displayName: "Ravi", kind: "agent" }]);
+    expect(session.transcriptSegments).toEqual([]);
     expect(session.mediaRefs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -75,11 +60,6 @@ describe("Google Meet recorder adapter", () => {
           sizeBytes: 1234,
           startedAt: "2026-06-22T01:41:31.463Z",
         }),
-        expect.objectContaining({
-          kind: "log",
-          path: join(runDir, "realtime-webrtc", "events.jsonl"),
-          mimeType: "application/x-ndjson",
-        }),
       ]),
     );
     expect(session.diagnostics).toEqual(
@@ -87,46 +67,6 @@ describe("Google Meet recorder adapter", () => {
         expect.objectContaining({
           level: "warning",
           code: "recorder.artifact_missing",
-        }),
-        expect.objectContaining({
-          level: "info",
-          code: "realtime.events_parsed",
-          message: expect.stringContaining("Parsed 2 final transcript segment"),
-        }),
-      ]),
-    );
-  });
-
-  it("imports websocket realtime transcript JSONL from a recorder run", () => {
-    const runDir = writeRecorderTranscriptFixture();
-
-    const session = importGoogleMeetRecorderRun({ runDir });
-
-    expect(session.transcriptSegments).toMatchObject([
-      {
-        id: "input-item-a",
-        speakerName: "Audio da reunião",
-        startAt: "2026-06-24T00:57:33.676Z",
-        text: "Eu",
-      },
-      {
-        id: "input-item-b",
-        speakerName: "Audio da reunião",
-        startAt: "2026-06-24T00:57:37.761Z",
-        text: "Me fale se tu conseguiu transcrever",
-      },
-      {
-        id: "input-item-c",
-        speakerName: "Audio da reunião",
-        startAt: "2026-06-24T00:57:41.871Z",
-        text: "ABC 1, 2, 3",
-      },
-    ]);
-    expect(session.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "realtime.events_parsed",
-          message: expect.stringContaining("Parsed 3 final transcript segment"),
         }),
       ]),
     );
@@ -139,6 +79,39 @@ describe("Google Meet recorder adapter", () => {
     });
 
     const runDir = writeRecorderFixture();
+    setGoogleMeetRecorderTranscriberForTests(async (input) => ({
+      text: "A gente precisa de um artifact no final. P0 é gerar um artifact meet.md raw no final da sessão.",
+      provider: "groq",
+      model: "whisper-large-v3-turbo",
+      duration: 1800,
+      chunks: 1,
+      segments: [
+        {
+          index: 0,
+          text: "A gente precisa de um artifact no final.",
+          startSec: 76,
+          endSec: 79,
+          duration: 3,
+          provider: "groq",
+          model: "whisper-large-v3-turbo",
+        },
+        {
+          index: 1,
+          text: "P0 é gerar um artifact meet.md raw no final da sessão.",
+          startSec: 151,
+          endSec: 156,
+          duration: 5,
+          provider: "groq",
+          model: "whisper-large-v3-turbo",
+        },
+      ],
+      source: {
+        filePath: input.filePath,
+        mimeType: input.mimeType ?? "audio/webm",
+        sizeBytes: 1234,
+        sizeMB: 0,
+      },
+    }));
     const result = await finalizeGoogleMeetRecorderRun({
       runDir,
       outputDir: join(stateDir!, "rendered-meet"),
@@ -256,71 +229,6 @@ describe("Google Meet recorder adapter", () => {
     );
   });
 
-  it("transcribes post-call meeting audio when realtime transcript only has Ravi output", async () => {
-    const runDir = writeRealtimeOutputOnlyRecorderFixture();
-    const selectedAudioFiles: string[] = [];
-    setGoogleMeetRecorderTranscriberForTests(async (input) => {
-      selectedAudioFiles.push(input.filePath);
-      return {
-        text: "Fala humana capturada",
-        provider: "groq",
-        model: "whisper-large-v3-turbo",
-        duration: 8,
-        chunks: 1,
-        segments: [
-          {
-            index: 0,
-            text: "Fala humana capturada",
-            startSec: 1,
-            endSec: 8,
-            duration: 7,
-            provider: "groq",
-            model: "whisper-large-v3-turbo",
-          },
-        ],
-        source: {
-          filePath: input.filePath,
-          mimeType: input.mimeType ?? "audio/webm",
-          sizeBytes: 2048,
-          sizeMB: 0,
-        },
-      };
-    });
-
-    const result = await finalizeGoogleMeetRecorderRun({
-      runDir,
-      outputDir: join(stateDir!, "output-only-rendered-meet"),
-      actor: "ravi-meet-v0",
-    });
-
-    const meetAudioPath = join(runDir, "webrtc-tap", "audio-3.fixture.audio.webm");
-    expect(selectedAudioFiles).toEqual([meetAudioPath]);
-    expect(result.transcriptSegments).toMatchObject([
-      {
-        speakerName: "Audio da reunião",
-        startAt: "2026-06-24T19:01:37.677Z",
-        endAt: "2026-06-24T19:01:44.677Z",
-        text: "Fala humana capturada",
-        source: "audio_transcription",
-      },
-      {
-        speakerName: "Ravi",
-        startAt: "2026-06-24T19:01:45.051Z",
-        text: "Sim, tô te ouvindo bem. Pode seguir.",
-        source: "realtime_transcription",
-      },
-    ]);
-    expect(result.registeredArtifact.markdown).toContain("Audio da reunião: Fala humana capturada");
-    expect(result.registeredArtifact.markdown).toContain("Ravi: Sim, tô te ouvindo bem.");
-    expect(result.registeredArtifact.transcriptionJson?.data.transcription).toMatchObject({
-      sourceTypes: ["audio_transcription", "realtime_transcription"],
-      provider: "groq",
-      model: "whisper-large-v3-turbo",
-      mediaPath: meetAudioPath,
-      segmentCount: 2,
-    });
-  });
-
   it("exposes a provider handle whose finalize registers the artifact", async () => {
     const runDir = writeRecorderFixture();
     const provider = new GoogleMeetRecorderProvider({
@@ -348,9 +256,7 @@ describe("Google Meet recorder adapter", () => {
 
 function writeRecorderFixture(): string {
   const runDir = join(stateDir!, "meet-ravi-v0-backlog-refiner-v2", "20260622T014111Z");
-  const realtimeDir = join(runDir, "realtime-webrtc");
   const tapDir = join(runDir, "webrtc-tap");
-  mkdirSync(realtimeDir, { recursive: true });
   mkdirSync(tapDir, { recursive: true });
 
   const metadata = {
@@ -368,22 +274,11 @@ function writeRecorderFixture(): string {
     options: {
       outDir: join(stateDir!, "meet-ravi-v0-backlog-refiner-v2"),
       captureMode: "webrtc-tap",
-      realtimeAgent: true,
-      realtimeTranscribe: false,
-      realtimeModel: "gpt-realtime-2",
-      realtimeTranscriptionModel: "gpt-realtime-whisper",
     },
     artifacts: {
       runDir,
       metadataPath: join(runDir, "metadata.json"),
       media: [
-        {
-          kind: "log",
-          path: join(realtimeDir, "events.jsonl"),
-          note: "Raw local-server and browser events for OpenAI Realtime WebRTC.",
-          exists: true,
-          sizeBytes: 100,
-        },
         {
           kind: "webrtc-track",
           path: join(tapDir, "audio-3.fixture.audio.webm"),
@@ -411,41 +306,6 @@ function writeRecorderFixture(): string {
     failures: [],
   };
 
-  const events = [
-    {
-      at: "2026-06-22T01:42:47.520Z",
-      type: "browser.event",
-      payload: {
-        type: "realtime-webrtc-event",
-        event: {
-          type: "conversation.item.input_audio_transcription.completed",
-          event_id: "event-input",
-          item_id: "item-luis",
-          content_index: 0,
-          transcript: "A gente precisa de um artifact no final.",
-        },
-        at: "2026-06-22T01:42:47.519Z",
-      },
-    },
-    {
-      at: "2026-06-22T01:44:02.560Z",
-      type: "browser.event",
-      payload: {
-        type: "realtime-webrtc-event",
-        event: {
-          type: "response.output_audio_transcript.done",
-          event_id: "event-output",
-          response_id: "resp-ravi",
-          item_id: "item-ravi",
-          output_index: 0,
-          content_index: 0,
-          transcript: "P0 é gerar um artifact meet.md raw no final da sessão.",
-        },
-        at: "2026-06-22T01:44:02.559Z",
-      },
-    },
-  ];
-
   const manifest = {
     version: 1,
     mode: "webrtc-tap",
@@ -467,11 +327,6 @@ function writeRecorderFixture(): string {
   };
 
   writeFileSync(join(runDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-  writeFileSync(
-    join(realtimeDir, "events.jsonl"),
-    `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
-    "utf8",
-  );
   writeFileSync(join(tapDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   writeFileSync(join(tapDir, "events.jsonl"), "", "utf8");
   writeFileSync(join(tapDir, "audio-3.fixture.audio.webm"), "fake-webm", "utf8");
@@ -500,8 +355,6 @@ function writeAudioOnlyRecorderFixture(): string {
     options: {
       outDir: join(stateDir!, "meet-ravi-v0-audio-only"),
       captureMode: "webrtc-tap",
-      realtimeAgent: false,
-      realtimeTranscribe: false,
     },
     artifacts: {
       runDir,
@@ -548,221 +401,6 @@ function writeAudioOnlyRecorderFixture(): string {
   writeFileSync(join(tapDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   writeFileSync(join(tapDir, "events.jsonl"), "", "utf8");
   writeFileSync(audioPath, "fake-webm", "utf8");
-
-  return runDir;
-}
-
-function writeRealtimeOutputOnlyRecorderFixture(): string {
-  const runDir = join(stateDir!, "meet-ravi-v0-output-only", "20260624T190120Z");
-  const realtimeDir = join(runDir, "realtime-webrtc");
-  const tapDir = join(runDir, "webrtc-tap");
-  mkdirSync(realtimeDir, { recursive: true });
-  mkdirSync(tapDir, { recursive: true });
-  const audioPath = join(tapDir, "audio-3.fixture.audio.webm");
-  const realtimeAudioPath = join(runDir, "realtime-output.pcm16");
-
-  const metadata = {
-    version: 1,
-    runId: "20260624T190120Z",
-    meetUrl: "https://meet.google.com/ird-sbmq-dix",
-    botName: "Ravi",
-    status: "completed",
-    admissionStatus: "joined",
-    startedAt: "2026-06-24T19:01:20.000Z",
-    timestamps: {
-      recordingStartedAt: "2026-06-24T19:01:36.677Z",
-      recordingEndedAt: "2026-06-24T19:02:57.049Z",
-    },
-    options: {
-      outDir: join(stateDir!, "meet-ravi-v0-output-only"),
-      captureMode: "webrtc-tap",
-      realtimeAgent: true,
-      realtimeTranscribe: false,
-      realtimeModel: "gpt-realtime-2",
-      realtimeTranscriptionModel: "gpt-realtime-whisper",
-    },
-    artifacts: {
-      runDir,
-      metadataPath: join(runDir, "metadata.json"),
-      media: [
-        {
-          kind: "log",
-          path: join(realtimeDir, "events.jsonl"),
-          note: "Raw local-server and browser events for OpenAI Realtime WebRTC.",
-          exists: true,
-          sizeBytes: 100,
-        },
-        {
-          kind: "realtime-audio",
-          path: realtimeAudioPath,
-          note: "Raw PCM16 24 kHz model output audio.",
-          exists: true,
-          sizeBytes: 999_999,
-        },
-        {
-          kind: "webrtc-track",
-          path: audioPath,
-          note: "Individual MediaStreamTrack file captured from the visible browser participant.",
-          exists: true,
-          sizeBytes: 2048,
-        },
-      ],
-    },
-    participants: {
-      detected: true,
-      names: [],
-      note: "Stopped WebRTC tap because left_call.",
-    },
-    failures: [],
-  };
-
-  const events = [
-    {
-      at: "2026-06-24T19:01:45.052Z",
-      type: "browser.event",
-      payload: {
-        type: "realtime-webrtc-event",
-        event: {
-          type: "response.output_audio_transcript.done",
-          event_id: "event-output",
-          response_id: "resp-ravi",
-          item_id: "item-ravi",
-          output_index: 0,
-          content_index: 0,
-          transcript: "Sim, tô te ouvindo bem. Pode seguir.",
-        },
-        at: "2026-06-24T19:01:45.051Z",
-      },
-    },
-  ];
-
-  const manifest = {
-    version: 1,
-    mode: "webrtc-tap",
-    startedAt: "2026-06-24T19:01:36.677Z",
-    stoppedAt: "2026-06-24T19:02:57.049Z",
-    tracks: [
-      {
-        id: "audio-3",
-        kind: "audio",
-        path: audioPath,
-        mimeType: "audio/webm;codecs=opus",
-        bytes: 2048,
-        startedAt: "2026-06-24T19:01:36.677Z",
-        stoppedAt: "2026-06-24T19:02:57.049Z",
-      },
-    ],
-    eventsPath: join(tapDir, "events.jsonl"),
-    errors: [],
-  };
-
-  writeFileSync(join(runDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-  writeFileSync(
-    join(realtimeDir, "events.jsonl"),
-    `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
-    "utf8",
-  );
-  writeFileSync(join(tapDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  writeFileSync(join(tapDir, "events.jsonl"), "", "utf8");
-  writeFileSync(audioPath, "fake-webm", "utf8");
-  writeFileSync(realtimeAudioPath, "fake-output-audio", "utf8");
-
-  return runDir;
-}
-
-function writeRecorderTranscriptFixture(): string {
-  const runDir = join(stateDir!, "meet-ravi-v0-live-transcript", "20260624T005716Z");
-  const realtimeDir = join(runDir, "realtime");
-  mkdirSync(realtimeDir, { recursive: true });
-
-  const metadata = {
-    version: 1,
-    runId: "20260624T005716Z",
-    meetUrl: "https://meet.google.com/ggt-kebk-fjo",
-    botName: "Ravi",
-    status: "completed",
-    admissionStatus: "joined",
-    startedAt: "2026-06-24T00:57:16.205Z",
-    timestamps: {
-      recordingStartedAt: "2026-06-24T00:57:31.047Z",
-      recordingEndedAt: "2026-06-24T00:57:42.105Z",
-    },
-    options: {
-      outDir: join(stateDir!, "meet-ravi-v0-live-transcript"),
-      captureMode: "webrtc-tap",
-      realtimeAgent: false,
-      realtimeTranscribe: true,
-      realtimeTranscriptionModel: "gpt-realtime-whisper",
-    },
-    artifacts: {
-      runDir,
-      metadataPath: join(runDir, "metadata.json"),
-      media: [
-        {
-          kind: "transcript",
-          path: join(realtimeDir, "transcript.jsonl"),
-          note: "Realtime transcription delta/completed events as JSONL.",
-          exists: true,
-          sizeBytes: 300,
-        },
-      ],
-    },
-    browser: {
-      channel: "chrome",
-      profileDir: "/tmp/profile",
-      finalUrl: "https://meet.google.com/ggt-kebk-fjo",
-    },
-    participants: {
-      detected: true,
-      names: [],
-      note: "Stopped WebRTC tap because left_call.",
-    },
-    failures: [],
-  };
-  const transcriptEvents = [
-    {
-      at: "2026-06-24T00:57:33.170Z",
-      kind: "delta",
-      itemId: "item-a",
-      contentIndex: 0,
-      text: " Eu",
-    },
-    {
-      at: "2026-06-24T00:57:33.676Z",
-      kind: "completed",
-      itemId: "item-a",
-      contentIndex: 0,
-      text: "Eu",
-    },
-    {
-      at: "2026-06-24T00:57:37.761Z",
-      kind: "completed",
-      itemId: "item-b",
-      contentIndex: 0,
-      text: "Me fale se tu conseguiu transcrever",
-    },
-    {
-      at: "2026-06-24T00:57:41.871Z",
-      kind: "completed",
-      itemId: "item-c",
-      contentIndex: 0,
-      text: "ABC 1, 2, 3",
-    },
-    {
-      at: "2026-06-24T00:57:43.796Z",
-      kind: "completed",
-      itemId: "item-empty",
-      contentIndex: 0,
-      text: "",
-    },
-  ];
-
-  writeFileSync(join(runDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-  writeFileSync(
-    join(realtimeDir, "transcript.jsonl"),
-    `${transcriptEvents.map((event) => JSON.stringify(event)).join("\n")}\n`,
-    "utf8",
-  );
 
   return runDir;
 }

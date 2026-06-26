@@ -19,6 +19,8 @@ interface ChunkOptions {
   chunkDuration?: number;
   /** Overlap in seconds added before and after each chunk (default: 15) */
   overlap?: number;
+  /** Duration hint for containers such as live WebM that do not store format duration. */
+  durationHintSec?: number;
 }
 
 export interface AudioChunk {
@@ -77,8 +79,9 @@ export async function splitAudioChunks(buffer: Buffer, ext: string, opts: ChunkO
   try {
     await writeFile(inputFile, buffer);
 
-    // Get total duration
-    const duration = await getAudioDuration(buffer, ext);
+    // Get total duration. Browser-recorded live WebM files frequently omit
+    // container duration, so meeting capture can provide a trusted track hint.
+    const duration = sanitizeDurationHint(opts.durationHintSec) ?? (await getAudioDuration(buffer, ext));
     log.debug("Audio duration", { duration, chunkDuration, overlap });
 
     // If short enough, no need to split
@@ -164,4 +167,9 @@ export async function splitAudioChunks(buffer: Buffer, ext: string, opts: ChunkO
   } finally {
     await unlink(inputFile).catch(() => {});
   }
+}
+
+function sanitizeDurationHint(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
+  return value;
 }

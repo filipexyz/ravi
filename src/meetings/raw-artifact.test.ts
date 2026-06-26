@@ -32,6 +32,8 @@ describe("meeting raw artifact", () => {
     expect(markdown).toContain("## Metadata");
     expect(markdown).toContain("- Title: Ravi v0 backlog refinement");
     expect(markdown).toContain("- Provider: google-meet");
+    expect(markdown).toContain("- Meeting channel: meet");
+    expect(markdown).toContain("- Meeting chat: bdw-wzcp-fse");
     expect(markdown).toContain("- Origin session: agent:ravi-meet-v0:whatsapp:group:120363428094858911");
     expect(markdown).toContain("Luís Filipe (kind=human, id=human-luis)");
     expect(markdown).toContain("Ravi (kind=agent, id=agent-ravi-meet-v0)");
@@ -42,6 +44,14 @@ describe("meeting raw artifact", () => {
     expect(markdown).toContain("A gente precisa de um artifact no final.");
     expect(markdown).toContain("- [+00:01:12 to +00:01:18] Ravi: P0 = gerar um artifact meet.md ao final da sessão.");
     expect(markdown).toContain("P0 = gerar um artifact meet.md ao final da sessão.");
+    expect(markdown).toContain("## Text Chat");
+    expect(markdown).toContain(
+      "- [2026-06-22T01:41:30.000Z] Luís Filipe (direction=inbound, providerId=chat-001, source=google-meet-chat): manda o artifact aqui",
+    );
+    expect(markdown).toContain("## Agent Output");
+    expect(markdown).toContain(
+      "- [2026-06-22T01:42:00.000Z] Ravi (kind=speech, status=delivered, ended=2026-06-22T01:42:03.000Z, source=ravi-native): Entrei na sala e estou ouvindo.",
+    );
     expect(markdown).toContain("recording: /recordings/ravi-v0.mp4");
     expect(markdown).toContain("audio: /recordings/ravi-v0.wav");
     expect(markdown).toContain("warning/captions.partial: Captions started after the first greeting.");
@@ -75,6 +85,27 @@ describe("meeting raw artifact", () => {
           startSec: 72,
           endSec: 78,
           text: "P0 = gerar um artifact meet.md ao final da sessão.",
+        },
+      ],
+      textMessages: [
+        {
+          id: "chat-001",
+          providerMessageId: "chat-001",
+          sender: "Luís Filipe",
+          direction: "inbound",
+          sentAt: "2026-06-22T01:41:30.000Z",
+          text: "manda o artifact aqui",
+        },
+      ],
+      agentOutputs: [
+        {
+          id: "agent-output-001",
+          kind: "speech",
+          agent: "Ravi",
+          startedAt: "2026-06-22T01:42:00.000Z",
+          endedAt: "2026-06-22T01:42:03.000Z",
+          deliveryStatus: "delivered",
+          text: "Entrei na sala e estou ouvindo.",
         },
       ],
     });
@@ -118,17 +149,27 @@ describe("meeting raw artifact", () => {
     expect(result.artifact.metadata).toMatchObject({
       meetingId: "meet-ravi-v0-backlog-refiner-v2",
       provider: "google-meet",
+      meetingChannel: "meet",
+      meetingChatId: "bdw-wzcp-fse",
       providerMeetingId: "bdw-wzcp-fse",
       participantCount: 2,
       transcriptSegmentCount: 2,
+      textMessageCount: 1,
+      agentOutputCount: 1,
       transcriptionJsonPath: transcriptionJson.filePath,
     });
     expect(result.artifact.lineage).toMatchObject({
       source: "meetings.raw-artifact",
-      meeting: { id: "meet-ravi-v0-backlog-refiner-v2", providerMeetingId: "bdw-wzcp-fse" },
+      meeting: {
+        id: "meet-ravi-v0-backlog-refiner-v2",
+        providerMeetingId: "bdw-wzcp-fse",
+        channel: "meet",
+        chatId: "bdw-wzcp-fse",
+      },
       origin: {
         sessionName: "ravi-meet-v0",
         agentId: "ravi-meet-v0",
+        channel: "whatsapp",
       },
     });
 
@@ -157,10 +198,14 @@ describe("meeting raw artifact", () => {
       payload: {
         meetingId: "meet-ravi-v0-backlog-refiner-v2",
         provider: "google-meet",
+        channel: "meet",
+        meetingChatId: "bdw-wzcp-fse",
         artifactId: result.artifact.id,
         artifactPath: result.filePath,
         transcriptionJsonPath: transcriptionJson.filePath,
         transcriptSegmentCount: 2,
+        textMessageCount: 1,
+        agentOutputCount: 1,
       },
     });
 
@@ -189,6 +234,9 @@ function sampleMeetingSession(): MeetingSession {
     originSessionKey: "agent:ravi-meet-v0:whatsapp:group:120363428094858911",
     originSessionName: "ravi-meet-v0",
     originAgentId: "ravi-meet-v0",
+    meetingChannel: "meet",
+    meetingAccountId: "google-meet",
+    meetingChatId: "bdw-wzcp-fse",
     channel: "whatsapp",
     accountId: "main",
     chatId: "120363428094858911@g.us",
@@ -217,6 +265,31 @@ function sampleMeetingSession(): MeetingSession {
         endOffsetMs: 78_000,
         source: "imported_transcript",
         text: "P0 = gerar um artifact meet.md ao final da sessão.",
+      },
+    ],
+    textMessages: [
+      {
+        id: "chat-001",
+        providerMessageId: "chat-001",
+        senderId: "human-luis",
+        senderName: "Luís Filipe",
+        direction: "inbound",
+        sentAt: "2026-06-22T01:41:30.000Z",
+        text: "manda o artifact aqui",
+        source: "google-meet-chat",
+      },
+    ],
+    agentOutputs: [
+      {
+        id: "agent-output-001",
+        kind: "speech",
+        agentId: "agent-ravi-meet-v0",
+        agentName: "Ravi",
+        startedAt: "2026-06-22T01:42:00.000Z",
+        endedAt: "2026-06-22T01:42:03.000Z",
+        deliveryStatus: "delivered",
+        text: "Entrei na sala e estou ouvindo.",
+        source: "ravi-native",
       },
     ],
     mediaRefs: [

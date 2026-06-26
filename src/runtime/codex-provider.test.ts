@@ -114,7 +114,7 @@ describe("createCodexRuntimeProvider", () => {
     expect(synced).toEqual([{ type: "local", path: "/tmp/ravi/plugins/ravi-system" }]);
   });
 
-  it("materializes the global Codex bash hook in ~/.codex/hooks.json", () => {
+  it("materializes the global Codex native tool hook in ~/.codex/hooks.json", () => {
     const home = mkdtempSync(join(tmpdir(), "ravi-codex-home-"));
     const originalHome = process.env.HOME;
     process.env.HOME = home;
@@ -134,14 +134,17 @@ describe("createCodexRuntimeProvider", () => {
       const preToolUse = Array.isArray(payload?.hooks?.PreToolUse) ? payload.hooks.PreToolUse : [];
       const raviHookGroup = preToolUse.find(
         (group: any) =>
-          group?.matcher === "^(Bash|shell)$" &&
+          typeof group?.matcher === "string" &&
+          group.matcher.includes("Bash") &&
+          group.matcher.includes("shell") &&
+          group.matcher.includes("Read") &&
           Array.isArray(group?.hooks) &&
-          group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex bash permission gate"),
+          group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex native tool permission gate"),
       );
 
       expect(raviHookGroup).toBeDefined();
       expect(raviHookGroup.hooks[0]?.command).toContain("context");
-      expect(raviHookGroup.hooks[0]?.command).toContain("codex-bash-hook");
+      expect(raviHookGroup.hooks[0]?.command).toContain("codex-tool-hook");
       expect(raviHookGroup.hooks[0]?.command).not.toContain(".test.");
     } finally {
       if (originalHome === undefined) {

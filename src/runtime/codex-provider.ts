@@ -5,6 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
+import { RUNTIME_BUILTIN_TOOL_HOOK_NAMES } from "../cli/tool-registry.js";
 import { logger } from "../utils/logger.js";
 import {
   createCodexTransport,
@@ -61,7 +62,8 @@ const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
 const RAVI_CODEX_BASH_HOOK_STATUS = "ravi codex bash permission gate";
-const RAVI_CODEX_BASH_HOOK_MATCHER = "^(Bash|shell)$";
+const RAVI_CODEX_TOOL_HOOK_STATUS = "ravi codex native tool permission gate";
+const RAVI_CODEX_TOOL_HOOK_MATCHER = buildCodexNativeToolHookMatcher();
 const CODEX_APP_SERVER_ENV_KEY_PREFIXES = ["RAVI_"];
 const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH"]);
 const CODEX_SHELL_ENV_INCLUDE_ONLY = [
@@ -3033,12 +3035,12 @@ function upsertRaviCodexBashHook(config: Record<string, unknown>): Record<string
   const hooks = asRecord(config.hooks) ?? {};
   const preToolUse = Array.isArray(hooks.PreToolUse) ? [...hooks.PreToolUse] : [];
   const raviGroup = {
-    matcher: RAVI_CODEX_BASH_HOOK_MATCHER,
+    matcher: RAVI_CODEX_TOOL_HOOK_MATCHER,
     hooks: [
       {
         type: "command",
         command: buildRaviCodexHookCommand(),
-        statusMessage: RAVI_CODEX_BASH_HOOK_STATUS,
+        statusMessage: RAVI_CODEX_TOOL_HOOK_STATUS,
       },
     ],
   };
@@ -3057,15 +3059,23 @@ function upsertRaviCodexBashHook(config: Record<string, unknown>): Record<string
 
 function isRaviCodexHookGroup(value: unknown): boolean {
   const group = asRecord(value);
-  if (!group || group.matcher !== RAVI_CODEX_BASH_HOOK_MATCHER) {
+  if (!group) {
     return false;
   }
 
   const handlers = Array.isArray(group.hooks) ? group.hooks : [];
   return handlers.some((handler) => {
     const entry = asRecord(handler);
-    return entry?.statusMessage === RAVI_CODEX_BASH_HOOK_STATUS;
+    return entry?.statusMessage === RAVI_CODEX_BASH_HOOK_STATUS || entry?.statusMessage === RAVI_CODEX_TOOL_HOOK_STATUS;
   });
+}
+
+function buildCodexNativeToolHookMatcher(): string {
+  return `^(${RUNTIME_BUILTIN_TOOL_HOOK_NAMES.map(escapeRegex).join("|")})$`;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function shouldMaterializeCodexHookForCommand(command: string): boolean {
@@ -3076,20 +3086,20 @@ function shouldMaterializeCodexHookForCommand(command: string): boolean {
 function buildRaviCodexHookCommand(): string {
   const configuredRaviBin = process.env.RAVI_BIN?.trim();
   if (configuredRaviBin) {
-    return [configuredRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+    return [configuredRaviBin, "context", "codex-tool-hook"].map(shellEscape).join(" ");
   }
 
   const bundlePath = process.argv[1];
   if (isRunnableRaviCliEntrypoint(bundlePath)) {
-    return [process.execPath, bundlePath, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+    return [process.execPath, bundlePath, "context", "codex-tool-hook"].map(shellEscape).join(" ");
   }
 
   const sourceRaviBin = resolveSourceRaviBinPath();
   if (sourceRaviBin) {
-    return [sourceRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+    return [sourceRaviBin, "context", "codex-tool-hook"].map(shellEscape).join(" ");
   }
 
-  return ["ravi", "context", "codex-bash-hook"].map(shellEscape).join(" ");
+  return ["ravi", "context", "codex-tool-hook"].map(shellEscape).join(" ");
 }
 
 function isRunnableRaviCliEntrypoint(entrypoint?: string): entrypoint is string {

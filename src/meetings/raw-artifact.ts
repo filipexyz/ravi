@@ -5,10 +5,12 @@ import { getRaviStateDir } from "../utils/paths.js";
 import { buildMeetingEventPayload, emitMeetingEvent, MEETING_EVENT_TOPICS } from "./events.js";
 import {
   MEETING_RAW_ARTIFACT_KIND,
+  type MeetingAgentOutput,
   type MeetingCaptureDiagnostic,
   type MeetingMediaRef,
   type MeetingParticipant,
   type MeetingSession,
+  type MeetingTextMessage,
   type MeetingTranscriptSegment,
 } from "./types.js";
 
@@ -51,6 +53,8 @@ export interface MeetingTranscriptionJson {
   meeting: {
     id: string;
     provider: string;
+    meetingChannel?: string | null;
+    meetingChatId?: string | null;
     providerMeetingId?: string | null;
     title?: string | null;
     startedAt?: string | null;
@@ -74,6 +78,27 @@ export interface MeetingTranscriptionJson {
     endSec?: number;
     text: string;
   }>;
+  textMessages: Array<{
+    id?: string;
+    providerMessageId?: string;
+    sender?: string;
+    direction?: string;
+    sentAt?: string;
+    capturedAt?: string;
+    text: string;
+  }>;
+  agentOutputs: Array<{
+    id?: string;
+    kind: string;
+    agent?: string;
+    providerMessageId?: string;
+    startedAt?: string;
+    endedAt?: string;
+    sentAt?: string;
+    capturedAt?: string;
+    deliveryStatus?: string;
+    text: string;
+  }>;
 }
 
 export function renderMeetingRawArtifactMarkdown(input: RenderMeetingRawArtifactInput): string {
@@ -84,6 +109,8 @@ export function renderMeetingRawArtifactMarkdown(input: RenderMeetingRawArtifact
   lines.push("## Metadata", "");
   lines.push(`- Title: ${valueOrDash(session.title ?? session.providerMeetingId ?? session.id)}`);
   lines.push(`- Provider: ${valueOrDash(session.provider)}`);
+  lines.push(`- Meeting channel: ${valueOrDash(session.meetingChannel)}`);
+  lines.push(`- Meeting chat: ${valueOrDash(session.meetingChatId)}`);
   lines.push(`- Meeting ID: ${valueOrDash(session.providerMeetingId ?? session.id)}`);
   lines.push(`- URL: ${valueOrDash(session.url)}`);
   lines.push(`- Started at: ${valueOrDash(session.startedAt)}`);
@@ -110,6 +137,24 @@ export function renderMeetingRawArtifactMarkdown(input: RenderMeetingRawArtifact
     for (const segment of segments) lines.push(formatTranscriptSegment(segment));
     lines.push("");
   }
+
+  lines.push("## Text Chat", "");
+  const textMessages = session.textMessages ?? [];
+  if (textMessages.length === 0) {
+    lines.push("- unavailable");
+  } else {
+    for (const message of textMessages) lines.push(formatTextMessage(message));
+  }
+  lines.push("");
+
+  lines.push("## Agent Output", "");
+  const agentOutputs = session.agentOutputs ?? [];
+  if (agentOutputs.length === 0) {
+    lines.push("- unavailable");
+  } else {
+    for (const output of agentOutputs) lines.push(formatAgentOutput(output));
+  }
+  lines.push("");
 
   lines.push("## Media References", "");
   const mediaRefs = session.mediaRefs ?? [];
@@ -158,6 +203,8 @@ export function renderMeetingTranscriptionJson(input: RenderMeetingRawArtifactIn
     meeting: {
       id: session.id,
       provider: session.provider,
+      meetingChannel: session.meetingChannel ?? null,
+      meetingChatId: session.meetingChatId ?? null,
       providerMeetingId: session.providerMeetingId ?? null,
       title: session.title ?? null,
       startedAt: session.startedAt ?? null,
@@ -180,6 +227,27 @@ export function renderMeetingTranscriptionJson(input: RenderMeetingRawArtifactIn
       ...(segment.startOffsetMs !== undefined ? { startSec: msToSeconds(segment.startOffsetMs) } : {}),
       ...(segment.endOffsetMs !== undefined ? { endSec: msToSeconds(segment.endOffsetMs) } : {}),
       text: normalizeMarkdownText(segment.text),
+    })),
+    textMessages: (session.textMessages ?? []).map((message) => ({
+      ...(message.id ? { id: message.id } : {}),
+      ...(message.providerMessageId ? { providerMessageId: message.providerMessageId } : {}),
+      ...(message.senderName || message.senderId ? { sender: message.senderName ?? message.senderId } : {}),
+      ...(message.direction ? { direction: message.direction } : {}),
+      ...(message.sentAt ? { sentAt: message.sentAt } : {}),
+      ...(message.capturedAt ? { capturedAt: message.capturedAt } : {}),
+      text: normalizeMarkdownText(message.text),
+    })),
+    agentOutputs: (session.agentOutputs ?? []).map((output) => ({
+      ...(output.id ? { id: output.id } : {}),
+      kind: output.kind,
+      ...(output.agentName || output.agentId ? { agent: output.agentName ?? output.agentId } : {}),
+      ...(output.providerMessageId ? { providerMessageId: output.providerMessageId } : {}),
+      ...(output.startedAt ? { startedAt: output.startedAt } : {}),
+      ...(output.endedAt ? { endedAt: output.endedAt } : {}),
+      ...(output.sentAt ? { sentAt: output.sentAt } : {}),
+      ...(output.capturedAt ? { capturedAt: output.capturedAt } : {}),
+      ...(output.deliveryStatus ? { deliveryStatus: output.deliveryStatus } : {}),
+      text: normalizeMarkdownText(output.text),
     })),
   };
 }
@@ -230,10 +298,14 @@ export function registerMeetingRawArtifact(input: RegisterMeetingRawArtifactInpu
     payload: {
       meetingId: session.id,
       provider: session.provider,
+      meetingChannel: session.meetingChannel ?? null,
+      meetingChatId: session.meetingChatId ?? null,
       providerMeetingId: session.providerMeetingId ?? null,
       filePath: written.filePath,
       transcriptionJsonPath: written.transcriptionJson?.filePath ?? null,
       transcriptSegmentCount: session.transcriptSegments?.length ?? 0,
+      textMessageCount: session.textMessages?.length ?? 0,
+      agentOutputCount: session.agentOutputs?.length ?? 0,
     },
   });
 
@@ -290,6 +362,11 @@ function buildArtifactMetadata(
   return {
     meetingId: session.id,
     provider: session.provider,
+    meetingChannel: session.meetingChannel ?? null,
+    meetingAccountId: session.meetingAccountId ?? null,
+    meetingChatId: session.meetingChatId ?? null,
+    meetingThreadId: session.meetingThreadId ?? null,
+    meetingMessageId: session.meetingMessageId ?? null,
     providerMeetingId: session.providerMeetingId ?? null,
     title: session.title ?? null,
     url: session.url ?? null,
@@ -298,6 +375,8 @@ function buildArtifactMetadata(
     durationMs: session.durationMs ?? null,
     participantCount: session.participants?.length ?? 0,
     transcriptSegmentCount: session.transcriptSegments?.length ?? 0,
+    textMessageCount: session.textMessages?.length ?? 0,
+    agentOutputCount: session.agentOutputs?.length ?? 0,
     transcriptionJsonPath: written?.transcriptionJson?.filePath ?? null,
     mediaRefs: (session.mediaRefs ?? []).map((mediaRef) => ({
       kind: mediaRef.kind,
@@ -317,6 +396,11 @@ function buildArtifactLineage(session: MeetingSession): Record<string, unknown> 
     meeting: {
       id: session.id,
       provider: session.provider,
+      channel: session.meetingChannel ?? null,
+      accountId: session.meetingAccountId ?? null,
+      chatId: session.meetingChatId ?? null,
+      threadId: session.meetingThreadId ?? null,
+      messageId: session.meetingMessageId ?? null,
       providerMeetingId: session.providerMeetingId ?? null,
     },
     origin: {
@@ -386,6 +470,45 @@ function safePathSegment(value: string): string {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return normalized || "meeting";
+}
+
+function formatTextMessage(message: MeetingTextMessage): string {
+  const timestamp = message.sentAt ?? message.capturedAt ?? "timestamp unavailable";
+  const sender = message.senderName ?? message.senderId ?? "Unknown sender";
+  const details = [
+    message.direction ? `direction=${message.direction}` : null,
+    message.providerMessageId ? `providerId=${message.providerMessageId}` : null,
+    message.threadId ? `thread=${message.threadId}` : null,
+    message.replyToId ? `replyTo=${message.replyToId}` : null,
+    message.source ? `source=${message.source}` : null,
+  ].filter(Boolean);
+  const suffix = details.length > 0 ? ` (${details.join(", ")})` : "";
+  const text = normalizeMarkdownText(message.text);
+  if (!text.includes("\n")) return `- [${timestamp}] ${sender}${suffix}: ${text}`;
+  const indented = text
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
+  return `- [${timestamp}] ${sender}${suffix}:\n${indented}`;
+}
+
+function formatAgentOutput(output: MeetingAgentOutput): string {
+  const timestamp = output.startedAt ?? output.sentAt ?? output.capturedAt ?? "timestamp unavailable";
+  const agent = output.agentName ?? output.agentId ?? "Ravi";
+  const details = [
+    `kind=${output.kind}`,
+    output.deliveryStatus ? `status=${output.deliveryStatus}` : null,
+    output.providerMessageId ? `providerId=${output.providerMessageId}` : null,
+    output.endedAt ? `ended=${output.endedAt}` : null,
+    output.source ? `source=${output.source}` : null,
+  ].filter(Boolean);
+  const text = normalizeMarkdownText(output.text);
+  if (!text.includes("\n")) return `- [${timestamp}] ${agent} (${details.join(", ")}): ${text}`;
+  const indented = text
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
+  return `- [${timestamp}] ${agent} (${details.join(", ")}):\n${indented}`;
 }
 
 function formatParticipant(participant: MeetingParticipant): string {

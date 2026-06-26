@@ -39,7 +39,10 @@ export async function transcribeFile(input: TranscribeFileInput): Promise<Transc
   }
 
   const [stats, buffer] = await Promise.all([stat(input.filePath), readFile(input.filePath)]);
-  const result = await transcribeAudio(buffer, mimeType, { language: input.language });
+  const result = await transcribeAudio(buffer, mimeType, {
+    language: input.language,
+    durationHintSec: input.durationHintSec,
+  });
   return {
     ...result,
     source: {
