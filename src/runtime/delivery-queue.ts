@@ -219,6 +219,10 @@ export async function* createRuntimeMessageGenerator({
     });
     session.turnActive = true;
     session.currentTurnToolStarted = false;
+    if (session.idleSessionEvictionTimer) {
+      clearTimeout(session.idleSessionEvictionTimer);
+      session.idleSessionEvictionTimer = undefined;
+    }
     if (session.idleGapRecoveryTimer) {
       clearTimeout(session.idleGapRecoveryTimer);
       session.idleGapRecoveryTimer = undefined;

@@ -1378,7 +1378,14 @@ export class TaskCommands {
   }
 
   @Command({ name: "show", description: "Show task details and history" })
-  @CommandAccess({ kind: "read", resource: "tasks", action: "show", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "tasks",
+    action: "show",
+    risk: "low",
+    resourceId: "taskId",
+    input: ["taskId"],
+  })
   @Returns(taskShowReturnSchema)
   show(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1816,7 +1823,14 @@ export class TaskCommands {
   }
 
   @Command({ name: "report", description: "Report task progress from a CLI or agent session" })
-  @CommandAccess({ kind: "read", resource: "tasks", action: "report", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "tasks",
+    action: "report",
+    risk: "medium",
+    resourceId: "taskId",
+    input: ["taskId"],
+  })
   @Returns(taskMutationReturnSchema)
   async report(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1869,7 +1883,14 @@ export class TaskCommands {
   }
 
   @Command({ name: "done", description: "Mark a task as done" })
-  @CommandAccess({ kind: "mutate", resource: "tasks", action: "done", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "tasks",
+    action: "done",
+    risk: "medium",
+    resourceId: "taskId",
+    input: ["taskId"],
+  })
   @Returns(taskMutationReturnSchema)
   async done(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1911,7 +1932,14 @@ export class TaskCommands {
   }
 
   @Command({ name: "block", description: "Mark a task as blocked" })
-  @CommandAccess({ kind: "mutate", resource: "tasks", action: "block", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "tasks",
+    action: "block",
+    risk: "medium",
+    resourceId: "taskId",
+    input: ["taskId"],
+  })
   @Returns(taskMutationReturnSchema)
   async block(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1953,7 +1981,14 @@ export class TaskCommands {
   }
 
   @Command({ name: "fail", description: "Mark a task as failed" })
-  @CommandAccess({ kind: "mutate", resource: "tasks", action: "fail", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "tasks",
+    action: "fail",
+    risk: "medium",
+    resourceId: "taskId",
+    input: ["taskId"],
+  })
   @Returns(taskMutationReturnSchema)
   async failTaskCommand(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1994,7 +2029,14 @@ export class TaskCommands {
   }
 
   @Command({ name: "watch", description: "Watch task events live" })
-  @CommandAccess({ kind: "read", resource: "tasks", action: "watch", risk: "low", input: ["taskId"] })
+  @CommandAccess({
+    kind: "read",
+    resource: "tasks",
+    action: "watch",
+    risk: "low",
+    resourceId: "taskId",
+    input: ["taskId"],
+  })
   @CliOnly()
   async watch(
     @Arg("taskId", { description: "Task ID (optional)", required: false }) taskId?: string,

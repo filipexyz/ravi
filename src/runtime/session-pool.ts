@@ -5,9 +5,11 @@ import type { RuntimeLaunchPrompt } from "./message-types.js";
 
 export const RUNTIME_SESSION_POOL_MAX_ENV = "RAVI_RUNTIME_SESSION_POOL_MAX";
 export const LEGACY_RUNTIME_SESSION_POOL_MAX_ENV = "RAVI_STREAMING_POOL_MAX";
-export const DEFAULT_RUNTIME_SESSION_POOL_MAX = 60;
+export const DEFAULT_RUNTIME_SESSION_POOL_MAX = 12;
 export const RUNTIME_INTERACTIVE_RESERVED_SLOTS_ENV = "RAVI_RUNTIME_INTERACTIVE_RESERVED_SLOTS";
 export const DEFAULT_RUNTIME_INTERACTIVE_RESERVED_SLOTS = 4;
+export const RUNTIME_IDLE_SESSION_TTL_MS_ENV = "RAVI_RUNTIME_IDLE_SESSION_TTL_MS";
+export const DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS = 5 * 60 * 1000;
 
 export interface RuntimeStreamingSessionIdentity {
   sessionName?: string | null;
@@ -61,6 +63,19 @@ export function resolveRuntimeInteractiveReservedSlots(
   }
 
   return Math.min(parsed, maxReserved);
+}
+
+export function resolveRuntimeIdleSessionTtlMs(value = process.env[RUNTIME_IDLE_SESSION_TTL_MS_ENV]): number {
+  if (value === undefined || value === null || value.trim() === "") {
+    return DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS;
+  }
+
+  const parsed = Number.parseInt(value.trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS;
+  }
+
+  return parsed;
 }
 
 export function resolveRuntimeStreamingSession(

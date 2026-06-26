@@ -33,11 +33,28 @@ describe("RAVI_EVENTS stream subjects", () => {
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.session.reset.completed");
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.session.delete.requested");
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.session.delete.completed");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.session.prune.requested");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.session.prune.completed");
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.sessions.followup.>");
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.presence.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.runtime.>");
     expect(RAVI_EVENTS_SUBJECTS).toContain("ravi._cli.cli.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.chats.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.tags.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.inbox.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.console.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.watch.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.task.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.tts");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.tts.*");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.artifacts.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.meetings.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.hooks.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.rtk.>");
+    expect(RAVI_EVENTS_SUBJECTS).toContain("ravi.work_objects.>");
     expect(RAVI_EVENTS_SUBJECTS).not.toContain("ravi.session.*.prompt");
     expect(RAVI_EVENTS_SUBJECTS).not.toContain("ravi.*.cli.>");
+    expect(RAVI_EVENTS_SUBJECTS).not.toContain("omni.work_objects.>");
     expect(new Set(RAVI_EVENTS_SUBJECTS).size).toBe(RAVI_EVENTS_SUBJECTS.length);
   });
 

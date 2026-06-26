@@ -1,43 +1,13 @@
 import { RetentionPolicy, type JetStreamManager } from "nats";
 import { getNats } from "../nats.js";
 import { logger } from "../utils/logger.js";
+import { getRaviEventsReplaySubjects } from "./topic-registry.js";
 
 const log = logger.child("events:audit-stream");
 
 export const RAVI_EVENTS_STREAM = "RAVI_EVENTS";
 
-export const RAVI_EVENTS_SUBJECTS = [
-  "ravi.session.*.response",
-  "ravi.session.*.runtime",
-  "ravi.session.*.claude",
-  "ravi.session.*.tool",
-  "ravi.session.*.stream",
-  "ravi.session.*.delivery",
-  "ravi.session.*.adapter.>",
-  "ravi.session.abort",
-  "ravi.session.reset.requested",
-  "ravi.session.reset.completed",
-  "ravi.session.delete.requested",
-  "ravi.session.delete.completed",
-  "ravi.session.model.changed",
-  "ravi.session.runtime.control",
-  "ravi.presence.>",
-  "ravi.approval.>",
-  "ravi.audit.>",
-  "ravi.inbound.>",
-  "ravi.outbound.>",
-  "ravi.media.send",
-  "ravi.stickers.send",
-  "ravi.contacts.>",
-  "ravi.instances.>",
-  "ravi.whatsapp.>",
-  "ravi.config.changed",
-  "ravi.triggers.>",
-  "ravi.sessions.followup.>",
-  "ravi.cron.>",
-  "ravi.heartbeat.>",
-  "ravi._cli.cli.>",
-] as const;
+export const RAVI_EVENTS_SUBJECTS = getRaviEventsReplaySubjects();
 
 const MAX_AGE_NS = 7 * 24 * 60 * 60 * 1_000_000_000; // 7 days
 const MAX_BYTES = 512 * 1024 * 1024; // bounded replay history, not archival storage

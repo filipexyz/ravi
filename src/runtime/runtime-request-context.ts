@@ -14,6 +14,7 @@ import {
   type AgentIdentityCompartment,
 } from "../permissions/agent-identity-permissions-provider.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
@@ -53,7 +54,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     approvalSource,
   } = options;
 
-  const capabilities = buildRuntimeContextCapabilities(agent.id);
+  const capabilities = buildRuntimeContextCapabilities(agent.id, sessionName, prompt);
   const runtimeContext = createRuntimeContextForPrompt({
     agentId: agent.id,
     sessionKey: dbSessionKey,
@@ -110,7 +111,7 @@ export function refreshRuntimeRequestContextForTurn(options: {
   resolvedSource?: RuntimeMessageTarget;
   approvalSource?: RuntimeMessageTarget;
 }): ContextRecord {
-  const capabilities = buildRuntimeContextCapabilities(options.agent.id);
+  const capabilities = buildRuntimeContextCapabilities(options.agent.id, options.sessionName, options.prompt);
   const nextContext = createRuntimeContextForPrompt({
     agentId: options.agent.id,
     sessionKey: options.dbSessionKey,
@@ -160,8 +161,37 @@ export function refreshRuntimeRequestContextForTurn(options: {
   return options.runtimeContext;
 }
 
-function buildRuntimeContextCapabilities(agentId: string): ContextCapability[] {
-  return dedupeContextCapabilities(snapshotAgentCapabilities(agentId));
+function buildRuntimeContextCapabilities(
+  agentId: string,
+  sessionName?: string,
+  prompt?: RuntimeLaunchPrompt,
+): ContextCapability[] {
+  return dedupeContextCapabilities([
+    ...snapshotAgentCapabilities(agentId),
+    ...buildTaskSelfCapabilities(sessionName, prompt),
+  ]);
+}
+
+function buildTaskSelfCapabilities(sessionName?: string, prompt?: RuntimeLaunchPrompt): ContextCapability[] {
+  const taskId = cleanStringValue(prompt?.taskBarrierTaskId);
+  if (!sessionName || !taskId) return [];
+  const binding = dbResolveActiveTaskBindingForSession(sessionName, taskId);
+  if (!binding) return [];
+  const source = `task-runtime:self:${binding.task.id}`;
+  return [
+    {
+      permission: "read",
+      objectType: "task",
+      objectId: binding.task.id,
+      source,
+    },
+    {
+      permission: "mutate",
+      objectType: "task",
+      objectId: binding.task.id,
+      source,
+    },
+  ];
 }
 
 function createRuntimeContextForPrompt(options: {
@@ -247,6 +277,8 @@ function buildAgentIdentityRuntimeContextInput(options: {
         authorityModel: AGENT_IDENTITY_AUTHORITY_MODE,
       })
     : [];
+  const taskSelfCapabilityCount = countTaskSelfCapabilities(options.capabilities);
+  const taskSelfTaskId = resolveTaskSelfTaskId(options.capabilities);
   const effectiveCapabilities = buildEffectiveCapabilities({
     agentCapabilities: agentIdentityCapabilities,
     actorCapabilities: agentIdentityCapabilities,
@@ -269,6 +301,8 @@ function buildAgentIdentityRuntimeContextInput(options: {
       agentIdentityPrincipal: formatPrincipal(agentIdentityPrincipal),
       agentIdentityCompartment: `${compartment.type}:${compartment.id}`,
       agentIdentityCapabilityCount: agentIdentityCapabilities.length,
+      ...(taskSelfCapabilityCount > 0 ? { taskSelfCapabilityCount } : {}),
+      ...(taskSelfTaskId ? { taskSelfTaskId } : {}),
       actorCapabilityCount: 0,
       surfaceCapabilityCount: 0,
       turnCapabilityCount: observationCapabilities.length,
@@ -276,6 +310,18 @@ function buildAgentIdentityRuntimeContextInput(options: {
       effectiveCapabilityCount: effectiveCapabilities.length,
     },
   };
+}
+
+function countTaskSelfCapabilities(capabilities: ContextCapability[]): number {
+  return capabilities.filter(isTaskSelfCapability).length;
+}
+
+function resolveTaskSelfTaskId(capabilities: ContextCapability[]): string | undefined {
+  return capabilities.find(isTaskSelfCapability)?.objectId;
+}
+
+function isTaskSelfCapability(capability: ContextCapability): boolean {
+  return capability.source?.startsWith("task-runtime:self:") === true;
 }
 
 function resolveAgentIdentityCompartment(
@@ -598,11 +644,18 @@ function parseObservationPermissionGrant(value: string): ContextCapability[] {
     ];
   }
 
+  const normalizedCommand = normalizeCliToolNamePart(command);
   return [
     {
       permission: "use",
       objectType: "tool",
-      objectId: `${group}_${normalizeCliToolNamePart(command)}`,
+      objectId: `${group}_${normalizedCommand}`,
+      source: "observer-rule",
+    },
+    {
+      permission: "execute",
+      objectType: "group",
+      objectId: `${group}_${normalizedCommand}`,
       source: "observer-rule",
     },
   ];

@@ -251,12 +251,12 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
           path: "detail",
           type: "string",
           description:
-            "Optional safe semantic diagnosis. Scope denials describe the missing delegated branch when available.",
+            "Optional safe semantic diagnosis. Scope denials describe the missing agent-identity capability when available.",
         },
         {
           path: "blockType",
           type: "string",
-          description: "Optional normalized denial category, e.g. delegated_actor_surface_capabilities_empty.",
+          description: "Optional normalized denial category, e.g. agent_identity_effective_capabilities_empty.",
         },
         {
           path: "missingPrincipals",
@@ -396,6 +396,28 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     ],
   },
   {
+    id: "tts.lifecycle",
+    category: "delivery",
+    pattern: "ravi.tts.*",
+    title: "Text-to-speech lifecycle",
+    description: "TTS generation lifecycle event such as started, ready or failed.",
+    payload: "{ id, status?, filePath?, error?, sessionName?, agentId?, createdAt? }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "id", type: "string", required: true, description: "TTS request or playback item id." },
+        { path: "status", type: "string", description: "Lifecycle status when present." },
+        { path: "filePath", type: "string", description: "Generated local audio path when ready." },
+        { path: "error", type: "string", description: "Failure reason when generation failed." },
+        { path: "sessionName", type: "string", description: "Runtime session associated with the request." },
+        { path: "agentId", type: "string", description: "Agent associated with the request." },
+        { path: "createdAt", type: "number", description: "Unix timestamp in milliseconds." },
+      ],
+    },
+    examples: ['ravi triggers add "TTS ready" --topic "ravi.tts.ready" --message "..."'],
+    filters: ['data.status == "ready"', 'data.agentId == "main"'],
+  },
+  {
     id: "inbox.mail.received",
     category: "inbox",
     pattern: "ravi.inbox.mail.received",
@@ -529,6 +551,57 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     examples: [
       'ravi triggers add "Task done" --topic "ravi.task.*.event" --filter \'data.event.type == "task.completed"\' --message "..."',
     ],
+  },
+  {
+    id: "artifacts.lifecycle",
+    category: "custom",
+    pattern: "ravi.artifacts.*",
+    title: "Artifact lifecycle",
+    description: "Artifact lifecycle event such as created, running, completed, failed or archived.",
+    payload: "{ version, eventType, lifecycle, artifact, event, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "version", type: "number", required: true, description: "Payload contract version." },
+        { path: "eventType", type: "string", required: true, description: "Always artifact.lifecycle." },
+        { path: "lifecycle", type: "string", required: true, description: "Lifecycle state from the topic suffix." },
+        { path: "artifact.id", type: "string", required: true, description: "Artifact id." },
+        { path: "artifact.kind", type: "string", required: true, description: "Artifact kind." },
+        { path: "artifact.status", type: "string", required: true, description: "Current artifact status." },
+        { path: "event.id", type: "string", required: true, description: "Artifact event id." },
+        { path: "occurredAt", type: "string", required: true, description: "ISO occurrence timestamp." },
+      ],
+    },
+    examples: [
+      'ravi triggers add "Image completed" --topic "ravi.artifacts.completed" --filter \'data.artifact.kind == "image"\' --message "..."',
+    ],
+    filters: ['data.lifecycle == "completed"', 'data.artifact.kind == "image"'],
+  },
+  {
+    id: "meetings.lifecycle",
+    category: "custom",
+    pattern: "ravi.meetings.*",
+    title: "Meeting lifecycle",
+    description: "Meeting lifecycle event such as ended, transcript_available or artifact_generated.",
+    payload:
+      "{ version, eventType, meetingId, provider, originSessionName?, artifactId?, title?, startedAt?, endedAt?, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "version", type: "number", required: true, description: "Payload contract version." },
+        { path: "eventType", type: "string", required: true, description: "Always meeting.lifecycle." },
+        { path: "meetingId", type: "string", required: true, description: "Meeting session id." },
+        { path: "provider", type: "string", required: true, description: "Meeting provider." },
+        { path: "originSessionName", type: ["string", "null"], description: "Origin Ravi session name." },
+        { path: "artifactId", type: ["string", "null"], description: "Generated artifact id when available." },
+        { path: "title", type: ["string", "null"], description: "Meeting title." },
+        { path: "startedAt", type: ["number", "null"], description: "Meeting start timestamp in ms." },
+        { path: "endedAt", type: ["number", "null"], description: "Meeting end timestamp in ms." },
+        { path: "occurredAt", type: "string", required: true, description: "ISO occurrence timestamp." },
+      ],
+    },
+    examples: ['ravi triggers add "Meeting transcript" --topic "ravi.meetings.transcript_available" --message "..."'],
+    filters: ['data.artifactId != ""', 'data.originSessionName == "meetings"'],
   },
   {
     id: "tags.rule.applied",
