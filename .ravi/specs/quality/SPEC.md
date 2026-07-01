@@ -8,6 +8,7 @@ capabilities:
   - root-cause-packets
   - watch-windows
   - triage
+  - ci-gates
 tags:
   - quality
   - observability
