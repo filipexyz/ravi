@@ -44,6 +44,7 @@ import { hasLiveAdminContext } from "./runtime/context-registry.js";
 import type { MessageTarget } from "./runtime/message-types.js";
 import { dbHasActiveAssignedTaskForSession } from "./tasks/task-db.js";
 import { startWorkObjectNatsService, type WorkObjectNatsServiceHandle } from "./work-objects/index.js";
+import { createSlackNativeRuntimeFromEnv, type SlackNativeRuntime } from "./channels/slack/index.js";
 import {
   tryAcquireLeadership,
   startLeadershipRenewal,
@@ -181,6 +182,7 @@ let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
 let webhookHttpServer: WebhookHttpServerHandle | null = null;
 let workObjectNatsService: WorkObjectNatsServiceHandle | null = null;
+let slackNativeRuntime: SlackNativeRuntime | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
 export function getBotInstance(): RaviBot | null {
@@ -242,6 +244,11 @@ async function shutdown(signal: string) {
     // Stop gateway
     if (gateway) {
       await gateway.stop();
+    }
+
+    if (slackNativeRuntime) {
+      await slackNativeRuntime.socketMode.stop();
+      slackNativeRuntime = null;
     }
 
     if (sessionAdapterBus) {
@@ -323,6 +330,9 @@ export async function startDaemon() {
   log.info("Bot started");
 
   // Step 6: Set up omni sender + consumer + gateway
+  slackNativeRuntime = createSlackNativeRuntimeFromEnv();
+  const nativeTextDeliveries = slackNativeRuntime ? [slackNativeRuntime.delivery] : [];
+
   if (omniApiUrl && omniApiKey) {
     const sender = new OmniSender(omniApiUrl, omniApiKey);
     omniConsumer = new OmniConsumer(sender, omniApiUrl, omniApiKey, {
@@ -341,6 +351,7 @@ export async function startDaemon() {
       logLevel: config.logLevel,
       omniSender: sender,
       omniConsumer,
+      nativeTextDeliveries,
     });
   } else {
     // No omni — create a stub gateway that handles internal routing only
@@ -351,11 +362,17 @@ export async function startDaemon() {
       logLevel: config.logLevel,
       omniSender: stubSender,
       omniConsumer: stubConsumer,
+      nativeTextDeliveries,
     });
   }
 
   await gateway.start();
   log.info("Gateway started");
+
+  if (slackNativeRuntime) {
+    slackNativeRuntime.socketMode.start();
+    log.info("Slack native Socket Mode runtime started");
+  }
 
   // Step 7: Start runners — leader election ensures only one daemon runs heartbeat/cron
   // Trigger, ephemeral, and inbox are per-daemon (each daemon handles its own).
