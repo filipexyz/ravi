@@ -39,6 +39,53 @@ Expected:
 - `page.hasMore` is boolean;
 - cursor preserves sort/order.
 
+## Cron List Agent-Scoped Default
+
+```bash
+RAVI_AGENT_ID=ravi-refinamento ravi cron list --json
+```
+
+Expected:
+
+- only jobs whose effective owner is `ravi-refinamento` are returned;
+- `filters.scope` is `"agent"`;
+- `filters.agentId` is `"ravi-refinamento"`;
+- jobs from other agents are excluded.
+
+## Cron List Explicit Global Scope
+
+```bash
+RAVI_AGENT_ID=ravi-refinamento ravi cron list --all-agents --json
+```
+
+Expected:
+
+- jobs from all visible agents are returned;
+- `filters.scope` is `"all-agents"`;
+- `--limit` and `--offset` still apply.
+
+## Cron List Tag + Pagination With Scope
+
+```bash
+RAVI_AGENT_ID=ravi-refinamento ravi cron list --tag etl --limit 2 --json
+```
+
+Expected:
+
+- only jobs matching both the agent scope and the tag filter are returned;
+- pagination metadata is present.
+
+## Cron List No Agent Context
+
+```bash
+ravi cron list --json
+```
+
+Expected:
+
+- without `RAVI_AGENT_ID` or session context, all accessible jobs are listed;
+- `filters.scope` is `"all"`.
+
 ## Local Debt Scan
 
 ```bash

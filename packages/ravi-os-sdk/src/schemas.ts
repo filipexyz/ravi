@@ -16760,6 +16760,14 @@ export const CronEnableReturnSchema = {
 export const CronListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "agent": {
+      "description": "Filter jobs by a specific agent ID",
+      "type": "string"
+    },
+    "allAgents": {
+      "description": "List jobs from all agents (requires authorization)",
+      "type": "boolean"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
