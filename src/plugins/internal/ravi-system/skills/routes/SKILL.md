@@ -109,20 +109,31 @@ Route e attach (`sessions/attach`) operam em camadas diferentes — confundi-las
 | Camada | Define | Resultado |
 |--------|--------|-----------|
 | **Route** | Qual *agent* atende o chat | matchRoute escolhe agent, session_key é derivado de (agent, channel, instance, dmScope, peer). Cada combinação vira sessão própria. |
-| **Attach** (`sessions attach`) | Qual chat recebe output da sessão e qual sessão recebe inbound daquele chat | Seleciona output target da sessão e cria subscription para o chat. |
+| **Attach** (`sessions attach`) | Qual chat fica ligado a uma sessão já escolhida | Seleciona output target da sessão e cria subscription para o chat, mas não cria nem corrige route. |
+
+**Regra crítica:** `sessions attach` pressupõe que o chat já está chegando no agent correto. Se a rota ainda aponta para outro agent, para o default da instância, ou não existe, configure `ravi instances routes add` primeiro. Para usar uma sessão canônica específica desde a route, use `--session <name>`.
+
+```bash
+# Chat novo que deve ir para agent dev e sessão dev
+ravi instances routes add main "group:<id>" dev --session dev --priority 10
+
+# Depois, se necessário, ajustar fala/output da sessão no chat
+ravi sessions attach dev --chat <chat-id> --reason "unificar chat na sessão dev"
+```
 
 **Cuidado com a interação:**
 
 - Se um chat tem subscription ativa (atachado a sessão X), o consumer **ignora** o agent escolhido pela route e dispatcha pra sessão X. A route não troca o destino sozinha.
 - Inbound-route bookkeeping pode criar subscription, mas não deve mudar o output target escolhido por `sessions attach`.
 - `routes add` faz cleanup automático de sessões conflitantes (apaga sessão paralela do agent antigo e libera o chat). Quando isso roda, a próxima inbound segue a nova route normalmente.
-- `routes add ... --session <name>` (redirect estático) força a sessão alvo e cria subscription automaticamente — funciona ao lado do attach.
+- `routes add ... --session <name>` (redirect estático) força a sessão alvo e cria subscription automaticamente — é o caminho certo quando o requisito já é "este chat deve cair nesta sessão".
 
 **Quando usar cada um:**
 
 - "Quero outro agent atendendo esse chat, com histórico próprio" → `routes add`
-- "Quero a MESMA sessão respondendo em um chat específico" → `sessions attach`
+- "Quero a MESMA sessão em um chat cuja route já está correta" → `sessions attach`
+- "Quero a MESMA sessão em um chat novo ou com route errada" → `routes add ... --session <name>` e depois `sessions attach` apenas se precisar ajustar fala/output
 
-Focus foi removido: `attach` é o primitive que escolhe o chat de output da sessão. Ver skill `ravi-system:sessions` (seção Attach) pras receitas práticas e diagrama de fluxo.
+Focus foi removido: `attach` é o primitive que escolhe o chat de output da sessão; não é substituto de route. Ver skill `ravi-system:sessions` (seção Attach) pras receitas práticas e diagrama de fluxo.
 
 Para gerenciar contacts: use a skill `ravi-system:contacts`
