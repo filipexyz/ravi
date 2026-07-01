@@ -160,6 +160,46 @@ Next page:
   ravi tasks list --cursor ey...
 ```
 
+## Agent-Scoped Defaults
+
+List commands for resources that have an agent owner (e.g., cron jobs, triggers)
+SHOULD default to the current owner when a runtime `agentId` is resolved from
+context or `RAVI_AGENT_ID`.
+
+When the caller is an agent, the default scope is the agent's own resources.
+An explicit flag (`--all-agents`) is REQUIRED to request global scope, even for
+admin/superadmin callers, except documented exceptions.
+
+Pagination and limits (`--limit`, `--offset`) MUST be preserved when global
+scope is requested.
+
+JSON output MUST disclose the active scope:
+
+```json
+{
+  "filters": {
+    "scope": "agent",
+    "agentId": "<current-agent>"
+  }
+}
+```
+
+When global scope is explicit:
+
+```json
+{
+  "filters": {
+    "scope": "all-agents"
+  }
+}
+```
+
+Human output SHOULD show the active scope and the next-page command SHOULD
+preserve relevant scope flags.
+
+An optional `--agent <id>` flag MAY be used to filter by a specific agent when
+the caller is authorized to view that agent's resources.
+
 ## Acceptance Criteria
 
 - Calling a list command with no filters is safe in a large database.
@@ -168,3 +208,6 @@ Next page:
   page.
 - `--all-time` is explicit when removing a default time window.
 - `tasks list` defaults to tasks updated in the last day.
+- In an agent context, `cron list` defaults to the agent's own jobs.
+- `cron list --all-agents` returns globally visible jobs when authorized.
+- Scope metadata is included in JSON and human output.

@@ -7,6 +7,9 @@ const actualRouterDbModule = await import("../../router/router-db.js");
 const emitMock = mock(async () => {});
 
 let cronJob: Record<string, unknown> | null = null;
+let cronJobs: Record<string, unknown>[] = [];
+let mockScopeContext: Record<string, unknown> | undefined;
+let mockScopeEnforced = false;
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -41,12 +44,17 @@ mock.module("../../nats.js", () => ({
 }));
 
 mock.module("../../permissions/scope.js", () => ({
-  getScopeContext: () => undefined,
-  isScopeEnforced: () => false,
+  getScopeContext: () => mockScopeContext,
+  isScopeEnforced: () => mockScopeEnforced,
   canAccessSession: () => true,
   canModifySession: () => true,
   canAccessContact: () => true,
-  canAccessResource: () => true,
+  canAccessResource: (_ctx: unknown, resourceAgentId: string | undefined) => {
+    // When scope is enforced, only allow access to own agent's resources
+    if (!mockScopeEnforced || !mockScopeContext?.agentId) return true;
+    if (!resourceAgentId) return false;
+    return mockScopeContext.agentId === resourceAgentId;
+  },
   canViewAgent: () => true,
   canWriteContacts: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
@@ -99,7 +107,7 @@ mock.module("../../cron/index.js", () => ({
     return cronJob;
   },
   dbGetCronJob: () => cronJob,
-  dbListCronJobs: () => (cronJob ? [cronJob] : []),
+  dbListCronJobs: () => (cronJobs.length > 0 ? cronJobs : cronJob ? [cronJob] : []),
   dbUpdateCronJob: (_id: string, patch: Record<string, unknown>) => {
     cronJob = {
       ...cronJob,
@@ -147,6 +155,9 @@ async function captureJson(run: () => Promise<unknown>): Promise<Record<string, 
 describe("CronCommands --json", () => {
   beforeEach(() => {
     emitMock.mockClear();
+    mockScopeContext = undefined;
+    mockScopeEnforced = false;
+    cronJobs = [];
     cronJob = {
       id: "cron-1",
       name: "Daily",
@@ -252,5 +263,178 @@ describe("CronCommands --json", () => {
       },
     });
     expect(cronJob).toBeNull();
+  });
+});
+
+describe("CronCommands agent-scoped listing", () => {
+  beforeEach(() => {
+    emitMock.mockClear();
+    mockScopeContext = undefined;
+    mockScopeEnforced = false;
+    cronJobs = [
+      {
+        id: "cron-own",
+        name: "Own Job",
+        enabled: true,
+        schedule: { type: "every", every: 1_800_000 },
+        executionType: "agent",
+        agentId: "ravi-refinamento",
+        message: "own task",
+        sessionTarget: "main",
+        deleteAfterRun: false,
+        fireCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "cron-other",
+        name: "Other Job",
+        enabled: true,
+        schedule: { type: "every", every: 3_600_000 },
+        executionType: "agent",
+        agentId: "ravi-dev",
+        message: "other task",
+        sessionTarget: "main",
+        deleteAfterRun: false,
+        fireCount: 0,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      {
+        id: "cron-default",
+        name: "Default Agent Job",
+        enabled: true,
+        schedule: { type: "every", every: 900_000 },
+        executionType: "agent",
+        agentId: undefined,
+        message: "default task",
+        sessionTarget: "main",
+        deleteAfterRun: false,
+        fireCount: 0,
+        createdAt: 3,
+        updatedAt: 3,
+      },
+    ];
+    cronJob = cronJobs[0];
+  });
+
+  it("defaults to agent-scoped listing when agentId is present", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+
+    const payload = await captureJson(async () => new CronCommands().list(true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe("cron-own");
+    expect(payload.filters).toMatchObject({
+      scope: "agent",
+      agentId: "ravi-refinamento",
+    });
+  });
+
+  it("excludes jobs from other agents in default scope", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+
+    const payload = await captureJson(async () => new CronCommands().list(true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    const ids = items.map((i) => i.id);
+    expect(ids).not.toContain("cron-other");
+    expect(ids).not.toContain("cron-default");
+  });
+
+  it("includes default-agent jobs when caller is the default agent", async () => {
+    mockScopeContext = { agentId: "main" };
+
+    const payload = await captureJson(async () => new CronCommands().list(true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    const ids = items.map((i) => i.id);
+    expect(ids).toContain("cron-default");
+    expect(ids).not.toContain("cron-own");
+    expect(ids).not.toContain("cron-other");
+  });
+
+  it("returns all visible jobs with --all-agents", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, undefined, undefined, true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(3);
+    expect(payload.filters).toMatchObject({ scope: "all-agents" });
+  });
+
+  it("--all-agents still applies REBAC when scope is enforced", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+    mockScopeEnforced = true;
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, undefined, undefined, true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    // Only own agent's jobs visible when scope is enforced
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe("cron-own");
+    expect(payload.filters).toMatchObject({ scope: "all-agents" });
+  });
+
+  it("--agent filters to a specific agent", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+
+    const payload = await captureJson(async () =>
+      new CronCommands().list(true, undefined, undefined, undefined, undefined, "ravi-dev"),
+    );
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe("cron-other");
+    expect(payload.filters).toMatchObject({
+      scope: "agent",
+      agentId: "ravi-dev",
+    });
+  });
+
+  it("no agent context lists all jobs with scope=all", async () => {
+    mockScopeContext = undefined;
+
+    const payload = await captureJson(async () => new CronCommands().list(true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(3);
+    expect(payload.filters).toMatchObject({ scope: "all" });
+  });
+
+  it("preserves --tag and --limit with agent scope", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, "1", undefined));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items.length).toBeLessThanOrEqual(1);
+    expect(payload.filters).toMatchObject({
+      scope: "agent",
+      agentId: "ravi-refinamento",
+    });
+  });
+
+  it("preserves --limit and --offset with --all-agents", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, "2", "1", true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(2);
+    expect(payload.filters).toMatchObject({ scope: "all-agents" });
+  });
+
+  it("next-page command preserves --all-agents flag", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, "1", undefined, true));
+
+    const pagination = payload.pagination as Record<string, unknown>;
+    if (pagination.nextCommand) {
+      expect(pagination.nextCommand).toContain("--all-agents");
+    }
   });
 });
