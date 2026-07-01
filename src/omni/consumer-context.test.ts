@@ -264,6 +264,7 @@ const loggerChildSpy = spyOn(logger, "child").mockImplementation(
 );
 
 const { OmniConsumer } = await import("./consumer.js");
+const natsModule = await import("../nats.js");
 
 afterAll(() => {
   loggerChildSpy.mockRestore();
@@ -1340,5 +1341,185 @@ describe("OmniConsumer channel context", () => {
     const [, prompt] = promptCalls[0];
     expect(prompt.prompt).toContain("[Replying to unknown mid:quoted-audio-2]");
     expect(prompt.prompt).toContain("[Audio]\nTranscript:\nhistórico recuperado pelo metadata db");
+  });
+
+  it("persists a reaction as a chat_messages row with message_type=reaction and correct content/provenance", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    // Ensure the chat exists so persistReactionAccounting can find it
+    actualDbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+    });
+
+    chatMessageCalls.length = 0;
+    const emitMock = natsModule.nats.emit as ReturnType<typeof mock>;
+    emitMock.mockClear();
+
+    await consumer["handleReactionEvent"]("reaction.received.whatsapp-baileys.instance-1", {
+      id: "evt-reaction-1",
+      type: "reaction.received",
+      payload: {
+        messageId: "msg-target-1",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        emoji: "👍",
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+      },
+      timestamp: Date.now(),
+    });
+
+    // Assert: one chat_messages row persisted with message_type=reaction
+    const reactionRows = chatMessageCalls.filter((c) => c.messageType === "reaction");
+    expect(reactionRows).toHaveLength(1);
+    const row = reactionRows[0];
+    expect(row.messageType).toBe("reaction");
+    expect(row.providerMessageId).toBe("reaction:msg-target-1:👍:5511947879044");
+    expect(row.channel).toBe("whatsapp");
+    expect(row.instanceId).toBe("instance-1");
+    expect(row.rawChatId).toBe("120363424772797713@g.us");
+    expect(row.normalizedSenderId).toBe("5511947879044");
+
+    // Assert: content_json has the required fields
+    const content = row.content as Record<string, unknown>;
+    expect(content.type).toBe("reaction");
+    expect(content.targetMessageId).toBe("msg-target-1");
+    expect(content.emoji).toBe("👍");
+    expect(content.senderId).toBe("5511947879044");
+
+    // Assert: raw_provenance_json preserves event metadata
+    const provenance = row.rawProvenance as Record<string, unknown>;
+    expect(provenance.source).toBe("omni.reaction.received");
+    expect(provenance.eventId).toBe("evt-reaction-1");
+    expect(provenance.channelType).toBe("whatsapp-baileys");
+    expect(provenance.instanceId).toBe("instance-1");
+    expect(provenance.chatId).toBe("120363424772797713@g.us");
+    expect(provenance.from).toBe("5511947879044@s.whatsapp.net");
+
+    // Assert: ravi.inbound.reaction emitted with correct payload
+    const emitCalls = emitMock.mock.calls.filter((c: unknown[]) => c[0] === "ravi.inbound.reaction");
+    expect(emitCalls).toHaveLength(1);
+    const emitPayload = emitCalls[0][1] as Record<string, unknown>;
+    expect(emitPayload).toEqual({
+      targetMessageId: "msg-target-1",
+      emoji: "👍",
+      senderId: "5511947879044",
+    });
+
+    // Assert: no prompt/session dispatch for reaction
+    expect(promptCalls).toHaveLength(0);
+  });
+
+  it("deduplicates reactions with the same targetMessageId+emoji+senderId", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    actualDbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+    });
+
+    chatMessageCalls.length = 0;
+
+    const reactionEvent = {
+      id: "evt-dup-1",
+      type: "reaction.received" as const,
+      payload: {
+        messageId: "msg-target-dup",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        emoji: "❤️",
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+      },
+      timestamp: Date.now(),
+    };
+
+    // First event should persist
+    await consumer["handleReactionEvent"]("reaction.received.whatsapp-baileys.instance-1", reactionEvent);
+
+    // Second event with different ID but same dedup key should be skipped
+    await consumer["handleReactionEvent"]("reaction.received.whatsapp-baileys.instance-1", {
+      ...reactionEvent,
+      id: "evt-dup-2",
+    });
+
+    const reactionRows = chatMessageCalls.filter((c) => c.messageType === "reaction");
+    expect(reactionRows).toHaveLength(1);
+    expect(reactionRows[0].providerMessageId).toBe("reaction:msg-target-dup:❤️:5511947879044");
+
+    // Assert: no prompt/session dispatch
+    expect(promptCalls).toHaveLength(0);
+  });
+
+  it("does not route reactions through the message.received dispatch path", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    actualDbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+    });
+
+    promptCalls.length = 0;
+    chatMessageCalls.length = 0;
+    channelMessageTraceCalls.length = 0;
+
+    // Send via handleReactionEvent — should NOT create a prompt
+    await consumer["handleReactionEvent"]("reaction.received.whatsapp-baileys.instance-1", {
+      id: "evt-no-dispatch",
+      type: "reaction.received",
+      payload: {
+        messageId: "msg-no-dispatch",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        emoji: "🎉",
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+      },
+      timestamp: Date.now(),
+    });
+
+    // No prompt published (reaction does not enter runtime dispatch)
+    expect(promptCalls).toHaveLength(0);
+
+    // No channel message trace recorded (that is the message.received path)
+    expect(channelMessageTraceCalls).toHaveLength(0);
+
+    // But a chat_messages row IS persisted
+    const reactionRows = chatMessageCalls.filter((c) => c.messageType === "reaction");
+    expect(reactionRows).toHaveLength(1);
   });
 });
