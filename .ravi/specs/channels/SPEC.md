@@ -5,9 +5,11 @@ kind: domain
 domain: channels
 capabilities:
   - chats
+  - credentials
 tags:
   - omni
   - gateway
+  - credentials
 applies_to:
   - src/gateway.ts
   - src/omni/
@@ -33,6 +35,7 @@ Ravi MUST abstract Omni as a transport/gateway adapter. Product and agent-facing
 - Omni/raw channel identifiers MUST remain stored as provenance and debugging data, but they MUST NOT be the primary product model exposed to agents or operators.
 - Channel-specific behavior SHOULD be exposed to Ravi through typed capabilities and normalized events when a feature needs it, not through provider conditionals spread across features.
 - A dedicated channel capability registry MAY be deferred until a concrete feature needs it. The source of capability facts SHOULD be Omni.
+- Channels that require provider/action secrets MUST depend on the credentials broker for secret resolution. Channel runners MUST NOT read Keychain, Vault, or other secret backends directly. See `channels/credentials`.
 
 ## Boundary
 
