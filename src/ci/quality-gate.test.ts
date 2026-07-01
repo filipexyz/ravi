@@ -191,6 +191,56 @@ describe("runSpecGate", () => {
     expect(companionErrors.length).toBe(3);
   });
 
+  it("fails for a spec with empty CHECKS.md", () => {
+    const cwd = makeWorkspace();
+    writeSpec(cwd, "quality");
+    writeSpec(cwd, "quality/ci-gates");
+    // Overwrite CHECKS.md with empty content
+    writeFileSync(join(cwd, ".ravi/specs/quality/ci-gates/CHECKS.md"), "", "utf8");
+
+    const result = runSpecGate([".ravi/specs/quality/ci-gates/SPEC.md"], cwd);
+
+    expect(result.ok).toBe(false);
+    const checksError = result.errors.find((e) => e.error.includes("CHECKS.md is empty"));
+    expect(checksError).toBeTruthy();
+  });
+
+  it("fails for a spec with CHECKS.md lacking verifiable criteria", () => {
+    const cwd = makeWorkspace();
+    writeSpec(cwd, "quality");
+    writeSpec(cwd, "quality/ci-gates");
+    // Overwrite CHECKS.md with content that has no list items
+    writeFileSync(
+      join(cwd, ".ravi/specs/quality/ci-gates/CHECKS.md"),
+      "# Checks\n\nSome notes about quality.\n",
+      "utf8",
+    );
+
+    const result = runSpecGate([".ravi/specs/quality/ci-gates/SPEC.md"], cwd);
+
+    expect(result.ok).toBe(false);
+    const checksError = result.errors.find((e) => e.error.includes("no verifiable criteria"));
+    expect(checksError).toBeTruthy();
+  });
+
+  it("fails for a spec with CHECKS.md list items but no verifiable language", () => {
+    const cwd = makeWorkspace();
+    writeSpec(cwd, "quality");
+    writeSpec(cwd, "quality/ci-gates");
+    // List items without MUST/SHOULD/fails/passes etc.
+    writeFileSync(
+      join(cwd, ".ravi/specs/quality/ci-gates/CHECKS.md"),
+      "# Checks\n\n- Something about the spec\n- Another note\n",
+      "utf8",
+    );
+
+    const result = runSpecGate([".ravi/specs/quality/ci-gates/SPEC.md"], cwd);
+
+    expect(result.ok).toBe(false);
+    const checksError = result.errors.find((e) => e.error.includes("none appear verifiable"));
+    expect(checksError).toBeTruthy();
+  });
+
   it("returns ok with no changed spec ids", () => {
     const result = runSpecGate(["src/router/sessions.ts"]);
     expect(result.ok).toBe(true);

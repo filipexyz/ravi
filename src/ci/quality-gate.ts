@@ -7,7 +7,7 @@
  * No external secrets, APIs, or subjective judgements required.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { getSpec, getSpecContext, syncSpecs } from "../specs/service.js";
 
@@ -100,6 +100,43 @@ export function isDocsOnlyDiff(changedFiles: string[]): boolean {
   });
 }
 
+const CHECKS_VERIFIABLE_PATTERN = /^[-*]\s+.+(MUST|SHOULD|fails?|passes?|returns?|rejects?|validates?|checks?|verif)/im;
+
+/**
+ * Validate that CHECKS.md has non-empty, verifiable content.
+ * Returns an error if the file is empty, whitespace-only, has no list items
+ * (lines starting with `- ` or `* `), or has no verifiable criterion.
+ */
+function validateChecksContent(checksPath: string, specId: string): SpecGateError | null {
+  const raw = readFileSync(checksPath, "utf8");
+  const trimmed = raw.trim();
+
+  if (trimmed.length === 0) {
+    return { specId, error: "CHECKS.md is empty; it must contain verifiable criteria (e.g. '- Spec MUST …')" };
+  }
+
+  const lines = trimmed.split("\n").map((l) => l.trim());
+  const listItems = lines.filter((l) => /^[-*]\s+/.test(l));
+
+  if (listItems.length === 0) {
+    return {
+      specId,
+      error:
+        "CHECKS.md has no verifiable criteria; add list items with actionable checks (e.g. '- Spec MUST validate kind')",
+    };
+  }
+
+  if (!CHECKS_VERIFIABLE_PATTERN.test(trimmed)) {
+    return {
+      specId,
+      error:
+        "CHECKS.md has list items but none appear verifiable; each check should use MUST/SHOULD/fails/passes or similar verifiable language",
+    };
+  }
+
+  return null;
+}
+
 /**
  * Run the spec validation gate against a list of changed files.
  *
@@ -160,7 +197,7 @@ export function runSpecGate(changedFiles: string[], cwd?: string): SpecGateResul
       result.errors.push({ specId, error: `checks context: ${message}` });
     }
 
-    // Check required companions exist
+    // Check required companions exist and validate CHECKS.md content
     const specsRoot = resolve(cwd ?? process.cwd(), ".ravi", "specs");
     const specDir = join(specsRoot, ...specId.split("/"));
     for (const companion of REQUIRED_COMPANIONS) {
@@ -171,6 +208,12 @@ export function runSpecGate(changedFiles: string[], cwd?: string): SpecGateResul
           specId,
           error: `missing required companion: ${companion}`,
         });
+      } else if (companion === "CHECKS.md") {
+        const checksError = validateChecksContent(companionPath, specId);
+        if (checksError) {
+          result.ok = false;
+          result.errors.push(checksError);
+        }
       }
     }
   }
