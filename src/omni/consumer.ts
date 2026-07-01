@@ -49,6 +49,7 @@ import {
   dbBindSessionToChat,
   dbCanonicalizeDmChatForContact,
   dbContactDmNormalizedChatId,
+  dbFindChat,
   dbGetChat,
   dbGetMessageMeta,
   dbSaveMessageMeta,
@@ -2086,9 +2087,10 @@ export class OmniConsumer {
 
   /**
    * Handle reaction.received events from omni.
-   * Emits ravi.inbound.reaction for approval/poll resolution.
+   * Persists the reaction as a durable chat_messages ledger entry and emits
+   * ravi.inbound.reaction for approval/poll/trigger resolution.
    */
-  private async handleReactionEvent(_subject: string, event: OmniEvent): Promise<void> {
+  private async handleReactionEvent(subject: string, event: OmniEvent): Promise<void> {
     if (event.type !== "reaction.received") return;
 
     // Skip old reactions (before this daemon started)
@@ -2114,11 +2116,117 @@ export class OmniConsumer {
       chatId: payload.chatId,
     });
 
+    // --- Durable accounting (spec: channels/chats/reactions) ---
+    // Persist the reaction as a chat_messages row with message_type = "reaction".
+    // The deterministic provider_message_id guarantees idempotency via the DB
+    // unique constraint, independent of the in-memory dedup set above.
+    this.persistReactionAccounting(subject, event, payload, senderId, reactionTs);
+
     await nats.emit("ravi.inbound.reaction", {
       targetMessageId: payload.messageId,
       emoji: payload.emoji,
       senderId,
     });
+  }
+
+  /**
+   * Persist a reaction as a durable chat_messages ledger entry.
+   * Best-effort: logs warnings on resolution failures but never blocks
+   * the ravi.inbound.reaction emission.
+   */
+  private persistReactionAccounting(
+    subject: string,
+    event: OmniEvent,
+    payload: ReactionReceivedPayload,
+    senderId: string,
+    reactionTs: number,
+  ): void {
+    try {
+      const parsed = parseSubject(subject);
+      if (!parsed) {
+        log.debug("Reaction accounting skipped: could not parse subject", { subject });
+        return;
+      }
+      const { channelType, instanceId } = parsed;
+      const sessionChannel = channelType.replace(/-baileys$/, "");
+
+      const routerConfig = configStore.getConfig();
+      const effectiveAccountId = routerConfig.instanceToAccount[instanceId];
+      if (!effectiveAccountId) {
+        log.debug("Reaction accounting skipped: unknown instanceId", { instanceId, channelType });
+        return;
+      }
+
+      const chat = dbFindChat({ channel: sessionChannel, instanceId, platformChatId: payload.chatId });
+      if (!chat) {
+        log.debug("Reaction accounting skipped: chat not found", {
+          chatId: payload.chatId,
+          instanceId,
+          channel: sessionChannel,
+        });
+        return;
+      }
+
+      const senderPlatformIdentity = resolveSenderPlatformIdentity({
+        channel: sessionChannel,
+        instanceId,
+        normalizedSenderId: senderId,
+        rawSenderId: senderId,
+        rawProviderSenderId: payload.from,
+      });
+      const senderContact =
+        senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
+          ? getContact(senderPlatformIdentity.ownerId)
+          : getContact(senderId);
+      const actorType = senderPlatformIdentity?.ownerType === "agent" ? "agent" : senderContact ? "contact" : "unknown";
+      const contactId = actorType === "contact" ? (senderContact?.id ?? null) : null;
+      const agentId =
+        actorType === "agent" && senderPlatformIdentity?.ownerType === "agent"
+          ? (senderPlatformIdentity.ownerId ?? null)
+          : null;
+
+      const providerMessageId = `reaction:${payload.messageId}:${payload.emoji}:${senderId}`;
+
+      dbUpsertChatMessage({
+        chatId: chat.id,
+        channel: sessionChannel,
+        instanceId,
+        providerMessageId,
+        rawChatId: payload.chatId,
+        rawSenderId: payload.from,
+        normalizedSenderId: senderId,
+        actorType,
+        contactId,
+        agentId,
+        platformIdentityId: senderPlatformIdentity?.id ?? null,
+        messageType: "reaction",
+        content: {
+          type: "reaction",
+          targetMessageId: payload.messageId,
+          emoji: payload.emoji,
+          senderId,
+        },
+        rawProvenance: {
+          source: "omni.reaction.received",
+          eventId: event.id,
+          subject,
+          channelType,
+          instanceId,
+          accountId: effectiveAccountId,
+          chatId: payload.chatId,
+          from: payload.from,
+        },
+        providerTimestamp: reactionTs,
+        ingestedAt: Date.now(),
+      });
+    } catch (err) {
+      log.warn("Reaction accounting failed", {
+        messageId: payload.messageId,
+        emoji: payload.emoji,
+        senderId,
+        error: err,
+      });
+    }
   }
 
   /**
