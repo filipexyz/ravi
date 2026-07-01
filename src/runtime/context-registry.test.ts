@@ -3,11 +3,8 @@ import { dbCreateAgent, dbDeleteAgent, dbGetContext, getDb } from "../router/rou
 import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
-  ADMIN_BOOTSTRAP_KIND,
   createRuntimeContext,
-  getOrCreateAgentRuntimeContext,
   issueRuntimeContext,
-  listLiveAdminContexts,
   resolveRuntimeContext,
   resolveRuntimeContextOrThrow,
   revokeAgentRuntimeContextsForSession,
@@ -72,87 +69,11 @@ describe("runtime context registry", () => {
     });
   });
 
-  it("reuses one live agent-runtime context per agent/session and keeps the original capability snapshot", () => {
-    const sessionKey = "agent:test-context-agent:main";
-    createTestSession(sessionKey);
-
-    const first = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey,
-      sessionName: "test-main",
-      capabilities: snapshotAgentCapabilities(TEST_AGENT_ID),
-      metadata: { runtimeProvider: "codex", runtimeModel: "gpt-5.4" },
-      source: { channel: "whatsapp", accountId: "main", chatId: "chat-1" },
-    });
-
-    const second = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey,
-      sessionName: "test-main-renamed",
-      capabilities: snapshotAgentCapabilities(TEST_AGENT_ID),
-      metadata: { runtimeProvider: "codex", runtimeModel: "gpt-5.5" },
-      source: { channel: "whatsapp", accountId: "main", chatId: "chat-2" },
-    });
-
-    expect(second.contextId).toBe(first.contextId);
-    expect(second.contextKey).toBe(first.contextKey);
-    expect(second.sessionName).toBe("test-main-renamed");
-    expect(second.source).toEqual({ channel: "whatsapp", accountId: "main", chatId: "chat-2" });
-    expect(second.metadata).toEqual({ runtimeProvider: "codex", runtimeModel: "gpt-5.5" });
-    expect(second.lastUsedAt).toBeGreaterThanOrEqual(first.createdAt);
-    expect(second.capabilities).toContainEqual({
-      permission: "use",
-      objectType: "tool",
-      objectId: "*",
-      source: "runtime-bootstrap:agent",
-    });
-    expect(second.capabilities.some((capability) => capability.permission === "admin")).toBe(false);
-  });
-
-  it("creates a fresh agent-runtime context when the previous one is revoked or expired", () => {
-    const sessionKey = "agent:test-context-agent:revoked";
-    createTestSession(sessionKey);
-    createTestSession("agent:test-context-agent:expired");
-    const first = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey,
-      sessionName: "test-revoked",
-      capabilities: [],
-      ttlMs: 60_000,
-    });
-    revokeRuntimeContext(first.contextId);
-
-    const afterRevoke = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey,
-      sessionName: "test-revoked",
-      capabilities: [],
-      ttlMs: 60_000,
-    });
-    expect(afterRevoke.contextId).not.toBe(first.contextId);
-
-    const expired = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey: "agent:test-context-agent:expired",
-      sessionName: "test-expired",
-      capabilities: [],
-      expiresAt: Date.now() - 1,
-    });
-
-    const afterExpiry = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey: "agent:test-context-agent:expired",
-      sessionName: "test-expired",
-      capabilities: [],
-      ttlMs: 60_000,
-    });
-    expect(afterExpiry.contextId).not.toBe(expired.contextId);
-  });
-
   it("revokes live agent-runtime contexts for a session", () => {
     const sessionKey = "agent:test-context-agent:reset";
     createTestSession(sessionKey);
-    const first = getOrCreateAgentRuntimeContext({
+    const first = createRuntimeContext({
+      kind: "agent-runtime",
       agentId: TEST_AGENT_ID,
       sessionKey,
       sessionName: "test-reset",
@@ -213,7 +134,7 @@ describe("runtime context registry", () => {
 
   it("issues a child context with explicit least-privilege capabilities", () => {
     const parent = createRuntimeContext({
-      kind: "agent-runtime",
+      kind: "turn-runtime",
       agentId: TEST_AGENT_ID,
       ttlMs: 30 * 60 * 1000,
       capabilities: [
@@ -221,6 +142,8 @@ describe("runtime context registry", () => {
         { permission: "access", objectType: "session", objectId: "agent:dev:main" },
       ],
       metadata: {
+        authorityMode: "agent-identity",
+        executorAgentId: TEST_AGENT_ID,
         approvalSource: {
           channel: "whatsapp",
           accountId: "main",
@@ -243,7 +166,7 @@ describe("runtime context registry", () => {
     expect(child.expiresAt).toBe(parent.expiresAt);
     expect(child.metadata).toMatchObject({
       parentContextId: parent.contextId,
-      parentContextKind: "agent-runtime",
+      parentContextKind: "turn-runtime",
       issuedFor: "sync-cli",
       issuanceMode: "explicit",
       approvalSource: {
@@ -271,9 +194,10 @@ describe("runtime context registry", () => {
 
   it("cascades revocation to descendants with a single shared revokedAt", () => {
     const parent = createRuntimeContext({
-      kind: "agent-runtime",
+      kind: "turn-runtime",
       agentId: TEST_AGENT_ID,
       capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+      metadata: { authorityMode: "agent-identity", executorAgentId: TEST_AGENT_ID },
       ttlMs: 60 * 60 * 1000,
     });
 
@@ -314,9 +238,10 @@ describe("runtime context registry", () => {
 
   it("supports --no-cascade narrow revoke that leaves descendants live", () => {
     const parent = createRuntimeContext({
-      kind: "agent-runtime",
+      kind: "turn-runtime",
       agentId: TEST_AGENT_ID,
       capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+      metadata: { authorityMode: "agent-identity", executorAgentId: TEST_AGENT_ID },
       ttlMs: 60 * 60 * 1000,
     });
 
@@ -359,7 +284,7 @@ describe("runtime context registry", () => {
     ).toThrow("Capability not granted by parent context");
   });
 
-  it("only treats bootstrap admin contexts as live admin contexts", () => {
+  it("keeps historical admin-bootstrap contexts as ordinary context records", () => {
     createTestSession("agent:test-context-agent:admin");
     createRuntimeContext({
       kind: "agent-runtime",
@@ -370,15 +295,12 @@ describe("runtime context registry", () => {
     });
 
     const bootstrap = createRuntimeContext({
-      kind: ADMIN_BOOTSTRAP_KIND,
+      kind: "admin-bootstrap",
       agentId: TEST_AGENT_ID,
       capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
       ttlMs: 60_000,
     });
 
-    const testAgentAdminContextIds = listLiveAdminContexts()
-      .filter((context) => context.agentId === TEST_AGENT_ID)
-      .map((context) => context.contextId);
-    expect(testAgentAdminContextIds).toEqual([bootstrap.contextId]);
+    expect(resolveRuntimeContext(bootstrap.contextKey, { touch: false })?.kind).toBe("admin-bootstrap");
   });
 });

@@ -441,6 +441,43 @@ mock.module("./cli/context.js", () => ({
 
 mock.module("./cli/tool-definitions.js", () => ({
   getAllCommandClasses: () => [],
+  getAllCliToolDefinitions: () => [
+    {
+      name: "tools_list",
+      description: "List available tools",
+      handler: async () => ({
+        content: [{ type: "text" as const, text: "fake tools list" }],
+        isError: false,
+      }),
+      metadata: {
+        group: "tools",
+        command: "list",
+        method: "list",
+        args: [],
+        options: [],
+        scope: "open",
+      },
+    },
+  ],
+  getCliToolDefinition: (name: string) =>
+    name === "tools_list"
+      ? {
+          name: "tools_list",
+          description: "List available tools",
+          handler: async () => ({
+            content: [{ type: "text" as const, text: "fake tools list" }],
+            isError: false,
+          }),
+          metadata: {
+            group: "tools",
+            command: "list",
+            method: "list",
+            args: [],
+            options: [],
+            scope: "open",
+          },
+        }
+      : undefined,
   createSdkTools: () => [
     {
       name: "tools_list",

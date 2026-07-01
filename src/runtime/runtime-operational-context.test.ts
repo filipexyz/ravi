@@ -9,23 +9,23 @@ describe("buildRuntimeOperationalContextContent", () => {
       cwd: "/repo",
       runtimeContext: {
         contextId: "ctx_public",
-        kind: "agent-runtime",
+        kind: "turn-runtime",
         agentId: "dev",
         sessionKey: "agent:dev:main",
         sessionName: "task-work",
         source: { channel: "whatsapp", accountId: "main", chatId: "chat_123" },
         capabilities: [
           { permission: "use", objectType: "tool", objectId: "Bash" },
-          { permission: "execute", objectType: "group", objectId: "tasks" },
+          { permission: "read", objectType: "tasks", objectId: "list" },
         ],
       },
     });
 
     expect(text).toContain("agent: `dev`");
     expect(text).toContain("session: `task-work`");
-    expect(text).toContain("context: `ctx_public` (agent-runtime)");
+    expect(text).toContain("context: `ctx_public` (turn-runtime)");
     expect(text).toContain("tool capabilities: 1");
-    expect(text).toContain("command-group capabilities: 1");
+    expect(text).toContain("semantic action capabilities: 1");
     expect(text).toContain("ravi self permissions --json");
     expect(text).not.toContain("rctx_");
     expect(text).not.toContain("contextKey");

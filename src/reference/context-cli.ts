@@ -120,7 +120,7 @@ export function createReferenceContextCli(deps: ReferenceCliDeps = {}) {
 
     probeDaemon(): ProbeDaemonResult {
       const context = this.whoami();
-      const authorization = this.authorize("execute", "group", "daemon");
+      const authorization = this.authorize("read", "daemon", "status");
       if (!authorization.allowed) {
         throw new Error(authorization.reason || "Permission denied for daemon status");
       }

@@ -177,14 +177,14 @@ describe("createBashPermissionHook", () => {
       expect(getDenyReason(result)).toContain("command substitution");
     });
 
-    it("allows bootstrap safe executables with stale agent-runtime capabilities", () => {
+    it("blocks bootstrap safe executables with stale agent-runtime capabilities", () => {
       const decision = evaluateBashPermission("pwd && rg foo", {
         agentId: "dev",
         kind: "agent-runtime",
         capabilities: [],
       });
 
-      expect(decision.allowed).toBe(true);
+      expect(decision.allowed).toBe(false);
     });
 
     it("keeps executable grants bounded to the issued context", () => {

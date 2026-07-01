@@ -429,7 +429,15 @@ function normalizeObservationEventType(value: string): string {
 }
 
 function normalizePermissionGrants(values?: string[]): string[] {
-  return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))].sort();
+  const normalized = [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))].sort();
+  for (const grant of normalized) {
+    if (/^execute:group:/i.test(grant)) {
+      throw new Error(
+        `Legacy observer permission grant is not supported: ${grant}. Use semantic command access such as mutate:tasks:report plus use:tool:<tool>.`,
+      );
+    }
+  }
+  return normalized;
 }
 
 function validateRuleSafety(input: {

@@ -16,14 +16,10 @@
 import { checkDangerousPatterns, parseBashCommand, UNCONDITIONAL_BLOCKS } from "./parser.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext } from "../permissions/scope.js";
-import {
-  canWithCapabilities,
-  canWithCapabilityContext,
-  materializeSubjectCapabilities,
-} from "../permissions/provider-runtime.js";
+import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "../permissions/audit-provenance.js";
-import { SDK_TOOLS } from "../cli/tool-registry.js";
+import { normalizeRuntimeBuiltinToolName } from "../cli/tool-registry.js";
 import type { ContextCapability, ContextRecord, ContextSource } from "../router/router-db.js";
 
 const log = logger.child("bash:hook");
@@ -219,41 +215,9 @@ function canWithBashContext(
   objectId: string,
 ): boolean {
   if (hasContextCapabilities(ctx)) {
-    if (canWithCapabilityContext(ctx, permission, objectType, objectId)) {
-      return true;
-    }
-    if (!isDelegatedBashContext(ctx) && ctx.kind === "agent-runtime" && ctx.agentId) {
-      return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
-    }
-    if (!isDelegatedBashContext(ctx) && isMaterializedAgentSuperadmin(ctx)) {
-      return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
-    }
-    return false;
-  }
-  if (ctx.agentId) {
-    return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
+    return canWithCapabilityContext(ctx, permission, objectType, objectId);
   }
   return false;
-}
-
-function isDelegatedBashContext(ctx: Pick<BashPermissionContext, "kind" | "metadata">): boolean {
-  if (ctx.kind === "turn-runtime" || ctx.kind === "invocation-runtime") return true;
-  return ctx.metadata?.authorityMode === "delegated" || ctx.metadata?.authorityMode === "agent-identity";
-}
-
-function isMaterializedAgentSuperadmin(ctx: Pick<BashPermissionContext, "agentId">): boolean {
-  if (!ctx.agentId) return false;
-  return canWithCapabilities(materializeSubjectCapabilities("agent", ctx.agentId), "admin", "system", "*");
-}
-
-function canWithMaterializedAgentCapabilities(
-  ctx: Pick<BashPermissionContext, "agentId">,
-  permission: string,
-  objectType: string,
-  objectId: string,
-): boolean {
-  if (!ctx.agentId) return false;
-  return canWithCapabilities(materializeSubjectCapabilities("agent", ctx.agentId), permission, objectType, objectId);
 }
 
 function isSuperadminContext(ctx: BashPermissionContext): boolean {
@@ -530,11 +494,12 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
 export function createToolPermissionHook(options: BashHookOptions): HookCallbackMatcher {
   const toolPermissionHook: HookCallback = async (input) => {
     const agentId = options.getAgentId();
-    const toolName = input.tool_name;
-    if (!toolName) return {};
+    const rawToolName = input.tool_name;
+    if (!rawToolName) return {};
 
     // Only check SDK built-in tools — MCP tools and CLI tools are not gated here
-    if (!SDK_TOOLS.includes(toolName)) return {};
+    const toolName = normalizeRuntimeBuiltinToolName(rawToolName);
+    if (!toolName) return {};
 
     if (!agentId) {
       const reason = `Permission denied: missing agent identity cannot use tool:${toolName}`;

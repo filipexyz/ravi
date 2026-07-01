@@ -75,6 +75,9 @@ for (const [alias, nativeName] of RUNTIME_BUILTIN_TOOL_PROVIDER_ALIASES) {
 export const RUNTIME_BUILTIN_TOOL_HOOK_NAMES = [
   ...new Set([
     ...SDK_TOOLS,
+    ...RUNTIME_BUILTIN_TOOLS.map((tool) => normalizeToolAliasKey(tool.nativeName)),
+    ...RUNTIME_BUILTIN_TOOLS.map((tool) => tool.capability),
+    ...RUNTIME_BUILTIN_TOOLS.map((tool) => normalizeToolAliasKey(tool.capability)),
     ...RUNTIME_BUILTIN_TOOL_PROVIDER_ALIASES.map(([alias]) => alias),
     ...RUNTIME_BUILTIN_TOOL_PROVIDER_ALIASES.map(([alias]) => normalizeToolAliasKey(alias)),
   ]),

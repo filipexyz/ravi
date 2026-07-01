@@ -46,10 +46,11 @@ describe("evaluateSkillGate", () => {
       runtimeSessionDisplayId: "thread-1",
     });
     const context = createRuntimeContext({
-      kind: "agent-runtime",
+      kind: "turn-runtime",
       agentId: "main",
       sessionKey: "agent:main:main",
       sessionName: "skill-gate-test",
+      metadata: { authorityMode: "agent-identity", executorAgentId: "main" },
     });
 
     const first = evaluateSkillGate({
@@ -78,10 +79,11 @@ describe("evaluateSkillGate", () => {
   it("reports configuration errors distinctly when the declared skill does not exist", () => {
     getOrCreateSession("agent:main:main", "main", stateDir!, { name: "skill-gate-test", runtimeProvider: "codex" });
     const context = createRuntimeContext({
-      kind: "agent-runtime",
+      kind: "turn-runtime",
       agentId: "main",
       sessionKey: "agent:main:main",
       sessionName: "skill-gate-test",
+      metadata: { authorityMode: "agent-identity", executorAgentId: "main" },
     });
 
     const decision = evaluateSkillGate({
@@ -163,11 +165,15 @@ describe("runtime host skill-gate enforcement", () => {
       runtimeSessionDisplayId: "thread-1",
     });
     const context = createRuntimeContext({
-      kind: "agent-runtime",
+      kind: "turn-runtime",
       agentId: "main",
       sessionKey: "agent:main:main",
       sessionName: "skill-gate-test",
-      capabilities: [{ permission: "use", objectType: "tool", objectId: "image_generate", source: "test" }],
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "image_generate", source: "test" },
+        { permission: "mutate", objectType: "image", objectId: "generate", source: "test" },
+      ],
+      metadata: { authorityMode: "agent-identity", executorAgentId: "main" },
     });
     let callbackSnapshot: RuntimeSkillVisibilitySnapshot | undefined;
     const services = createRuntimeHostServices({
@@ -209,10 +215,11 @@ describe("runtime host skill-gate enforcement", () => {
       runtimeSessionDisplayId: "thread-1",
     });
     const context = createRuntimeContext({
-      kind: "agent-runtime",
+      kind: "turn-runtime",
       agentId: "main",
       sessionKey: "agent:main:main",
       sessionName: "skill-gate-test",
+      metadata: { authorityMode: "agent-identity", executorAgentId: "main" },
     });
     const services = createRuntimeHostServices({
       context,
@@ -241,7 +248,7 @@ describe("runtime host skill-gate enforcement", () => {
       runtimeSessionDisplayId: "thread-1",
     });
     const context = createRuntimeContext({
-      kind: "agent-runtime",
+      kind: "turn-runtime",
       agentId: "main",
       sessionKey: "agent:main:main",
       sessionName: "skill-gate-test",
@@ -249,6 +256,7 @@ describe("runtime host skill-gate enforcement", () => {
         { permission: "use", objectType: "tool", objectId: "Bash", source: "test" },
         { permission: "execute", objectType: "executable", objectId: "echo", source: "test" },
       ],
+      metadata: { authorityMode: "agent-identity", executorAgentId: "main" },
     });
     const services = createRuntimeHostServices({
       context,
@@ -266,7 +274,7 @@ describe("runtime host skill-gate enforcement", () => {
     expect(getSession("agent:main:main")?.runtimeSessionParams?.skillVisibility).toBeUndefined();
   });
 
-  it("keeps executable grants bounded to the issued agent-runtime context", async () => {
+  it("keeps executable grants bounded to the issued agent-identity context", async () => {
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "permission-live-grant-test",
       runtimeProvider: "codex",
@@ -274,11 +282,12 @@ describe("runtime host skill-gate enforcement", () => {
       runtimeSessionDisplayId: "thread-1",
     });
     const context = createRuntimeContext({
-      kind: "agent-runtime",
+      kind: "turn-runtime",
       agentId: "main",
       sessionKey: "agent:main:main",
       sessionName: "permission-live-grant-test",
       capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+      metadata: { authorityMode: "agent-identity", executorAgentId: "main" },
     });
     const services = createRuntimeHostServices({
       context,

@@ -6,7 +6,6 @@ import {
   dbGetContextByKeyReadOnly,
   dbListContexts,
   dbTouchContext,
-  dbUpdateContextRuntimeState,
   dbRevokeContextCascade,
   type ContextCapability,
   type ContextRecord,
@@ -18,9 +17,6 @@ import { canWithCapabilityContext, materializeSubjectCapabilities } from "../per
 export const RAVI_CONTEXT_KEY_ENV = "RAVI_CONTEXT_KEY";
 export const DEFAULT_CONTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_DERIVED_CONTEXT_TTL_MS = 60 * 60 * 1000;
-export const DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
-export const ADMIN_BOOTSTRAP_KIND = "admin-bootstrap";
-export const ADMIN_BOOTSTRAP_AGENT_ID = "bootstrap";
 
 export interface CreateRuntimeContextInput {
   kind?: string;
@@ -36,12 +32,6 @@ export interface CreateRuntimeContextInput {
   contextId?: string;
   /** Override generated contextKey (rctx_*). Used by the bootstrap CLI for --from-env imports. */
   contextKey?: string;
-}
-
-export interface GetOrCreateAgentRuntimeContextInput
-  extends Omit<CreateRuntimeContextInput, "kind" | "agentId" | "sessionKey"> {
-  agentId: string;
-  sessionKey: string;
 }
 
 export interface IssueRuntimeContextInput {
@@ -69,56 +59,6 @@ export function createRuntimeContext(input: CreateRuntimeContextInput): ContextR
     createdAt: now,
     expiresAt: input.expiresAt ?? (input.ttlMs === 0 ? undefined : now + (input.ttlMs ?? DEFAULT_CONTEXT_TTL_MS)),
   });
-}
-
-export function getOrCreateAgentRuntimeContext(input: GetOrCreateAgentRuntimeContextInput): ContextRecord {
-  const now = Date.now();
-  const reusable = findLiveAgentRuntimeContext({
-    agentId: input.agentId,
-    sessionKey: input.sessionKey,
-    now,
-  });
-
-  if (reusable) {
-    return dbUpdateContextRuntimeState(
-      reusable.contextId,
-      {
-        sessionName: input.sessionName,
-        source: input.source,
-        metadata: input.metadata,
-      },
-      now,
-    );
-  }
-
-  return createRuntimeContext({
-    ...input,
-    kind: "agent-runtime",
-    agentId: input.agentId,
-    sessionKey: input.sessionKey,
-  });
-}
-
-export function findLiveAgentRuntimeContext(input: {
-  agentId: string;
-  sessionKey: string;
-  now?: number;
-}): ContextRecord | null {
-  const now = input.now ?? Date.now();
-  const contexts = dbListContexts({
-    agentId: input.agentId,
-    sessionKey: input.sessionKey,
-    kind: "agent-runtime",
-    includeInactive: false,
-  }).filter((ctx) => isContextLive(ctx, now));
-
-  contexts.sort((a, b) => {
-    const aUsed = a.lastUsedAt ?? a.createdAt;
-    const bUsed = b.lastUsedAt ?? b.createdAt;
-    return bUsed - aUsed || b.createdAt - a.createdAt;
-  });
-
-  return contexts[0] ?? null;
 }
 
 export function revokeAgentRuntimeContextsForSession(
@@ -288,27 +228,6 @@ export function getContextLineage(contextId: string): ContextLineage | null {
   }
 
   return { context: target, ancestors, descendants };
-}
-
-/**
- * Lookup the live admin (`admin:system:*`) contexts. Used by the daemon to
- * decide whether the bootstrap CLI must be run before any non-`open` request
- * is accepted.
- */
-export function listLiveAdminContexts(): ContextRecord[] {
-  const now = Date.now();
-  return dbListContexts({ includeInactive: false }).filter((ctx) => {
-    if (ctx.kind !== ADMIN_BOOTSTRAP_KIND) return false;
-    if (ctx.revokedAt && ctx.revokedAt <= now) return false;
-    if (ctx.expiresAt && ctx.expiresAt <= now) return false;
-    return ctx.capabilities.some(
-      (cap) => cap.permission === "admin" && cap.objectType === "system" && cap.objectId === "*",
-    );
-  });
-}
-
-export function hasLiveAdminContext(): boolean {
-  return listLiveAdminContexts().length > 0;
 }
 
 function dedupeCapabilities(capabilities: ContextCapability[]): ContextCapability[] {

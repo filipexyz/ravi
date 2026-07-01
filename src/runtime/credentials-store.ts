@@ -32,7 +32,7 @@ export interface CredentialsEntry {
   agent_id: string;
   /** Human-readable label (hostname, role, etc). */
   label: string;
-  /** Context kind, e.g. `admin-bootstrap` or `cli-runtime`. */
+  /** Context kind, e.g. `turn-runtime` or `cli-runtime`. */
   kind: string;
   /** Issuance timestamp (ms). */
   issued_at: number;

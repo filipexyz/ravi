@@ -70,6 +70,20 @@ export function getAllCliToolNames(): string[] {
 }
 
 /**
+ * Get all CLI tool definitions with command access metadata.
+ */
+export function getAllCliToolDefinitions(): ExportedTool[] {
+  return getCachedTools();
+}
+
+/**
+ * Find a CLI tool definition by its runtime tool name.
+ */
+export function getCliToolDefinition(name: string): ExportedTool | undefined {
+  return getCachedTools().find((tool) => tool.name === name);
+}
+
+/**
  * Get CLI tools grouped by command group.
  */
 export function getCliToolsByGroup(): Record<string, string[]> {

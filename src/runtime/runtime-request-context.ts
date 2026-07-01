@@ -13,6 +13,7 @@ import {
   buildAgentIdentitySubjectId,
   type AgentIdentityCompartment,
 } from "../permissions/agent-identity-permissions-provider.js";
+import { getAllCliToolDefinitions, getCliToolDefinition } from "../cli/tool-definitions.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
@@ -221,6 +222,7 @@ function createRuntimeContextForPrompt(options: {
 
 function buildAgentIdentityRuntimeContextInputForPrompt(options: {
   agentId: string;
+  sessionName: string;
   prompt: RuntimeLaunchPrompt;
   resolvedSource?: RuntimeMessageTarget;
   capabilities: ContextCapability[];
@@ -237,6 +239,7 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
 
   return buildAgentIdentityRuntimeContextInput({
     agentId: options.agentId,
+    sessionName: options.sessionName,
     prompt: options.prompt,
     capabilities: options.capabilities,
     actorPrincipal,
@@ -249,6 +252,7 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
 
 function buildAgentIdentityRuntimeContextInput(options: {
   agentId: string;
+  sessionName: string;
   prompt: RuntimeLaunchPrompt;
   capabilities: ContextCapability[];
   actorPrincipal: AuthorityPrincipal | null;
@@ -277,11 +281,13 @@ function buildAgentIdentityRuntimeContextInput(options: {
         authorityModel: AGENT_IDENTITY_AUTHORITY_MODE,
       })
     : [];
-  const taskSelfCapabilityCount = countTaskSelfCapabilities(options.capabilities);
-  const taskSelfTaskId = resolveTaskSelfTaskId(options.capabilities);
+  const taskSelfCapabilities = shouldMaterializeIdentity
+    ? materializeTaskRuntimeSelfCapabilities(options.sessionName, options.prompt.taskBarrierTaskId)
+    : [];
+  const agentCapabilities = dedupeContextCapabilities([...agentIdentityCapabilities, ...taskSelfCapabilities]);
   const effectiveCapabilities = buildEffectiveCapabilities({
-    agentCapabilities: agentIdentityCapabilities,
-    actorCapabilities: agentIdentityCapabilities,
+    agentCapabilities,
+    actorCapabilities: agentCapabilities,
     turnCapabilities: hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined,
   });
 
@@ -301,8 +307,8 @@ function buildAgentIdentityRuntimeContextInput(options: {
       agentIdentityPrincipal: formatPrincipal(agentIdentityPrincipal),
       agentIdentityCompartment: `${compartment.type}:${compartment.id}`,
       agentIdentityCapabilityCount: agentIdentityCapabilities.length,
-      ...(taskSelfCapabilityCount > 0 ? { taskSelfCapabilityCount } : {}),
-      ...(taskSelfTaskId ? { taskSelfTaskId } : {}),
+      taskSelfCapabilityCount: taskSelfCapabilities.length,
+      ...(taskSelfCapabilities.length > 0 ? { taskSelfTaskId: taskSelfCapabilities[0]?.objectId } : {}),
       actorCapabilityCount: 0,
       surfaceCapabilityCount: 0,
       turnCapabilityCount: observationCapabilities.length,
@@ -312,16 +318,21 @@ function buildAgentIdentityRuntimeContextInput(options: {
   };
 }
 
-function countTaskSelfCapabilities(capabilities: ContextCapability[]): number {
-  return capabilities.filter(isTaskSelfCapability).length;
-}
+function materializeTaskRuntimeSelfCapabilities(
+  sessionName: string,
+  taskBarrierTaskId: string | undefined,
+): ContextCapability[] {
+  const taskId = taskBarrierTaskId?.trim();
+  if (!taskId) return [];
 
-function resolveTaskSelfTaskId(capabilities: ContextCapability[]): string | undefined {
-  return capabilities.find(isTaskSelfCapability)?.objectId;
-}
+  const binding = dbResolveActiveTaskBindingForSession(sessionName, taskId);
+  if (!binding) return [];
 
-function isTaskSelfCapability(capability: ContextCapability): boolean {
-  return capability.source?.startsWith("task-runtime:self:") === true;
+  const source = `task-runtime:self:${binding.task.id}`;
+  return [
+    { permission: "read", objectType: "task", objectId: binding.task.id, source },
+    { permission: "mutate", objectType: "task", objectId: binding.task.id, source },
+  ];
 }
 
 function resolveAgentIdentityCompartment(
@@ -612,6 +623,9 @@ function parseObservationPermissionGrant(value: string): ContextCapability[] {
 
   const direct = /^([^:\s]+):([^:\s]+):(.+)$/.exec(grant);
   if (direct) {
+    if (direct[1] === "execute" && direct[2] === "group") {
+      return [];
+    }
     return [
       {
         permission: direct[1]!,
@@ -628,37 +642,10 @@ function parseObservationPermissionGrant(value: string): ContextCapability[] {
   const group = normalizeCliToolNamePart(shortcut[1]!);
   const command = shortcut[2]!;
   if (command === "*") {
-    return [
-      {
-        permission: "use",
-        objectType: "tool",
-        objectId: `${group}_*`,
-        source: "observer-rule",
-      },
-      {
-        permission: "execute",
-        objectType: "group",
-        objectId: group,
-        source: "observer-rule",
-      },
-    ];
+    return buildWildcardCliShortcutCapabilities(group);
   }
 
-  const normalizedCommand = normalizeCliToolNamePart(command);
-  return [
-    {
-      permission: "use",
-      objectType: "tool",
-      objectId: `${group}_${normalizedCommand}`,
-      source: "observer-rule",
-    },
-    {
-      permission: "execute",
-      objectType: "group",
-      objectId: `${group}_${normalizedCommand}`,
-      source: "observer-rule",
-    },
-  ];
+  return buildCliShortcutCapabilities(`${group}_${normalizeCliToolNamePart(command)}`);
 }
 
 function normalizeCliToolNamePart(value: string): string {
@@ -666,6 +653,54 @@ function normalizeCliToolNamePart(value: string): string {
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function buildCliShortcutCapabilities(toolName: string): ContextCapability[] {
+  const tool = getCliToolDefinition(toolName);
+  return dedupeContextCapabilities([
+    {
+      permission: "use",
+      objectType: "tool",
+      objectId: toolName,
+      source: "observer-rule",
+    },
+    ...(tool?.metadata.access
+      ? [
+          {
+            permission: tool.metadata.access.kind,
+            objectType: tool.metadata.access.resource,
+            objectId: tool.metadata.access.action,
+            source: "observer-rule",
+          },
+        ]
+      : []),
+  ]);
+}
+
+function buildWildcardCliShortcutCapabilities(group: string): ContextCapability[] {
+  const matchingTools = getAllCliToolDefinitions().filter(
+    (tool) => tool.name.startsWith(`${group}_`) || tool.metadata.group === group,
+  );
+  return dedupeContextCapabilities([
+    {
+      permission: "use",
+      objectType: "tool",
+      objectId: `${group}_*`,
+      source: "observer-rule",
+    },
+    ...matchingTools.flatMap((tool) =>
+      tool.metadata.access
+        ? [
+            {
+              permission: tool.metadata.access.kind,
+              objectType: tool.metadata.access.resource,
+              objectId: tool.metadata.access.action,
+              source: "observer-rule",
+            },
+          ]
+        : [],
+    ),
+  ]);
 }
 
 function dedupeContextCapabilities(capabilities: ContextCapability[]): ContextCapability[] {

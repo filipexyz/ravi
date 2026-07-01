@@ -55,22 +55,22 @@ describe("buildRuntimeSystemPrompt", () => {
         agent: { id: "main", cwd },
         runtimeContext: {
           contextId: "ctx_visible",
-          kind: "agent-runtime",
+          kind: "turn-runtime",
           agentId: "main",
           sessionKey: "agent:main:main",
           sessionName: "ops",
           source: { channel: "whatsapp", accountId: "main", chatId: "chat_123" },
           capabilities: [
             { permission: "use", objectType: "tool", objectId: "Bash", source: "test" },
-            { permission: "execute", objectType: "group", objectId: "sessions", source: "test" },
+            { permission: "read", objectType: "sessions", objectId: "info", source: "test" },
           ],
         },
       });
 
-      expect(prompt.text).toContain("`ctx_visible` (agent-runtime)");
+      expect(prompt.text).toContain("`ctx_visible` (turn-runtime)");
       expect(prompt.text).toContain("- capabilities: 2");
       expect(prompt.text).toContain("`use:tool:Bash source=test`");
-      expect(prompt.text).toContain("`execute:group:sessions source=test`");
+      expect(prompt.text).toContain("`read:sessions:info source=test`");
       expect(prompt.text).not.toContain("rctx_");
       expect(prompt.text).not.toContain("contextKey");
     } finally {

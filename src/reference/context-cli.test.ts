@@ -43,14 +43,14 @@ describe("reference context cli", () => {
           };
         }
 
-        if (args.join(" ") === "src/cli/index.ts context authorize execute group daemon") {
+        if (args.join(" ") === "src/cli/index.ts context authorize read daemon status") {
           return {
             status: 0,
             stdout: JSON.stringify({
               contextId: "ctx_child_123",
-              permission: "execute",
-              objectType: "group",
-              objectId: "daemon",
+              permission: "read",
+              objectType: "daemon",
+              objectId: "status",
               allowed: true,
               approved: false,
               inherited: true,
@@ -86,9 +86,9 @@ describe("reference context cli", () => {
       },
       authorization: {
         contextId: "ctx_child_123",
-        permission: "execute",
-        objectType: "group",
-        objectId: "daemon",
+        permission: "read",
+        objectType: "daemon",
+        objectId: "status",
         allowed: true,
         approved: false,
         inherited: true,
@@ -99,7 +99,7 @@ describe("reference context cli", () => {
 
     expect(calls.map((call) => `${call.cmd} ${call.args.join(" ")}`)).toEqual([
       "bun src/cli/index.ts context whoami",
-      "bun src/cli/index.ts context authorize execute group daemon",
+      "bun src/cli/index.ts context authorize read daemon status",
       "bun src/cli/index.ts daemon status",
     ]);
   });

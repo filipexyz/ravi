@@ -47,6 +47,54 @@ export const changedEntityReturnSchema = z
 
 export const commandEnvelopeReturnSchema = looseObjectSchema;
 
+export const codexHookReturnSchema = z
+  .object({
+    hookSpecificOutput: z
+      .object({
+        hookEventName: z.literal("PreToolUse"),
+        permissionDecision: z.literal("deny"),
+        permissionDecisionReason: z.string(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .describe("Codex PreToolUse hook decision output");
+
+export const contextCapabilityReturnSchema = z
+  .object({
+    permission: z.string(),
+    objectType: z.string(),
+    objectId: z.string(),
+    source: z.string().optional(),
+  })
+  .strict();
+
+export const contextRootIssueReturnSchema = z
+  .object({
+    contextId: z.string(),
+    contextKey: z.string(),
+    kind: z.string(),
+    cliName: z.string(),
+    profile: z.string(),
+    label: z.string(),
+    agentId: z.string().nullable(),
+    createdAt: z.number(),
+    expiresAt: z.number().nullable(),
+    capabilities: z.array(contextCapabilityReturnSchema),
+    capabilitiesCount: z.number(),
+    metadata: jsonObjectSchema.nullable(),
+    env: z.record(z.string(), z.string()),
+    credential: z
+      .object({
+        saved: z.boolean(),
+        path: z.string().nullable(),
+        isDefault: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const runtimeControlReturnSchema = z
   .object({
     ok: z.boolean(),

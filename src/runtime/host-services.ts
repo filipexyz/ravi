@@ -113,22 +113,20 @@ function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTo
   }
 
   const scope = tool.metadata.scope ?? "admin";
-  switch (scope) {
-    case "open":
-    case "resource":
-      return true;
-    case "superadmin":
-      return canWithCapabilityContext(context, "admin", "system", "*");
-    case "writeContacts":
-      return canWithCapabilityContext(context, "write_contacts", "system", "*");
-    case "admin":
-      return (
-        canWithCapabilityContext(context, "execute", "group", tool.metadata.group) ||
-        canWithCapabilityContext(context, "execute", "group", `${tool.metadata.group}_${tool.metadata.command}`)
-      );
-    default:
-      return false;
+  if (scope === "superadmin" && !canWithCapabilityContext(context, "admin", "system", "*")) {
+    return false;
   }
+
+  return canAdvertiseRuntimeCommandAccess(context, tool);
+}
+
+function canAdvertiseRuntimeCommandAccess(context: ContextRecord, tool: ExportedTool): boolean {
+  const access = tool.metadata.access;
+  if (!access) return false;
+  return (
+    canWithCapabilityContext(context, access.kind, access.resource, access.action) ||
+    canWithCapabilityContext(context, access.kind, access.resource, "*")
+  );
 }
 
 function emitRuntimePolicyDenied(
@@ -312,10 +310,6 @@ async function authorizeRuntimeDynamicToolScope(
   eventData?: Record<string, unknown>,
 ): Promise<{ allowed: boolean; reason?: string }> {
   const scope = tool.metadata.scope ?? "admin";
-  if (scope === "open" || scope === "resource") {
-    return { allowed: true };
-  }
-
   if (scope === "superadmin") {
     const result = await authorizeRuntimeContext({
       context: options.context,
@@ -329,35 +323,44 @@ async function authorizeRuntimeDynamicToolScope(
       : { allowed: false, reason: result.reason ?? "Superadmin permission denied." };
   }
 
-  if (scope === "writeContacts") {
-    const result = await authorizeRuntimeContext({
-      context: options.context,
-      permission: "write_contacts",
-      objectType: "system",
-      objectId: "*",
-      eventData,
-    });
-    return result.allowed
-      ? { allowed: true }
-      : { allowed: false, reason: result.reason ?? "Contact write permission denied." };
+  return authorizeRuntimeDynamicToolCommandAccess(options.context, tool, eventData);
+}
+
+async function authorizeRuntimeDynamicToolCommandAccess(
+  context: ContextRecord,
+  tool: ExportedTool,
+  eventData?: Record<string, unknown>,
+): Promise<{ allowed: boolean; reason?: string }> {
+  const access = tool.metadata.access;
+  if (!access) {
+    return {
+      allowed: false,
+      reason: `CLI tool permission denied: ${tool.metadata.group}_${tool.metadata.command} is missing @CommandAccess metadata.`,
+    };
   }
 
-  const group = tool.metadata.group;
-  const command = tool.metadata.command;
-  if (canWithCapabilityContext(options.context, "execute", "group", group)) {
-    return { allowed: true };
-  }
-
-  const result = await authorizeRuntimeContext({
-    context: options.context,
-    permission: "execute",
-    objectType: "group",
-    objectId: `${group}_${command}`,
+  const exact = await authorizeRuntimeContext({
+    context,
+    permission: access.kind,
+    objectType: access.resource,
+    objectId: access.action,
     eventData,
   });
-  return result.allowed
+  if (exact.allowed) return { allowed: true };
+
+  const wildcard = await authorizeRuntimeContext({
+    context,
+    permission: access.kind,
+    objectType: access.resource,
+    objectId: "*",
+    eventData,
+  });
+  return wildcard.allowed
     ? { allowed: true }
-    : { allowed: false, reason: result.reason ?? `CLI tool permission denied: ${group}_${command}` };
+    : {
+        allowed: false,
+        reason: exact.reason ?? `CLI tool permission denied: ${access.kind}:${access.resource}:${access.action}`,
+      };
 }
 
 function normalizeDynamicToolArguments(value: unknown): Record<string, unknown> {

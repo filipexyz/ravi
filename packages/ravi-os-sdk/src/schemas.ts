@@ -15979,11 +15979,11 @@ export const ContextAuthorizeInputSchema = {
       "type": "string"
     },
     "objectType": {
-      "description": "Object type (e.g. group, session, tool)",
+      "description": "Object type (e.g. sessions, context, session, tool)",
       "type": "string"
     },
     "permission": {
-      "description": "Permission name (e.g. execute, access, use)",
+      "description": "Permission name (e.g. read, mutate, access, use)",
       "type": "string"
     }
   },
@@ -16025,11 +16025,11 @@ export const ContextCheckInputSchema = {
       "type": "string"
     },
     "objectType": {
-      "description": "Object type (e.g. group, session, tool)",
+      "description": "Object type (e.g. sessions, context, session, tool)",
       "type": "string"
     },
     "permission": {
-      "description": "Permission name (e.g. execute, access, use)",
+      "description": "Permission name (e.g. read, mutate, access, use)",
       "type": "string"
     }
   },
@@ -16094,6 +16094,44 @@ export const ContextCodexBashHookInputSchema = {
 export const ContextCodexBashHookReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `context.codex-tool-hook`. */
+export const ContextCodexToolHookInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.codex-tool-hook`. */
+export const ContextCodexToolHookReturnSchema = {
+  "additionalProperties": false,
+  "description": "Codex PreToolUse hook decision output",
+  "properties": {
+    "hookSpecificOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "hookEventName": {
+          "const": "PreToolUse",
+          "type": "string"
+        },
+        "permissionDecision": {
+          "const": "deny",
+          "type": "string"
+        },
+        "permissionDecisionReason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hookEventName",
+        "permissionDecision",
+        "permissionDecisionReason"
+      ],
+      "type": "object"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16247,6 +16285,232 @@ export const ContextIssueInputSchema = {
 export const ContextIssueReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `context.issue-root`. */
+export const ContextIssueRootInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Optional existing agent principal for ownership binding",
+      "type": "string"
+    },
+    "cliName": {
+      "description": "Logical local runtime name for audit and credentials",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Context kind (default: extension-runtime)",
+      "type": "string"
+    },
+    "label": {
+      "description": "Credential label saved to ~/.ravi/credentials.json",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Built-in permission profile to materialize",
+      "type": "string"
+    },
+    "setDefault": {
+      "description": "Mark the saved credential as default",
+      "type": "boolean"
+    },
+    "skipSave": {
+      "description": "Do not save this context key in the local credentials store",
+      "type": "boolean"
+    },
+    "ttl": {
+      "description": "Explicit TTL like 30d or 300d",
+      "type": "string"
+    }
+  },
+  "required": [
+    "cliName"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.issue-root`. */
+export const ContextIssueRootReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "cliName": {
+      "type": "string"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "contextKey": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "number"
+    },
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "isDefault": {
+          "type": "boolean"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "saved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "saved",
+        "path",
+        "isDefault"
+      ],
+      "type": "object"
+    },
+    "env": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "expiresAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "profile": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "contextId",
+    "contextKey",
+    "kind",
+    "cliName",
+    "profile",
+    "label",
+    "agentId",
+    "createdAt",
+    "expiresAt",
+    "capabilities",
+    "capabilitiesCount",
+    "metadata",
+    "env",
+    "credential"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -20575,50 +20839,6 @@ export const DaemonEnvReturnSchema = {
     "existedBefore",
     "created",
     "openedEditor"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `daemon.init-admin-key`. */
-export const DaemonInitAdminKeyInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "fromEnv": {
-      "description": "Read RAVI_BOOTSTRAP_KEY from env. Imports it as the admin context key when the registry is empty; idempotent if it matches an existing live admin context; fails loud if it conflicts.",
-      "type": "boolean"
-    },
-    "label": {
-      "description": "Label for the bootstrap context (default: hostname)",
-      "type": "string"
-    },
-    "noStore": {
-      "default": true,
-      "description": "Alias for --print-only (do not write to ~/.ravi/credentials.json)",
-      "type": "boolean"
-    },
-    "printOnly": {
-      "description": "Print the rctx key without writing it to the credentials file",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `daemon.init-admin-key`. */
-export const DaemonInitAdminKeyReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "action": {
-      "const": "init-admin-key",
-      "type": "string"
-    },
-    "changed": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "action",
-    "changed"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
