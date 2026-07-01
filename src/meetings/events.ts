@@ -1,4 +1,11 @@
 import { isExplicitConnect, publish } from "../nats.js";
+import {
+  buildMeetingChannelEvent,
+  getMeetingChatId,
+  MEETING_CHANNEL_ID,
+  type MeetingChannelEvent,
+  type MeetingChannelEventType,
+} from "../channels/meetings/types.js";
 import { logger } from "../utils/logger.js";
 import type { MeetingMediaRef, MeetingParticipant, MeetingSession } from "./types.js";
 
@@ -11,6 +18,10 @@ export const MEETING_EVENT_TOPICS = {
 } as const;
 
 export type MeetingEventTopic = (typeof MEETING_EVENT_TOPICS)[keyof typeof MEETING_EVENT_TOPICS];
+
+export function meetingChannelEventTopic(type: MeetingChannelEventType): string {
+  return `ravi.meetings.${type.replace(/^meeting\./, "")}`;
+}
 
 type MeetingEventPublisher = (subject: string, payload: Record<string, unknown>) => Promise<void> | void;
 
@@ -33,11 +44,20 @@ export function buildMeetingEventPayload(input: BuildMeetingEventPayloadInput): 
     version: 1,
     eventType: "meeting.lifecycle",
     meetingId: session.id,
+    channel: session.meetingChannel ?? MEETING_CHANNEL_ID,
+    meetingChatId: session.meetingChatId ?? getMeetingChatId(session),
     provider: session.provider,
     providerMeetingId: session.providerMeetingId ?? null,
     originSessionKey: session.originSessionKey ?? null,
     originSessionName: session.originSessionName ?? null,
     originAgentId: session.originAgentId ?? null,
+    origin: {
+      channel: session.channel ?? null,
+      accountId: session.accountId ?? null,
+      chatId: session.chatId ?? null,
+      threadId: session.threadId ?? null,
+      messageId: session.messageId ?? null,
+    },
     artifactId: input.artifactId ?? session.artifactId ?? null,
     artifactPath: input.artifactPath ?? null,
     transcriptionJsonPath: input.transcriptionJsonPath ?? null,
@@ -48,6 +68,8 @@ export function buildMeetingEventPayload(input: BuildMeetingEventPayloadInput): 
     durationMs: session.durationMs ?? null,
     participants: (session.participants ?? []).map(publicParticipantPayload),
     transcriptSegmentCount: session.transcriptSegments?.length ?? 0,
+    textMessageCount: session.textMessages?.length ?? 0,
+    agentOutputCount: session.agentOutputs?.length ?? 0,
     mediaRefs: (session.mediaRefs ?? []).map(publicMediaRefPayload),
     rawProvenance: session.rawProvenance ?? null,
     occurredAt: new Date().toISOString(),
@@ -55,6 +77,31 @@ export function buildMeetingEventPayload(input: BuildMeetingEventPayloadInput): 
 }
 
 export function emitMeetingEvent(topic: MeetingEventTopic, payload: Record<string, unknown>): void {
+  const publisher = publisherForTests ?? (isExplicitConnect() ? publish : null);
+  if (!publisher) return;
+
+  Promise.resolve(publisher(topic, payload)).catch((error) => {
+    log.warn("Failed to publish meeting event", {
+      topic,
+      meetingId: typeof payload.meetingId === "string" ? payload.meetingId : undefined,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
+
+export function emitMeetingChannelEvent(event: MeetingChannelEvent): void {
+  emitRawMeetingEvent(meetingChannelEventTopic(event.type), event as unknown as Record<string, unknown>);
+}
+
+export function emitMeetingSessionChannelEvent(
+  type: MeetingChannelEventType,
+  session: MeetingSession,
+  input: Parameters<typeof buildMeetingChannelEvent>[2] = {},
+): void {
+  emitMeetingChannelEvent(buildMeetingChannelEvent(type, session, input));
+}
+
+function emitRawMeetingEvent(topic: string, payload: Record<string, unknown>): void {
   const publisher = publisherForTests ?? (isExplicitConnect() ? publish : null);
   if (!publisher) return;
 

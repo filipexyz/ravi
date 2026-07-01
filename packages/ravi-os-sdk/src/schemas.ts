@@ -33015,6 +33015,753 @@ export const MeetingsFinalizeReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `meetings.profiles.init`. */
+export const MeetingsProfilesInitInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "description": "Meeting profile id",
+      "type": "string"
+    },
+    "source": {
+      "default": "workspace",
+      "description": "workspace|user",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profileId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.profiles.init`. */
+export const MeetingsProfilesInitReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileDir": {
+      "type": "string"
+    },
+    "profilePath": {
+      "type": "string"
+    },
+    "sourceKind": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "sourceKind",
+    "profileDir",
+    "profilePath"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `meetings.profiles.list`. */
+export const MeetingsProfilesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching profiles to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.profiles.list`. */
+export const MeetingsProfilesListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "chrome": {
+            "additionalProperties": false,
+            "properties": {
+              "browserChannel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "profileDir": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "profileDir",
+              "browserChannel"
+            ],
+            "type": "object"
+          },
+          "defaults": {
+            "additionalProperties": false,
+            "properties": {
+              "capture": {
+                "type": "string"
+              },
+              "duration": {
+                "type": "string"
+              },
+              "emptyGrace": {
+                "type": "string"
+              },
+              "maxDuration": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "out": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "live": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "contextChars": {
+                "type": "number"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "includeSessionContext": {
+                "type": "boolean"
+              },
+              "initialPromptChars": {
+                "type": "number"
+              },
+              "initialPromptDelay": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tools": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "agentId",
+              "contextChars",
+              "includeSessionContext",
+              "initialPromptChars",
+              "initialPromptDelay",
+              "tools"
+            ],
+            "type": "object"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "voice": {
+            "additionalProperties": false,
+            "properties": {
+              "runtime": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "runtime"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "label",
+          "sourceKind",
+          "source",
+          "provider",
+          "chrome",
+          "voice",
+          "live",
+          "defaults"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "profiles": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "chrome": {
+            "additionalProperties": false,
+            "properties": {
+              "browserChannel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "profileDir": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "profileDir",
+              "browserChannel"
+            ],
+            "type": "object"
+          },
+          "defaults": {
+            "additionalProperties": false,
+            "properties": {
+              "capture": {
+                "type": "string"
+              },
+              "duration": {
+                "type": "string"
+              },
+              "emptyGrace": {
+                "type": "string"
+              },
+              "maxDuration": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "out": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "live": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "contextChars": {
+                "type": "number"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "includeSessionContext": {
+                "type": "boolean"
+              },
+              "initialPromptChars": {
+                "type": "number"
+              },
+              "initialPromptDelay": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tools": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "agentId",
+              "contextChars",
+              "includeSessionContext",
+              "initialPromptChars",
+              "initialPromptDelay",
+              "tools"
+            ],
+            "type": "object"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "voice": {
+            "additionalProperties": false,
+            "properties": {
+              "runtime": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "runtime"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "label",
+          "sourceKind",
+          "source",
+          "provider",
+          "chrome",
+          "voice",
+          "live",
+          "defaults"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "profiles"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `meetings.profiles.show`. */
+export const MeetingsProfilesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "description": "Meeting profile id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profileId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.profiles.show`. */
+export const MeetingsProfilesShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chrome": {
+      "additionalProperties": false,
+      "properties": {
+        "browserChannel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profileDir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "profileDir",
+        "browserChannel"
+      ],
+      "type": "object"
+    },
+    "defaults": {
+      "additionalProperties": false,
+      "properties": {
+        "capture": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "emptyGrace": {
+          "type": "string"
+        },
+        "maxDuration": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "out": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "id": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "live": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contextChars": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "includeSessionContext": {
+          "type": "boolean"
+        },
+        "initialPromptChars": {
+          "type": "number"
+        },
+        "initialPromptDelay": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "enabled",
+        "agentId",
+        "contextChars",
+        "includeSessionContext",
+        "initialPromptChars",
+        "initialPromptDelay",
+        "tools"
+      ],
+      "type": "object"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "sourceKind": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "voice": {
+      "additionalProperties": false,
+      "properties": {
+        "runtime": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "label",
+    "sourceKind",
+    "source",
+    "provider",
+    "chrome",
+    "voice",
+    "live",
+    "defaults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `meetings.profiles.validate`. */
+export const MeetingsProfilesValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "description": "Optional meeting profile id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.profiles.validate`. */
+export const MeetingsProfilesValidateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "results": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "sourceKind",
+          "source",
+          "valid"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "valid": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid",
+    "results"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `meetings.voice-runtimes`. */
+export const MeetingsVoiceRuntimesInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.voice-runtimes`. */
+export const MeetingsVoiceRuntimesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "type": "string"
+          },
+          "constraints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "defaultModel": {
+            "type": "string"
+          },
+          "docsUrl": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "providerRuntime": {
+            "type": "string"
+          },
+          "strengths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "availability",
+          "kind",
+          "docsUrl",
+          "strengths",
+          "constraints"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "defaultRuntimeId": {
+      "type": "string"
+    },
+    "recommendation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "defaultRuntimeId",
+    "recommendation",
+    "candidates"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `metrics.dates`. */
 export const MetricsDatesInputSchema = {
   "additionalProperties": false,

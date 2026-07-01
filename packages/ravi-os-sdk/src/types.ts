@@ -6675,6 +6675,179 @@ export type MeetingsFinalizeReturn = {
   transcriptSegmentCount: number;
 };
 
+/** Input shape for `meetings.profiles.init`. */
+export type MeetingsProfilesInitInput = {
+  profileId: string;
+  source?: string;
+};
+
+/** Return shape for `meetings.profiles.init`. */
+export type MeetingsProfilesInitReturn = {
+  profileDir: string;
+  profilePath: string;
+  sourceKind: string;
+};
+
+/** Input shape for `meetings.profiles.list`. */
+export type MeetingsProfilesListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `meetings.profiles.list`. */
+export type MeetingsProfilesListReturn = {
+  items: Array<{
+    chrome: {
+      browserChannel: string | null;
+      profileDir: string | null;
+    };
+    defaults: {
+      capture?: string;
+      duration?: string;
+      emptyGrace?: string;
+      maxDuration?: string;
+      name?: string;
+      out?: string;
+    };
+    id: string;
+    label: string;
+    live: {
+      agentId: string | null;
+      contextChars: number;
+      enabled: boolean;
+      includeSessionContext: boolean;
+      initialPromptChars: number;
+      initialPromptDelay: string | null;
+      tools: string[];
+    };
+    provider: string;
+    source: string;
+    sourceKind: string;
+    version: string;
+    voice: {
+      runtime: string;
+    };
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  profiles: Array<{
+    chrome: {
+      browserChannel: string | null;
+      profileDir: string | null;
+    };
+    defaults: {
+      capture?: string;
+      duration?: string;
+      emptyGrace?: string;
+      maxDuration?: string;
+      name?: string;
+      out?: string;
+    };
+    id: string;
+    label: string;
+    live: {
+      agentId: string | null;
+      contextChars: number;
+      enabled: boolean;
+      includeSessionContext: boolean;
+      initialPromptChars: number;
+      initialPromptDelay: string | null;
+      tools: string[];
+    };
+    provider: string;
+    source: string;
+    sourceKind: string;
+    version: string;
+    voice: {
+      runtime: string;
+    };
+  }>;
+  total: number;
+};
+
+/** Input shape for `meetings.profiles.show`. */
+export type MeetingsProfilesShowInput = {
+  profileId: string;
+};
+
+/** Return shape for `meetings.profiles.show`. */
+export type MeetingsProfilesShowReturn = {
+  chrome: {
+    browserChannel: string | null;
+    profileDir: string | null;
+  };
+  defaults: {
+    capture?: string;
+    duration?: string;
+    emptyGrace?: string;
+    maxDuration?: string;
+    name?: string;
+    out?: string;
+  };
+  id: string;
+  label: string;
+  live: {
+    agentId: string | null;
+    contextChars: number;
+    enabled: boolean;
+    includeSessionContext: boolean;
+    initialPromptChars: number;
+    initialPromptDelay: string | null;
+    tools: string[];
+  };
+  provider: string;
+  source: string;
+  sourceKind: string;
+  version: string;
+  voice: {
+    runtime: string;
+  };
+};
+
+/** Input shape for `meetings.profiles.validate`. */
+export type MeetingsProfilesValidateInput = {
+  profileId?: string;
+};
+
+/** Return shape for `meetings.profiles.validate`. */
+export type MeetingsProfilesValidateReturn = {
+  results: Array<{
+    error?: string;
+    id: string;
+    source: string;
+    sourceKind: string;
+    valid: boolean;
+  }>;
+  valid: boolean;
+};
+
+/** Input shape for `meetings.voice-runtimes`. */
+export type MeetingsVoiceRuntimesInput = Record<string, never>;
+
+/** Return shape for `meetings.voice-runtimes`. */
+export type MeetingsVoiceRuntimesReturn = {
+  candidates: Array<{
+    availability: string;
+    constraints: string[];
+    defaultModel?: string;
+    docsUrl: string;
+    id: string;
+    kind: string;
+    label: string;
+    providerRuntime?: string;
+    strengths: string[];
+  }>;
+  defaultRuntimeId: string;
+  recommendation: string;
+};
+
 /** Input shape for `metrics.dates`. */
 export type MetricsDatesInput = Record<string, never>;
 

@@ -1,10 +1,12 @@
 import "reflect-metadata";
 import { spawn } from "node:child_process";
-import { accessSync, constants, mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { accessSync, constants, mkdirSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { z } from "zod";
-import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   appendArtifactEvent,
   attachArtifact,
@@ -13,26 +15,45 @@ import {
   updateArtifact,
   type ArtifactRecord,
 } from "../../artifacts/store.js";
-import { looseObjectSchema } from "./operational-return-schemas.js";
+import {
+  looseObjectSchema,
+  meetingProfileInitReturnSchema,
+  meetingProfileReturnSchema,
+  meetingProfilesListReturnSchema,
+  meetingProfilesValidateReturnSchema,
+  meetingVoiceRuntimesReturnSchema,
+} from "./operational-return-schemas.js";
 import { finalizeGoogleMeetRecorderRun } from "../../meetings/google-meet/recorder-run.js";
 import {
-  buildRaviRealtimeToolManifest,
-  serializeRuntimeDynamicToolResultForRealtime,
-  type RaviRealtimeToolManifest,
-} from "../../meetings/realtime-tools.js";
-import { createRuntimeHostServices } from "../../runtime/host-services.js";
-import { RAVI_CONTEXT_KEY_ENV, resolveRuntimeContextOrThrow } from "../../runtime/context-registry.js";
-import type { ContextRecord } from "../../router/router-db.js";
+  DEFAULT_MEETING_VOICE_RUNTIME_ID,
+  listMeetingVoiceRuntimeCandidates,
+  resolveMeetingVoiceRuntime,
+  type MeetingVoiceRuntimeDecision,
+} from "../../meetings/voice-runtime.js";
+import {
+  initMeetingProfile,
+  listMeetingProfiles,
+  publicMeetingProfile,
+  resolveMeetingProfile,
+  validateMeetingProfiles,
+  type ResolvedMeetingProfile,
+} from "../../meetings/profiles.js";
+import {
+  RAVI_MEET_RESOLVED_PROFILE_ENV,
+  buildMeetingResolvedProfile,
+  publicMeetingResolvedProfile,
+  readMeetingResolvedProfile,
+  writeMeetingResolvedProfile,
+  type BuildMeetingResolvedProfileInput,
+  type MeetingResolvedProfile,
+} from "../../meetings/resolved-profile.js";
 import { getAgent } from "../../router/config.js";
 import { getAgentCwd } from "../../router/resolver.js";
-import { getSessionByName } from "../../router/sessions.js";
-import { buildRuntimeSystemPrompt } from "../../runtime/runtime-system-prompt.js";
-import type { ChannelContext } from "../../runtime/message-types.js";
+import { getOrCreateSession, updateSessionContext } from "../../router/sessions.js";
 import { getRaviStateDir } from "../../utils/paths.js";
-import { getRecentHistory, type Message } from "../../db.js";
+import { GOOGLE_MEET_PROVIDER_ID, MEETING_CHANNEL_ID } from "../../channels/meetings/types.js";
 
-const RAVI_REALTIME_INSTRUCTIONS_ENV = "RAVI_REALTIME_INSTRUCTIONS";
-const RAVI_MEET_INITIAL_PROMPT_ENV = "RAVI_MEET_INITIAL_PROMPT";
+const DEFAULT_GOOGLE_MEET_CAPTURE_MODE = "webrtc-tap" as const;
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -160,273 +181,6 @@ function mergeEnvOverrides(...overrides: Array<NodeJS.ProcessEnv | undefined>): 
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
-function requireRuntimeContext(): ContextRecord {
-  const inlineContext = getContext()?.context;
-  if (inlineContext) return inlineContext;
-
-  const contextKey = process.env[RAVI_CONTEXT_KEY_ENV];
-  if (!contextKey) {
-    fail(`Missing ${RAVI_CONTEXT_KEY_ENV}; live meeting tools require a Ravi runtime context.`);
-  }
-
-  try {
-    return resolveRuntimeContextOrThrow(contextKey);
-  } catch (error) {
-    fail(`Failed to resolve Ravi runtime context: ${errorMessage(error)}`);
-  }
-}
-
-function buildToolContext(context: ContextRecord): Record<string, unknown> {
-  return {
-    contextId: context.contextId,
-    context,
-    agentId: context.agentId,
-    sessionKey: context.sessionKey,
-    sessionName: context.sessionName,
-    source: context.source,
-    suppressCliOutput: true,
-  };
-}
-
-function createMeetingRuntimeHostServices(context: ContextRecord) {
-  const agentId = context.agentId?.trim();
-  if (!agentId) fail("Live meeting tools require a runtime context with an agent id.");
-  return createRuntimeHostServices({
-    context,
-    agentId,
-    sessionName: context.sessionName ?? context.sessionKey ?? "meeting-live",
-    toolContext: buildToolContext(context),
-  });
-}
-
-function parseRealtimeToolSelection(value: string): Set<string> {
-  const trimmed = value?.trim();
-  if (!trimmed) return new Set();
-  if (trimmed === "all" || trimmed === "*") {
-    fail("Live meeting --tools must be an explicit allowlist. `all` and `*` are not allowed.");
-  }
-  const names = trimmed
-    .split(",")
-    .map((name) => name.trim())
-    .filter(Boolean);
-  return new Set(names);
-}
-
-function buildRealtimeToolManifestForCurrentContext(toolSelection: string): RaviRealtimeToolManifest {
-  const context = requireRuntimeContext();
-  const hostServices = createMeetingRuntimeHostServices(context);
-  const selectedTools = parseRealtimeToolSelection(toolSelection);
-  if (selectedTools.size === 0) fail("Live meeting --tools must include at least one tool name.");
-  const availableTools = hostServices.listDynamicTools();
-  const availableNames = new Set(availableTools.map((tool) => tool.name));
-  const missingTools = [...selectedTools].filter((name) => !availableNames.has(name));
-  if (missingTools.length > 0) {
-    fail(`Unknown live meeting tool(s): ${missingTools.join(", ")}.`);
-  }
-  const tools = availableTools.filter((tool) => selectedTools.has(tool.name));
-  return buildRaviRealtimeToolManifest({
-    tools,
-    agentId: context.agentId,
-    sessionName: context.sessionName ?? context.sessionKey,
-    contextId: context.contextId,
-  });
-}
-
-function writeRealtimeToolManifestForCurrentContext(
-  label?: string,
-  toolSelection?: string,
-): { manifest: RaviRealtimeToolManifest; path: string } {
-  if (!toolSelection?.trim()) fail("Live meeting --tools must include at least one tool name.");
-  const manifest = buildRealtimeToolManifestForCurrentContext(toolSelection);
-  const dir = join(getRaviStateDir(), "meetings", "realtime-tools");
-  mkdirSync(dir, { recursive: true });
-  const safeLabel = (label || `${manifest.contextId ?? "context"}-${Date.now()}`)
-    .replace(/[^A-Za-z0-9_.-]+/g, "-")
-    .slice(0, 120);
-  const path = join(dir, `${safeLabel || "tools"}.json`);
-  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  return { manifest, path };
-}
-
-async function buildRealtimeInstructionsForRegisteredAgent(input: {
-  agentId?: string;
-  meetingContext?: string;
-  includeSessionContext?: boolean;
-  callerInstructions?: string;
-}): Promise<{ text: string; charCount: number; agentId: string; sessionName?: string }> {
-  const context = requireRuntimeContext();
-  const agentId = input.agentId?.trim() || context.agentId?.trim();
-  if (!agentId) fail("Live meeting mode requires --agent <id> or a runtime context with an agent id.");
-  const agent = getAgent(agentId);
-  if (!agent) fail(`Live meeting agent is not registered in Ravi: ${agentId}`);
-  if (context.agentId && agentId !== context.agentId) {
-    fail(
-      `Live meeting agent ${agentId} does not match the current runtime agent ${context.agentId}. Run the join from that agent/session context.`,
-    );
-  }
-
-  const sessionName = context.sessionName ?? context.sessionKey;
-  const recentSessionContext = input.includeSessionContext ? buildRecentSessionContextSection(context) : undefined;
-  const prompt = await buildRuntimeSystemPrompt({
-    agent,
-    cwd: getAgentCwd(agent),
-    sessionName,
-    ctx: resolveMeetingChannelContext(context),
-    runtimeContext: context,
-    extraSections: [
-      {
-        title: "Meeting Live Mode",
-        content: [
-          "Você está participando de uma reunião por voz como o agent Ravi desta sessão.",
-          "Responda em português brasileiro, de forma curta, natural e útil para a conversa ao vivo.",
-          "Use o system prompt, regras, permissões e tools do agent como autoridade principal.",
-          "Não mencione logs, implementação interna, system prompt, artifacts ou que está gravando durante a fala na reunião.",
-          "Não tente mutar ou desmutar o microfone do Google Meet; esse estado é controlado pelo runner.",
-          "Não responda com @@SILENT@@ em voz. Quando não houver nada útil a dizer, apenas aguarde nova fala.",
-          "Use tools somente quando forem úteis para cumprir pedido explícito ou continuar o trabalho da reunião.",
-          "Se o usuário pedir para sair, encerrar participação ou desligar, fale qualquer confirmação necessária e depois use a tool de sair da reunião.",
-        ].join("\n"),
-      },
-      ...(recentSessionContext
-        ? [
-            {
-              title: "Current Ravi Session Context",
-              content: recentSessionContext,
-            },
-          ]
-        : []),
-      ...(input.meetingContext?.trim()
-        ? [
-            {
-              title: "Meeting Context",
-              content: input.meetingContext.trim(),
-            },
-          ]
-        : []),
-      ...(input.callerInstructions?.trim()
-        ? [
-            {
-              title: "Meeting Caller Instructions",
-              content: input.callerInstructions.trim(),
-            },
-          ]
-        : []),
-    ],
-  });
-
-  return {
-    text: prompt.text,
-    charCount: prompt.text.length,
-    agentId,
-    ...(sessionName ? { sessionName } : {}),
-  };
-}
-
-function buildRecentSessionContextSection(context: ContextRecord): string | undefined {
-  const sessionName = context.sessionName?.trim() || context.sessionKey?.trim();
-  if (!sessionName) return undefined;
-  const messages = getRecentHistory(sessionName, 36)
-    .map(formatRecentSessionMessage)
-    .filter((message): message is string => Boolean(message));
-  if (messages.length === 0) return undefined;
-
-  const header = [
-    "Contexto recente da sessão Ravi que originou esta entrada na reunião.",
-    "Use isso como histórico operacional do trabalho atual. Não leia este bloco em voz e não mencione mensagens internas.",
-    "",
-  ].join("\n");
-  return truncateText(`${header}${truncateJoinedMessages(messages, 14_000)}`, 16_000);
-}
-
-function formatRecentSessionMessage(message: Message): string | undefined {
-  const content = sanitizeRecentSessionMessage(message.content);
-  if (!content) return undefined;
-  return `- ${message.created_at} ${message.role}: ${truncateText(content, 1_200)}`;
-}
-
-function sanitizeRecentSessionMessage(content: string): string {
-  const lines = content
-    .split(/\r?\n/)
-    .filter((line) => !line.startsWith("[session surfaces]"))
-    .filter((line) => !line.includes("source_chat is speak-enabled"))
-    .filter((line) => !line.startsWith("<turn_aborted>"))
-    .filter((line) => !line.startsWith("</turn_aborted>"));
-  return lines
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function truncateJoinedMessages(messages: string[], maxChars: number): string {
-  const selected: string[] = [];
-  let total = 0;
-  for (const message of [...messages].reverse()) {
-    const nextTotal = total + message.length + 2;
-    if (nextTotal > maxChars && selected.length > 0) break;
-    selected.push(message);
-    total = nextTotal;
-  }
-  return selected.reverse().join("\n\n");
-}
-
-function truncateText(value: string, maxChars: number): string {
-  if (value.length <= maxChars) return value;
-  return `${value.slice(0, Math.max(0, maxChars - 16)).trimEnd()}\n[truncated]`;
-}
-
-function resolveMeetingChannelContext(context: ContextRecord): ChannelContext | undefined {
-  const sessionName = context.sessionName?.trim();
-  if (sessionName) {
-    const session = getSessionByName(sessionName);
-    const parsed = parseSessionChannelContext(session?.lastContext);
-    if (parsed) return parsed;
-  }
-  return fallbackChannelContextFromRuntimeContext(context);
-}
-
-function parseSessionChannelContext(value: string | undefined): ChannelContext | undefined {
-  if (!value?.trim()) return undefined;
-  try {
-    const parsed = JSON.parse(value) as Partial<ChannelContext>;
-    if (typeof parsed.channelId !== "string" || typeof parsed.channelName !== "string") return undefined;
-    return {
-      channelId: parsed.channelId,
-      channelName: parsed.channelName,
-      isGroup: Boolean(parsed.isGroup),
-      ...(typeof parsed.groupName === "string" ? { groupName: parsed.groupName } : {}),
-      ...(typeof parsed.groupId === "string" ? { groupId: parsed.groupId } : {}),
-      ...(Array.isArray(parsed.groupMembers)
-        ? { groupMembers: parsed.groupMembers.filter((member): member is string => typeof member === "string") }
-        : {}),
-      ...(typeof parsed.botTag === "string" ? { botTag: parsed.botTag } : {}),
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function fallbackChannelContextFromRuntimeContext(context: ContextRecord): ChannelContext | undefined {
-  const source = context.source;
-  if (!source) return undefined;
-  const channelName = source.channel === "whatsapp" ? "WhatsApp" : source.channel;
-  const isGroup = source.chatId.includes("@g.us") || source.chatId.startsWith("group:");
-  return {
-    channelId: source.channel,
-    channelName,
-    isGroup,
-    ...(isGroup ? { groupId: source.chatId.replace(/@g\.us$/i, "") } : {}),
-  };
-}
-
-function parseJsonArgument(value: string | undefined, flag: string): unknown {
-  if (!value?.trim()) return {};
-  try {
-    return JSON.parse(value);
-  } catch (error) {
-    fail(`Invalid ${flag}: ${errorMessage(error)}`);
-  }
-}
-
 function buildGoogleMeetJoinArgs(input: {
   url: string;
   name?: string;
@@ -436,15 +190,6 @@ function buildGoogleMeetJoinArgs(input: {
   maxDuration?: string;
   emptyGrace?: string;
   capture?: string;
-  realtimeTranscribe?: boolean;
-  realtimeAgent?: boolean;
-  speakBack?: boolean;
-  realtimeVoice?: string;
-  realtimeLanguage?: string;
-  realtimeInstructions?: string;
-  initialPrompt?: string;
-  initialPromptDelay?: string;
-  toolsManifestPath?: string;
   skipFinalize?: boolean;
 }): string[] {
   const args = ["--url", input.url, "--until-empty", "--out", input.out?.trim() || "~/.ravi/meetings/runs"];
@@ -453,16 +198,7 @@ function buildGoogleMeetJoinArgs(input: {
   pushOption(args, "--duration", input.duration);
   pushOption(args, "--max-duration", input.maxDuration);
   pushOption(args, "--empty-grace", input.emptyGrace);
-  pushOption(args, "--capture", input.capture);
-  pushOption(args, "--realtime-voice", input.realtimeVoice);
-  pushOption(args, "--realtime-language", input.realtimeLanguage);
-  pushOption(args, "--realtime-instructions", input.realtimeInstructions);
-  pushOption(args, "--initial-prompt", input.initialPrompt);
-  pushOption(args, "--initial-prompt-delay", input.initialPromptDelay);
-  pushOption(args, "--tools", input.toolsManifestPath);
-  if (input.realtimeTranscribe) args.push("--realtime-transcribe");
-  if (input.realtimeAgent) args.push("--realtime-agent");
-  if (input.speakBack) args.push("--speak-back");
+  pushOption(args, "--capture", input.capture ?? DEFAULT_GOOGLE_MEET_CAPTURE_MODE);
   if (input.skipFinalize) args.push("--no-ravi-finalize-artifact");
   return args;
 }
@@ -477,19 +213,11 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   maxDuration?: string;
   emptyGrace?: string;
   capture?: string;
-  realtimeTranscribe?: boolean;
-  realtimeAgent?: boolean;
-  speakBack?: boolean;
-  realtimeVoice?: string;
-  realtimeLanguage?: string;
-  realtimeInstructions?: string;
-  initialPrompt?: string;
-  initialPromptDelay?: string;
+  voiceRuntime?: string;
   live?: boolean;
   liveAgentId?: string;
   liveContext?: string;
   includeSessionContext?: boolean;
-  toolsManifestPath?: string;
   skipFinalize?: boolean;
   artifactId: string;
 }): string[] {
@@ -500,19 +228,11 @@ function buildGoogleMeetJoinWorkerArgs(input: {
   pushOption(args, "--duration", input.duration);
   pushOption(args, "--max-duration", input.maxDuration);
   pushOption(args, "--empty-grace", input.emptyGrace);
-  pushOption(args, "--capture", input.capture);
-  pushOption(args, "--realtime-voice", input.realtimeVoice);
-  pushOption(args, "--realtime-language", input.realtimeLanguage);
-  pushOption(args, "--realtime-instructions", input.realtimeInstructions);
-  pushOption(args, "--initial-prompt", input.initialPrompt);
-  pushOption(args, "--initial-prompt-delay", input.initialPromptDelay);
+  pushOption(args, "--capture", input.capture ?? DEFAULT_GOOGLE_MEET_CAPTURE_MODE);
+  pushOption(args, "--voice-runtime", input.voiceRuntime);
   pushOption(args, "--agent", input.liveAgentId);
   pushOption(args, "--context", input.liveContext);
   pushFlag(args, "--include-session-context", input.includeSessionContext);
-  pushOption(args, "--tools-manifest", input.toolsManifestPath);
-  pushFlag(args, "--realtime-transcribe", input.realtimeTranscribe);
-  pushFlag(args, "--realtime-agent", input.realtimeAgent);
-  pushFlag(args, "--speak-back", input.speakBack);
   pushFlag(args, "--live", input.live);
   pushFlag(args, "--skip-finalize", input.skipFinalize);
   args.push("--artifact-id", input.artifactId, "--async-worker", "--json");
@@ -634,8 +354,221 @@ function extractRecorderArtifact(metadata: unknown): {
 
 function buildMeetingJoinTitle(url: string): string {
   const trimmed = url.trim();
-  const meetCode = trimmed.match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/i)?.[1];
+  const meetCode = extractGoogleMeetCode(trimmed);
   return `Google Meet ${meetCode ?? trimmed}`.slice(0, 200);
+}
+
+function extractGoogleMeetCode(url: string): string | undefined {
+  return url
+    .trim()
+    .match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/i)?.[1]
+    ?.toLowerCase();
+}
+
+function safeSessionToken(value: string): string {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "meeting"
+  );
+}
+
+function timestampToken(now = new Date()): string {
+  return now
+    .toISOString()
+    .replaceAll(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z")
+    .toLowerCase();
+}
+
+function meetingIdFromUrl(url: string): string {
+  const code = extractGoogleMeetCode(url);
+  if (code) return code;
+  return `url-${createHash("sha256").update(url.trim()).digest("hex").slice(0, 12)}`;
+}
+
+interface NativeMeetingRuntimeSessionPlan {
+  sessionKey: string;
+  sessionName: string;
+  agentId: string;
+  provider: "google-meet";
+  providerMeetingId: string;
+  title: string;
+  bridgeDir: string;
+  created: boolean;
+}
+
+function nativeMeetingRuntimeFromResolvedProfile(
+  profile: MeetingResolvedProfile | undefined,
+  url: string,
+): NativeMeetingRuntimeSessionPlan | undefined {
+  const sessionName = profile?.session.name?.trim();
+  const sessionKey = profile?.session.key?.trim();
+  const agentId = profile?.session.agentId?.trim();
+  if (!sessionName || !sessionKey || !agentId || !profile?.session.nativeRuntime) return undefined;
+  const providerMeetingId = profile.session.providerMeetingId?.trim() || meetingIdFromUrl(url);
+  return {
+    sessionKey,
+    sessionName,
+    agentId,
+    provider: GOOGLE_MEET_PROVIDER_ID,
+    providerMeetingId,
+    title: buildMeetingJoinTitle(url),
+    bridgeDir: profile.session.bridgeDir?.trim() || join(getRaviStateDir(), "meetings", "bridges", sessionName),
+    created: false,
+  };
+}
+
+function buildNativeMeetingRuntimeSessionPlan(input: {
+  url: string;
+  agentId: string;
+  origin: ReturnType<typeof contextDefaults>;
+  create: boolean;
+}): NativeMeetingRuntimeSessionPlan {
+  const agent = getAgent(input.agentId);
+  if (!agent) fail(`Live meeting agent is not registered in Ravi: ${input.agentId}`);
+
+  const providerMeetingId = meetingIdFromUrl(input.url);
+  const sessionSuffix = timestampToken();
+  const sessionName = `meet-${GOOGLE_MEET_PROVIDER_ID}-${safeSessionToken(providerMeetingId)}-${sessionSuffix}`;
+  const sessionKey = `agent:${input.agentId}:meet:${GOOGLE_MEET_PROVIDER_ID}:${providerMeetingId}:${sessionSuffix}`;
+  const title = buildMeetingJoinTitle(input.url);
+  const bridgeDir = join(getRaviStateDir(), "meetings", "bridges", sessionName);
+
+  if (input.create) {
+    mkdirSync(join(bridgeDir, "outbound"), { recursive: true });
+    getOrCreateSession(sessionKey, input.agentId, getAgentCwd(agent), {
+      name: sessionName,
+      chatType: "group",
+      channel: MEETING_CHANNEL_ID,
+      accountId: GOOGLE_MEET_PROVIDER_ID,
+      groupId: providerMeetingId,
+      subject: title,
+      displayName: title,
+      lastChannel: MEETING_CHANNEL_ID,
+      lastAccountId: GOOGLE_MEET_PROVIDER_ID,
+      lastTo: providerMeetingId,
+    });
+    updateSessionContext(
+      sessionKey,
+      JSON.stringify({
+        channelId: MEETING_CHANNEL_ID,
+        channelName: "Meet",
+        isGroup: true,
+        groupId: providerMeetingId,
+        groupName: title,
+        meeting: {
+          provider: GOOGLE_MEET_PROVIDER_ID,
+          providerMeetingId,
+          url: input.url,
+          bridgeDir,
+          originSessionKey: input.origin.sessionKey ?? null,
+          originSessionName: input.origin.sessionName ?? null,
+          originAgentId: input.origin.agentId ?? null,
+        },
+      }),
+    );
+  }
+
+  return {
+    sessionKey,
+    sessionName,
+    agentId: input.agentId,
+    provider: GOOGLE_MEET_PROVIDER_ID,
+    providerMeetingId,
+    title,
+    bridgeDir,
+    created: input.create,
+  };
+}
+
+function publicNativeMeetingRuntimeSession(
+  session: NativeMeetingRuntimeSessionPlan | undefined,
+): Record<string, unknown> | null {
+  if (!session) return null;
+  return {
+    sessionKey: session.sessionKey,
+    sessionName: session.sessionName,
+    agentId: session.agentId,
+    provider: session.provider,
+    providerMeetingId: session.providerMeetingId,
+    title: session.title,
+    bridgeDir: session.bridgeDir,
+    created: session.created,
+  };
+}
+
+function publicVoiceRuntimeDecision(decision: MeetingVoiceRuntimeDecision): Record<string, unknown> {
+  return {
+    enabled: decision.enabled,
+    runtimeId: decision.runtimeId,
+    runnable: decision.runnable,
+    reason: decision.reason,
+    availability: decision.candidate?.availability ?? null,
+    kind: decision.candidate?.kind ?? null,
+    defaultModel: decision.candidate?.defaultModel ?? null,
+    docsUrl: decision.candidate?.docsUrl ?? null,
+  };
+}
+
+function firstTrimmed(...values: Array<string | null | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+function buildResolvedProfileInput(input: {
+  provider: "google-meet";
+  meetingProfile?: ResolvedMeetingProfile;
+  sessionKey?: string | null;
+  sessionName?: string | null;
+  agentId?: string | null;
+  contextId?: string;
+  nativeMeetingRuntime?: NativeMeetingRuntimeSessionPlan;
+  chromeProfileDir?: string;
+  browserChannel?: string;
+  voiceRuntimeDecision: MeetingVoiceRuntimeDecision;
+  initialPrompt?: string;
+  initialPromptDelay?: string;
+  live: boolean;
+  liveContext?: string;
+  includeSessionContext?: boolean;
+  liveTools?: string;
+  toolManifestPath?: string;
+  toolCount?: number | null;
+  out?: string;
+  capture?: string;
+}): BuildMeetingResolvedProfileInput {
+  return {
+    provider: input.provider,
+    profile: input.meetingProfile,
+    sessionKey: input.sessionKey ?? input.nativeMeetingRuntime?.sessionKey,
+    sessionName: input.sessionName ?? undefined,
+    agentId: input.agentId ?? undefined,
+    contextId: input.contextId,
+    nativeRuntime: input.voiceRuntimeDecision.enabled,
+    providerMeetingId: input.nativeMeetingRuntime?.providerMeetingId,
+    bridgeDir: input.nativeMeetingRuntime?.bridgeDir,
+    chromeProfileDir: input.chromeProfileDir,
+    browserChannel: input.meetingProfile?.chrome.browserChannel,
+    voiceRuntimeId: input.voiceRuntimeDecision.runtimeId,
+    voiceRuntimeEnabled: input.voiceRuntimeDecision.enabled,
+    initialPrompt: input.initialPrompt,
+    initialPromptDelay: input.initialPromptDelay,
+    liveEnabled: input.live,
+    liveContext: input.liveContext,
+    includeSessionContext: input.includeSessionContext,
+    liveTools: input.liveTools,
+    toolManifestPath: input.toolManifestPath,
+    toolCount: input.toolCount,
+    out: input.out,
+    capture: input.capture,
+  };
 }
 
 @Group({
@@ -717,23 +650,18 @@ export class MeetingsCommands {
     @Option({ flags: "--empty-grace <seconds>", description: "Seconds to wait after the meeting appears empty" })
     emptyGrace?: string,
     @Option({ flags: "--capture <mode>", description: "Capture mode passed to the provider" }) capture?: string,
-    @Option({ flags: "--realtime-transcribe", description: "Enable OpenAI Realtime transcription" })
-    realtimeTranscribe?: boolean,
-    @Option({ flags: "--realtime-agent", description: "Enable OpenAI Realtime speech agent" }) realtimeAgent?: boolean,
-    @Option({ flags: "--speak-back", description: "Allow Realtime agent audio back into the meeting" })
-    speakBack?: boolean,
-    @Option({ flags: "--realtime-voice <voice>", description: "Realtime output voice" }) realtimeVoice?: string,
-    @Option({ flags: "--realtime-language <language>", description: "Optional transcription language hint" })
-    realtimeLanguage?: string,
-    @Option({ flags: "--realtime-instructions <text>", description: "Realtime agent instructions override" })
-    realtimeInstructions?: string,
     @Option({
       flags: "--initial-prompt <text>",
-      description: "Initial prompt spoken by the live Realtime agent after join",
+      description: "Initial prompt for the native Ravi meeting session after join",
     })
     initialPrompt?: string,
     @Option({ flags: "--initial-prompt-delay <seconds>", description: "Delay before --initial-prompt is spoken" })
     initialPromptDelay?: string,
+    @Option({
+      flags: "--voice-runtime <id>",
+      description: `Voice runtime for live meeting mode. Current ready default: ${DEFAULT_MEETING_VOICE_RUNTIME_ID}`,
+    })
+    voiceRuntime?: string,
     @Option({ flags: "--agent <id>", description: "Registered Ravi agent id for live meeting mode" })
     liveAgentId?: string,
     @Option({ flags: "--context <text>", description: "Freeform context injected into the live meeting agent prompt" })
@@ -743,10 +671,8 @@ export class MeetingsCommands {
       description: "Inject recent Ravi session history into the live meeting prompt",
     })
     includeSessionContext?: boolean,
-    @Option({ flags: "--live", description: "Enable Realtime live agent mode with Ravi-authorized CLI tools" })
+    @Option({ flags: "--live", description: "Enable native Ravi live agent mode" })
     live?: boolean,
-    @Option({ flags: "--tools-manifest <path>", description: "Internal Realtime tools manifest path" })
-    toolsManifestPath?: string,
     @Option({ flags: "--skip-finalize", description: "Skip final meeting.raw artifact registration" })
     skipFinalize?: boolean,
     @Option({ flags: "--sync", description: "Wait for provider completion before returning" })
@@ -760,8 +686,20 @@ export class MeetingsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tools <names>", description: "Comma-separated Ravi tool names allowlist for live mode" })
     liveTools?: string,
+    @Option({ flags: "--profile <id>", description: "Reusable meeting profile id" })
+    meetingProfileId?: string,
   ) {
-    const selectedProvider = provider?.trim() || "google-meet";
+    const requestedMeetingProfileId = meetingProfileId?.trim();
+    let meetingProfile: ResolvedMeetingProfile | undefined;
+    if (requestedMeetingProfileId) {
+      try {
+        meetingProfile = resolveMeetingProfile(requestedMeetingProfileId);
+      } catch (error) {
+        fail(errorMessage(error));
+      }
+    }
+
+    const selectedProvider = firstTrimmed(provider, meetingProfile?.provider) || "google-meet";
     if (selectedProvider !== "google-meet") fail(`Unsupported meeting provider: ${selectedProvider}.`);
     if (!url?.trim()) fail("Missing --url <url>.");
     if (artifactId && !asyncWorker) fail("--artifact-id is reserved for internal meeting async workers.");
@@ -769,65 +707,145 @@ export class MeetingsCommands {
 
     const command = resolveGoogleMeetRecorderExecutable();
     const ctx = contextDefaults();
+    const inheritedResolvedProfilePath = process.env[RAVI_MEET_RESOLVED_PROFILE_ENV]?.trim();
+    let inheritedResolvedProfile: MeetingResolvedProfile | undefined;
+    if (inheritedResolvedProfilePath) {
+      try {
+        inheritedResolvedProfile = readMeetingResolvedProfile(inheritedResolvedProfilePath);
+      } catch (error) {
+        fail(`Failed to read ${RAVI_MEET_RESOLVED_PROFILE_ENV}: ${errorMessage(error)}`);
+      }
+    }
     const shouldRunAsync = syncMode !== true && asyncWorker !== true && dryRun !== true;
-    const liveMode = Boolean(live);
-    const effectiveRealtimeAgent = Boolean(realtimeAgent || liveMode);
-    const effectiveSpeakBack = Boolean(speakBack || liveMode);
-    const inheritedRealtimeInstructions = process.env[RAVI_REALTIME_INSTRUCTIONS_ENV]?.trim();
-    const shouldRenderLiveInstructions =
-      liveMode && !inheritedRealtimeInstructions && !(asyncWorker && realtimeInstructions?.trim());
-    const liveInstructions = shouldRenderLiveInstructions
-      ? await buildRealtimeInstructionsForRegisteredAgent({
-          agentId: liveAgentId,
-          meetingContext: liveContext,
-          includeSessionContext,
-          callerInstructions: realtimeInstructions,
-        })
-      : undefined;
-    const effectiveRealtimeInstructions =
-      liveInstructions?.text ?? realtimeInstructions?.trim() ?? inheritedRealtimeInstructions;
-    const realtimeInstructionsEnv = effectiveRealtimeInstructions?.trim()
-      ? { [RAVI_REALTIME_INSTRUCTIONS_ENV]: effectiveRealtimeInstructions.trim() }
-      : undefined;
-    const inheritedInitialPrompt = process.env[RAVI_MEET_INITIAL_PROMPT_ENV]?.trim();
-    const effectiveInitialPrompt = initialPrompt?.trim() || inheritedInitialPrompt;
-    const initialPromptEnv = effectiveInitialPrompt
-      ? { [RAVI_MEET_INITIAL_PROMPT_ENV]: effectiveInitialPrompt }
-      : undefined;
-    const envOverrides = mergeEnvOverrides(realtimeInstructionsEnv, initialPromptEnv);
-    const explicitLiveTools = liveTools?.trim();
+    const effectiveName = firstTrimmed(name, meetingProfile?.defaults.name);
+    const effectiveOut = firstTrimmed(out, meetingProfile?.defaults.out);
+    const effectiveProfileDir = firstTrimmed(profileDir, meetingProfile?.chrome.profileDir);
+    const effectiveDuration = firstTrimmed(duration, meetingProfile?.defaults.duration);
+    const effectiveMaxDuration = firstTrimmed(maxDuration, meetingProfile?.defaults.maxDuration);
+    const effectiveEmptyGrace = firstTrimmed(emptyGrace, meetingProfile?.defaults.emptyGrace);
+    const effectiveCapture = firstTrimmed(capture, meetingProfile?.defaults.capture);
+    const liveMode = Boolean(live ?? meetingProfile?.live.enabled ?? inheritedResolvedProfile?.live.enabled);
+    const profileLiveTools =
+      meetingProfile?.live.tools && meetingProfile.live.tools.length > 0
+        ? meetingProfile.live.tools.join(",")
+        : undefined;
+    const effectiveLiveTools = firstTrimmed(liveTools, profileLiveTools);
+    const effectiveLiveAgentId = firstTrimmed(liveAgentId, meetingProfile?.live.agentId);
+    const effectiveLiveContext = firstTrimmed(liveContext, meetingProfile?.live.context);
+    const effectiveIncludeSessionContext = includeSessionContext ?? meetingProfile?.live.includeSessionContext;
+    const effectiveInitialPromptInput = firstTrimmed(initialPrompt, meetingProfile?.live.initialPrompt);
+    const effectiveInitialPromptDelay = firstTrimmed(initialPromptDelay, meetingProfile?.live.initialPromptDelay);
+    const effectiveVoiceRuntime = firstTrimmed(voiceRuntime, meetingProfile?.voice.runtime);
+    const voiceRuntimeDecision = resolveMeetingVoiceRuntime({
+      requested: effectiveVoiceRuntime,
+      live: liveMode,
+    });
+    if (!voiceRuntimeDecision.runnable && voiceRuntimeDecision.error) {
+      fail(voiceRuntimeDecision.error);
+    }
+    const liveAgentForNativeRuntime = firstTrimmed(
+      effectiveLiveAgentId,
+      inheritedResolvedProfile?.session.agentId,
+      liveMode ? ctx.agentId : undefined,
+    );
+    if (liveMode && !liveAgentForNativeRuntime) {
+      fail("Live meeting mode requires --agent <id> or a current Ravi agent context.");
+    }
+    const nativeMeetingRuntime =
+      liveMode && inheritedResolvedProfile
+        ? nativeMeetingRuntimeFromResolvedProfile(inheritedResolvedProfile, url.trim())
+        : liveMode
+          ? buildNativeMeetingRuntimeSessionPlan({
+              url: url.trim(),
+              agentId: liveAgentForNativeRuntime!,
+              origin: ctx,
+              create: !dryRun,
+            })
+          : undefined;
+    const effectiveInitialPrompt = effectiveInitialPromptInput;
+    const explicitLiveTools = effectiveLiveTools;
     if (explicitLiveTools === "all" || explicitLiveTools === "*") {
       fail("Live meeting --tools must be an explicit allowlist. `all` and `*` are not allowed.");
     }
-    const realtimeToolsManifest = toolsManifestPath?.trim()
-      ? { path: toolsManifestPath.trim(), manifest: undefined }
-      : liveMode && explicitLiveTools
-        ? writeRealtimeToolManifestForCurrentContext(`meeting-live-${Date.now()}`, explicitLiveTools)
+    const shouldUseResolvedProfileContract = Boolean(
+      inheritedResolvedProfile ||
+        meetingProfile ||
+        voiceRuntimeDecision.enabled ||
+        effectiveProfileDir ||
+        effectiveInitialPrompt ||
+        effectiveInitialPromptDelay,
+    );
+    const resolvedProfileInput =
+      !inheritedResolvedProfile && shouldUseResolvedProfileContract
+        ? buildResolvedProfileInput({
+            provider: selectedProvider,
+            meetingProfile,
+            sessionKey: nativeMeetingRuntime?.sessionKey ?? ctx.sessionKey,
+            sessionName: nativeMeetingRuntime?.sessionName ?? ctx.sessionName ?? ctx.sessionKey,
+            agentId: nativeMeetingRuntime?.agentId ?? liveAgentForNativeRuntime ?? ctx.agentId,
+            contextId: getContext()?.context?.contextId,
+            nativeMeetingRuntime,
+            chromeProfileDir: effectiveProfileDir,
+            voiceRuntimeDecision,
+            initialPrompt: effectiveInitialPrompt,
+            initialPromptDelay: effectiveInitialPromptDelay,
+            live: liveMode,
+            liveContext: effectiveLiveContext,
+            includeSessionContext: effectiveIncludeSessionContext,
+            liveTools: explicitLiveTools,
+            toolManifestPath: undefined,
+            toolCount: null,
+            out: effectiveOut,
+            capture: effectiveCapture,
+          })
         : undefined;
+    const resolvedMeetingProfile:
+      | { profile: MeetingResolvedProfile; path: string | null; public: Record<string, unknown> }
+      | undefined = inheritedResolvedProfile
+      ? {
+          profile: inheritedResolvedProfile,
+          path: inheritedResolvedProfilePath!,
+          public: publicMeetingResolvedProfile(inheritedResolvedProfile, inheritedResolvedProfilePath),
+        }
+      : resolvedProfileInput
+        ? dryRun
+          ? (() => {
+              const profile = buildMeetingResolvedProfile(resolvedProfileInput);
+              return { profile, path: null, public: publicMeetingResolvedProfile(profile, null) };
+            })()
+          : (() => {
+              const written = writeMeetingResolvedProfile({
+                ...resolvedProfileInput,
+                label: `meeting-live-${Date.now()}`,
+              });
+              return { ...written, public: publicMeetingResolvedProfile(written.profile, written.path) };
+            })()
+        : undefined;
+    const resolvedProfileEnv = resolvedMeetingProfile?.path
+      ? { [RAVI_MEET_RESOLVED_PROFILE_ENV]: resolvedMeetingProfile.path }
+      : undefined;
+    const envOverrides = mergeEnvOverrides(resolvedProfileEnv);
+    const providerUsesResolvedProfile = Boolean(resolvedMeetingProfile);
     const args = buildGoogleMeetJoinArgs({
       url: url.trim(),
-      name,
-      out,
-      profileDir,
-      duration,
-      maxDuration,
-      emptyGrace,
-      capture,
-      realtimeTranscribe,
-      realtimeAgent: effectiveRealtimeAgent,
-      speakBack: effectiveSpeakBack,
-      realtimeVoice,
-      realtimeLanguage,
-      realtimeInstructions: realtimeInstructionsEnv ? undefined : effectiveRealtimeInstructions,
-      initialPrompt: initialPromptEnv ? undefined : effectiveInitialPrompt,
-      initialPromptDelay,
-      toolsManifestPath: realtimeToolsManifest?.path,
+      name: effectiveName,
+      out: effectiveOut,
+      profileDir: providerUsesResolvedProfile ? undefined : effectiveProfileDir,
+      duration: effectiveDuration,
+      maxDuration: effectiveMaxDuration,
+      emptyGrace: effectiveEmptyGrace,
+      capture: providerUsesResolvedProfile ? undefined : effectiveCapture,
       skipFinalize,
     });
 
     const basePayload = {
       provider: selectedProvider,
       providerRuntime: "google-meet-recorder",
+      meetingProfile: meetingProfile ? publicMeetingProfile(meetingProfile) : null,
+      voiceRuntime: publicVoiceRuntimeDecision(voiceRuntimeDecision),
+      nativeMeetingSession: publicNativeMeetingRuntimeSession(nativeMeetingRuntime),
+      resolvedMeetingProfile: resolvedMeetingProfile?.public ?? null,
+      voiceRuntimePreflight: null,
       mode: dryRun ? "dry-run" : "foreground",
       args,
     };
@@ -835,29 +853,27 @@ export class MeetingsCommands {
       provider: selectedProvider,
       providerRuntime: "google-meet-recorder",
       url: url.trim(),
-      name: name ?? null,
-      out: out ?? "~/.ravi/meetings/runs",
-      profileDir: profileDir ?? null,
-      duration: duration ?? null,
-      maxDuration: maxDuration ?? null,
-      emptyGrace: emptyGrace ?? null,
-      capture: capture ?? null,
-      realtimeTranscribe: Boolean(realtimeTranscribe),
-      realtimeAgent: effectiveRealtimeAgent,
-      speakBack: effectiveSpeakBack,
+      meetingProfile: meetingProfile ? publicMeetingProfile(meetingProfile) : null,
+      meetingProfileId: meetingProfile?.id ?? null,
+      name: effectiveName ?? null,
+      out: effectiveOut ?? "~/.ravi/meetings/runs",
+      profileDir: effectiveProfileDir ?? null,
+      duration: effectiveDuration ?? null,
+      maxDuration: effectiveMaxDuration ?? null,
+      emptyGrace: effectiveEmptyGrace ?? null,
+      capture: effectiveCapture ?? null,
       live: liveMode,
-      liveAgentId: liveInstructions?.agentId ?? liveAgentId?.trim() ?? null,
-      liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
-      liveContext: liveContext?.trim() || null,
-      includeSessionContext: Boolean(includeSessionContext),
+      liveAgentId: nativeMeetingRuntime?.agentId ?? liveAgentForNativeRuntime ?? null,
+      liveAgentSessionName: nativeMeetingRuntime?.sessionName ?? null,
+      nativeMeetingSession: publicNativeMeetingRuntimeSession(nativeMeetingRuntime),
+      liveContext: effectiveLiveContext ?? null,
+      includeSessionContext: Boolean(effectiveIncludeSessionContext),
       initialPromptChars: effectiveInitialPrompt?.length ?? null,
-      initialPromptDelay: initialPromptDelay ?? null,
+      initialPromptDelay: effectiveInitialPromptDelay ?? null,
+      voiceRuntime: publicVoiceRuntimeDecision(voiceRuntimeDecision),
+      resolvedMeetingProfile: resolvedMeetingProfile?.public ?? null,
+      voiceRuntimePreflight: null,
       liveTools: explicitLiveTools || null,
-      realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
-      realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
-      realtimeInstructionsChars: liveInstructions?.charCount ?? effectiveRealtimeInstructions?.length ?? null,
-      realtimeVoice: realtimeVoice ?? null,
-      realtimeLanguage: realtimeLanguage ?? null,
       skipFinalize: Boolean(skipFinalize),
       async: shouldRunAsync || asyncWorker === true,
     };
@@ -873,20 +889,21 @@ export class MeetingsCommands {
         providerRuntime: "google-meet-recorder",
         async: shouldRunAsync || asyncWorker === true,
         skipFinalize: Boolean(skipFinalize),
-        realtimeTranscribe: Boolean(realtimeTranscribe),
-        realtimeAgent: effectiveRealtimeAgent,
-        speakBack: effectiveSpeakBack,
+        meetingProfile: meetingProfile ? publicMeetingProfile(meetingProfile) : null,
+        meetingProfileId: meetingProfile?.id ?? null,
         live: liveMode,
-        liveAgentId: liveInstructions?.agentId ?? liveAgentId?.trim() ?? null,
-        liveAgentSessionName: liveInstructions?.sessionName ?? ctx.sessionName ?? null,
-        liveContext: liveContext?.trim() || null,
-        includeSessionContext: Boolean(includeSessionContext),
+        liveAgentId: nativeMeetingRuntime?.agentId ?? liveAgentForNativeRuntime ?? null,
+        liveAgentSessionName: nativeMeetingRuntime?.sessionName ?? null,
+        nativeMeetingSession: publicNativeMeetingRuntimeSession(nativeMeetingRuntime),
+        liveContext: effectiveLiveContext ?? null,
+        includeSessionContext: Boolean(effectiveIncludeSessionContext),
         initialPromptChars: effectiveInitialPrompt?.length ?? null,
-        initialPromptDelay: initialPromptDelay ?? null,
+        initialPromptDelay: effectiveInitialPromptDelay ?? null,
+        voiceRuntime: publicVoiceRuntimeDecision(voiceRuntimeDecision),
+        resolvedMeetingProfile: resolvedMeetingProfile?.public ?? null,
+        voiceRuntimePreflight: null,
         liveTools: explicitLiveTools || null,
-        realtimeToolsManifestPath: realtimeToolsManifest?.path ?? null,
-        realtimeToolCount: realtimeToolsManifest?.manifest?.toolCount ?? null,
-        realtimeInstructionsChars: liveInstructions?.charCount ?? effectiveRealtimeInstructions?.length ?? null,
+        chromeProfileDir: effectiveProfileDir ?? null,
       },
       lineage: {
         source: "ravi meetings join",
@@ -902,11 +919,8 @@ export class MeetingsCommands {
 
     if (dryRun) {
       const dryRunEnv = {
-        ...(realtimeInstructionsEnv
-          ? { [RAVI_REALTIME_INSTRUCTIONS_ENV]: `[set:${effectiveRealtimeInstructions?.length ?? 0} chars]` }
-          : {}),
-        ...(initialPromptEnv
-          ? { [RAVI_MEET_INITIAL_PROMPT_ENV]: `[set:${effectiveInitialPrompt?.length ?? 0} chars]` }
+        ...(resolvedMeetingProfile
+          ? { [RAVI_MEET_RESOLVED_PROFILE_ENV]: resolvedMeetingProfile.path ?? "[dry-run:not-written]" }
           : {}),
       };
       const dryRunPayload = {
@@ -918,11 +932,8 @@ export class MeetingsCommands {
         console.log("Meeting provider invocation validated.");
         console.log(`Provider: ${selectedProvider}`);
         console.log(`Args: ${args.join(" ")}`);
-        if (realtimeInstructionsEnv) {
-          console.log(`${RAVI_REALTIME_INSTRUCTIONS_ENV}: [set:${effectiveRealtimeInstructions?.length ?? 0} chars]`);
-        }
-        if (initialPromptEnv) {
-          console.log(`${RAVI_MEET_INITIAL_PROMPT_ENV}: [set:${effectiveInitialPrompt?.length ?? 0} chars]`);
+        if (resolvedMeetingProfile) {
+          console.log(`${RAVI_MEET_RESOLVED_PROFILE_ENV}: ${resolvedMeetingProfile.path ?? "[dry-run:not-written]"}`);
         }
       }
       return dryRunPayload;
@@ -942,26 +953,20 @@ export class MeetingsCommands {
       const workerArgs = buildGoogleMeetJoinWorkerArgs({
         provider: selectedProvider,
         url: url.trim(),
-        name,
-        out,
-        profileDir,
-        duration,
-        maxDuration,
-        emptyGrace,
-        capture,
-        realtimeTranscribe,
-        realtimeAgent: effectiveRealtimeAgent,
-        speakBack: effectiveSpeakBack,
-        realtimeVoice,
-        realtimeLanguage,
-        realtimeInstructions: realtimeInstructionsEnv ? undefined : effectiveRealtimeInstructions,
-        initialPrompt: initialPromptEnv ? undefined : effectiveInitialPrompt,
-        initialPromptDelay,
-        live: liveMode,
-        liveAgentId: liveInstructions?.agentId ?? liveAgentId,
-        liveContext,
-        includeSessionContext,
-        toolsManifestPath: realtimeToolsManifest?.path,
+        name: effectiveName,
+        out: effectiveOut,
+        profileDir: providerUsesResolvedProfile ? undefined : effectiveProfileDir,
+        duration: effectiveDuration,
+        maxDuration: effectiveMaxDuration,
+        emptyGrace: effectiveEmptyGrace,
+        capture: providerUsesResolvedProfile ? undefined : effectiveCapture,
+        voiceRuntime: providerUsesResolvedProfile
+          ? undefined
+          : (voiceRuntimeDecision.runtimeId ?? effectiveVoiceRuntime),
+        live: providerUsesResolvedProfile ? false : liveMode,
+        liveAgentId: providerUsesResolvedProfile ? undefined : liveAgentForNativeRuntime,
+        liveContext: providerUsesResolvedProfile ? undefined : effectiveLiveContext,
+        includeSessionContext: providerUsesResolvedProfile ? false : effectiveIncludeSessionContext,
         skipFinalize,
         artifactId: artifact.id,
       });
@@ -1220,68 +1225,160 @@ export class MeetingsCommands {
   }
 
   @Command({
-    name: "realtime-tools",
-    description: "Export Ravi-authorized CLI tools as OpenAI Realtime function tools",
+    name: "voice-runtimes",
+    description: "List meeting voice runtime candidates and current recommendation",
   })
-  @CommandAccess({ kind: "read", resource: "meetings", action: "realtime-tools", risk: "low" })
-  @CliOnly()
-  @Returns(looseObjectSchema)
-  realtimeTools(
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({ flags: "--tools <names>", description: "Comma-separated Ravi tool names allowlist" }) tools?: string,
-  ) {
-    const manifest = buildRealtimeToolManifestForCurrentContext(tools ?? "");
-
-    if (asJson) {
-      printJson(manifest);
-    } else {
-      console.log(`Realtime tools: ${manifest.toolCount}`);
-      console.log(`Agent: ${manifest.agentId ?? "-"}`);
-      console.log(`Session: ${manifest.sessionName ?? "-"}`);
-    }
-    return manifest;
-  }
-
-  @Command({
-    name: "realtime-call",
-    description: "Execute one Ravi dynamic tool call from an OpenAI Realtime session",
-  })
-  @CommandAccess({ kind: "mutate", resource: "meetings", action: "realtime-call", risk: "high" })
-  @CliOnly()
-  @Returns(looseObjectSchema)
-  async realtimeCall(
-    @Option({ flags: "--tool <name>", description: "Runtime dynamic tool name" }) toolName?: string,
-    @Option({ flags: "--arguments-json <json>", description: "Function call arguments JSON" }) argumentsJson?: string,
-    @Option({ flags: "--call-id <id>", description: "Provider function call id" }) callId?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-  ) {
-    if (!toolName?.trim()) fail("Missing --tool <name>.");
-    const context = requireRuntimeContext();
-    const hostServices = createMeetingRuntimeHostServices(context);
-    const result = await hostServices.executeDynamicTool(
-      {
-        toolName: toolName.trim(),
-        callId,
-        arguments: parseJsonArgument(argumentsJson, "--arguments-json"),
-        rawRequest: {
-          source: "ravi.meetings.realtime",
-          callId: callId ?? null,
-        },
-      },
-      {
-        eventData: {
-          source: "ravi.meetings.realtime",
-          toolName: toolName.trim(),
-          callId: callId ?? null,
-        },
-      },
-    );
-    const payload = serializeRuntimeDynamicToolResultForRealtime(toolName.trim(), result);
+  @CommandAccess({ kind: "read", resource: "meetings", action: "voice-runtimes", risk: "low" })
+  @Returns(meetingVoiceRuntimesReturnSchema)
+  voiceRuntimes(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const candidates = listMeetingVoiceRuntimeCandidates();
+    const payload = {
+      defaultRuntimeId: DEFAULT_MEETING_VOICE_RUNTIME_ID,
+      recommendation:
+        "Start Google Meet live mode with ravi-native. Keep Pipecat and LiveKit as planned adapters behind the same meeting channel/runtime boundary.",
+      candidates,
+    };
 
     if (asJson) {
       printJson(payload);
     } else {
-      console.log(`${payload.ok ? "ok" : "failed"}: ${toolName.trim()}`);
+      console.log(`Default meeting voice runtime: ${DEFAULT_MEETING_VOICE_RUNTIME_ID}`);
+      for (const candidate of candidates) {
+        console.log(`${candidate.id}: ${candidate.availability} (${candidate.kind})`);
+      }
+    }
+    return payload;
+  }
+}
+
+@Group({
+  name: "meetings.profiles",
+  description: "Inspect and scaffold reusable meeting profiles",
+  scope: "open",
+})
+export class MeetingProfileCommands {
+  @Command({ name: "list", description: "List resolved meeting profiles" })
+  @CommandAccess({ kind: "read", resource: "meetings.profiles", action: "list", risk: "low" })
+  @Returns(meetingProfilesListReturnSchema)
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching profiles to skip (default: 0)" }) offset?: string,
+  ) {
+    const profiles = listMeetingProfiles();
+    const page = paginateCliItems(profiles, { limit, offset });
+    const pageProfiles = page.items;
+    const publicProfiles = pageProfiles.map(publicMeetingProfile);
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "meetings", "profiles", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageProfiles.length,
+      total: page.total,
+    });
+    const payload = {
+      total: page.total,
+      pagination,
+      items: publicProfiles,
+      profiles: publicProfiles,
+    };
+
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(
+        `Meeting profiles: ${pageProfiles.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}`,
+      );
+      for (const profile of pageProfiles) {
+        console.log(`${profile.id}: ${profile.label} (${profile.sourceKind})`);
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
+    }
+    return payload;
+  }
+
+  @Command({ name: "show", description: "Show one resolved meeting profile" })
+  @CommandAccess({ kind: "read", resource: "meetings.profiles", action: "show", risk: "low" })
+  @Returns(meetingProfileReturnSchema)
+  show(
+    @Arg("profileId", { description: "Meeting profile id" }) profileId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    let profile: ResolvedMeetingProfile;
+    try {
+      profile = resolveMeetingProfile(profileId);
+    } catch (error) {
+      fail(errorMessage(error));
+    }
+    const payload = publicMeetingProfile(profile);
+
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`Meeting profile: ${profile.id}`);
+      console.log(`Label: ${profile.label}`);
+      console.log(`Source: ${profile.sourceKind} :: ${profile.source}`);
+      console.log(`Provider: ${profile.provider}`);
+      console.log(`Voice runtime: ${profile.voice.runtime}`);
+      console.log(`Chrome profile: ${profile.chrome.profileDir ?? "-"}`);
+      console.log(`Tools: ${profile.live.tools.join(", ") || "-"}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "init", description: "Create a reusable meeting profile scaffold" })
+  @CommandAccess({ kind: "mutate", resource: "meetings.profiles", action: "init", risk: "medium" })
+  @Returns(meetingProfileInitReturnSchema)
+  init(
+    @Arg("profileId", { description: "Meeting profile id" }) profileId: string,
+    @Option({ flags: "--source <kind>", description: "workspace|user", defaultValue: "workspace" })
+    sourceKind?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const source = sourceKind?.trim() || "workspace";
+    if (source !== "workspace" && source !== "user") {
+      fail("Invalid source. Use workspace|user.");
+    }
+    let payload: ReturnType<typeof initMeetingProfile>;
+    try {
+      payload = initMeetingProfile(profileId, { sourceKind: source });
+    } catch (error) {
+      fail(errorMessage(error));
+    }
+
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`Meeting profile created: ${profileId}`);
+      console.log(`Path: ${payload.profilePath}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "validate", description: "Validate one meeting profile or the whole catalog" })
+  @CommandAccess({ kind: "read", resource: "meetings.profiles", action: "validate", risk: "low" })
+  @Returns(meetingProfilesValidateReturnSchema)
+  validate(
+    @Arg("profileId", { required: false, description: "Optional meeting profile id" }) profileId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const results = validateMeetingProfiles(profileId);
+    const invalid = results.filter((result) => !result.valid);
+    const payload = { valid: invalid.length === 0, results };
+
+    if (asJson) {
+      printJson(payload);
+    } else {
+      for (const result of results) {
+        console.log(`${result.valid ? "ok" : "failed"}: ${result.id} (${result.sourceKind})`);
+        if (result.error) console.log(`  ${result.error}`);
+      }
+    }
+    if (invalid.length > 0 && !asJson) {
+      fail(`Meeting profile validation failed for ${invalid.length} profile(s).`);
     }
     return payload;
   }

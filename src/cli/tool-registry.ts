@@ -39,6 +39,46 @@ export const RUNTIME_BUILTIN_TOOLS: RuntimeBuiltinToolDefinition[] = [
 ];
 
 export const SDK_TOOLS = RUNTIME_BUILTIN_TOOLS.map((tool) => tool.nativeName);
+const RUNTIME_BUILTIN_TOOL_ALIASES = new Map<string, string>();
+const RUNTIME_BUILTIN_TOOL_PROVIDER_ALIASES = [
+  ["shell", "Bash"],
+  ["command_execution", "Bash"],
+  ["exec_command", "Bash"],
+  ["read", "Read"],
+  ["read_file", "Read"],
+  ["file_read", "Read"],
+  ["fs_read", "Read"],
+  ["imageView", "Read"],
+  ["image_view", "Read"],
+  ["view_image", "Read"],
+  ["edit", "Edit"],
+  ["file_edit", "Edit"],
+  ["fs_edit", "Edit"],
+  ["file_change", "Edit"],
+  ["apply_patch", "Edit"],
+  ["write", "Write"],
+  ["file_write", "Write"],
+  ["fs_write", "Write"],
+  ["glob", "Glob"],
+  ["grep", "Grep"],
+] as const;
+
+for (const tool of RUNTIME_BUILTIN_TOOLS) {
+  RUNTIME_BUILTIN_TOOL_ALIASES.set(normalizeToolAliasKey(tool.nativeName), tool.nativeName);
+  RUNTIME_BUILTIN_TOOL_ALIASES.set(normalizeToolAliasKey(tool.capability), tool.nativeName);
+}
+
+for (const [alias, nativeName] of RUNTIME_BUILTIN_TOOL_PROVIDER_ALIASES) {
+  RUNTIME_BUILTIN_TOOL_ALIASES.set(normalizeToolAliasKey(alias), nativeName);
+}
+
+export const RUNTIME_BUILTIN_TOOL_HOOK_NAMES = [
+  ...new Set([
+    ...SDK_TOOLS,
+    ...RUNTIME_BUILTIN_TOOL_PROVIDER_ALIASES.map(([alias]) => alias),
+    ...RUNTIME_BUILTIN_TOOL_PROVIDER_ALIASES.map(([alias]) => normalizeToolAliasKey(alias)),
+  ]),
+];
 
 /** Named groups of built-in tools for bulk permission grants */
 export const TOOL_GROUPS: Record<string, string[]> = Object.fromEntries(
@@ -51,8 +91,22 @@ export const TOOL_GROUPS: Record<string, string[]> = Object.fromEntries(
 const BUILTIN_TOOL_BY_NATIVE_NAME = new Map(RUNTIME_BUILTIN_TOOLS.map((tool) => [tool.nativeName, tool]));
 const BUILTIN_TOOL_BY_CAPABILITY = new Map(RUNTIME_BUILTIN_TOOLS.map((tool) => [tool.capability, tool]));
 
+function normalizeToolAliasKey(value: string): string {
+  return value
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
+
+export function normalizeRuntimeBuiltinToolName(toolName: string): string | null {
+  const normalized = normalizeToolAliasKey(toolName);
+  return RUNTIME_BUILTIN_TOOL_ALIASES.get(normalized) ?? null;
+}
+
 export function getBuiltinToolCapability(toolName: string): string | undefined {
-  return BUILTIN_TOOL_BY_NATIVE_NAME.get(toolName)?.capability;
+  const nativeName = normalizeRuntimeBuiltinToolName(toolName) ?? toolName;
+  return BUILTIN_TOOL_BY_NATIVE_NAME.get(nativeName)?.capability;
 }
 
 export function getBuiltinToolNativeName(capability: string): string | undefined {

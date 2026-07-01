@@ -2,15 +2,18 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MeetingsCommands } from "./meetings.js";
+import { runWithContext } from "../context.js";
+import { MeetingProfileCommands, MeetingsCommands } from "./meetings.js";
 
 let tempDir: string | undefined;
 let previousPath: string | undefined;
+let previousOpenAiApiKey: string | undefined;
 
 describe("MeetingsCommands", () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), "ravi-meetings-command-test-"));
     previousPath = process.env.PATH;
+    previousOpenAiApiKey = process.env.OPENAI_API_KEY;
     const binDir = join(tempDir, "bin");
     await mkdir(binDir, { recursive: true });
     const executable = join(binDir, "meet-record");
@@ -21,9 +24,12 @@ describe("MeetingsCommands", () => {
 
   afterEach(async () => {
     process.env.PATH = previousPath;
+    if (previousOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousOpenAiApiKey;
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
     tempDir = undefined;
     previousPath = undefined;
+    previousOpenAiApiKey = undefined;
   });
 
   it("validates Google Meet provider invocation without joining on dry-run", async () => {
@@ -38,11 +44,6 @@ describe("MeetingsCommands", () => {
         "120",
         "5",
         "webrtc-tap",
-        false,
-        false,
-        false,
-        undefined,
-        "pt",
         undefined,
         undefined,
         undefined,
@@ -50,7 +51,6 @@ describe("MeetingsCommands", () => {
         undefined,
         undefined,
         false,
-        undefined,
         false,
         undefined,
         undefined,
@@ -60,7 +60,12 @@ describe("MeetingsCommands", () => {
       ),
     );
 
-    const payload = JSON.parse(output) as { mode: string; provider: string; args: string[] };
+    const payload = JSON.parse(output) as {
+      mode: string;
+      provider: string;
+      args: string[];
+      voiceRuntime: Record<string, unknown>;
+    };
     expect(result).toMatchObject({ mode: "dry-run", provider: "google-meet" });
     expect(payload).toMatchObject({ mode: "dry-run", provider: "google-meet" });
     expect(payload.args).toEqual(
@@ -78,10 +83,117 @@ describe("MeetingsCommands", () => {
         "5",
         "--capture",
         "webrtc-tap",
-        "--realtime-language",
-        "pt",
       ]),
     );
+    expect(payload.voiceRuntime).toMatchObject({
+      enabled: false,
+      runtimeId: null,
+      runnable: true,
+    });
+  });
+
+  it("lists meeting voice runtime candidates", async () => {
+    const { output, result } = await captureConsole(() => new MeetingsCommands().voiceRuntimes(true));
+
+    const payload = JSON.parse(output) as { defaultRuntimeId: string; candidates: Array<{ id: string }> };
+    expect(result.defaultRuntimeId).toBe("ravi-native");
+    expect(payload.defaultRuntimeId).toBe("ravi-native");
+    expect(payload.candidates.map((candidate) => candidate.id)).toEqual(["ravi-native", "pipecat", "livekit"]);
+  });
+
+  it("lists and shows reusable meeting profiles", async () => {
+    const { output, result } = await captureConsole(() => new MeetingProfileCommands().show("default", true));
+
+    const payload = JSON.parse(output) as { id: string; chrome: { profileDir: string } };
+    expect(result).toMatchObject({
+      id: "default",
+      chrome: {
+        profileDir: "~/.ravi/meet-recorder/chrome-profile",
+      },
+    });
+    expect(payload.id).toBe("default");
+    expect(payload.chrome.profileDir).toBe("~/.ravi/meet-recorder/chrome-profile");
+  });
+
+  it("uses meeting profile defaults through join --profile", async () => {
+    const { output, result } = await captureConsole(() =>
+      new MeetingsCommands().join(
+        "google-meet",
+        "https://meet.google.com/abc-defg-hij",
+        undefined,
+        "/tmp/ravi-meetings",
+        undefined,
+        undefined,
+        "120",
+        "5",
+        "webrtc-tap",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+        undefined,
+        "default",
+      ),
+    );
+
+    const payload = JSON.parse(output) as {
+      args: string[];
+      meetingProfile: { id: string; chrome: { profileDir: string } };
+      resolvedMeetingProfile: { chrome: { profileDir: string; browserChannel: string } };
+    };
+    expect(result).toMatchObject({
+      meetingProfile: {
+        id: "default",
+      },
+    });
+    expect(payload.args).not.toContain("--profile-dir");
+    expect(payload.meetingProfile.chrome.profileDir).toBe("~/.ravi/meet-recorder/chrome-profile");
+    expect(payload.resolvedMeetingProfile.chrome).toEqual({
+      profileDir: "~/.ravi/meet-recorder/chrome-profile",
+      browserChannel: "chrome",
+    });
+  });
+
+  it("blocks live mode until the native Meet voice bridge is wired", async () => {
+    await expect(
+      runWithContext({ sessionKey: "meeting-test", sessionName: "meeting-test", agentId: "ravi-meet-v0" }, () =>
+        new MeetingsCommands().join(
+          "google-meet",
+          "https://meet.google.com/abc-defg-hij",
+          "Ravi",
+          "/tmp/ravi-meetings",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "entrei para testar",
+          "3",
+          undefined,
+          "ravi-meet-v0",
+          "teste live",
+          true,
+          true,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+          undefined,
+          "default",
+        ),
+      ),
+    ).rejects.toThrow("native Meet voice bridge");
   });
 
   it("opens Google Meet provider login with the selected persistent profile", async () => {

@@ -4,7 +4,7 @@ description: |
   Opera reunioes nativas do Ravi. Use quando precisar:
   - Fazer um agent entrar em Google Meet como participante visivel
   - Gravar/capturar uma reuniao e gerar artifact raw meet.md
-  - Rodar modo live com OpenAI Realtime, fala do agent e tools Ravi autorizadas
+  - Rodar modo live com runtime nativo do Ravi e agent registrado
   - Finalizar runs do meet-recorder em artifacts do Ravi
   - Auditar eventos, transcricao, midias e diagnosticos de uma meeting
 ---
@@ -37,6 +37,7 @@ Fluxo esperado:
 ```text
 ravi meetings join
   -> meeting.join artifact pending/running
+  -> sessao nativa meet-* quando --live
   -> google-meet provider visivel
   -> captura/transcricao/midia
   -> ravi meetings finalize
@@ -135,10 +136,12 @@ Contrato:
 - `--context <text>` e livre e opcional. Use para contexto manual da call.
 - `--include-session-context` e opcional. So use quando o usuario pedir para
   levar o contexto recente da sessao atual.
-- `--initial-prompt <text>` faz o proprio agent comecar a falar depois de
-  entrar, com delay default do provider. Use `--initial-prompt-delay <seconds>`
-  quando o usuario definir o tempo.
-- Live mode ativa Realtime agent e speak-back para a sala.
+- `--initial-prompt <text>` pertence a sessao nativa do Ravi. Use
+  `--initial-prompt-delay <seconds>` quando o usuario definir o tempo.
+- Live mode cria uma sessao normal do Ravi (`meet-google-meet-*`) com
+  `channel=meet` e provider `google-meet`.
+- O meet-recorder e apenas bridge/captura do Google Meet; ele nao recebe prompt,
+  tools, modelo ou runtime direto.
 
 Exemplo com contexto e fala inicial:
 
@@ -156,9 +159,10 @@ ravi meetings join \
   --json
 ```
 
-## Tools No Realtime
+## Tools No Runtime Nativo
 
-Realtime tools sempre usam allowlist explicita.
+Tools do live mode sempre usam allowlist explicita e passam pelo runtime nativo
+da sessao Ravi.
 
 Nunca use:
 
@@ -177,26 +181,6 @@ ravi meetings join \
   --live \
   --agent ravi-meet-v0 \
   --tools tasks_list,tasks_show,artifacts_show \
-  --json
-```
-
-Para exportar/inspecionar o manifest de tools sem entrar em call:
-
-```bash
-ravi meetings realtime-tools \
-  --tools tasks_list,tasks_show,artifacts_show \
-  --json
-```
-
-`realtime-call` e uma superficie interna para executar uma tool dinamica a
-partir de uma function call do Realtime. Nao chame manualmente sem um payload
-real vindo do provider:
-
-```bash
-ravi meetings realtime-call \
-  --tool <name> \
-  --arguments-json '<json>' \
-  --call-id <provider-call-id> \
   --json
 ```
 
@@ -250,7 +234,7 @@ O `meet.md` deve referenciar cada midia capturada. O run dir tambem pode conter:
 
 - `webrtc-tap/manifest.json`;
 - tracks individuais `.webm`;
-- `realtime-webrtc/events.jsonl`;
+- diagnosticos do provider/captura;
 - screenshots e snapshots de diagnostico do Meet UI.
 
 ## Debug Operacional
@@ -260,8 +244,6 @@ Se a call falhar ou parecer travada:
 1. Veja os eventos do artifact `meeting.join`.
 2. Leia o `metadata.json` do run dir se ja existir.
 3. Confirme `admissionStatus`, `failures`, `nextSteps` e media refs.
-4. Verifique se `OPENAI_API_KEY` chegou ao processo quando Realtime foi pedido,
-   sem expor o valor.
-5. Rode novamente com `--dry-run --json` antes de repetir um join.
+4. Rode novamente com `--dry-run --json` antes de repetir um join.
 
 Nao reexecute em loop. Corrija a causa observavel primeiro.
