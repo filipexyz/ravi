@@ -3106,6 +3106,18 @@ export type ContextCodexBashHookInput = Record<string, never>;
 /** Return shape for `context.codex-bash-hook`. */
 export type ContextCodexBashHookReturn = Record<string, unknown>;
 
+/** Input shape for `context.codex-tool-hook`. */
+export type ContextCodexToolHookInput = Record<string, never>;
+
+/** Return shape for `context.codex-tool-hook`. */
+export type ContextCodexToolHookReturn = {
+  hookSpecificOutput?: {
+    hookEventName: "PreToolUse";
+    permissionDecision: "deny";
+    permissionDecisionReason: string;
+  };
+};
+
 /** Input shape for `context.credentials.add`. */
 export type ContextCredentialsAddInput = {
   contextKey: string;
@@ -3159,6 +3171,45 @@ export type ContextIssueInput = {
 
 /** Return shape for `context.issue`. */
 export type ContextIssueReturn = Record<string, unknown>;
+
+/** Input shape for `context.issue-root`. */
+export type ContextIssueRootInput = {
+  agent?: string;
+  cliName: string;
+  kind?: string;
+  label?: string;
+  profile?: string;
+  setDefault?: boolean;
+  skipSave?: boolean;
+  ttl?: string;
+};
+
+/** Return shape for `context.issue-root`. */
+export type ContextIssueRootReturn = {
+  agentId: string | null;
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  capabilitiesCount: number;
+  cliName: string;
+  contextId: string;
+  contextKey: string;
+  createdAt: number;
+  credential: {
+    isDefault: boolean;
+    path: string | null;
+    saved: boolean;
+  };
+  env: Record<string, string>;
+  expiresAt: number | null;
+  kind: string;
+  label: string;
+  metadata: (Record<string, unknown>) | null;
+  profile: string;
+};
 
 /** Input shape for `context.lineage`. */
 export type ContextLineageInput = {
@@ -4356,21 +4407,6 @@ export type DaemonEnvReturn = {
   existedBefore: boolean;
   openedEditor: boolean;
   path: string;
-  [k: string]: unknown;
-};
-
-/** Input shape for `daemon.init-admin-key`. */
-export type DaemonInitAdminKeyInput = {
-  fromEnv?: boolean;
-  label?: string;
-  noStore?: boolean;
-  printOnly?: boolean;
-};
-
-/** Return shape for `daemon.init-admin-key`. */
-export type DaemonInitAdminKeyReturn = {
-  action: "init-admin-key";
-  changed: boolean;
   [k: string]: unknown;
 };
 

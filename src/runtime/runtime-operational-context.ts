@@ -119,11 +119,17 @@ function formatCapabilities(capabilities: ContextCapability[]): string[] {
   }
 
   const toolCaps = capabilities.filter((cap) => cap.objectType === "tool");
-  const groupCaps = capabilities.filter((cap) => cap.objectType === "group");
+  const toolgroupCaps = capabilities.filter((cap) => cap.objectType === "toolgroup");
+  const actionCaps = capabilities.filter(
+    (cap) => (cap.permission === "read" || cap.permission === "mutate") && cap.objectType !== "tool",
+  );
   const preview = [
     ...toolCaps,
-    ...groupCaps,
-    ...capabilities.filter((cap) => cap.objectType !== "tool" && cap.objectType !== "group"),
+    ...toolgroupCaps,
+    ...actionCaps,
+    ...capabilities.filter(
+      (cap) => cap.objectType !== "tool" && cap.objectType !== "toolgroup" && !actionCaps.includes(cap),
+    ),
   ]
     .slice(0, CAPABILITY_PREVIEW_LIMIT)
     .map(formatCapability);
@@ -131,7 +137,8 @@ function formatCapabilities(capabilities: ContextCapability[]): string[] {
   return [
     `- capabilities: ${capabilities.length}`,
     `- tool capabilities: ${toolCaps.length}`,
-    `- command-group capabilities: ${groupCaps.length}`,
+    `- toolgroup capabilities: ${toolgroupCaps.length}`,
+    `- semantic action capabilities: ${actionCaps.length}`,
     `- preview:`,
     ...preview.map((capability) => `  - \`${capability}\``),
     ...(capabilities.length > preview.length

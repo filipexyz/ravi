@@ -55,7 +55,9 @@ function bootstrapCapabilitiesFor(subjectType: string): ContextCapability[] {
   return [
     { permission: "use", objectType: "tool", objectId: "*", source },
     { permission: "use", objectType: "toolgroup", objectId: "*", source },
-    { permission: "execute", objectType: "group", objectId: "*", source },
+    { permission: "read", objectType: "context", objectId: "codex-bash-hook", source },
+    { permission: "read", objectType: "sessions", objectId: "info", source },
+    { permission: "read", objectType: "sessions", objectId: "actions", source },
     ...SAFE_EXECUTABLES.map((objectId) => ({
       permission: "execute",
       objectType: "executable",

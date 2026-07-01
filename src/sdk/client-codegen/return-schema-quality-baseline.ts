@@ -148,7 +148,6 @@ export const WEAK_PUBLIC_RETURN_COMMANDS_BASELINE = [
   "cron.set",
   "cron.show",
   "daemon.env",
-  "daemon.init-admin-key",
   "daemon.install",
   "daemon.logs",
   "daemon.restart",

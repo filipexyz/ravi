@@ -491,6 +491,21 @@ rendererHints:
     ).toEqual(["tasks.report", "use:tool:tasks_done"]);
   });
 
+  it("rejects legacy command-group observer permission grants", () => {
+    expect(() =>
+      dbUpsertObserverRule({
+        id: "legacy-command-grant",
+        scope: "session",
+        sourceSession: "runtime-source",
+        observerAgentId: "observer",
+        observerRole: "legacy-command-grant",
+        observerMode: "report",
+        eventTypes: ["turn.complete"],
+        permissionGrants: ["execute:group:tasks"],
+      }),
+    ).toThrow("Legacy observer permission grant is not supported");
+  });
+
   it("includes rule instructions from metadata in observer prompts", async () => {
     const session = getOrCreateSession("instruction-source", "worker", "/tmp/worker", { name: "instruction-source" });
     dbUpsertObserverRule({

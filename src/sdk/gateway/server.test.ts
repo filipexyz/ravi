@@ -5,8 +5,7 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { startGateway, type GatewayHandle } from "./server.js";
-import { ADMIN_BOOTSTRAP_KIND, createRuntimeContext } from "../../runtime/context-registry.js";
-import { getDb, type ContextRecord } from "../../router/router-db.js";
+import type { ContextRecord } from "../../router/router-db.js";
 import type { StreamAuditEvent, StreamChannel } from "./streaming/types.js";
 
 @Group({ name: "demo", description: "Server demo", scope: "open" })
@@ -32,7 +31,6 @@ class ServerTasksCommands {
 const registry = buildRegistry([ServerDemoCommands, ServerTasksCommands]);
 
 let handle: GatewayHandle;
-let adminContextId: string;
 const streamAudits: StreamAuditEvent[] = [];
 
 const allowedContext: ContextRecord = {
@@ -98,11 +96,6 @@ const testStreamChannels: StreamChannel[] = [
 ];
 
 beforeAll(() => {
-  const admin = createRuntimeContext({
-    kind: ADMIN_BOOTSTRAP_KIND,
-    capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
-  });
-  adminContextId = admin.contextId;
   handle = startGateway({
     host: "127.0.0.1",
     port: 0,
@@ -126,7 +119,6 @@ beforeAll(() => {
 
 afterAll(async () => {
   if (handle) await handle.stop();
-  if (adminContextId) getDb().prepare("DELETE FROM contexts WHERE context_id = ?").run(adminContextId);
 });
 
 describe("gateway server — meta + health", () => {

@@ -3,8 +3,14 @@ import { readFileSync } from "node:fs";
 import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import {
+  codexHookReturnSchema,
+  commandEnvelopeReturnSchema,
+  contextRootIssueReturnSchema,
+  declareCommandReturns,
+} from "./operational-return-schemas.js";
+import {
+  createRuntimeContext,
   issueRuntimeContext,
   resolveRuntimeContextOrThrow,
   revokeRuntimeContext,
@@ -25,10 +31,15 @@ import {
   type CredentialsFile,
 } from "../../runtime/credentials-store.js";
 import { canWithCapabilityContext } from "../../permissions/provider-runtime.js";
+import {
+  getBuiltinPermissionProfile,
+  type BuiltinPermissionProfile,
+} from "../../permissions/permission-profile-catalog.js";
 import { authorizeRuntimeContext } from "../../approval/service.js";
 import type { ContextCapability } from "../../router/router-db.js";
 import { buildPreToolUseDenyResult, emitBashDeniedAudit, evaluateBashPermission } from "../../bash/hook.js";
 import { evaluateRuntimeCommandSkillGate } from "../../runtime/skill-gate.js";
+import { normalizeRuntimeBuiltinToolName } from "../tool-registry.js";
 import {
   formatInspectionSection,
   printInspectionBlock,
@@ -118,6 +129,27 @@ interface ContextIssuePayload {
   source: ContextRecord["source"] | null;
   metadata: Record<string, unknown> | null;
   env: Record<string, string>;
+}
+
+interface ContextRootIssuePayload {
+  contextId: string;
+  contextKey: string;
+  kind: string;
+  cliName: string;
+  profile: string;
+  label: string;
+  agentId: string | null;
+  createdAt: number;
+  expiresAt: number | null;
+  capabilities: ContextCapability[];
+  capabilitiesCount: number;
+  metadata: Record<string, unknown> | null;
+  env: Record<string, string>;
+  credential: {
+    saved: boolean;
+    path: string | null;
+    isDefault: boolean;
+  };
 }
 
 interface AgentRuntimeCleanupCandidate {
@@ -242,8 +274,8 @@ export class ContextCommands {
   @Command({ name: "check", description: "Check whether the current runtime context allows an action" })
   @CommandAccess({ kind: "read", resource: "context", action: "check", risk: "low" })
   check(
-    @Arg("permission", { description: "Permission name (e.g. execute, access, use)" }) permission: string,
-    @Arg("objectType", { description: "Object type (e.g. group, session, tool)" }) objectType: string,
+    @Arg("permission", { description: "Permission name (e.g. read, mutate, access, use)" }) permission: string,
+    @Arg("objectType", { description: "Object type (e.g. sessions, context, session, tool)" }) objectType: string,
     @Arg("objectId", { description: "Object identifier or pattern target" }) objectId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
@@ -265,8 +297,8 @@ export class ContextCommands {
   @Command({ name: "authorize", description: "Request approval and extend the current runtime context if approved" })
   @CommandAccess({ kind: "read", resource: "context", action: "authorize", risk: "low" })
   async authorize(
-    @Arg("permission", { description: "Permission name (e.g. execute, access, use)" }) permission: string,
-    @Arg("objectType", { description: "Object type (e.g. group, session, tool)" }) objectType: string,
+    @Arg("permission", { description: "Permission name (e.g. read, mutate, access, use)" }) permission: string,
+    @Arg("objectType", { description: "Object type (e.g. sessions, context, session, tool)" }) objectType: string,
     @Arg("objectId", { description: "Object identifier or pattern target" }) objectId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
@@ -342,6 +374,95 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printIssuedContext(payload));
+    return payload;
+  }
+
+  @Command({
+    name: "issue-root",
+    description: "Issue a profile-scoped root context for a local extension or long-lived CLI",
+  })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "issue-root", risk: "high", localOperator: true })
+  issueRoot(
+    @Arg("cliName", { description: "Logical local runtime name for audit and credentials" }) cliName: string,
+    @Option({ flags: "--profile <profile>", description: "Built-in permission profile to materialize" })
+    profile?: string,
+    @Option({ flags: "--ttl <duration>", description: "Explicit TTL like 30d or 300d" }) ttl?: string,
+    @Option({ flags: "--label <label>", description: "Credential label saved to ~/.ravi/credentials.json" })
+    label?: string,
+    @Option({ flags: "--agent <agentId>", description: "Optional existing agent principal for ownership binding" })
+    agentId?: string,
+    @Option({ flags: "--kind <kind>", description: "Context kind (default: extension-runtime)" })
+    kind = "extension-runtime",
+    @Option({ flags: "--skip-save", description: "Do not save this context key in the local credentials store" })
+    skipSave = false,
+    @Option({ flags: "--set-default", description: "Mark the saved credential as default" }) setDefault = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const normalizedCliName = normalizeRequiredToken(cliName, "cliName");
+    const builtinProfile = requireRootIssueProfile(profile);
+    const ttlMs = requireRootIssueTtl(ttl);
+    const contextKind = normalizeRootContextKind(kind);
+    const normalizedAgentId = normalizeOptionalToken(agentId);
+    const normalizedLabel = label?.trim() || builtinProfile.label;
+    const capabilities = builtinProfile.capabilities.map((capability) => ({
+      ...capability,
+      source: `permission-profile:${builtinProfile.id}`,
+    }));
+    const now = Date.now();
+    const runtimeInput: Parameters<typeof createRuntimeContext>[0] = {
+      kind: contextKind,
+      capabilities,
+      ttlMs,
+      metadata: {
+        issuedFor: normalizedCliName,
+        issuedAt: now,
+        issuanceMode: "root-profile",
+        issuedBy: "local-operator",
+        profile: builtinProfile.id,
+        profileLabel: builtinProfile.label,
+        label: normalizedLabel,
+      },
+    };
+    if (normalizedAgentId) {
+      runtimeInput.agentId = normalizedAgentId;
+    }
+    const context = createRuntimeContext(runtimeInput);
+
+    const credential = !skipSave
+      ? saveCredentialEntry(
+          context.contextKey,
+          {
+            context_id: context.contextId,
+            agent_id: context.agentId ?? "",
+            label: normalizedLabel,
+            kind: context.kind,
+            issued_at: context.createdAt,
+            expires_at: context.expiresAt ?? null,
+          },
+          setDefault,
+        )
+      : { saved: false, path: null, isDefault: false };
+
+    const payload: ContextRootIssuePayload = {
+      contextId: context.contextId,
+      contextKey: context.contextKey,
+      kind: context.kind,
+      cliName: normalizedCliName,
+      profile: builtinProfile.id,
+      label: normalizedLabel,
+      agentId: context.agentId ?? null,
+      createdAt: context.createdAt,
+      expiresAt: context.expiresAt ?? null,
+      capabilities: context.capabilities,
+      capabilitiesCount: context.capabilities.length,
+      metadata: context.metadata ?? null,
+      env: {
+        [RAVI_CONTEXT_KEY_ENV]: context.contextKey,
+      },
+      credential,
+    };
+
+    this.printPayload(payload, asJson, () => this.printIssuedRootContext(payload));
     return payload;
   }
 
@@ -515,6 +636,17 @@ export class ContextCommands {
     return output;
   }
 
+  @Command({
+    name: "codex-tool-hook",
+    description: "Evaluate a Codex PreToolUse native tool hook payload from stdin using the current Ravi context",
+  })
+  @CommandAccess({ kind: "read", resource: "context", action: "codex-tool-hook", risk: "low" })
+  async codexToolHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {
+    const output = await this.handleCodexToolHook();
+    console.log(JSON.stringify(output));
+    return output;
+  }
+
   private requireResolvedContext(options: { touch?: boolean; readOnly?: boolean } = {}) {
     const inlineContext = getContext()?.context;
     if (inlineContext) {
@@ -591,6 +723,59 @@ export class ContextCommands {
     } catch (error) {
       return buildPreToolUseDenyResult(
         `Failed to resolve Ravi context for Codex bash hook: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private async handleCodexToolHook(inputPayload?: Record<string, unknown>): Promise<Record<string, unknown>> {
+    let payload: Record<string, unknown>;
+    try {
+      payload = inputPayload ?? parseCodexHookPayload();
+    } catch (error) {
+      return buildPreToolUseDenyResult(
+        `Invalid Codex hook payload: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    const toolInput = asRecord(payload.tool_input);
+    const rawToolName = firstString(payload.tool_name, payload.toolName, payload.tool, payload.name);
+    const inferredToolName = rawToolName ?? (typeof toolInput?.command === "string" ? "Bash" : undefined);
+    const toolName = inferredToolName ? normalizeRuntimeBuiltinToolName(inferredToolName) : null;
+
+    if (!toolName) {
+      return buildPreToolUseDenyResult(`Unsupported Codex native tool: ${inferredToolName ?? "unknown"}`);
+    }
+
+    if (toolName === "Bash") {
+      return this.handleCodexBashHook(payload);
+    }
+
+    try {
+      const context = this.requireResolvedContext({ touch: false, readOnly: true });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: toolName,
+        eventData: {
+          runtimeHook: {
+            provider: "codex",
+            toolName: inferredToolName,
+            normalizedToolName: toolName,
+          },
+        },
+      });
+
+      if (!result.allowed) {
+        return buildPreToolUseDenyResult(
+          result.reason ?? `Permission denied: agent:${context.agentId ?? "unknown"} cannot use tool:${toolName}`,
+        );
+      }
+
+      return {};
+    } catch (error) {
+      return buildPreToolUseDenyResult(
+        `Failed to resolve Ravi context for Codex tool hook: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -711,6 +896,28 @@ export class ContextCommands {
     printInspectionField("Parent", payload.parentContextId, DERIVED_META);
     printInspectionField("Created", formatTimestamp(payload.createdAt), DERIVED_META);
     printInspectionField("Expires", formatTimestamp(payload.expiresAt), DERIVED_META);
+    console.log(`\n${formatInspectionSection(`  Capabilities (${payload.capabilitiesCount})`, DERIVED_META)}`);
+    this.printCapabilitiesList(payload.capabilities);
+    console.log(`\n${formatInspectionSection("  Export", DERIVED_META)}`);
+    for (const [name, value] of Object.entries(payload.env)) {
+      console.log(`    ${name}=${value}`);
+    }
+  }
+
+  private printIssuedRootContext(payload: ContextRootIssuePayload): void {
+    console.log(`\nIssued Root Context: ${payload.contextId}\n`);
+    printInspectionField("Kind", payload.kind, DERIVED_META);
+    printInspectionField("CLI", payload.cliName, DERIVED_META);
+    printInspectionField("Profile", payload.profile, DERIVED_META);
+    printInspectionField("Agent", payload.agentId ?? "-", DERIVED_META);
+    printInspectionField("Label", payload.label, DERIVED_META);
+    printInspectionField("Created", formatTimestamp(payload.createdAt), DERIVED_META);
+    printInspectionField("Expires", formatTimestamp(payload.expiresAt), DERIVED_META);
+    printInspectionField(
+      "Stored",
+      payload.credential.saved ? `${payload.credential.path}${payload.credential.isDefault ? " (default)" : ""}` : "no",
+      DERIVED_META,
+    );
     console.log(`\n${formatInspectionSection(`  Capabilities (${payload.capabilitiesCount})`, DERIVED_META)}`);
     this.printCapabilitiesList(payload.capabilities);
     console.log(`\n${formatInspectionSection("  Export", DERIVED_META)}`);
@@ -937,7 +1144,7 @@ export class ContextCredentialsCommands {
     } else {
       console.log(`\nCredentials: ${path}`);
       if (!exists) {
-        console.log("  (file not yet written; run 'ravi daemon init-admin-key' or 'ravi context credentials add')");
+        console.log("  (file not yet written; run 'ravi context credentials add')");
       } else {
         console.log(`  default: ${data.default ?? "(none)"}`);
         if (page.items.length === 0) {
@@ -1069,8 +1276,10 @@ declareCommandReturns(ContextCommands, {
   check: commandEnvelopeReturnSchema,
   cleanupAgentRuntime: commandEnvelopeReturnSchema,
   codexBashHook: commandEnvelopeReturnSchema,
+  codexToolHook: codexHookReturnSchema,
   info: commandEnvelopeReturnSchema,
   issue: commandEnvelopeReturnSchema,
+  issueRoot: contextRootIssueReturnSchema,
   lineage: commandEnvelopeReturnSchema,
   list: commandEnvelopeReturnSchema,
   prune: commandEnvelopeReturnSchema,
@@ -1130,17 +1339,101 @@ function parseCapability(input: string): ContextCapability {
   const firstColon = input.indexOf(":");
   const secondColon = input.indexOf(":", firstColon + 1);
   if (firstColon === -1 || secondColon === -1 || secondColon === input.length - 1) {
-    fail(`Invalid capability format: "${input}". Expected permission:objectType:objectId, e.g. execute:group:daemon`);
+    fail(`Invalid capability format: "${input}". Expected permission:objectType:objectId, e.g. read:sessions:info`);
   }
 
   const permission = input.slice(0, firstColon).trim();
   const objectType = input.slice(firstColon + 1, secondColon).trim();
   const objectId = input.slice(secondColon + 1).trim();
   if (!permission || !objectType || !objectId) {
-    fail(`Invalid capability format: "${input}". Expected permission:objectType:objectId, e.g. execute:group:daemon`);
+    fail(`Invalid capability format: "${input}". Expected permission:objectType:objectId, e.g. read:sessions:info`);
   }
 
   return { permission, objectType, objectId };
+}
+
+function requireRootIssueProfile(profile: string | undefined): BuiltinPermissionProfile {
+  const normalized = profile?.trim();
+  if (!normalized) {
+    fail("--profile is required for root context issuance");
+  }
+  if (normalized === "admin-bootstrap") {
+    fail("admin-bootstrap is retired; use a narrow permission profile such as whatsapp-extension-runtime");
+  }
+  const builtinProfile = getBuiltinPermissionProfile(normalized);
+  if (!builtinProfile) {
+    fail(`Unknown permission profile: ${normalized}`);
+  }
+  if (builtinProfile.capabilities.some((capability) => isAdminSystemCapability(capability))) {
+    fail(`Profile ${builtinProfile.id} includes admin system:* and cannot be used for root context issuance`);
+  }
+  return builtinProfile;
+}
+
+function requireRootIssueTtl(ttl: string | undefined): number {
+  if (!ttl?.trim()) {
+    fail("--ttl is required for root context issuance");
+  }
+  const ttlMs = parseDurationMs(ttl);
+  if (!ttlMs || ttlMs <= 0) {
+    fail("--ttl must be greater than zero");
+  }
+  return ttlMs;
+}
+
+function normalizeRootContextKind(kind: string | undefined): string {
+  const normalized = normalizeRequiredToken(kind ?? "extension-runtime", "kind");
+  if (["admin-bootstrap", "agent-runtime", "turn-runtime", "invocation-runtime"].includes(normalized)) {
+    fail(`${normalized} is not allowed for root context issuance`);
+  }
+  return normalized;
+}
+
+function normalizeRequiredToken(value: string | undefined, label: string): string {
+  const normalized = value?.trim();
+  if (!normalized) {
+    fail(`${label} is required`);
+  }
+  return normalized;
+}
+
+function normalizeOptionalToken(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized || undefined;
+}
+
+function isAdminSystemCapability(capability: { permission: string; objectType: string; objectId: string }): boolean {
+  return capability.permission === "admin" && capability.objectType === "system" && capability.objectId === "*";
+}
+
+function saveCredentialEntry(
+  contextKey: string,
+  entry: {
+    context_id: string;
+    agent_id: string;
+    label: string;
+    kind: string;
+    issued_at: number;
+    expires_at: number | null;
+  },
+  setDefault: boolean,
+): { saved: true; path: string; isDefault: boolean } {
+  const path = getCredentialsPath();
+  const file = loadCredentialsFileOrFail(path) ?? emptyCredentialsFile();
+  const next = upsertCredentialsEntry(file, contextKey, entry, { setDefault });
+  writeCredentialsFile(next, path);
+  return { saved: true, path, isDefault: next.default === contextKey };
+}
+
+function loadCredentialsFileOrFail(path: string): CredentialsFile | null {
+  try {
+    return readCredentialsFile(path);
+  } catch (err) {
+    if (err instanceof CredentialsFileError) {
+      fail(err.message);
+    }
+    throw err;
+  }
 }
 
 function parseDurationMs(input: string | undefined): number | undefined {
@@ -1162,4 +1455,13 @@ function parseDurationMs(input: string | undefined): number | undefined {
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
 }

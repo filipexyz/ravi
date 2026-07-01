@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
+import { enforceCliCommandAccess } from "../cli/command-access.js";
 import { agentCan } from "../permissions/provider-runtime.js";
-import { enforceScopeCheck } from "../permissions/scope.js";
 import type { AgentConfig } from "../router/index.js";
 import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
@@ -93,6 +93,15 @@ function turnContext(prompt: RuntimeLaunchPrompt): ToolContext {
   return toolContext as ToolContext;
 }
 
+function sessionsInfoAccess() {
+  return enforceCliCommandAccess({
+    group: "sessions",
+    command: "info",
+    access: { kind: "read", resource: "sessions", action: "info", risk: "low" },
+    source: "tool",
+  });
+}
+
 describe("delegated turn enforcement (end-to-end)", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-delegated-e2e-test-");
@@ -117,16 +126,16 @@ describe("delegated turn enforcement (end-to-end)", () => {
 
     expect(ctx.context?.kind).toBe("turn-runtime");
     expect(ctx.context?.metadata?.authorityMode).toBe("agent-identity");
-    const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
+    const decision = runWithContext(ctx, () => sessionsInfoAccess());
     expect(decision.allowed).toBe(true);
   });
 
   it("fails closed for an unresolved actor in the same powerful agent session", () => {
     const ctx = turnContext(unknownPrompt());
 
-    const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
+    const decision = runWithContext(ctx, () => sessionsInfoAccess());
     expect(decision.allowed).toBe(false);
-    expect(decision.errorMessage).toContain("execute on group:sessions_info");
+    expect(decision.errorMessage).toContain("Missing capability: read:sessions:info");
   });
 
   it("does not leak resolved actor state to the next unresolved speaker", () => {
@@ -143,7 +152,7 @@ describe("delegated turn enforcement (end-to-end)", () => {
 
     expect(runWithContext(ctx, () => agentCan(agent.id, "use", "tool", "Bash"))).toBe(true);
     expect(runWithContext(ctx, () => agentCan(agent.id, "admin", "system", "*"))).toBe(false);
-    const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
+    const decision = runWithContext(ctx, () => sessionsInfoAccess());
     expect(decision.allowed).toBe(true);
   });
 
@@ -158,14 +167,14 @@ describe("delegated turn enforcement (end-to-end)", () => {
   it("does not add extra cron authority without provider-owned automation config", () => {
     const ctx = turnContext(cronPrompt());
 
-    expect(runWithContext(ctx, () => agentCan(agent.id, "execute", "group", "sessions_info"))).toBe(true);
+    expect(runWithContext(ctx, () => agentCan(agent.id, "read", "sessions", "info"))).toBe(true);
     expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
   });
 
   it("keeps contact turns bounded to provider-owned agent identity authority", () => {
     const ctx = turnContext(contactPrompt("luis"));
 
-    const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
+    const decision = runWithContext(ctx, () => sessionsInfoAccess());
     expect(decision.allowed).toBe(true);
     expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
   });
