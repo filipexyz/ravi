@@ -22,11 +22,7 @@ function makeWorkspace(): string {
   return root;
 }
 
-function writeSpec(
-  cwd: string,
-  id: string,
-  overrides: Record<string, string> = {},
-): void {
+function writeSpec(cwd: string, id: string, overrides: Record<string, string> = {}): void {
   const parts = id.split("/");
   const depth = parts.length;
   const expectedKind = depth === 1 ? "domain" : depth === 2 ? "capability" : "feature";
@@ -65,21 +61,9 @@ function writeSpec(
   writeFileSync(join(dir, "SPEC.md"), frontmatter, "utf8");
 
   if (overrides.withCompanions !== "false") {
-    writeFileSync(
-      join(dir, "WHY.md"),
-      `# ${title} / WHY\n\n## Rationale\n\nTest rationale.\n`,
-      "utf8",
-    );
-    writeFileSync(
-      join(dir, "RUNBOOK.md"),
-      `# ${title} / RUNBOOK\n\n## Debug Flow\n\nTest runbook.\n`,
-      "utf8",
-    );
-    writeFileSync(
-      join(dir, "CHECKS.md"),
-      `# ${title} / CHECKS\n\n## Checks\n\n- Spec MUST be valid.\n`,
-      "utf8",
-    );
+    writeFileSync(join(dir, "WHY.md"), `# ${title} / WHY\n\n## Rationale\n\nTest rationale.\n`, "utf8");
+    writeFileSync(join(dir, "RUNBOOK.md"), `# ${title} / RUNBOOK\n\n## Debug Flow\n\nTest runbook.\n`, "utf8");
+    writeFileSync(join(dir, "CHECKS.md"), `# ${title} / CHECKS\n\n## Checks\n\n- Spec MUST be valid.\n`, "utf8");
   }
 }
 
@@ -117,10 +101,7 @@ describe("extractChangedSpecIds", () => {
       "src/omni/consumer.ts",
       "README.md",
     ];
-    expect(extractChangedSpecIds(files)).toEqual([
-      "channels/chats/reactions",
-      "quality/ci-gates",
-    ]);
+    expect(extractChangedSpecIds(files)).toEqual(["channels/chats/reactions", "quality/ci-gates"]);
   });
 
   it("returns empty array for non-spec changes", () => {
@@ -174,10 +155,7 @@ describe("runSpecGate", () => {
     writeSpec(cwd, "quality");
     writeSpec(cwd, "quality/ci-gates");
 
-    const result = runSpecGate(
-      [".ravi/specs/quality/ci-gates/SPEC.md"],
-      cwd,
-    );
+    const result = runSpecGate([".ravi/specs/quality/ci-gates/SPEC.md"], cwd);
 
     expect(result.ok).toBe(true);
     expect(result.changedSpecIds).toEqual(["quality/ci-gates"]);
@@ -192,16 +170,11 @@ describe("runSpecGate", () => {
     // Three-level spec declaring kind: capability instead of kind: feature
     writeSpec(cwd, "channels/chats/reactions", { kind: "capability" });
 
-    const result = runSpecGate(
-      [".ravi/specs/channels/chats/reactions/SPEC.md"],
-      cwd,
-    );
+    const result = runSpecGate([".ravi/specs/channels/chats/reactions/SPEC.md"], cwd);
 
     expect(result.ok).toBe(false);
     expect(result.errors.length).toBeGreaterThan(0);
-    const kindError = result.errors.find(
-      (e) => e.specId === "channels/chats/reactions" || e.specId === "*",
-    );
+    const kindError = result.errors.find((e) => e.specId === "channels/chats/reactions" || e.specId === "*");
     expect(kindError).toBeTruthy();
     expect(kindError!.error).toContain("kind");
   });
@@ -211,15 +184,10 @@ describe("runSpecGate", () => {
     writeSpec(cwd, "quality");
     writeSpec(cwd, "quality/ci-gates", { withCompanions: "false" });
 
-    const result = runSpecGate(
-      [".ravi/specs/quality/ci-gates/SPEC.md"],
-      cwd,
-    );
+    const result = runSpecGate([".ravi/specs/quality/ci-gates/SPEC.md"], cwd);
 
     expect(result.ok).toBe(false);
-    const companionErrors = result.errors.filter((e) =>
-      e.error.includes("missing required companion"),
-    );
+    const companionErrors = result.errors.filter((e) => e.error.includes("missing required companion"));
     expect(companionErrors.length).toBe(3);
   });
 
@@ -231,26 +199,22 @@ describe("runSpecGate", () => {
 });
 
 describe("runCoverageGate", () => {
-  it("passes when test file exists on disk", () => {
+  it("fails when test file exists on disk but not in the diff", () => {
     const cwd = makeWorkspace();
     writeTestFile(cwd, "src/omni/consumer-context.test.ts");
 
-    const result = runCoverageGate(
-      ["src/omni/consumer.ts"],
-      cwd,
-    );
+    const result = runCoverageGate(["src/omni/consumer.ts"], cwd);
 
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
     expect(result.triggeredPrefixes).toEqual(["src/omni/"]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain("no focused test in the diff");
   });
 
   it("passes when test file is in the diff", () => {
     const cwd = makeWorkspace();
 
-    const result = runCoverageGate(
-      ["src/omni/consumer.ts", "src/omni/consumer-context.test.ts"],
-      cwd,
-    );
+    const result = runCoverageGate(["src/omni/consumer.ts", "src/omni/consumer-context.test.ts"], cwd);
 
     expect(result.ok).toBe(true);
   });
@@ -258,34 +222,37 @@ describe("runCoverageGate", () => {
   it("fails for runtime change without focused test", () => {
     const cwd = makeWorkspace();
 
-    const result = runCoverageGate(
-      ["src/omni/consumer.ts"],
-      cwd,
-    );
+    const result = runCoverageGate(["src/omni/consumer.ts"], cwd);
 
     expect(result.ok).toBe(false);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]!.message).toContain("src/omni/");
-    expect(result.errors[0]!.message).toContain("no focused test found");
+    expect(result.errors[0]!.message).toContain("no focused test in the diff");
   });
 
   it("skips coverage gate for docs-only diff", () => {
-    const result = runCoverageGate(
-      ["docs/guide.md", ".ravi/specs/quality/SPEC.md"],
-    );
+    const result = runCoverageGate(["docs/guide.md", ".ravi/specs/quality/SPEC.md"]);
 
     expect(result.ok).toBe(true);
     expect(result.triggeredPrefixes).toEqual([]);
   });
 
-  it("passes for runtime change with existing test on disk", () => {
+  it("fails for runtime change with existing test on disk but not in diff", () => {
     const cwd = makeWorkspace();
     writeTestFile(cwd, "src/devin/client.test.ts");
 
-    const result = runCoverageGate(
-      ["src/devin/client.ts"],
-      cwd,
-    );
+    const result = runCoverageGate(["src/devin/client.ts"], cwd);
+
+    expect(result.ok).toBe(false);
+    expect(result.triggeredPrefixes).toEqual(["src/devin/"]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain("no focused test in the diff");
+  });
+
+  it("passes when test file is in the diff alongside source", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/devin/client.ts", "src/devin/client.test.ts"], cwd);
 
     expect(result.ok).toBe(true);
     expect(result.triggeredPrefixes).toEqual(["src/devin/"]);
@@ -300,10 +267,7 @@ describe("runQualityGate (combined)", () => {
     writeTestFile(cwd, "src/omni/consumer-context.test.ts");
 
     const result = runQualityGate(
-      [
-        ".ravi/specs/quality/ci-gates/SPEC.md",
-        "src/omni/consumer.ts",
-      ],
+      [".ravi/specs/quality/ci-gates/SPEC.md", "src/omni/consumer.ts", "src/omni/consumer-context.test.ts"],
       cwd,
     );
 
@@ -318,10 +282,7 @@ describe("runQualityGate (combined)", () => {
     writeSpec(cwd, "channels/chats");
     writeSpec(cwd, "channels/chats/reactions", { kind: "capability" });
 
-    const result = runQualityGate(
-      [".ravi/specs/channels/chats/reactions/SPEC.md"],
-      cwd,
-    );
+    const result = runQualityGate([".ravi/specs/channels/chats/reactions/SPEC.md"], cwd);
 
     expect(result.ok).toBe(false);
     expect(result.spec.ok).toBe(false);
@@ -330,10 +291,7 @@ describe("runQualityGate (combined)", () => {
   it("fails when coverage gate fails", () => {
     const cwd = makeWorkspace();
 
-    const result = runQualityGate(
-      ["src/omni/consumer.ts"],
-      cwd,
-    );
+    const result = runQualityGate(["src/omni/consumer.ts"], cwd);
 
     expect(result.ok).toBe(false);
     expect(result.coverage.ok).toBe(false);

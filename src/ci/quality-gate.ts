@@ -203,11 +203,11 @@ export function findTriggeredPrefixes(changedFiles: string[]): string[] {
  * Run the focused coverage gate against a list of changed files.
  *
  * For each triggered runtime/consumer prefix, verify that at least one
- * known test file for that prefix either:
- * - appears in the changed files (test was updated alongside source), or
- * - exists on disk (test suite already covers the path).
+ * known test file for that prefix appears in the changed files (test was
+ * updated or added alongside source). Existence on disk alone is not
+ * sufficient — the diff must include the focused test.
  */
-export function runCoverageGate(changedFiles: string[], cwd?: string): CoverageGateResult {
+export function runCoverageGate(changedFiles: string[], _cwd?: string): CoverageGateResult {
   const triggeredPrefixes = findTriggeredPrefixes(changedFiles);
   const result: CoverageGateResult = {
     ok: true,
@@ -219,22 +219,18 @@ export function runCoverageGate(changedFiles: string[], cwd?: string): CoverageG
     return result;
   }
 
-  const rootDir = cwd ?? process.cwd();
-
   for (const prefix of triggeredPrefixes) {
     const testFiles = RUNTIME_PATH_MAP[prefix];
     if (!testFiles || testFiles.length === 0) continue;
 
     const hasTestInDiff = testFiles.some((testFile) => changedFiles.some((f) => f.replace(/\\/g, "/") === testFile));
 
-    const hasTestOnDisk = testFiles.some((testFile) => existsSync(join(rootDir, testFile)));
-
-    if (!hasTestInDiff && !hasTestOnDisk) {
+    if (!hasTestInDiff) {
       result.ok = false;
       result.errors.push({
         path: prefix,
         prefix,
-        message: `Runtime/consumer path '${prefix}' changed but no focused test found. Expected one of: ${testFiles.join(", ")}`,
+        message: `Runtime/consumer path '${prefix}' changed but no focused test in the diff. Expected one of: ${testFiles.join(", ")}`,
       });
     }
   }

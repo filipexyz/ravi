@@ -6,8 +6,6 @@ on:
     paths-ignore:
       - "docs/**"
       - "site/**"
-      - ".ravi/specs/**/WHY.md"
-      - ".ravi/specs/**/RUNBOOK.md"
       - "examples/**"
       - "extensions/**"
       - ".claude-plugin/**"
@@ -22,23 +20,6 @@ on:
       - "LICENSE"
   pull_request:
     branches: [main, dev]
-    paths-ignore:
-      - "docs/**"
-      - "site/**"
-      - ".ravi/specs/**/WHY.md"
-      - ".ravi/specs/**/RUNBOOK.md"
-      - "examples/**"
-      - "extensions/**"
-      - ".claude-plugin/**"
-      - ".markdownlint.jsonc"
-      - ".githooks/**"
-      - ".github/workflows/docs.yml"
-      - ".github/workflows/site.yml"
-      - "AGENTS.md"
-      - "CLAUDE.md"
-      - "Makefile"
-      - ".env.example"
-      - "LICENSE"
 
 concurrency:
   group: ci-${{ github.ref }}

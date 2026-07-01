@@ -40,7 +40,7 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
 - Devin-authored deliveries MUST pass the same gate as any PR; if PR touches `src/devin/**`, run existing Devin coverage.
 - The gate MUST NOT require Notion, Devin, or other live secrets in CI.
 - The spec validation helper MUST extract changed spec ids from the GitHub diff using path prefix stripping on `.ravi/specs/`.
-- The focused coverage helper MUST map runtime/consumer paths to their corresponding test files and fail when a mapped path changes without its test file in the diff or test suite.
+- The focused coverage helper MUST map runtime/consumer paths to their corresponding test files and fail when a mapped path changes without its test file in the diff.
 
 ## Runtime/Consumer Path Mapping
 

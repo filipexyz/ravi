@@ -19,12 +19,12 @@ status: active
 
 ## Coverage Gate Checks
 
-- A diff containing `src/omni/consumer.ts` without a corresponding test file in the diff or test suite fails with a message naming the expected coverage.
+- A diff containing `src/omni/consumer.ts` without a corresponding test file in the diff fails with a message naming the expected coverage, even if the test file exists on disk.
 - A diff containing `src/omni/consumer.ts` and `src/omni/consumer-context.test.ts` passes the coverage gate.
 - A docs-only diff (`docs/**` or `.ravi/specs/**` only) skips the coverage gate but still runs spec validation.
 
 ## CI Integration Checks
 
 - `.github/workflows/ci.yml` includes a step that runs spec validation for PRs.
-- `.ravi/specs/**` is not excluded from CI via `paths-ignore`.
+- `.ravi/specs/**` is not excluded from CI via `paths-ignore` for pull_request events.
 - The gate runs without Notion, Devin, or external API secrets.

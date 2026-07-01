@@ -27,10 +27,7 @@ function getChangedFiles(): string[] {
   // Fall back to git diff against merge-base
   const base = process.env.GITHUB_BASE_REF || "main";
   try {
-    const output = execSync(
-      `git diff --name-only --diff-filter=ACMR origin/${base}...HEAD`,
-      { encoding: "utf8" },
-    );
+    const output = execSync(`git diff --name-only --diff-filter=ACMR origin/${base}...HEAD`, { encoding: "utf8" });
     return output
       .split("\n")
       .map((f) => f.trim())
