@@ -1,14 +1,4 @@
----
-id: channels/chats/reactions/runbook
-title: "Reaction Accounting Runbook"
-kind: capability
-domain: channels
-capability: reactions
-status: draft
-normative: false
----
-
-# Reaction Accounting Runbook
+# Reaction Accounting / RUNBOOK
 
 ## Verify Reaction Accounting Is Working
 

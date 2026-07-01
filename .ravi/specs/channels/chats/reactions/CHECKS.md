@@ -1,14 +1,4 @@
----
-id: channels/chats/reactions/checks
-title: "Reaction Accounting Checks"
-kind: capability
-domain: channels
-capability: reactions
-status: draft
-normative: false
----
-
-# Reaction Accounting Checks
+# Reaction Accounting / CHECKS
 
 ## Durable Persistence
 

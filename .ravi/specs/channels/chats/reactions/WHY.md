@@ -1,14 +1,4 @@
----
-id: channels/chats/reactions/why
-title: "Reaction Accounting Why"
-kind: capability
-domain: channels
-capability: reactions
-status: draft
-normative: false
----
-
-# Why Reaction Accounting Exists
+# Reaction Accounting / WHY
 
 ## Problem
 

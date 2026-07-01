@@ -1,9 +1,10 @@
 ---
 id: channels/chats/reactions
 title: Reaction Accounting
-kind: capability
+kind: feature
 domain: channels
-capability: reactions
+capability: chats
+feature: reactions
 tags:
   - channels
   - chats
