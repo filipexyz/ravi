@@ -14,9 +14,12 @@ status: draft
 ## Return schema quality
 
 ```bash
-ravi sdk returns status --json    # weakPublic must be 0
-ravi sdk returns validate --json  # must return ok: true
+ravi sdk returns status --json
+ravi sdk returns validate --json
 ```
+
+- `weakPublic` MUST be `0`.
+- `ravi sdk returns validate --json` MUST return `ok: true`.
 
 ## Schema coverage tests
 
@@ -25,14 +28,17 @@ bun test src/sdk/client-codegen/return-schema-coverage.test.ts
 bun test src/sdk/return-schemas
 ```
 
+- Schema coverage tests MUST pass with zero failures.
+- Return schema workflow tests MUST pass with zero failures.
+
 ## Gateway dispatch tests
 
 ```bash
 bun test src/sdk/gateway/dispatcher.test.ts
 ```
 
+- Gateway dispatcher tests MUST pass, including binary return handling.
+
 ## Type safety
 
-```bash
-bun run typecheck
-```
+- `bun run typecheck` MUST pass with zero errors.
