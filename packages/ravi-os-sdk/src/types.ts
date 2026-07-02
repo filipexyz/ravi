@@ -11214,12 +11214,34 @@ export type ToolsInvokeReturn = {
   executed: true;
   mode: "executed";
   result: {
-    content: unknown[];
+    content: Array<{
+      text: string;
+      type: "text";
+    }>;
     isError: boolean;
-    [k: string]: unknown;
   };
-  tool: Record<string, unknown>;
-  [k: string]: unknown;
+  tool: {
+    description: string;
+    metadata: {
+      access?: {
+        action: string;
+        kind: string;
+        resource: string;
+        risk: string;
+      };
+      args: Array<Record<string, unknown>>;
+      command: string;
+      group: string;
+      method: string;
+      options: Array<Record<string, unknown>>;
+      scope?: string;
+      skillGate?: {
+        skill: string;
+        source: string;
+      };
+    };
+    name: string;
+  };
 };
 
 /** Input shape for `tools.list`. */
@@ -11286,13 +11308,11 @@ export type ToolsSearchReturn = {
     name: string;
     rank: number;
     score: number;
-    [k: string]: unknown;
   }>;
   limit: number;
   query: string;
   returned: number;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tools.show`. */
@@ -11314,14 +11334,39 @@ export type ToolsTestInput = {
 
 /** Return shape for `tools.test`. */
 export type ToolsTestReturn = {
-  access: (Record<string, unknown>) | null;
+  access: ({
+    action: string;
+    kind: string;
+    resource: string;
+    risk: string;
+  }) | null;
   args: Record<string, unknown>;
   executed: false;
   invokeCommand: string;
   mode: "dry_run";
   schema: (Record<string, unknown>) | null;
-  tool: Record<string, unknown>;
-  [k: string]: unknown;
+  tool: {
+    description: string;
+    metadata: {
+      access?: {
+        action: string;
+        kind: string;
+        resource: string;
+        risk: string;
+      };
+      args: Array<Record<string, unknown>>;
+      command: string;
+      group: string;
+      method: string;
+      options: Array<Record<string, unknown>>;
+      scope?: string;
+      skillGate?: {
+        skill: string;
+        source: string;
+      };
+    };
+    name: string;
+  };
 };
 
 /** Input shape for `transcribe.file`. */
