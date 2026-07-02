@@ -42,10 +42,10 @@ ravi specs get devin/sessions/api --mode full --json
 
 ## Acceptance Criteria
 
-- [ ] `ravi devin sessions create --help` shows v3 flags (mode, platform, resumable, etc.)
-- [ ] Client tests prove v3 fields sent only when explicit/configured
-- [ ] CLI tests prove flag > env/config > omit precedence
-- [ ] Store tests prove audit fields survive insert/update/list/show/sync
-- [ ] Return-schema validation: no newly weak Devin command schemas
-- [ ] SDK/OpenAPI reflects concrete Devin payload schemas
-- [ ] Low ACU is never silently hidden; Devin remains external executor in docs
+- [ ] `ravi devin sessions create --help` MUST show v3 flags (mode, platform, resumable, etc.)
+- [ ] Client tests MUST prove v3 fields are sent only when explicit/configured
+- [ ] CLI tests MUST prove flag > env/config > omit precedence
+- [ ] Store tests MUST prove audit fields survive insert/update/list/show/sync
+- [ ] Return-schema validation MUST report no newly weak Devin command schemas
+- [ ] SDK/OpenAPI MUST reflect concrete Devin payload schemas
+- [ ] Low ACU MUST NOT be silently hidden; Devin MUST remain external executor in docs
