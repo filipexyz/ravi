@@ -2012,6 +2012,42 @@ export const toolsSchemaReturnSchema = z
 
 export const toolTestReturnSchema = z
   .object({
+    mode: z.literal("dry_run"),
+    executed: z.literal(false),
+    tool: looseObjectSchema,
+    args: looseObjectSchema,
+    schema: looseObjectSchema.nullable(),
+    access: looseObjectSchema.nullable(),
+    invokeCommand: z.string(),
+  })
+  .passthrough();
+
+const toolsSearchItemReturnSchema = z
+  .object({
+    rank: z.number(),
+    score: z.number(),
+    name: z.string(),
+    description: z.string(),
+    group: z.string(),
+    command: z.string(),
+    matchedFields: z.array(z.string()),
+  })
+  .passthrough();
+
+export const toolsSearchReturnSchema = z
+  .object({
+    query: z.string(),
+    limit: z.number(),
+    total: z.number(),
+    returned: z.number(),
+    items: z.array(toolsSearchItemReturnSchema),
+  })
+  .passthrough();
+
+export const toolInvokeReturnSchema = z
+  .object({
+    mode: z.literal("executed"),
+    executed: z.literal(true),
     tool: looseObjectSchema,
     args: looseObjectSchema,
     result: z
